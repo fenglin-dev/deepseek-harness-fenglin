@@ -1,4 +1,28 @@
-/**
+﻿}
+function cleanupTmpDirsInNodeModules(profileDirectory) {
+    const nodeModulesDir = join(profileDirectory, 'node_modules');
+    if (!existsSync(nodeModulesDir)) return;
+    let cleaned = 0;
+    try {
+        const entries = readdirSync(nodeModulesDir);
+        for (const name of entries) {
+            if (name.includes('_tmp_')) {
+                const tmpPath = join(nodeModulesDir, name);
+                try {
+                    rmSync(tmpPath, { recursive: true, force: true });
+                    cleaned++;
+                } catch (e) {
+                    logEvent('warn', 'install', 'failed to remove stale tmp dir ' + name + ': ' + e.message);
+                }
+            }
+        }
+        if (cleaned > 0) {
+            logEvent('info', 'install', 'cleaned up ' + cleaned + ' stale tmp dir(s) in node_modules to prevent EPERM rename failures');
+        }
+    } catch (err) {
+        logEvent('warn', 'install', 'failed to scan node_modules for tmp dirs: ' + err.message);
+    }
+}/**
  * Process layer: re-invoking the dsh CLI that launched this host, spawning
  * `dsh plugin` commands with timeouts and live progress, and provisioning
  * pnpm. This is the only module that starts child processes.
@@ -763,6 +787,7 @@ export async function runDshPlugin(profile, pluginArgs) {
     }
     pluginArgs = prepared.args;
     const tracker = beginProgress(prepared.target);
+    cleanupTmpDirsInNodeModules(profileDir(profile));
     const feed = makeProgressFeeder(tracker);
     return new Promise((resolvePromise) => {
         const child = spawnShim(file, [...args, 'plugin', '--profile', profile, ...pluginArgs], {
