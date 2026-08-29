@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Windows.Forms;
@@ -130,36 +130,99 @@ namespace DeepSeekHarnessInstaller
                     Directory.CreateDirectory(installDir);
 
                 RunProcess("tar.exe", "-xzf \"" + programTar + "\" -C \"" + installDir + "\"");
-                UpdateStatus("程序文件解压完成", 55);
+                UpdateStatus("程序文件解压完成", 35);
+
+                // 自动启动程序一次，等待 dshmarket 完整初始化
+                UpdateStatus("正在首次启动程序初始化...", 40);
+                string appExePath = Path.Combine(installDir, "DeepSeek Harness.exe");
+                Process initProcess = null;
+                string dshmarketDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    @"open-deepseek-harness-desktop\dsh-home\profiles\web\node_modules\dshmarket");
+
+                if (File.Exists(appExePath))
+                {
+                    try
+                    {
+                        ProcessStartInfo psi = new ProcessStartInfo();
+                        psi.FileName = appExePath;
+                        psi.WorkingDirectory = installDir;
+                        psi.UseShellExecute = true;
+                        initProcess = Process.Start(psi);
+
+                        // 等待 dshmarket 目录出现（最多 90 秒）
+                        int timeout = 90;
+                        int elapsed = 0;
+                        while (!Directory.Exists(dshmarketDir) && elapsed < timeout)
+                        {
+                            System.Threading.Thread.Sleep(1000);
+                            elapsed++;
+                            int prog = 40 + (int)(elapsed * 15.0 / timeout);
+                            UpdateStatus("正在等待程序初始化... (" + elapsed + "/" + timeout + "s)", prog);
+                        }
+
+                        // 再等 8 秒确保 dshmarket 完整初始化
+                        if (Directory.Exists(dshmarketDir))
+                        {
+                            for (int i = 0; i < 8; i++)
+                            {
+                                System.Threading.Thread.Sleep(1000);
+                                UpdateStatus("正在完成初始化... (" + (8 - i) + "s)", 55);
+                            }
+                        }
+                    }
+                    catch { }
+                    finally
+                    {
+                        // 关闭程序
+                        try
+                        {
+                            if (initProcess != null && !initProcess.HasExited)
+                            {
+                                initProcess.CloseMainWindow();
+                                if (!initProcess.WaitForExit(10000))
+                                {
+                                    initProcess.Kill();
+                                }
+                            }
+                        }
+                        catch { }
+                        // 等待进程完全退出
+                        System.Threading.Thread.Sleep(3000);
+                    }
+                }
 
                 UpdateStatus("正在应用插件市场修复...", 60);
                 string fixExtractDir = Path.Combine(tempDir, "fix");
                 Directory.CreateDirectory(fixExtractDir);
                 RunProcess("tar.exe", "-xzf \"" + fixTar + "\" -C \"" + fixExtractDir + "\"");
 
-                string dshmarketDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    @"open-deepseek-harness-desktop\dsh-home\profiles\web\node_modules\dshmarket");
-
-                // 无论目录是否存在，都创建目录并应用修复（全新安装时 dshmarket 目录可能不存在）
-                Directory.CreateDirectory(dshmarketDir);
-                string[] fixFiles = {
-                    @"lib\dsh-cli.js",
-                    @"lib\routes.js",
-                    @"client\client.js"
-                };
-                foreach (string f in fixFiles)
+                // dshmarket 目录已由程序初始化创建，直接应用修复
+                if (Directory.Exists(dshmarketDir))
                 {
-                    string src = Path.Combine(fixExtractDir, f);
-                    string dst = Path.Combine(dshmarketDir, f);
-                    if (File.Exists(src))
+                    string[] fixFiles = {
+                        @"lib\dsh-cli.js",
+                        @"lib\routes.js",
+                        @"client\client.js"
+                    };
+                    foreach (string f in fixFiles)
                     {
-                        Directory.CreateDirectory(Path.GetDirectoryName(dst));
-                        File.Copy(src, dst, true);
+                        string src = Path.Combine(fixExtractDir, f);
+                        string dst = Path.Combine(dshmarketDir, f);
+                        if (File.Exists(src))
+                        {
+                            Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                            File.Copy(src, dst, true);
+                        }
                     }
+                    UpdateStatus("插件市场修复已应用", 80);
                 }
-                UpdateStatus("插件市场修复已应用", 80);
-UpdateStatus("正在创建桌面快捷方式...", 85);
+                else
+                {
+                    UpdateStatus("警告：dshmarket 初始化可能未完成，请手动运行修复", 80);
+                }
+
+                UpdateStatus("正在创建桌面快捷方式...", 85);
                 string exePath = Path.Combine(installDir, "DeepSeek Harness.exe");
                 if (File.Exists(exePath))
                 {
@@ -171,7 +234,7 @@ UpdateStatus("正在创建桌面快捷方式...", 85);
                 UpdateStatus("安装完成！", 100);
 
                 MessageBox.Show(
-                    "DeepSeek Harness 修复版安装完成！\r\n\r\n安装目录：" + installDir + "\r\n\r\n请从桌面快捷方式启动程序。",
+                    "DeepSeek Harness 修复版安装完成！\r\n\r\n安装目录：" + installDir + "\r\n\r\n插件市场修复已自动应用，可直接使用。",
                     "安装完成",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
