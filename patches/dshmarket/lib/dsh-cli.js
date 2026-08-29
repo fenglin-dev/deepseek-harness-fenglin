@@ -716,6 +716,17 @@ async function downloadTarballToBundled(url) {
     });
     return localPath;
 }
+function removeStaleLockfile(profileDirectory) {
+    const lockfilePath = join(profileDirectory, 'pnpm-lock.yaml');
+    if (!existsSync(lockfilePath)) return;
+    try {
+        const backupPath = lockfilePath + '.bak-' + Date.now();
+        renameSync(lockfilePath, backupPath);
+        logEvent('info', 'install', 'moved stale pnpm-lock.yaml to ' + basename(backupPath) + ' for URL tarball reinstall');
+    } catch (err) {
+        logEvent('warn', 'install', 'failed to move pnpm-lock.yaml: ' + err.message);
+    }
+}
 /** Run one `dsh plugin --profile <p> …` command with timeout and progress tracking. */
 export async function runDshPlugin(profile, pluginArgs) {
     const { file, args, cwd, viaShell } = dshArgv();
@@ -733,6 +744,7 @@ export async function runDshPlugin(profile, pluginArgs) {
             const url = pluginArgs[targetIdx];
             try {
                 const localPath = await downloadTarballToBundled(url);
+                removeStaleLockfile(profileDir(profile));
                 pluginArgs = [...pluginArgs];
                 // Use forward slashes — pnpm accepts them on Windows, and the
                 // TARGET_RE allowlist rejects backslashes (shell-injection defense).
