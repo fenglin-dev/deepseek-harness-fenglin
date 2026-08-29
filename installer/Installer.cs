@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Windows.Forms;
@@ -141,31 +141,25 @@ namespace DeepSeekHarnessInstaller
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     @"open-deepseek-harness-desktop\dsh-home\profiles\web\node_modules\dshmarket");
 
-                if (Directory.Exists(dshmarketDir))
+                // 无论目录是否存在，都创建目录并应用修复（全新安装时 dshmarket 目录可能不存在）
+                Directory.CreateDirectory(dshmarketDir);
+                string[] fixFiles = {
+                    @"lib\dsh-cli.js",
+                    @"lib\routes.js",
+                    @"client\client.js"
+                };
+                foreach (string f in fixFiles)
                 {
-                    string[] fixFiles = {
-                        @"lib\dsh-cli.js",
-                        @"lib\routes.js",
-                        @"client\client.js"
-                    };
-                    foreach (string f in fixFiles)
+                    string src = Path.Combine(fixExtractDir, f);
+                    string dst = Path.Combine(dshmarketDir, f);
+                    if (File.Exists(src))
                     {
-                        string src = Path.Combine(fixExtractDir, f);
-                        string dst = Path.Combine(dshmarketDir, f);
-                        if (File.Exists(src))
-                        {
-                            Directory.CreateDirectory(Path.GetDirectoryName(dst));
-                            File.Copy(src, dst, true);
-                        }
+                        Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                        File.Copy(src, dst, true);
                     }
-                    UpdateStatus("插件市场修复已应用", 80);
                 }
-                else
-                {
-                    UpdateStatus("提示：dshmarket 目录不存在，请先运行一次程序", 80);
-                }
-
-                UpdateStatus("正在创建桌面快捷方式...", 85);
+                UpdateStatus("插件市场修复已应用", 80);
+UpdateStatus("正在创建桌面快捷方式...", 85);
                 string exePath = Path.Combine(installDir, "DeepSeek Harness.exe");
                 if (File.Exists(exePath))
                 {
