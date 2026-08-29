@@ -1,4 +1,4 @@
-window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
+﻿window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 
 
 		var module = { exports: {} };
@@ -6116,8 +6116,19 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 				}))).then(({ status, body }) => {
 					if (status === 200 && body.ok) {
 						if (!body.hot) setRemovedCount((n) => n + 1);
-						 if (body.refresh === true) setRefreshNames((names) => names.includes(name) ? names : names.concat(name));
-						 else clearPendingRefresh(name);
+						if (body.refresh === true) {
+							/* Only ask for a reload when the page had actually loaded the
+							 * plugin. A name already in hotNames/refreshNames was installed
+							 * during this session and was never live here — undoing the
+							 * install nets to zero, so the banner has to go (#340). */
+							setHotNames((hot) => {
+								setRefreshNames((refresh) => {
+									const wasPending = hot.includes(name) || refresh.includes(name);
+									return wasPending ? refresh.filter((entry) => entry !== name) : refresh.includes(name) ? refresh : refresh.concat(name);
+								});
+								return hot.filter((entry) => entry !== name);
+							});
+						} else clearPendingRefresh(name);
 						refreshInstalled();
 					} else {
 						if (body.cancelled === true) {

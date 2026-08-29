@@ -2543,7 +2543,9 @@ export function mountMarketRoutes(host, config, commandRuntime, agentsLookup) {
                         // client shows the "refresh to apply" banner instead of leaving a
                         // ghost UI that 404s on its next route (#uninstall-refresh).
                         // Use hadClientPart captured BEFORE remove — the package is gone now.
-                        const refresh = ok ? hadClientPart : false;
+                        // Gate on hot: non-hot uninstalls already show the restart banner,
+                        // and adding a refresh banner there would double-banner (#213).
+                        const refresh = ok && hot && hadClientPart;
                         sendJson(response, ok || cancelled ? 200 : result.busy === true ? 409 : 502, {
                             ok,
                             cancelled: cancelled || undefined,
