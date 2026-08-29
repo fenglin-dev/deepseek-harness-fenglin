@@ -4,6 +4,12 @@
 >
 > 原项目链接：https://github.com/flaqai/open-deepseek-harness-desktop
 
+## 预览
+
+| 鲸鱼女孩图标 | 软件界面 |
+|:---:|:---:|
+| ![鲸鱼女孩图标](assets/icon-preview.png) | ![软件界面](assets/screenshot.png) |
+
 ## 简介
 
 DeepSeek Harness 是一个开源的 DeepSeek 桌面客户端，本仓库在原版基础上修复了多个 bug，并替换了图标。
@@ -41,12 +47,16 @@ its lockfile entry has no "integrity" field, so pnpm cannot verify the downloade
 **根本原因：**
 - pnpm 11+ 要求 URL tarball（GitHub codeload / gh-proxy）的 lockfile 条目必须包含 `integrity` 字段
 - GitHub codeload tarball 不提供 integrity，导致 pnpm 拒绝安装
-- 原代码中 `if (pluginArgs === 'add')` 条件错误（`pluginArgs` 是数组不是字符串），导致 URL tarball 下载到本地的逻辑永远不会执行
+- 之前安装过同一插件后，pnpm-lock.yaml 中会留下一条没有 integrity 的记录，导致后续每次安装都失败
 
 **修复方案：**
-1. 修正条件判断：`if (pluginArgs === 'add')` → `if (pluginArgs[0] === 'add')`
-2. 安装 URL tarball 插件时，先下载到本地 `bundled-plugins` 目录，再用 `file:` 协议安装，pnpm 会自动计算 integrity
-3. 安装前自动把 `pnpm-lock.yaml` 重命名为 `.bak-时间戳`，让 pnpm 根据 `package.json` 重新生成 lockfile，彻底清除旧的坏条目
+在执行 `dsh plugin add` 之前，检测目标是否为 URL tarball（以 `http://` 或 `https://` 开头，包含 `.tar.gz` 或 `.tgz`）。如果是，则自动删除 profile 目录中的 `pnpm-lock.yaml`，让 pnpm 从新下载的 tarball 重新生成 lockfile。
+
+修复同时覆盖了两条执行路径：
+- `runDshPlugin`（CLI 路径）
+- `createDesktopPluginRuntime` 中的 `runPlugin`（Desktop 路径）
+
+> 该修复已向上游提交 PR：[dsh-market/dsh-market#415](https://github.com/dsh-market/dsh-market/pull/415)
 
 **修改文件：** `patches/dshmarket/lib/dsh-cli.js`
 
@@ -58,11 +68,37 @@ its lockfile entry has no "integrity" field, so pnpm cannot verify the downloade
 - 启用/关闭插件会提示"刷新页面"
 - 卸载插件后不提示刷新，导致插件已卸载但由于缓存原因仍在界面上运行
 
-**修复方案：** 在卸载路由中添加刷新提示逻辑，与启用/关闭保持一致。
+**修复方案：**
+- 后端：在卸载路由的响应中添加 `refresh: true` 字段（当被卸载的插件有 client 部分时），与启用/关闭插件的行为保持一致
+- 前端：在卸载处理函数中处理 `refresh` 字段，当为 true 时将插件加入待刷新列表（显示与启用/关闭相同的刷新提示横幅），而不是清除它
 
 **修改文件：**
 - `patches/dshmarket/lib/routes.js`
 - `patches/dshmarket/client/client.js`
+
+---
+
+## 推荐插件
+
+以下插件在修复版中测试通过，推荐搭配使用：
+
+### 🐋 鲸鱼挂件插件
+
+**DeepSeek-Balance-Whale-Widget** - 桌面鲸鱼挂件，显示余额等信息。
+
+- 仓库：https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget
+
+### 🎨 皮肤插件
+
+**dsh-web-ui-all** - 全套 UI 皮肤包，包含多种主题样式。
+
+- 地址：https://dshhub.org/plugins/zhu1090093659/dsh-web-ui--packages-dsh-web-ui-all
+
+### 🎵 播放器插件
+
+**SinglePlayer** - 内置音乐播放器，支持网易云音乐等音源。
+
+- 仓库：https://github.com/nxz1026/SinglePlayer
 
 ---
 
@@ -73,6 +109,9 @@ deepseek-harness-patched/
 ├── README.md                          # 本说明文档
 ├── BUILD.md                           # 构建说明（如何从原版构建修复版）
 ├── .gitignore                         # Git 忽略文件
+├── assets/                            # 预览图片
+│   ├── icon-preview.png               # 鲸鱼女孩图标预览
+│   └── screenshot.png                 # 软件界面截图
 ├── patches/                           # 修复补丁目录
 │   ├── app.asar                       # 修复后的 app.asar（顶部窗口遮挡修复）
 │   ├── icon.ico                       # 鲸鱼女孩图标
@@ -160,6 +199,10 @@ Copy-Item "patches\dshmarket\client\client.js" "$dshmarketDir\client\client.js" 
 - 原项目：[flaqai/open-deepseek-harness-desktop](https://github.com/flaqai/open-deepseek-harness-desktop)
 - 图标来源：deepseek-whale-girl-icon
 - dshmarket 插件市场：[dsh-market/dsh-market](https://github.com/dsh-market/dsh-market)
+- 推荐插件：
+  - [DeepSeek-Balance-Whale-Widget](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget) by MeteorNOX
+  - [dsh-web-ui-all](https://dshhub.org/plugins/zhu1090093659/dsh-web-ui--packages-dsh-web-ui-all) by zhu1090093659
+  - [SinglePlayer](https://github.com/nxz1026/SinglePlayer) by nxz1026
 
 ## 许可证
 
