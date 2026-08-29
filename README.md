@@ -92,7 +92,7 @@ its lockfile entry has no "integrity" field, so pnpm cannot verify the downloade
 
 **dsh-web-ui-all** - 全套 UI 皮肤包，包含多种主题样式。
 
-- 地址：https://dshhub.org/plugins/zhu1090093659/dsh-web-ui--packages-dsh-web-ui-all
+- 仓库：https://github.com/zhu1090093659/dsh-web/tree/main/packages/dsh-web-all#readme
 
 ### 🎵 播放器插件
 
@@ -201,7 +201,7 @@ Copy-Item "patches\dshmarket\client\client.js" "$dshmarketDir\client\client.js" 
 - dshmarket 插件市场：[dsh-market/dsh-market](https://github.com/dsh-market/dsh-market)
 - 推荐插件：
   - [DeepSeek-Balance-Whale-Widget](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget) by MeteorNOX
-  - [dsh-web-ui-all](https://dshhub.org/plugins/zhu1090093659/dsh-web-ui--packages-dsh-web-ui-all) by zhu1090093659
+  - [dsh-web-ui-all](https://github.com/zhu1090093659/dsh-web/tree/main/packages/dsh-web-all#readme) by zhu1090093659
   - [SinglePlayer](https://github.com/nxz1026/SinglePlayer) by nxz1026
 
 ## 许可证
