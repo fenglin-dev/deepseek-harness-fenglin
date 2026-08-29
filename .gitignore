@@ -1,0 +1,49 @@
+# 编译产物
+*.exe
+*.dll
+*.pdb
+*.obj
+*.bin
+
+# 压缩包
+*.tar.gz
+*.zip
+*.7z
+*.rar
+
+# 备份文件
+*.bak
+*.backup
+backup_*/
+*.original
+
+# 临时文件
+*.tmp
+*.temp
+temp/
+tmp/
+
+# 日志文件
+*.log
+logs/
+
+# 操作系统文件
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# IDE 文件
+.vs/
+.vscode/
+*.suo
+*.user
+
+# 构建输出
+build/
+dist/
+out/
+bin/
+obj/
+
+# 安装包（太大，不放仓库）
+DeepSeek-Harness-Setup.exe
