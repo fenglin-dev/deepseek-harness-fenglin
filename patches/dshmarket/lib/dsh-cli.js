@@ -1,28 +1,4 @@
-﻿}
-function cleanupTmpDirsInNodeModules(profileDirectory) {
-    const nodeModulesDir = join(profileDirectory, 'node_modules');
-    if (!existsSync(nodeModulesDir)) return;
-    let cleaned = 0;
-    try {
-        const entries = readdirSync(nodeModulesDir);
-        for (const name of entries) {
-            if (name.includes('_tmp_')) {
-                const tmpPath = join(nodeModulesDir, name);
-                try {
-                    rmSync(tmpPath, { recursive: true, force: true });
-                    cleaned++;
-                } catch (e) {
-                    logEvent('warn', 'install', 'failed to remove stale tmp dir ' + name + ': ' + e.message);
-                }
-            }
-        }
-        if (cleaned > 0) {
-            logEvent('info', 'install', 'cleaned up ' + cleaned + ' stale tmp dir(s) in node_modules to prevent EPERM rename failures');
-        }
-    } catch (err) {
-        logEvent('warn', 'install', 'failed to scan node_modules for tmp dirs: ' + err.message);
-    }
-}/**
+﻿/**
  * Process layer: re-invoking the dsh CLI that launched this host, spawning
  * `dsh plugin` commands with timeouts and live progress, and provisioning
  * pnpm. This is the only module that starts child processes.
@@ -31,7 +7,7 @@ function cleanupTmpDirsInNodeModules(profileDirectory) {
  * the agent's sandboxed executor and denies writes to the profile directory.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, createWriteStream, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, createWriteStream, renameSync, readdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, basename } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -749,6 +725,30 @@ function removeStaleLockfile(profileDirectory) {
         logEvent('info', 'install', 'moved stale pnpm-lock.yaml to ' + basename(backupPath) + ' for URL tarball reinstall');
     } catch (err) {
         logEvent('warn', 'install', 'failed to move pnpm-lock.yaml: ' + err.message);
+    }
+}
+function cleanupTmpDirsInNodeModules(profileDirectory) {
+    const nodeModulesDir = join(profileDirectory, 'node_modules');
+    if (!existsSync(nodeModulesDir)) return;
+    let cleaned = 0;
+    try {
+        const entries = readdirSync(nodeModulesDir);
+        for (const name of entries) {
+            if (name.includes('_tmp_')) {
+                const tmpPath = join(nodeModulesDir, name);
+                try {
+                    rmSync(tmpPath, { recursive: true, force: true });
+                    cleaned++;
+                } catch (e) {
+                    logEvent('warn', 'install', 'failed to remove stale tmp dir ' + name + ': ' + e.message);
+                }
+            }
+        }
+        if (cleaned > 0) {
+            logEvent('info', 'install', 'cleaned up ' + cleaned + ' stale tmp dir(s) in node_modules to prevent EPERM rename failures');
+        }
+    } catch (err) {
+        logEvent('warn', 'install', 'failed to scan node_modules for tmp dirs: ' + err.message);
     }
 }
 /** Run one `dsh plugin --profile <p> …` command with timeout and progress tracking. */
