@@ -1,6 +1,5 @@
 # Build each desktop artifact on the operating system and CPU architecture it ships for.
 name: Desktop packages
-
 on:
   push:
     tags:
@@ -23,18 +22,14 @@ on:
         required: true
         type: boolean
         default: false
-
 permissions:
   contents: read
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
-
 env:
   PRIMARY_NODE_VERSION: '24.11.1'
   DSH_TELEMETRY_DISABLED: '1'
-
 jobs:
   bundled-plugins:
     name: Resolve bundled plugins
@@ -43,29 +38,23 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
-
       - run: pnpm install --frozen-lockfile
-
       - name: Resolve latest stable plugin archives
         run: pnpm run refresh:desktop:bundled-plugins
-
       - uses: actions/upload-artifact@v4
         with:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
           if-no-files-found: error
           retention-days: 14
-
   macos:
     name: macOS ${{ matrix.arch }}
-    if: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'macos' }}
+    if: ${{ inputs.target == 'all' || inputs.target == 'macos' }}
     needs: bundled-plugins
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
@@ -82,28 +71,21 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
-
       - run: pnpm install --frozen-lockfile
-
       - name: Use resolved bundled plugin snapshot
         run: |
           node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
-
       - uses: actions/download-artifact@v4
         with:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
-
       - name: Build macOS package
         run: pnpm run package:desktop:macos:${{ matrix.arch }}
-
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-macos-${{ matrix.arch }}
@@ -112,7 +94,6 @@ jobs:
             .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.zip
           if-no-files-found: error
           retention-days: 14
-
   windows:
     name: Windows x64
     if: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'windows-x64' }}
@@ -124,39 +105,30 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
-
       - run: pnpm install --frozen-lockfile
-
       - name: Use resolved bundled plugin snapshot
         run: |
           node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
-
       - uses: actions/download-artifact@v4
         with:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
-
       - name: Build Windows installer
         run: pnpm run package:desktop:win:x64
-
       - name: Smoke test installed Windows package
         shell: pwsh
         run: apps/desktop/scripts/smoke-windows-package.ps1
-
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-windows-x64
           path: .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
           if-no-files-found: error
           retention-days: 14
-
   linux:
     name: Linux x64
     if: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'linux-x64' }}
@@ -168,33 +140,25 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
-
       - name: Install package tools
         run: |
           sudo apt-get update -q
           sudo apt-get install -yq rpm
-
       - run: pnpm install --frozen-lockfile
-
       - name: Use resolved bundled plugin snapshot
         run: |
           node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
-
       - uses: actions/download-artifact@v4
         with:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
-
       - name: Build Linux packages
         run: pnpm run package:desktop:linux:x64
-
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-linux-x64
@@ -203,13 +167,12 @@ jobs:
             .artifacts/desktop-linux/DeepSeek-Harness-linux-x64.rpm
           if-no-files-found: error
           retention-days: 14
-
   checksums:
     name: SHA-256 checksums
     needs: [macos, windows, linux]
     if: >-
       ${{ always() && (
-        (github.event_name == 'push' && needs.macos.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success') ||
+        (github.event_name == 'push' && needs.windows.result == 'success' && needs.linux.result == 'success') ||
         (github.event_name == 'workflow_dispatch' && inputs.target == 'all' && needs.macos.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success') ||
         (github.event_name == 'workflow_dispatch' && inputs.target == 'macos' && needs.macos.result == 'success') ||
         (github.event_name == 'workflow_dispatch' && inputs.target == 'windows-x64' && needs.windows.result == 'success') ||
@@ -222,18 +185,15 @@ jobs:
           pattern: desktop-*
           path: dist
           merge-multiple: true
-
       - name: Write checksums
         working-directory: dist
         run: sha256sum DeepSeek-Harness-* > SHA256SUMS
-
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-checksums
           path: dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
-
   release:
     name: GitHub Release
     needs: [macos, windows, linux, checksums]
@@ -247,14 +207,12 @@ jobs:
           pattern: desktop-*
           path: dist
           merge-multiple: true
-
       - name: Verify release tag
         run: |
           case "$GITHUB_REF" in
             refs/tags/odsh-v*|refs/tags/dsh-v*) ;;
             *) echo "::error::Desktop publication requires an odsh-v* or legacy dsh-v* tag"; exit 1 ;;
           esac
-
       - name: Create or update Release
         env:
           GH_TOKEN: ${{ github.token }}
