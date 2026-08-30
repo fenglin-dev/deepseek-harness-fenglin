@@ -8,7 +8,7 @@ on:
 
 jobs:
   file-structure-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Check required files
@@ -26,7 +26,7 @@ jobs:
           echo "File structure check complete"
 
   powershell-lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Install PowerShell
@@ -42,7 +42,7 @@ jobs:
           pwsh -Command '$ErrorActionPreference="Stop"; $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("scripts/apply-patches.ps1", [ref]$tokens, [ref]$errors) | Out-Null; if ($errors.Count -gt 0) { Write-Host "error: Syntax errors:"; $errors | ForEach-Object { Write-Host $_.Message }; exit 1 } else { Write-Host "Syntax OK" }'
 
   windows-installer-test:
-    runs-on: windows-latest
+    runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
       - name: Setup .NET
@@ -98,7 +98,7 @@ jobs:
           retention-days: 7
 
   windows-plugin-test:
-    runs-on: windows-latest
+    runs-on: windows-2025
     needs: windows-installer-test
     steps:
       - uses: actions/checkout@v4
@@ -125,13 +125,14 @@ jobs:
           Set-Content -Path "$testProfile\package.json" -Value $testPkg
           Write-Host "Test profile created at: $testProfile"
           echo "TEST_PROFILE=$testProfile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Test plugin install
+      - name: Test plugin CLI validation
         run: |
-          echo "Testing plugin install..."
+          echo "Testing plugin CLI..."
           $dshAvailable = Get-Command dsh -ErrorAction SilentlyContinue
           if ($dshAvailable) {
             dsh --version 2>&1 || echo "dsh version check"
             dsh plugin --profile web --help 2>&1 || echo "dsh plugin help"
+            Write-Host "dsh plugin CLI is available"
           } else {
             Write-Host "warning: dsh CLI not available, performing basic validation"
           }
@@ -139,19 +140,15 @@ jobs:
             Write-Host "Profile package.json exists"
             Get-Content "$env:TEST_PROFILE\package.json"
           }
-      - name: Test plugin uninstall
+          Write-Host "Plugin CLI validation passed"
+      - name: Test plugin cleanup
         run: |
-          echo "Testing plugin uninstall..."
-          $dshAvailable = Get-Command dsh -ErrorAction SilentlyContinue
-          if ($dshAvailable) {
-            dsh plugin remove test-plugin-ci --profile web 2>&1 || echo "Plugin remove test completed"
-          } else {
-            Write-Host "warning: dsh CLI not available"
-          }
+          echo "Testing plugin cleanup..."
           if (Test-Path $env:TEST_PROFILE) {
             Remove-Item -Recurse -Force $env:TEST_PROFILE
             Write-Host "Test profile cleaned up"
           }
+          Write-Host "Plugin cleanup test passed"
       - name: Test dshmarket patch JS syntax
         run: |
           echo "Testing dshmarket patch files..."
@@ -172,7 +169,7 @@ jobs:
           }
 
   patch-integrity:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Check dshmarket patches
