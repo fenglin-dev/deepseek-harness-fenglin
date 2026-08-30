@@ -4,12 +4,12 @@
                     {
                         "seedId":  "dshmarket",
                         "packageName":  "dshmarket",
-                        "version":  "1.36.4",
+                        "version":  "1.38.1",
                         "profile":  "web",
                         "installPolicy":  "startup",
-                        "registrySpec":  "dshmarket@1.36.4",
-                        "archive":  "dshmarket-1.36.4.tgz",
-                        "integrity":  "sha512-OJbXkj0CcAwWCzfo9cuBTPrzKcgI4Al0ZFdNgSuL2w+D36GEG7L6o5nSMgtuTsfztFWn+LqE/cTdzBCMEZ3p/g=="
+                        "registrySpec":  "dshmarket@1.38.1",
+                        "archive":  "dshmarket-1.38.1.tgz",
+                        "integrity":  "sha512-Z9VleLtCXwk5OlbSJKayWtbMaKACL8JUMyb/JHpErS4N3q//GJS+cgOhhxNkZYmXxB8/lv9IbhX1CBzlMhJeJg=="
                     },
                     {
                         "seedId":  "xmanrui-dsh-im",
