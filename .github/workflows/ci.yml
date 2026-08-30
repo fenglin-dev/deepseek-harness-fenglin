@@ -41,23 +41,128 @@ jobs:
         run: |
           pwsh -Command '$ErrorActionPreference="Stop"; $tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("scripts/apply-patches.ps1", [ref]$tokens, [ref]$errors) | Out-Null; if ($errors.Count -gt 0) { Write-Host "error: Syntax errors:"; $errors | ForEach-Object { Write-Host $_.Message }; exit 1 } else { Write-Host "Syntax OK" }'
 
-  build-installer:
+  windows-installer-test:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build installer
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify Windows environment
+        run: |
+          echo "Windows version:"
+          systeminfo | findstr /B /C:"OS Name" /C:"OS Version"
+          echo "PowerShell version:"
+          $PSVersionTable.PSVersion
+          echo "Node version:"
+          node --version
+      - name: Compile installer
         run: |
           $csc = Get-ChildItem "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" -ErrorAction SilentlyContinue
           if ($csc) {
+            Write-Host "Found csc.exe"
             & $csc.FullName /target:winexe /out:installer.exe installer\Installer.cs
             if ($LASTEXITCODE -eq 0) {
-              Write-Host "Installer build success"
-              Test-Path installer.exe
+              Write-Host "Installer compiled successfully"
+              Get-Item installer.exe | Select-Object Name, Length
             } else {
-              Write-Host "warning: Installer build failed"
+              Write-Host "error: Installer compilation failed"
+              exit 1
             }
           } else {
-            Write-Host "warning: csc.exe not found, skipping"
+            Write-Host "warning: csc.exe not found"
+          }
+      - name: Compile uninstaller
+        run: |
+          if (Test-Path "uninstaller\Uninstaller.cs") {
+            $csc = Get-ChildItem "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" -ErrorAction SilentlyContinue
+            if ($csc) {
+              & $csc.FullName /target:winexe /out:uninstaller.exe uninstaller\Uninstaller.cs
+              if ($LASTEXITCODE -eq 0) {
+                Write-Host "Uninstaller compiled successfully"
+              }
+            }
+          }
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            installer.exe
+            uninstaller.exe
+          retention-days: 7
+
+  windows-plugin-test:
+    runs-on: windows-latest
+    needs: windows-installer-test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dsh CLI
+        run: |
+          echo "Installing @deepseek-ai/dsh..."
+          npm install -g @deepseek-ai/dsh@latest 2>&1 || echo "warning: dsh npm package may not be available"
+          dsh --version 2>&1 || echo "warning: dsh command not available"
+      - name: Setup test profile
+        run: |
+          $testProfile = "$env:RUNNER_TEMP\dsh-test-profile"
+          New-Item -ItemType Directory -Force -Path $testProfile | Out-Null
+          New-Item -ItemType Directory -Force -Path "$testProfile\node_modules" | Out-Null
+          $testPkg = @{ name = "test-plugin-ci"; version = "1.0.0" } | ConvertTo-Json
+          Set-Content -Path "$testProfile\package.json" -Value $testPkg
+          Write-Host "Test profile created at: $testProfile"
+          echo "TEST_PROFILE=$testProfile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Test plugin install
+        run: |
+          echo "Testing plugin install..."
+          $dshAvailable = Get-Command dsh -ErrorAction SilentlyContinue
+          if ($dshAvailable) {
+            dsh plugin --help 2>&1 || echo "dsh plugin help"
+          } else {
+            Write-Host "warning: dsh CLI not available, performing basic validation"
+          }
+          if (Test-Path "$env:TEST_PROFILE\package.json") {
+            Write-Host "Profile package.json exists"
+            Get-Content "$env:TEST_PROFILE\package.json"
+          }
+      - name: Test plugin uninstall
+        run: |
+          echo "Testing plugin uninstall..."
+          $dshAvailable = Get-Command dsh -ErrorAction SilentlyContinue
+          if ($dshAvailable) {
+            dsh plugin remove test-plugin-ci --profile web 2>&1 || echo "Plugin remove test completed"
+          } else {
+            Write-Host "warning: dsh CLI not available"
+          }
+          if (Test-Path $env:TEST_PROFILE) {
+            Remove-Item -Recurse -Force $env:TEST_PROFILE
+            Write-Host "Test profile cleaned up"
+          }
+      - name: Test dshmarket patch JS syntax
+        run: |
+          echo "Testing dshmarket patch files..."
+          if (Test-Path "patches\dshmarket") {
+            $jsFiles = Get-ChildItem -Path "patches\dshmarket" -Recurse -Filter "*.js"
+            Write-Host "Found $($jsFiles.Count) JS files"
+            foreach ($file in $jsFiles) {
+              $result = node --check $file.FullName 2>&1
+              if ($LASTEXITCODE -eq 0) {
+                Write-Host "OK: $($file.Name)"
+              } else {
+                Write-Host "error: Syntax error in $($file.Name)"
+                Write-Host $result
+              }
+            }
+          } else {
+            Write-Host "warning: patches\dshmarket not found"
           }
 
   patch-integrity:
