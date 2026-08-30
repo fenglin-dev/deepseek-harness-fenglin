@@ -9,7 +9,7 @@
                         "installPolicy":  "startup",
                         "registrySpec":  "dshmarket@1.38.1",
                         "archive":  "dshmarket-1.38.1.tgz",
-                        "integrity":  "sha512-w7E6APVGaSSah/Q7OHxyx2p0ZmjcijhgJi7Fx8gJZ9coUlM/z3nnRfZ3huNKzDfnROl4xM35eW677rXKLX+okQ=="
+                        "integrity":  "sha512-oIuxP4TE2Kje9jG9h7qcgI+piQvQxXrZXisIpfXLFs5n1LPAwAwBpCQZPPu9VMQ84cJsVG9uDzF0wG7c3pm7oA=="
                     },
                     {
                         "seedId":  "xmanrui-dsh-im",
