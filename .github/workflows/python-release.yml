@@ -33,7 +33,7 @@ jobs:
   python-compat:
     name: Python ${{ matrix.python }} / installed SDK
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -78,7 +78,7 @@ jobs:
   validate:
     name: Validate release candidate
     needs: [build, python-compat]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -185,7 +185,7 @@ jobs:
     name: Publish runtime wheels to public PyPI
     if: github.event_name == 'workflow_dispatch' && inputs.publish
     needs: validate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: pypi-runtime
     permissions:
@@ -220,7 +220,7 @@ jobs:
     name: Publish SDK wheel to public PyPI
     if: github.event_name == 'workflow_dispatch' && inputs.publish
     needs: [validate, publish-runtime]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: pypi
     permissions:

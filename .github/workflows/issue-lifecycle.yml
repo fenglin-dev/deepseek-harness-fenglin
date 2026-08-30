@@ -41,7 +41,7 @@ jobs:
     # are gated at step level (a skipped step does not gray the job): only a
     # changes_requested review drives the Project board; approved/commented
     # reviews never mint a write-capable App token.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out trusted policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

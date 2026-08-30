@@ -371,18 +371,19 @@ function installLoadingPage(): void {
 
 const TITLE_BAR_STYLE = `
   html.dsh-desktop-custom-frame {
-    box-sizing: border-box;
+    box-sizing: border-box !important;
     height: 100%;
     overflow: hidden;
-    --dsh-desktop-titlebar-inset: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px;
+    padding-top: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px !important;
   }
   html.dsh-desktop-custom-frame body {
     box-sizing: border-box;
-    height: auto !important;
-    inset: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px 0 0;
-    min-height: 0 !important;
-    overflow: hidden;
-    position: fixed;
+    height: 100% !important;
+    margin: 0 !important;
+    min-height: 100% !important;
+  }
+  html.dsh-desktop-custom-frame #root {
+    transform: translateZ(0) !important;
   }
   #dsh-desktop-titlebar {
     -webkit-app-region: drag;
@@ -468,6 +469,12 @@ function installCustomTitleBar(): void {
   style.id = 'dsh-desktop-titlebar-style'
   style.textContent = TITLE_BAR_STYLE
   document.head.append(style)
+
+  // Force inline styles — highest priority, cannot be overridden by the web app's CSS.
+  root.style.setProperty('padding-top', `${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px`, 'important')
+  root.style.setProperty('box-sizing', 'border-box', 'important')
+  const rootEl = document.getElementById('root')
+  if (rootEl) rootEl.style.setProperty('transform', 'translateZ(0)', 'important')
 
   const titleBar = document.createElement('header')
   titleBar.id = 'dsh-desktop-titlebar'
