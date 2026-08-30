@@ -46,7 +46,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Resolve latest stable plugin archives
         run: pnpm run refresh:desktop:bundled-plugins
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
@@ -80,13 +80,13 @@ jobs:
       - name: Use resolved bundled plugin snapshot
         run: |
           node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
       - name: Build macOS package
         run: pnpm run package:desktop:macos:${{ matrix.arch }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: desktop-macos-${{ matrix.arch }}
           path: |
@@ -114,7 +114,7 @@ jobs:
       - name: Use resolved bundled plugin snapshot
         run: |
           node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
@@ -123,7 +123,7 @@ jobs:
       - name: Smoke test installed Windows package
         shell: pwsh
         run: apps/desktop/scripts/smoke-windows-package.ps1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: desktop-windows-x64
           path: .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
@@ -153,13 +153,13 @@ jobs:
       - name: Use resolved bundled plugin snapshot
         run: |
           node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
       - name: Build Linux packages
         run: pnpm run package:desktop:linux:x64
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: desktop-linux-x64
           path: |
@@ -180,7 +180,7 @@ jobs:
       ) }}
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           pattern: desktop-*
           path: dist
@@ -188,7 +188,7 @@ jobs:
       - name: Write checksums
         working-directory: dist
         run: sha256sum DeepSeek-Harness-* > SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: desktop-checksums
           path: dist/SHA256SUMS
@@ -202,7 +202,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           pattern: desktop-*
           path: dist
