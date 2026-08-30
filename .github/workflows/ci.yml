@@ -125,7 +125,8 @@ jobs:
           echo "Testing plugin install..."
           $dshAvailable = Get-Command dsh -ErrorAction SilentlyContinue
           if ($dshAvailable) {
-            dsh plugin --help 2>&1 || echo "dsh plugin help"
+            dsh --version 2>&1 || echo "dsh version check"
+            dsh plugin --profile web --help 2>&1 || echo "dsh plugin help"
           } else {
             Write-Host "warning: dsh CLI not available, performing basic validation"
           }
