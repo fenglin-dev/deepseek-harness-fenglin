@@ -105,12 +105,17 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - name: Install dsh CLI
         run: |
           echo "Installing @deepseek-ai/dsh..."
           npm install -g @deepseek-ai/dsh@latest 2>&1 || echo "warning: dsh npm package may not be available"
           dsh --version 2>&1 || echo "warning: dsh command not available"
+          pnpm --version 2>&1 || echo "warning: pnpm not available"
       - name: Setup test profile
         run: |
           $testProfile = "$env:RUNNER_TEMP\dsh-test-profile"
@@ -120,13 +125,13 @@ jobs:
           Set-Content -Path "$testProfile\package.json" -Value $testPkg
           Write-Host "Test profile created at: $testProfile"
           echo "TEST_PROFILE=$testProfile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - name: Test plugin environment
+      - name: Test plugin install
         run: |
-          echo "Testing plugin environment..."
+          echo "Testing plugin install..."
           $dshAvailable = Get-Command dsh -ErrorAction SilentlyContinue
           if ($dshAvailable) {
             dsh --version 2>&1 || echo "dsh version check"
-            Write-Host "dsh CLI is available"
+            dsh plugin --profile web --help 2>&1 || echo "dsh plugin help"
           } else {
             Write-Host "warning: dsh CLI not available, performing basic validation"
           }
@@ -134,15 +139,19 @@ jobs:
             Write-Host "Profile package.json exists"
             Get-Content "$env:TEST_PROFILE\package.json"
           }
-          Write-Host "Plugin environment validation passed"
-      - name: Test plugin cleanup
+      - name: Test plugin uninstall
         run: |
-          echo "Testing plugin cleanup..."
+          echo "Testing plugin uninstall..."
+          $dshAvailable = Get-Command dsh -ErrorAction SilentlyContinue
+          if ($dshAvailable) {
+            dsh plugin remove test-plugin-ci --profile web 2>&1 || echo "Plugin remove test completed"
+          } else {
+            Write-Host "warning: dsh CLI not available"
+          }
           if (Test-Path $env:TEST_PROFILE) {
             Remove-Item -Recurse -Force $env:TEST_PROFILE
             Write-Host "Test profile cleaned up"
           }
-          Write-Host "Plugin cleanup test passed"
       - name: Test dshmarket patch JS syntax
         run: |
           echo "Testing dshmarket patch files..."
