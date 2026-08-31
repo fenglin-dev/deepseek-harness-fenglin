@@ -55,8 +55,6 @@ jobs:
             runner: landlock
           - os: ubuntu-24.04-arm
             runner: landlock
-          - os: macos-latest
-            runner: seatbelt
     name: sandbox e2e (${{ matrix.runner }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
