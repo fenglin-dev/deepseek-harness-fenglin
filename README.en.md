@@ -8,36 +8,39 @@
   <strong>A ready-to-use, dependency-safe desktop edition of DeepSeek Harness</strong>
 </p>
 
-Languages: [简体中文](README.md) · English · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Português](README.pt-BR.md)
+Languages: [简体中文](README.md) · English
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-alpha.1 is available now — download it and give it a try](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1).** It integrates DeepSeek Harness 0.1.2-alpha.1 and adds the Diagnostics Lab, live plugin discovery, stronger plugin isolation, and reorderable Settings navigation, alongside fixes for Windows PATH handling, the title bar, configuration-file opening, and packaged startup checks.
+> **[v1.2.0 Beta is available now — download it and give it a try](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v1.2.0).** This is a personally maintained fork based on Open DeepSeek Harness Desktop 0.1.2-alpha.1, featuring a whale-girl themed icon set, title bar overlap fix for Windows, and plugin marketplace installation/uninstallation fixes, alongside all upstream features including the Diagnostics Lab, live plugin discovery, stronger plugin isolation, and reorderable Settings navigation.
 >
-> This is an Alpha pre-release. Back up important configuration before upgrading, and include relevant logs or diagnostic reports when reporting problems.
+> This is a personally maintained beta release. Back up important configuration before upgrading, and include relevant logs or diagnostic reports when reporting problems to [this repository's Issues](https://github.com/fenglin-dev/deepseek-harness-fenglin/issues).
 
 <p align="center">
-  <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="Downloads"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/github/license/flaqai/open-deepseek-harness-desktop?style=flat" alt="MIT License"></a>
-  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/upstream-DeepSeek%20Harness-4d6bfe?style=flat" alt="DeepSeek Harness upstream"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases"><img src="https://img.shields.io/github/downloads/fenglin-dev/deepseek-harness-fenglin/total.svg?style=flat" alt="Downloads"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/fenglin-dev/deepseek-harness-fenglin?style=flat" alt="MIT License"></a>
+  <a href="https://github.com/flaqai/open-deepseek-harness-desktop"><img src="https://img.shields.io/badge/upstream-FLAQ%20AI%20Desktop-4d6bfe?style=flat" alt="Upstream project"></a>
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/runtime-DeepSeek%20Harness-blue?style=flat" alt="DeepSeek Harness runtime"></a>
 </p>
 
-Open DeepSeek Harness Desktop is an independent, community-maintained desktop distribution of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It combines the upstream plugin-based agent runtime, Web workspace, and native desktop integration into an installable app for configuring models, running coding sessions, inspecting execution, managing plugins and Skills, and connecting external coding tools or IM bots.
+This is a personally maintained fork of [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop), based on the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) desktop distribution. It combines the upstream plugin-based agent runtime, Web workspace, and native desktop integration into an installable app for configuring models, running coding sessions, inspecting execution, managing plugins and Skills, and connecting external coding tools or IM bots.
 
 Installers include Node.js, pnpm, and the Harness runtime, so users do not need to prepare a development environment. Electron does not become a second agent runtime: configuration, credentials, sessions, plugins, and Skills remain owned by the local Harness service, while Electron exposes only capability-scoped desktop integration.
 
 > [!NOTE]
 >
-> This repository is not an official DeepSeek product. It is an open-source community project built on DeepSeek Harness and remains in preview; local data formats, plugin compatibility policies, and installation details may continue to evolve.
+> This repository is a personally maintained fork, not an official DeepSeek product, and does not represent the FLAQ AI team. This version is based on [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop) with personal improvements and bug fixes. The project remains in beta; local data formats, plugin compatibility policies, and installation details may continue to evolve.
 
 ## Highlights in this release
 
+- [Whale-girl themed icons](#about-this-fork): full application visual elements replaced with whale-girl themed icons.
+- [Windows title bar overlap fix](#about-this-fork): fixed the window overlap issue caused by custom title bar on Windows.
 - [First launch and independent data environments](#first-launch-and-independent-data-environments): import an official configuration, share a directory directly, or start fresh.
 - [Plugin selection and restoration after import](#plugin-selection-and-restoration-after-import): online source checks plus safe restoration from source directories or `.tgz` archives.
 - [Supercharged diagnostics](#supercharged-diagnostics): turn difficult pnpm and Cordis failures into actionable diagnoses and guarded repair.
 - [Text selection and context-menu actions](#text-selection-and-context-menu-actions): copy, ask in a new conversation, or append to the current draft.
 - [Desktop enhancements](#desktop-enhancements-to-the-upstream-web-experience): tray operation, quick restart, notifications, logs, in-app updates, and CLI registration.
-- [Download and install](#installation): native Windows, macOS, and Linux packages are available.
+- [Download and install](#installation): native Windows and Linux packages are available (macOS users please visit the upstream official repository).
 
 ## First launch and independent data environments
 
@@ -238,9 +241,9 @@ Switch between system, light, dark, and eight product themes; pair them with eig
   </tr>
 </table>
 
-### Synchronized with DeepSeek Harness 0.1.2-alpha.1
+### Based on official 0.1.2-alpha.1 — personally maintained fork v1.2.0
 
-The current desktop baseline incorporates upstream `dsh-v0.1.2-alpha.1`, including folded process details, adjustable conversation width and font size, exact token usage, turn navigation, authorized subagent model selection, third-party languages, the improved image pipeline, expanded ACP support, and more efficient page and conversation initialization. Existing file and Session references, concurrent `web_search`, reasoning passback, persistent PowerShell PTY, dynamic client packages, build Profiles, and branding slots remain available. Upstream also fixes Windows paths containing Chinese characters, persistent terminal output on macOS and Linux, lost Agent Preset directories, and idle WebSocket disconnects. Electron always passes `--no-open` to `dsh web`, so launching the desktop app does not also open a system browser.
+The current desktop baseline is based on the upstream [Open DeepSeek Harness Desktop 0.1.2-alpha.1](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1), with this version numbered `v1.2.0 Beta`. It includes all upstream features such as folded process details, adjustable conversation width and font size, exact token usage, turn navigation, authorized subagent model selection, third-party languages, the improved image pipeline, expanded ACP support, and more efficient page and conversation initialization, plus personally maintained improvements including whale-girl themed icons, Windows title bar overlap fix, and plugin marketplace issue fixes. Existing file and Session references, concurrent `web_search`, reasoning passback, persistent PowerShell PTY, dynamic client packages, build Profiles, and branding slots remain available. Upstream also fixes Windows paths containing Chinese characters, persistent terminal output on macOS and Linux, lost Agent Preset directories, and idle WebSocket disconnects. Electron always passes `--no-open` to `dsh web`, so launching the desktop app does not also open a system browser.
 
 ### Diagnostics Lab
 
@@ -259,35 +262,27 @@ Quick, standard, and soak presets run 1, 3, or 10 rounds. The default target nev
 
 ## Installation
 
-Download builds only from this project's [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) page. [`v0.1.2-alpha.1`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1) provides the following artifacts:
+Download builds only from this project's [GitHub Releases](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases) page. [`v1.2.0 Beta`](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v1.2.0) provides the following artifacts:
 
 | Platform | Architecture | Release package | Status |
 | --- | --- | --- | --- |
-| macOS | Apple Silicon (`arm64`) | `DeepSeek-Harness-macos-arm64.dmg` | Available |
-| macOS | Intel (`x64`) | `DeepSeek-Harness-macos-x64.dmg` | Available |
 | Windows | `x64` | `DeepSeek-Harness-windows-x64.exe` | Available |
 | Linux | Debian / Ubuntu (`x64`) | `DeepSeek-Harness-linux-x64.deb` | Available |
 | Linux | Fedora / RHEL (`x64`) | `DeepSeek-Harness-linux-x64.rpm` | Available |
 
-The Release also includes `SHA256SUMS`. Verify downloads before installation; only files actually present on this project's Releases page are public release artifacts.
-
-### macOS
-
-1. Download the package matching your Mac processor and open the `.dmg`.
-2. Drag `DeepSeek Harness.app` into the Applications folder.
-3. Current open-source builds use ad-hoc signing and are not notarized. If Gatekeeper blocks the first launch, use **System Settings → Privacy & Security → Open Anyway**. Alternatively, after confirming the download came from this repository, run:
-
-   ```bash
-   xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness.app"
-   ```
-
-> [!CAUTION]
+> [!NOTE]
 >
-> Removing the quarantine attribute bypasses a macOS security check. Use the command only for this exact application path and only for a package downloaded from the official Releases page. You can also try Apple's [Open Anyway](https://support.apple.com/102445) flow under **System Settings → Privacy & Security**.
+> This personally maintained fork currently provides only Windows and Linux installers, not macOS. Users who need macOS please visit the [upstream official repository](https://github.com/flaqai/open-deepseek-harness-desktop/releases).
+
+The Release also includes `SHA256SUMS`. Verify downloads before installation; only files actually present on this project's Releases page are public release artifacts.
 
 ### Windows
 
 Download and run the Windows x64 installer. Windows may display a reputation-based warning for an unsigned or newly published build; continue only after checking the repository and release checksum. During an upgrade, the installer detects only the real client executable and bundled runtime processes, avoiding false matches against similarly named directories or unrelated Node processes.
+
+> [!IMPORTANT]
+>
+> Installing plugins from GitHub repositories requires [Git](https://git-scm.com/download/win) to be installed on your system. Regular users who do not need to install GitHub source-type plugins can ignore this requirement. This issue has been reported to the plugin marketplace developers.
 
 ### Linux
 
@@ -308,8 +303,8 @@ sudo dnf install "/path/to/DeepSeek-Harness-linux-x64.rpm"
 Install Node.js `^22.19.0 || >=24.0.0` and pnpm `11.7.0`, then run:
 
 ```sh
-git clone https://github.com/flaqai/open-deepseek-harness-desktop.git
-cd open-deepseek-harness-desktop
+git clone https://github.com/fenglin-dev/deepseek-harness-fenglin.git
+cd deepseek-harness-fenglin
 pnpm install
 pnpm run build
 pnpm run dev:desktop
@@ -369,20 +364,30 @@ Create keys only on the providers' official sites and save them through Harness 
 - Build on the existing tray, notifications, and startup diagnostics with native approvals, richer task status, deep links, and an authenticated local control endpoint.
 - Improve interactive approval, progress, change summaries, and resumable sessions for external coding tools while keeping the Harness and product context boundaries explicit.
 - Continue strengthening identity mapping, authorization, audit events, rate limits, and revocation for the preset IM bot connections.
-- Pursue macOS Developer ID signing and notarization while continuing real Windows 10/11 and mainstream Linux validation.
+- Continue real Windows 10/11 and mainstream Linux validation for this personally maintained fork (macOS users please use the upstream official version).
 
 These items describe direction, not completed support. See the [desktop release matrix](apps/desktop/README.md#cross-platform-release-matrix) for the current implementation boundary.
 
 ## Documentation and community
 
 - Read the [user guide](docs/user/guide/index.md), [plugin introduction](docs/user/develop/framework/index.md), and [Skill guide](docs/subsystems/skills.md).
-- Use [GitHub Issues](https://github.com/flaqai/open-deepseek-harness-desktop/issues) for reproducible bugs and feature requests.
+- Use [GitHub Issues](https://github.com/fenglin-dev/deepseek-harness-fenglin/issues) for reproducible bugs and feature requests.
 - Discuss the upstream runtime in [DeepSeek Harness Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) or its [Discord community](https://discord.gg/Ycq5dCaS4).
 - See [CONTRIBUTING.md](CONTRIBUTING.md) before contributing and [AGENTS.md](AGENTS.md) when working with coding agents in this repository.
 
 ## Acknowledgements
 
+Special thanks to the original authors of [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop), the [FLAQ AI team](https://flaq.ai/) and [hecooc](https://github.com/hecooc). This fork is based on their excellent work and is personally maintained with improvements and bug fixes.
+
 Thank you to the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) maintainers for the official Codex and Claude Code Providers, and to [OpenAI Codex](https://github.com/openai/codex) and [Anthropic Claude Code](https://github.com/anthropics/claude-code) for their product runtimes. This project integrates user-triggered npm installation of those official connectors with the desktop connection center.
+
+### Recommended plugins
+
+The following three plugins have been tested and are recommended for installation:
+
+- **[`dsh-market`](https://github.com/dsh-market/dsh-market)**: Plugin marketplace for browsing, searching, installing, and managing plugins inside Harness — the foundation for extending functionality.
+- **[`dsh-im`](https://github.com/xmanrui/dsh-im)**: Connects nine IM bot channels including WeChat and Feishu, allowing Harness to receive and reply to messages through instant messaging tools.
+- **[`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker)**: Quickly select a Skill from the composer and insert the Harness Skill invocation, improving usage efficiency.
 
 Thank you to the authors and maintainers of these community plugins. The startup set is removable, while the larger Better Sidebar remains an explicit install:
 
@@ -393,13 +398,28 @@ Thank you to the authors and maintainers of these community plugins. The startup
 - [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket): provides the Pocket extension included in the startup set.
 - [`DSH Better Sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar): provides the optional enhanced sidebar installed only on request.
 
-## About the FLAQ AI team
+## About this fork
 
-[FLAQ.AI](https://flaq.ai/) provides unified API access to image, video, music, and language models for AI Agents and production applications, together with documentation and developer-oriented workflows. This desktop project comes from the team's recurring work around model integration, local Agent environments, plugin delivery, and cross-platform application packaging; open-sourcing it turns those implementation lessons into an inspectable and reusable community project.
+This repository is a personally maintained fork of [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop), based on the upstream official version with personal improvements and bug fixes.
 
-Related open-source projects include [Backlink Skills](https://github.com/flaqai/backlink_skills), [Awesome Codex Skills](https://github.com/flaqai/awesome_codex_skills), and [Awesome Claude Code Skills](https://github.com/flaqai/awesome_claude_code_skills).
+### Main improvements in this version
+
+- **Whale-girl themed icons**: All application visual elements replaced with whale-girl themed icons, including app icon, tray icon, and installer icon.
+- **Windows title bar overlap fix**: Fixed the window overlap issue caused by custom title bar on Windows platform.
+- **Plugin marketplace installation/uninstallation fixes**: Fixed and reported issues encountered during plugin installation and uninstallation processes.
+- **CI configuration optimization**: Adapted to the personally maintained build environment, providing only Windows and Linux installers.
+
+### About the upstream original authors
+
+[FLAQ.AI](https://flaq.ai/) is the original team behind [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop), providing unified API access to image, video, music, and language models for AI Agents and production applications, together with documentation and developer-oriented workflows. This desktop project comes from their recurring work around model integration, local Agent environments, plugin delivery, and cross-platform application packaging.
+
+Related upstream open-source projects include [Backlink Skills](https://github.com/flaqai/backlink_skills), [Awesome Codex Skills](https://github.com/flaqai/awesome_codex_skills), and [Awesome Claude Code Skills](https://github.com/flaqai/awesome_claude_code_skills).
 
 FLAQ.AI remains an optional compatible provider or companion platform. It is not required to run this repository, is not configured as a hidden default, and does not imply endorsement by DeepSeek. Provider capabilities, availability, and commercial terms can change, so confirm current details in the [FLAQ.AI documentation](https://flaq.ai/docs/) before production use.
+
+> [!NOTE]
+>
+> This fork is maintained by an individual developer and does not represent the FLAQ AI team or DeepSeek official. For issues with this fork, please submit to [this repository's Issues](https://github.com/fenglin-dev/deepseek-harness-fenglin/issues). For upstream-related issues, please submit to the [official repository](https://github.com/flaqai/open-deepseek-harness-desktop/issues).
 
 ## License
 
