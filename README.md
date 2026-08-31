@@ -8,36 +8,39 @@
   <strong>开箱即用、依赖安全的 DeepSeek Harness 社区桌面版</strong>
 </p>
 
-语言：简体中文（默认） · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Português](README.pt-BR.md)
+语言：简体中文（默认） · [English](README.en.md)
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-alpha.1 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1)。** 本版同步官方 DeepSeek Harness 0.1.2-alpha.1，并新增诊断演练中心、实时插件发现、插件隔离保护和可排序的设置导航，同时修复 Windows PATH、标题栏、配置文件打开及安装包启动检查等问题。
+> **[v1.2.0 测试版已发布，欢迎下载体验](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v1.2.0)。** 本版基于官方 Open DeepSeek Harness Desktop 0.1.2-alpha.1，由个人开发者维护，新增鲸鱼女孩主题图标、顶部窗口遮挡修复、插件市场安装/卸载修复，并同步官方的诊断演练中心、实时插件发现、插件隔离保护等功能。
 >
-> 这是 Alpha 预发布版本。升级前建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈给我们。
+> 这是个人维护的测试版本。升级前建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈到[本仓库 Issues](https://github.com/fenglin-dev/deepseek-harness-fenglin/issues)。
 
 <p align="center">
-  <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="下载量"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/github/license/flaqai/open-deepseek-harness-desktop?style=flat" alt="MIT 许可证"></a>
-  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/upstream-DeepSeek%20Harness-4d6bfe?style=flat" alt="DeepSeek Harness 上游"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases"><img src="https://img.shields.io/github/downloads/fenglin-dev/deepseek-harness-fenglin/total.svg?style=flat" alt="下载量"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/fenglin-dev/deepseek-harness-fenglin?style=flat" alt="MIT 许可证"></a>
+  <a href="https://github.com/flaqai/open-deepseek-harness-desktop"><img src="https://img.shields.io/badge/upstream-FLAQ%20AI%20Desktop-4d6bfe?style=flat" alt="上游项目"></a>
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/runtime-DeepSeek%20Harness-blue?style=flat" alt="DeepSeek Harness 运行时"></a>
 </p>
 
-Open DeepSeek Harness Desktop 是由社区独立维护的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 桌面发行版。它把上游插件化智能体运行时、Web 工作区和桌面系统能力组合为可以直接安装的应用，可用于配置模型、运行编码会话、查看执行轨迹、管理插件与 Skill，并连接外部编码工具或 IM 机器人。
+这是由个人开发者维护的 [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop) 修复版，基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 桌面发行版。它把上游插件化智能体运行时、Web 工作区和桌面系统能力组合为可以直接安装的应用，可用于配置模型、运行编码会话、查看执行轨迹、管理插件与 Skill，并连接外部编码工具或 IM 机器人。
 
 安装包内置 Node.js、pnpm 与 Harness 运行时，无需用户先准备开发环境。本项目不会把 Electron 变成第二套智能体运行时：配置、凭据、会话、插件和 Skill 仍由本机 Harness 服务管理，Electron 只提供受限的桌面宿主能力。
 
 > [!NOTE]
 >
-> 本仓库并非 DeepSeek 官方产品，而是基于 DeepSeek Harness 的社区开源项目。项目仍处于预览阶段，本地数据结构、插件兼容策略和安装方式可能继续演进。
+> 本仓库是由个人开发者维护的修复版，并非 DeepSeek 官方产品，也不代表 FLAQ AI 团队。本版本基于 [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop) 进行个人化改进和问题修复。项目仍处于测试阶段，本地数据结构、插件兼容策略和安装方式可能继续演进。
 
 ## 本版本亮点
 
+- [鲸鱼女孩主题图标](#关于本修复版)：全应用视觉元素替换为鲸鱼女孩主题图标。
+- [顶部窗口遮挡修复](#关于本修复版)：修复 Windows 平台自定义标题栏导致的窗口遮挡问题。
 - [首次启动与独立配置环境](#首次启动与独立配置环境)：导入官方配置、直接共享目录或全新开始。
 - [导入后的插件选择与恢复](#导入后的插件选择与恢复)：联网预检、本地源码目录和 `.tgz` 安全恢复。
 - [超级强化的诊断检查](#超级强化的诊断检查)：把 pnpm 与 Cordis 的复杂错误翻译成可执行的诊断和修复动作。
 - [文本划选与右键菜单](#文本划选与右键菜单)：复制、填入新对话或追加到当前对话。
 - [桌面客户端体验](#桌面客户端体验)：托盘、快速重启、通知、日志、应用内更新和命令行注册。
-- [下载安装](#下载安装)：Windows、macOS 与 Linux 原生安装包已经提供。
+- [下载安装](#下载安装)：Windows 与 Linux 原生安装包已经提供（macOS 请前往上游官方仓库）。
 
 ## 首次启动与独立配置环境
 
@@ -223,9 +226,9 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
   </tr>
 </table>
 
-## 同步 DeepSeek Harness 0.1.2-alpha.1
+## 基于官方 0.1.2-alpha.1 的个人修复版
 
-当前桌面基线已同步上游 `dsh-v0.1.2-alpha.1`，包含会话过程折叠、可调正文宽度与字号、精确 Token 用量、回合导航、子 Agent 模型授权、第三方语言扩展、改进的图片管线、ACP 能力补全，以及更高效的页面和会话初始化。
+当前桌面基线基于上游 [Open DeepSeek Harness Desktop 0.1.2-alpha.1](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1)，本版本号为 `v1.2.0 测试版`，包含官方的会话过程折叠、可调正文宽度与字号、精确 Token 用量、回合导航、子 Agent 模型授权、第三方语言扩展、改进的图片管线、ACP 能力补全，以及更高效的页面和会话初始化，同时增加了个人维护的鲸鱼女孩主题图标、顶部窗口遮挡修复和插件市场问题修复。
 
 此前的文件与 Session 引用、多查询并发 `web_search`、推理内容回传、持久 PowerShell PTY、动态客户端包、构建 Profile 与品牌插槽继续保留。上游还修复了 Windows 中文目录选择、macOS/Linux 持久终端输出、Agent Preset 目录丢失和空闲 WebSocket 断连等问题。Electron 始终为 `dsh web` 传入 `--no-open`，因此启动桌面应用不会额外打开系统浏览器。
 
@@ -237,37 +240,27 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 ## 下载安装
 
-请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) 页面下载安装包。[`v0.1.2-alpha.1`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1) 已提供以下发行产物：
+请只从本项目的 [GitHub Releases](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases) 页面下载安装包。[`v1.2.0 测试版`](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v1.2.0) 已提供以下发行产物：
 
 | 平台 | 架构 | 发行包 | 状态 |
 | --- | --- | --- | --- |
-| macOS | Apple Silicon（`arm64`） | `DeepSeek-Harness-macos-arm64.dmg` | 已提供 |
-| macOS | Intel（`x64`） | `DeepSeek-Harness-macos-x64.dmg` | 已提供 |
 | Windows | `x64` | `DeepSeek-Harness-windows-x64.exe` | 已提供 |
 | Linux | Debian / Ubuntu（`x64`） | `DeepSeek-Harness-linux-x64.deb` | 已提供 |
 | Linux | Fedora / RHEL（`x64`） | `DeepSeek-Harness-linux-x64.rpm` | 已提供 |
 
-Release 同时提供 `SHA256SUMS`。安装前建议校验下载文件；只有实际出现在本项目 Releases 页面中的文件才属于公开发行产物。
-
-### macOS
-
-1. 下载与 Mac 处理器相符的 `.dmg`。
-2. 将 `DeepSeek Harness.app` 拖入“应用程序”文件夹。
-3. 当前开源构建使用 ad-hoc 签名且未经 Apple 公证。若 Gatekeeper 阻止首次打开，请前往**系统设置 → 隐私与安全性 → 仍要打开**。
-
-也可以在确认文件来自本仓库后执行：
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness.app"
-```
-
-> [!CAUTION]
+> [!NOTE]
 >
-> 移除 quarantine 属性会绕过 macOS 安全检查。请只对从本项目 Releases 下载、且位于上述准确路径的应用执行，不要把命令目标改为宽泛目录。
+> 本个人维护版本目前只提供 Windows 和 Linux 安装包，暂不提供 macOS 版本。需要 macOS 版本的用户请前往[上游官方仓库](https://github.com/flaqai/open-deepseek-harness-desktop/releases)下载。
+
+Release 同时提供 `SHA256SUMS`。安装前建议校验下载文件；只有实际出现在本项目 Releases 页面中的文件才属于公开发行产物。
 
 ### Windows
 
 下载并运行 Windows x64 安装程序。未签名或刚发布的版本可能触发 Windows 信誉提示，请先确认仓库来源和 SHA-256。升级安装会识别真正属于客户端的主程序与内置运行时进程，并避免把相似目录或无关 Node 进程误判为正在运行的客户端。
+
+> [!IMPORTANT]
+>
+> 安装 GitHub 仓库类型的插件需要系统安装 [Git](https://git-scm.com/download/win)。普通用户如果不需要安装 GitHub 源码类型的插件，可以忽略此要求。相关问题已反馈给插件市场开发者。
 
 ### Linux
 
@@ -288,8 +281,8 @@ sudo dnf install "/path/to/DeepSeek-Harness-linux-x64.rpm"
 安装 Node.js `^22.19.0 || >=24.0.0` 与 pnpm `11.7.0`，然后执行：
 
 ```sh
-git clone https://github.com/flaqai/open-deepseek-harness-desktop.git
-cd open-deepseek-harness-desktop
+git clone https://github.com/fenglin-dev/deepseek-harness-fenglin.git
+cd deepseek-harness-fenglin
 pnpm install
 pnpm run build
 pnpm run dev:desktop
@@ -354,7 +347,7 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 ## 文档与社区
 
 - 阅读[用户指南](docs/user/guide/index.md)、[插件介绍](docs/user/develop/framework/index.md)和 [Skill 指南](docs/subsystems/skills.md)。
-- 通过 [GitHub Issues](https://github.com/flaqai/open-deepseek-harness-desktop/issues) 提交可复现的缺陷、使用反馈和功能建议。
+- 通过 [GitHub Issues](https://github.com/fenglin-dev/deepseek-harness-fenglin/issues) 提交可复现的缺陷、使用反馈和功能建议。
 - 在 [DeepSeek Harness Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) 或其 [Discord 社区](https://discord.gg/Ycq5dCaS4)讨论上游运行时。
 - 贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；使用编码智能体处理本仓库时请遵循 [AGENTS.md](AGENTS.md)。
 
@@ -362,7 +355,17 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 
 ## 致谢
 
+特别感谢 [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop) 原作者 [FLAQ AI 团队](https://flaq.ai/) 和 [hecooc](https://github.com/hecooc)，本修复版基于他们的优秀工作进行个人维护和改进。
+
 感谢 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 上游维护核心运行时与官方 Provider，并感谢 [OpenAI Codex](https://github.com/openai/codex) 和 [Anthropic Claude Code](https://github.com/anthropics/claude-code) 提供产品运行时。
+
+### 推荐插件
+
+以下三个插件经过实际测试，推荐安装使用：
+
+- **[`dsh-market`](https://github.com/dsh-market/dsh-market)**：插件市场，在 Harness 内浏览、搜索、安装和管理插件，是扩展功能的基础。
+- **[`dsh-im`](https://github.com/xmanrui/dsh-im)**：连接微信、飞书等九种 IM 机器人，让 Harness 可以通过即时通讯工具接收和回复消息。
+- **[`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker)**：在输入区快速选择 Skill，并插入 Harness 的 Skill 调用指令，提升使用效率。
 
 感谢以下社区插件的作者与维护者：
 
@@ -372,13 +375,28 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 - [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket)：提供 Pocket 扩展。
 - [`DSH Better Sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar)：提供增强侧边栏。
 
-## 关于 FLAQ AI 团队
+## 关于本修复版
 
-[FLAQ.AI](https://flaq.ai/) 面向 AI Agent 和生产应用，提供图片、视频、音乐及语言模型的统一 API 接入、文档和开发者工作流。本桌面项目来自团队在模型集成、本地 Agent 环境、插件交付与跨平台应用打包中的实践；我们将它开源，是希望把这些经验整理成可检查、可复用、可继续改进的社区项目。
+本仓库是由个人开发者维护的 [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop) 修复版，基于上游官方版本进行个人化改进和问题修复。
 
-相关开源项目包括 [Backlink Skills](https://github.com/flaqai/backlink_skills)、[Awesome Codex Skills](https://github.com/flaqai/awesome_codex_skills) 和 [Awesome Claude Code Skills](https://github.com/flaqai/awesome_claude_code_skills)。
+### 本版本的主要改进
+
+- **鲸鱼女孩主题图标**：替换了应用图标、托盘图标、安装包图标等所有视觉元素
+- **顶部窗口遮挡修复**：修复了 Windows 平台自定义标题栏导致的窗口遮挡问题
+- **插件市场安装/卸载修复**：针对插件安装和卸载过程中遇到的问题进行了修复和反馈
+- **CI 配置优化**：适配个人维护的构建环境，只提供 Windows 和 Linux 安装包
+
+### 关于上游原作者
+
+[FLAQ.AI](https://flaq.ai/) 是上游 [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop) 的原创团队，面向 AI Agent 和生产应用，提供图片、视频、音乐及语言模型的统一 API 接入、文档和开发者工作流。本桌面项目来自他们在模型集成、本地 Agent 环境、插件交付与跨平台应用打包中的实践。
+
+相关上游开源项目包括 [Backlink Skills](https://github.com/flaqai/backlink_skills)、[Awesome Codex Skills](https://github.com/flaqai/awesome_codex_skills) 和 [Awesome Claude Code Skills](https://github.com/flaqai/awesome_claude_code_skills)。
 
 FLAQ.AI 只是可选的兼容提供商或配套平台。运行本仓库不依赖 FLAQ.AI，项目也不会将其设为隐藏默认服务；提及 FLAQ.AI 不代表 DeepSeek 对其背书。提供商能力、可用性和商业条款可能变化，投入生产前请在 [FLAQ.AI 文档](https://flaq.ai/docs/)中核对最新信息。
+
+> [!NOTE]
+>
+> 本修复版由个人开发者维护，不代表 FLAQ AI 团队或 DeepSeek 官方。遇到问题请提交到[本仓库 Issues](https://github.com/fenglin-dev/deepseek-harness-fenglin/issues)，上游相关问题请提交到[官方仓库](https://github.com/flaqai/open-deepseek-harness-desktop/issues)。
 
 ## 许可证
 
