@@ -104,7 +104,10 @@
   // belongs to the Client aggregate, `*.host.spec.ts` to this one. The two
   // suffixes are mutually exclusive, so each aggregate excludes the other's
   // and the package test glob above needs no per-file entry.
-  "exclude": [`n    "packages/examples/agent-spine-demo/tests/**/*",`n    "packages/host/plugin-inventory/**/*",
+  "exclude": [
+    "packages/examples/agent-spine-demo/tests/**/*",
+    "packages/host/plugin-inventory/**/*",
+    "packages/experimental/agent-team/tests/fold.spec.ts",
     "packages/client/*/src/**",
     "packages/*/*/tests/**/*.client.ts",
     "packages/*/*/tests/**/*.client.tsx",
