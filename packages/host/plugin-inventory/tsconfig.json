@@ -9,34 +9,19 @@
   ],
   "references": [
     {
-      "path": "../../boot/app-boot"
-    },
-    {
-      "path": "../../preset/agent-presets"
-    },
-    {
       "path": "../../../vendor/cordis"
     },
     {
       "path": "../../../vendor/loader"
     },
     {
-      "path": "../../../vendor/schemastery"
+      "path": "../../preset/agent-presets"
     },
     {
       "path": "../../util/brand"
     },
     {
       "path": "../../typert/protocol"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
-    },
-    {
-      "path": "../../subprocess/subprocess"
-    },
-    {
-      "path": "../../subagent/tool-subagent"
     }
   ]
 }

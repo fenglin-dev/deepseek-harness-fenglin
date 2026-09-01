@@ -61,7 +61,7 @@ kind: "package-reference"
 
 ### 本行如何注册
 
-`apply` 在挂载上下文的 scope 内通过 `ctx.systemPrompt.section({ name: PERSONA_SECTION, order: PERSONA_ORDER, text, complete? })` 注册一个提示词段落，因此该段落落在 order 0——紧随 harness 身份开场白之后——且只对加入该 preset 的 agent 生效。`PERSONA_SECTION` 与 `PERSONA_ORDER` 从 `dsh-system-prompt` 导入而非重述，因此 preset 人设总是遮蔽部署人设，而不是落在它旁边。`includeRuntimeContext: false` 会调用 `ctx.systemPrompt.suppressRuntimeContext()`。
+`apply` 在挂载上下文的 scope 内通过 `ctx.systemPrompt.section({ name: PERSONA_SECTION, order: ctx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA'), text, complete? })` 注册一个提示词段落，因此该段落落在 order 0——紧随 harness 身份开场白之后——且只对加入该 preset 的 agent 生效。共享段落名让 preset 人设遮蔽部署人设，而不是落在它旁边；服务持有的 order 查询则让仓库自带贡献方服从集中分配。`includeRuntimeContext: false` 会调用 `ctx.systemPrompt.suppressRuntimeContext()`。
 
 ### 本行为何仅限 scope 内使用
 
@@ -72,7 +72,7 @@ kind: "package-reference"
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、人设段落注册、runtime-context 抑制 |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件（无运行时不变式；身份、完整提示词执行与资源释放归提示词注册表） |
+| — | 不发布运行时不变式伴生入口；身份、完整提示词执行与资源释放归提示词注册表。 |
 
 </details>
 

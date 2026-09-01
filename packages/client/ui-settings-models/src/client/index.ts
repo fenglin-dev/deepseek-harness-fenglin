@@ -1,8 +1,8 @@
 /**
  * Models settings and product-onboarding plugin, browser half. It registers
- * the Models page plus the first-run setup wizard that routes into the existing
- * Models and IM settings pages. Host settings and credential contracts stay
- * behind their existing wire APIs.
+ * the Models page plus the ordered internal-testing and official-DeepSeek
+ * onboarding dialogs, whose UI shares this package's modal wrapper. The Host
+ * settings and credential contracts stay behind their existing wire APIs.
  * Export discipline:
  * packages/client/AGENTS.md.
  */
@@ -17,11 +17,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { ModelsSection } from './ModelsSection.tsx'
 import type { ModelsSectionInjected } from './ModelsSection.tsx'
-import { SetupWizard } from './SetupWizard.tsx'
-import type { SetupWizardInjected } from './SetupWizard.tsx'
+import { DeepSeekOnboardingDialog } from './DeepSeekOnboardingDialog.tsx'
+import type { DeepSeekOnboardingInjected } from './DeepSeekOnboardingDialog.tsx'
+import { WelcomeNotice } from './WelcomeNotice.tsx'
+import type { WelcomeNoticeInjected } from './WelcomeNotice.tsx'
 import { decodeWelcomeSection, WelcomeNoticeStore } from './welcome-store.ts'
 import { ModelsSettingsStore } from './store.ts'
-import type { ModelsWire } from './store.ts'
+import { createModelsOperations } from './operations.ts'
 import { createSettingsSchemaOperations } from './schema-operations.ts'
 import { en, zh, type ModelsKey } from './locales.ts'
 import { WELCOME_NOTICE_SETTINGS_NAMESPACE } from '../onboarding-copy.ts'
@@ -40,8 +42,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.models'
 export type {
-  ModelsCredentials, ModelsLlm, ModelsSettingsState, ModelsWire, ProviderDirectoryEntry, ProviderRow,
+  ModelsSettingsState, ProviderDirectoryEntry, ProviderRow,
 } from './store.ts'
+export type { ModelDiscoveryOutcome, ModelsOperations, SettingsWriteOutcome } from './operations.ts'
 
 /**
  * Refetch the page snapshot only after its first load: an unopened Models
@@ -73,20 +76,24 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-models: copy dictionaries')
 
   const schema = createSettingsSchemaOperations(ctx.settingsSchema)
-  // Every configuration operation rides its owning Remote namespace.
-  const wire: ModelsWire = {
-    credentials: ctx.remote.credentials,
-    llm: ctx.remote.llm,
-    settings: ctx.remote.settings,
-  }
-  const controller = new ModelsSettingsStore(wire, schema, ctx.settingsScope.describe())
+  // Bound once here, where the Remote namespaces are declared in this plugin's
+  // own `inject`; the cards receive callbacks and never a context.
+  const operations = createModelsOperations(ctx)
+  const controller = new ModelsSettingsStore(ctx, schema, ctx.settingsScope.describe())
   // Registration-time text (the nav label thunk) and the inject faces share
   // one bound translate; copy freshness rides the locale revision.
   const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']
   const injected = (): ModelsSectionInjected => ({
     controller,
     hooks: { snapshot: controller.store },
-    api: wire,
+    operations,
+    schema,
+    t,
+  })
+  const deepSeekOnboardingInjected = (): DeepSeekOnboardingInjected => ({
+    controller,
+    hooks: { models: controller.store },
+    operations,
     schema,
     t,
   })
@@ -96,15 +103,9 @@ export function apply(ctx: ClientContext): void {
     namespace: WELCOME_NOTICE_SETTINGS_NAMESPACE,
     decode: decodeWelcomeSection,
   }))
-  const setupInjected = (): SetupWizardInjected => ({
-    modelsController: controller,
-    welcomeController,
-    setLocale: (id) => { ctx.locale.setLocale(id) },
-    hooks: {
-      models: controller.store,
-      welcome: welcomeController.store,
-      locale: ctx.locale,
-    },
+  const welcomeInjected = (): WelcomeNoticeInjected => ({
+    controller: welcomeController,
+    hooks: { welcome: welcomeController.store },
     t,
   })
 
@@ -140,8 +141,14 @@ export function apply(ctx: ClientContext): void {
   }, ModelsSection))
   ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
     name: 'settings.onboarding',
-    id: 'setup-wizard',
+    id: 'welcome-notice',
+    order: -100,
+    inject: welcomeInjected,
+  }, WelcomeNotice))
+  ctx.slots.inject('settings.onboarding', () => ctx.slots.register({
+    name: 'settings.onboarding',
+    id: 'deepseek-official',
     order: 0,
-    inject: setupInjected,
-  }, SetupWizard))
+    inject: deepSeekOnboardingInjected,
+  }, DeepSeekOnboardingDialog))
 }

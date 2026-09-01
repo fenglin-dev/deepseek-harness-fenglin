@@ -49,9 +49,17 @@ session.deriveMessages()         // the derived model history
 
 Surface events (`user/message`, `assistant/message`, `tool/result`) must declare how they join the ordered surface; raw chunks, boundaries, and other log-only events never produce a message.
 
+### Read the log
+
+`session.seq` reads the current log length without materializing an array, and `session.eventAt(seq)` reads one accepted, deeply frozen event by sequence number. `session.snapshotEvents(fromSeq?, toSeqExclusive?)` materializes a frozen, stable snapshot of a half-open range; a complete current snapshot is cached until the next append. Callers that only need a length or one event use `seq` or `eventAt()`.
+
+Session log positions use two numeric types. `SessionSeq` identifies an existing event or inclusive event watermark; `SessionLogOffset` identifies a gap, prefix length, or read boundary and may equal the event count. `SessionSeqCursor` adds the `-1` “no event yet” value, while `OptionalSessionSeq` uses `null` when absence is data. The constructors validate non-negative safe integers, and the brands disappear at runtime, so durable JSON and wire values remain ordinary numbers.
+
 ### Fork a session
 
 `ctx.sessions.fork(source, boundary?, childSessionId?)` selects source events through an inclusive `boundary` seq (default: the current last event), requires the prefix to end outside an open turn, and creates a live child session with lineage metadata. A tool-time delegation that must branch mid-turn clips to a completed prefix instead.
+
+The logical `SessionHeader.isSeeded` field reports whether fork history exists without exposing a positional integer. `Session.inheritedEventCount` retains the exact checked `SessionLogOffset`; `ownEvents()` returns events at and after that cut, and `isOwnSeq(seq)` accepts only an existing child-owned position. A low-level seeded constructor must supply an explicit `seed` and `inheritedEventCount` because the constructor seed can contain child-owned setup events after the inherited prefix.
 
 ### Flush durable state
 
@@ -83,14 +91,14 @@ The package is built on event sourcing: a `Session` is an append-only log of typ
 | [`src/types.ts`](src/types.ts) | `SessionEventMap`, `SessionEvent`, `UserMessage`, `SessionHeader`, `TurnEndReasonMap` |
 | [`src/surface.ts`](src/surface.ts) | Ordered surface projection, replacement validation, `deriveEventMessage` |
 | [`src/request-header.ts`](src/request-header.ts) | `request/header` folding and reconstruction |
-| [`src/json.ts`](src/json.ts) | Lossless JSON validation and snapshotting |
+| [`dsh-util-values`](../../util/values/README.md) | Shared lossless JSON validation and detached snapshots |
 | [`src/chunk-rows.ts`](src/chunk-rows.ts) | Shared compact-row storage codec for persistence backends |
 | [`src/repair.ts`](src/repair.ts) | Cold repair of crash-orphaned logs |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion: seq, turn/step enclosure, tool call/result pairing |
 
 ### Append validation
 
-Every append runs one recursive pass that reads, validates, and copies each nested value once, so a stateful getter cannot supply one value to validation and another to storage. Non-lossless-JSON payloads (BigInt, cycles, sparse arrays, `-0`, exotic prototypes) are rejected at the append site, before any backend flush. Surface events additionally validate marker shape, cited source-event seqs, and complete shadowed-node coverage for replacements.
+Every append uses the shared iterative `snapshotJsonValue()` pass, which reads, validates, and copies each nested value once, so a stateful getter cannot supply one value to validation and another to storage. Non-lossless-JSON payloads (BigInt, cycles, sparse arrays, `-0`, exotic prototypes) are rejected at the append site, before any backend flush. The append path constructs each `SessionSeq`; surface events additionally validate marker shape, cited source-event sequences, and complete shadowed-node coverage for replacements.
 
 ### Derived history
 
@@ -170,7 +178,7 @@ Logging causes no invalidation, and exact reconstruction preserves request-prefi
 These limits define when the session store needs special care. They are current package constraints, not a task backlog.
 
 - **`fork()` cuts only at stable boundaries of live sessions** — the selected prefix must end outside an open turn and the source must be in the store; forking a persisted-but-unloaded session is excluded from the [fork API](../../../.agents/notes/implemented/feature/2026-06-30-session-store-fork-api.md).
-- **`SESSION_FORMAT_VERSION` stays pinned at `0`** — pre-release, no broad compatibility implied: `Session` accepts only current seed shapes, a backend refuses any other version, and every unknown event type refuses reconstruction ([mechanism](../../../.agents/notes/implemented/simplification/2026-08-25-fail-closed-session-event-vocabulary.md)).
+- **`SESSION_FORMAT_VERSION` stays pinned at `0`** — pre-release, no broad compatibility implied: `Session` accepts only current seed shapes, a backend refuses any other version, and unknown event types refuse reconstruction unless marked `ignorable` in the envelope ([mechanism](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md)).
 - **`TurnEndReasonMap` omits the ACP-named `refusal` / `max_turn_requests` variants** — producer-gated: they land when an adapter or the loop first emits them.
 - **No session tree beyond fork** — a pi-style entry tree over branched sessions is deferred unless a consumer needs more than boundary-based forking.
 

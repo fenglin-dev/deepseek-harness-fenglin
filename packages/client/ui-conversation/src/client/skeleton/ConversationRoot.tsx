@@ -7,7 +7,7 @@ import clsx from 'clsx'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
 import { conversationPhase } from '../contract/snapshot.ts'
-import { HeroGlow, HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
+import { HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
 import css from './ConversationRoot.module.css'
 
 /** Full props composed from the slot contract. */
@@ -342,16 +342,10 @@ export function ConversationRoot({
         // user clears it.
         ? { blocked: composerBlock, placeholder: composerBlock.reason }
         : hero ? { placeholder: t('placeholder.hero') } : {}),
-    overlay: sessionId === undefined ? undefined : renderSlot('conversation.input.overlay', {}),
-    leftItems: zone === undefined ? null : renderSlot('conversation.input.left', zone),
-    rightItems: zone === undefined ? null : renderSlot('conversation.input.right', zone),
-    // Ambient dock under the card shares the composer's width constraint.
-    footer: !hero && zone !== undefined ? renderSlot('conversation.composer.dock', zone) : null,
   })
 
   const composerBar = (
     <div className={clsx(css.composerStack, hero && css.composerHero)}>
-      {hero && <HeroGlow className={css.heroGlow} />}
       {hero && <HeroShell t={t} renderSlot={renderSlot} />}
       {hero && heroWorkspaceRow}
       {zone !== undefined && renderSlot('conversation.input.dock', zone)}
@@ -379,22 +373,24 @@ export function ConversationRoot({
   return (
     <div ref={rootResizeRef} className={css.root} data-phase={phase}>
       {sessionId === undefined ? null : renderSlot('conversation.session.header', {})}
-      <div className={css.scrollBody} data-conversation-scroll="">
-        {sessionId === undefined ? null : renderSlot('conversation.session', {})}
-        {composerSeat}
+      <div className={css.body}>
+        <div className={css.scrollBody} data-conversation-scroll="">
+          {sessionId === undefined ? null : renderSlot('conversation.session', {})}
+          {composerSeat}
+        </div>
+        {/* Width handles only while a transcript is on screen; the hero has no
+            content column to size. */}
+        {phase === 'active' && (['left', 'right'] as const).map(side => (
+          <WidthHandle
+            key={side}
+            side={side}
+            onStart={onHandleStart}
+            onDrag={onHandleDrag}
+            onCommit={onHandleCommit}
+            onEnd={onHandleEnd}
+          />
+        ))}
       </div>
-      {/* Width handles only while a transcript is on screen; the hero has no
-          content column to size. */}
-      {phase === 'active' && (['left', 'right'] as const).map(side => (
-        <WidthHandle
-          key={side}
-          side={side}
-          onStart={onHandleStart}
-          onDrag={onHandleDrag}
-          onCommit={onHandleCommit}
-          onEnd={onHandleEnd}
-        />
-      ))}
     </div>
   )
 }

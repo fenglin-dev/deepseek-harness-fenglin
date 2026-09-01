@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { isChunkRow, packChunkRuns } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
+import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session/types'
 import type {
   ChunkRowEvent,
@@ -85,6 +86,7 @@ const sessionWireEventSchema = z.object({
   seq: safeIntegerSchema,
   time: safeIntegerSchema,
   data: z.json(),
+  ignorable: z.literal(true).optional(),
   sourceEventSeqs: z.array(safeIntegerSchema).optional(),
   surfaceOp: z.json().optional(),
 }).strict()
@@ -266,7 +268,7 @@ function append<Type extends keyof SessionEventMap>(
   events: SessionEvent[],
   type: Type,
   data: SessionEventMap[Type],
-  options: { readonly surfaceOp?: 'append' } = {},
+  options: { readonly surfaceOp?: 'append'; readonly ignorable?: true } = {},
 ): void {
   const seq = events.length
   events.push({ type, seq, time: TIME_ZERO + seq, data, ...options } as SessionEvent<Type>)
@@ -279,6 +281,7 @@ function appendSeparator(events: SessionEvent[], run: number, separator: number)
     seq,
     time: TIME_ZERO + seq,
     data: { run, separator },
+    ignorable: true,
   } as SessionEvent)
 }
 
@@ -439,7 +442,8 @@ function assemble(entries: readonly SessionEventLikeEntry[]): FoldSnapshots {
     { entries: () => [viewDefinition('chat'), viewDefinition('trajectory')] },
   )
   assembler.replaceWindow(entries, false)
-  assembler.flush()
+  assembler.activateTarget('chat')
+  assembler.activateTarget('trajectory')
   return {
     chat: assembler.snapshot('chat'),
     trajectory: assembler.snapshot('trajectory'),
@@ -669,7 +673,7 @@ it('reports compact folding cost for long whitespace-prefix runs', () => {
     }
     const start = wireEntry({
       type: 'step/start',
-      seq: 0,
+      seq: SessionSeq(0),
       time: TIME_ZERO,
       data: { turn: 1, step: 1 },
     })

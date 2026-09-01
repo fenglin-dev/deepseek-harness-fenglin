@@ -2,8 +2,8 @@
  * Machine state arrives through the standard provide channel
  * (useInput + inputActions); the keyboard/DOM command face and stop arrive
  * through this entry's own inject, whose hooks compartment binds
- * useNotices/useLexicon; layout-phase inputs (variant, placeholder,
- * region-slot content) ride the owner props. Session facts
+ * useNotices/useLexicon; layout-phase inputs (variant and placeholder) ride
+ * the owner props. Session facts
  * (running/removed/promptError) are self-selected via useSession.
  *
  * The text surface is the shell-owned Lexical editor bound here through
@@ -13,7 +13,7 @@
  * trigger instead of a parallel tree.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
@@ -39,13 +39,13 @@ import css from './InputBar.module.css'
 
 export type InputBarProps = ComposerBarProps
 
-export function InputBar({
+export const InputBar = memo(function InputBar({
   useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages,
   resolveSubmitMode, toggleCommandMenu, stop, command, t,
   renderSlot, useNotices, useLexicon, useMenuLauncher,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
-  placeholder, accessory, overlay, leftItems, rightItems, footer,
+  placeholder, accessory,
 }: InputBarProps) {
   const input = useInput(s => s)
   const notice = useNotices(s => s)
@@ -88,13 +88,15 @@ export function InputBar({
   // and the user resubmits. A remount over a session whose machine still holds
   // an unresolved promptError deliberately re-announces it once — the failure
   // is still pending, and a transient banner is its only surface. Attachment
-  // rejections show product copy keyed by the wire reason; other codes are
-  // developer-facing and keep the raw message plus code.
+  // rejections show product copy keyed by the wire reason — whichever domain
+  // refused them; other codes are developer-facing and keep the raw message
+  // plus code.
   useEffect(() => {
     if (promptError === null) return
-    showToast(promptError.error.code === 'attachment-error'
-      ? attachmentErrorText(t, promptError.error.details.reason, imageLimits)
-      : `${promptError.error.message} (${promptError.error.code})`)
+    const { error } = promptError
+    showToast(error.code === 'session/attachment-invalid' || error.code === 'subagent/attachment-invalid'
+      ? attachmentErrorText(t, error.details.reason, imageLimits)
+      : `${error.message} (${error.code})`)
   }, [promptError, showToast, t, imageLimits])
   useEffect(() => {
     if (notice?.level === 'error') showToast(notice.text)
@@ -389,7 +391,9 @@ export function InputBar({
         onClick={workspaceTrigger ? onRequestWorkspace : undefined}
         onPointerDown={workspaceTrigger ? (e) => { e.stopPropagation() } : undefined}
       >
-        {overlay !== undefined && <div className={css.overlayAnchor}>{overlay}</div>}
+        {sessionId !== undefined && (
+          <div className={css.overlayAnchor}>{renderSlot('conversation.input.overlay', {})}</div>
+        )}
         {accessory !== undefined && <div className={css.accessory}>{accessory}</div>}
         {renderSlot('conversation.input.attachments', {
           attachments,
@@ -452,10 +456,14 @@ export function InputBar({
               {accessSelect}
               {sessionId === undefined ? null : renderSlot('conversation.input.plan', { locked })}
             </div>
-            {leftItems}
+            {input === undefined || sessionId === undefined
+              ? null
+              : renderSlot('conversation.input.left', {})}
           </div>
           <div className={css.trailing}>
-            {rightItems}
+            {input === undefined || sessionId === undefined
+              ? null
+              : renderSlot('conversation.input.right', {})}
             {sessionId === undefined ? null : renderSlot('conversation.input.model', { locked: modelSeatLocked })}
             <ContextMeter useProjection={useProjection} t={t} />
             {interruptible && (
@@ -497,7 +505,9 @@ export function InputBar({
           </div>
         </div>
       </div>
-      {footer}
+      {variant === 'composer' && input !== undefined && sessionId !== undefined
+        ? renderSlot('conversation.composer.dock', {})
+        : null}
     </div>
   )
-}
+})

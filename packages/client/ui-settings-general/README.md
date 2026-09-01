@@ -1,5 +1,5 @@
 ---
-description: "Settings shell, ownerless copy, durable user navigation order, and product-onboarding settings for the dsh web client."
+description: "Settings shell, ownerless copy, and durable product-onboarding namespace for the dsh web client: the General section, trigger chrome, and onboarding ledger projection."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-settings-general` is the settings shell of the dsh web client: the Settings panel opens from the sidebar's bottom control with the trigger chrome and modal shell, the navigation is built from the sections features contribute and can be rearranged by the user, and first-run users are walked through one onboarding step at a time. It also registers everything on the Settings pages that belongs to no single feature: the trigger/header/close chrome content, the local configuration-file action, the General section and its `settings.general.item` slot, and the `settings` dictionaries. Feature-owned rows (Permission, Language, Appearance), sections (Models), and conditional onboarding steps stay with their feature packages; the shell itself ships no onboarding copy of its own.
+`dsh-client-ui-settings-general` is the settings shell of the dsh web client: the Settings panel opens from the sidebar's bottom control, a connection-failure indicator beside that control offers immediate recovery, the navigation is built from the sections features contribute, and first-run users are walked through one onboarding step at a time. It also registers everything on the Settings pages that belongs to no single feature: the trigger/header/close chrome content, the local configuration-file action, the General section and its `settings.general.item` slot, and the `settings` dictionaries. Feature-owned rows (Permission, Language, Appearance), sections (Models), and conditional onboarding steps stay with their feature packages; the shell itself ships no onboarding copy of its own.
 
 ## Table of Contents
 
@@ -25,11 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Users reach the shell through the sidebar's bottom Settings control; feature plugins contribute their pages and onboarding steps through the slot ledgers this shell projects. The shell renders the modal panel, the navigation built from `settings.section` entries, and exactly one mounted onboarding step at a time.
-
-Each navigation row has a three-line reorder handle. Moving that handle more than four pixels lifts the complete row under the pointer; crossed rows animate into the vacated full-height slot, and the order is persisted once after the row settles. Releasing outside the rail, pressing Escape, or receiving `pointercancel` restores the original order. The insertion line follows the current theme, edge proximity scrolls long rails, reduced-motion users skip the transitions, and focused handles retain equivalent Up/Down arrow controls. A loopback client persists stable section ids in `ui-settings-navigation`; a remote client follows the settings transport's existing process-local policy. Labels may change with language and plugin sections may appear or disappear without corrupting the preference. A newly registered section is appended in its canonical registration order; a temporarily absent id is retained for a later reinstall.
-
-A feature can also call `ctx.settingsNavigation.open({ sectionId, subsectionId })`. The shell opens the panel, selects the requested contributed section, and forwards the optional subsection identifier to that section; a later request has a higher revision and is handled even when it repeats the same destination.
+Users reach the shell through the sidebar's bottom Settings control; feature plugins contribute their pages and onboarding steps through the slot ledgers this shell projects. After a Host connection failure, a pale-yellow **Disconnected** action appears to the right of Settings. Automatic recovery shows **Connecting** with one to three dots advancing every 500ms. Hover or keyboard focus changes either yellow label to **Reconnect now** without changing its background; press feedback stays within the warning palette, and selecting it starts retry 1 immediately. Recovery changes the region to pale-green **Connected** for two seconds before it disappears. The icon, left-aligned text origin, height, and width remain fixed across every visible state. Initial startup and uninterrupted healthy operation remain silent. The shell renders the modal panel, the navigation built from `settings.section` entries, and exactly one mounted onboarding step at a time.
 
 ### The General section
 
@@ -55,17 +51,19 @@ The shell owns the chrome and the projections; every piece of content and copy b
 
 ### Ledger projections
 
-The navigation is a projection of the `settings.section` ledger; nav labels may be locale-following thunks, resolved through `resolveSlotLabel` and re-rendered on the section ledger bump or the locale revision (an optional `ctx.get('locale')` read; no hard locale dependency). The shell also subscribes to the settings-domain navigation service, whose monotonic revision distinguishes repeated requests and whose subsection remains opaque to the shell. The onboarding ledger projects in ascending order; the active registrant receives its id, `complete()`, and an `openSection(id)` callback, and completing or skipping transfers ownership to the next entry.
+The navigation is a projection of the `settings.section` ledger; nav labels may be locale-following thunks, resolved through `resolveSlotLabel` and re-rendered on the section ledger bump or the locale revision (an optional `ctx.get('locale')` read; no hard locale dependency). The onboarding ledger projects in ascending order; the active registrant receives its id, `complete()`, and an `openSection(id)` callback, and completing or skipping transfers ownership to the next entry.
+
+### Connection recovery
+
+The shell is an explicit recovery consumer, so it injects Connection directly rather than adding lifecycle controls to `ctx.remote`. Its private hooks compartment binds `ctx.connection.state`, while the component receives only the selected state and an injected callback for `ctx.connection.reconnect()`. `ConnectionIndicator` owns the inline presentation and receives all visible and accessible copy from the `settings` locale namespace; the shell owns the two-second recovered-state timer.
 
 ### Document availability
 
-On a loopback page, the Client loads the provider's `hasDocument` capability through `settings/describe` and renders **Open configuration file** only when the Host confirms that a provider-owned local document can be prepared. The action calls the pathless, browser-authenticated `settings/openSettingsDocument` Remote; the Host resolves the provider path again, materializes an absent document, and hands it to a native text editor (`open -t` on macOS, bypassing a browser file association; the desktop file association on Linux and Windows; Windows association after `wslpath -w` translation on WSL). Native Windows resolves the system opener independently of `PATH`. Open failures keep the action available and render a localized error. Reopening the dialog or reconnecting refreshes availability after a transient read failure or Host topology change. Non-loopback pages retain the Client policy that withholds this native action and its settings read.
-
-The settings panel reserves the desktop title-bar inset before centering its fixed-height surface. Its content and navigation columns scroll independently; the navigation title remains fixed while contributed section rows keep their full height and scroll inside the remaining rail space.
+On a loopback page, the Client loads the provider's `hasDocument` capability through `settings/describe` and renders **Open configuration file** only when the Host confirms that a provider-owned local document can be prepared. The action calls the pathless, browser-authenticated `settings/openSettingsDocument` Remote; the Host resolves the provider path again, materializes an absent document, and hands it to a native text editor (`open -t` on macOS, bypassing a browser file association; the desktop file association on Linux and Windows; Windows association after `wslpath -w` translation on WSL). Open failures keep the action available and render a localized error. Reopening the dialog or reconnecting refreshes availability after a transient read failure or Host topology change. Non-loopback pages retain the Client policy that withholds this native action and its settings read.
 
 ### Host half
 
-The Host half registers `ui-onboarding` and `ui-settings-navigation` in the user-settings seam. The welcome step contributed by ui-settings-models reads and writes its `welcomeNoticeVersion` through the existing public settings boundary. The shell writes only the ordered `settings.section` ids; it never rewrites a feature's canonical registration order.
+The Host half registers `ui-onboarding` in the user-settings seam. The welcome step contributed by ui-settings-models reads and writes its `welcomeNoticeVersion` through the existing public settings boundary; the shell itself remains policy-free.
 
 </details>
 
@@ -111,3 +109,5 @@ These limits define what the shell itself provides versus what features must sup
 None.
 
 </details>
+
+**Runtime invariant:** No companion is published. The settings seam validates and publishes the durable onboarding section, while slot conflicts fail loud in the slot core. The local document action is browser state over typed RPC responses and is covered by store/component tests rather than a Cordis runtime relationship.

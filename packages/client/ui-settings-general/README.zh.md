@@ -1,5 +1,5 @@
 ---
-description: "dsh Web 客户端的设置外壳、无特定功能归属文案、持久化用户导航顺序与产品引导设置。"
+description: "dsh Web 客户端的设置外壳、无特定功能归属文案与持久化产品引导命名空间：「通用」分区、触发控件界面框架与引导账本投影。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-ui-settings-general` 是 dsh Web 客户端的设置外壳：Settings 面板从侧边栏底部的控件打开，带触发控件与模态外壳；导航由各功能贡献的分区构建，并允许用户调整顺序；首次运行的用户一次只走一个引导步骤。它还注册设置页面上所有不属于单一功能的内容：触发器、标题栏与关闭控件界面框架、「本地配置文件」操作、「通用」分区及其 `settings.general.item` slot，以及 `settings` 字典。归具体功能所有的行（「权限」、「语言」、「外观」）、分区（「模型」）与条件式首次使用引导步骤仍由各自的功能包提供；外壳本身不自带任何引导文案。
+`dsh-client-ui-settings-general` 是 dsh Web 客户端的设置外壳：Settings 面板从侧边栏底部的控件打开，该控件旁的连接故障指示器提供即时恢复操作；导航由各功能贡献的分区构建；首次运行的用户一次只走一个引导步骤。它还注册设置页面上所有不属于单一功能的内容：触发器、标题栏与关闭控件界面框架、「本地配置文件」操作、「通用」分区及其 `settings.general.item` slot，以及 `settings` 字典。归具体功能所有的行（「权限」、「语言」、「外观」）、分区（「模型」）与条件式首次使用引导步骤仍由各自的功能包提供；外壳本身不自带任何引导文案。
 
 ## 目录
 
@@ -25,11 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-用户通过侧边栏底部的 Settings 控件进入外壳；功能插件通过本外壳所投影的 slot 账本贡献自己的页面与引导步骤。外壳渲染模态面板、由 `settings.section` 条目构建的导航，以及每次只挂载一个的引导步骤。
-
-每个导航项都带有三横线排序把手。把手移动超过 4px 后，完整选项行会锁定跟随鼠标；被跨越的项目以动画让出一整行空位，落位动画结束后才一次性保存顺序。释放到导航区外、按 Escape 或收到 `pointercancel` 都会恢复原顺序。插入线会随明暗主题显示，靠近长列表边缘时会自动滚动，减少动态效果模式会跳过过渡动画；聚焦把手后仍可用上、下方向键完成等价排序。回环客户端会把稳定的分区 ID 持久化在 `ui-settings-navigation` 中；远程客户端则遵循设置传输既有的进程内策略。因此切换语言、插件分区出现或消失都不会破坏排序。新注册的分区会按其规范注册顺序追加；暂时缺失的 ID 会保留，以便插件重新安装后恢复。
-
-功能也可以调用 `ctx.settingsNavigation.open({ sectionId, subsectionId })`。外壳会打开面板、选择请求的贡献分区，并把可选子分区标识传给该分区；后续请求拥有更高 revision，即使目标相同也会再次处理。
+用户通过侧边栏底部的 Settings 控件进入外壳；功能插件通过本外壳所投影的 slot 账本贡献自己的页面与引导步骤。Host 连接失败后，浅黄色的**连接异常**操作会出现在 Settings 右侧；自动恢复期间显示**连接中**，其后一至三个点每 500ms 前进一次。鼠标悬浮或键盘聚焦任一黄色状态时，只有文案变为**立即重连**，背景保持不变；按压反馈留在黄色色阶内，选中后立即从 retry 1 开始。恢复后该区域变为浅绿色的**连接成功**，驻留 2 秒再消失。所有可见状态的文字都左对齐，且图标、文字起点、高度和宽度保持固定。首次启动与未曾中断的健康连接保持静默。外壳渲染模态面板、由 `settings.section` 条目构建的导航，以及每次只挂载一个的引导步骤。
 
 ### 「通用」分区
 
@@ -55,17 +51,19 @@ kind: "package-reference"
 
 ### 账本投影
 
-导航是 `settings.section` 账本的投影；导航 label 可以是跟随语言的 thunk，经 `resolveSlotLabel` 解析，并在分区账本更新或 locale revision 变化时重新渲染（`ctx.get('locale')` 可选读取，无硬 locale 依赖）。外壳还订阅设置领域导航服务；其单调递增 revision 区分重复请求，子分区标识则对外壳保持不透明。引导账本按升序投影；当前注册方会收到该条目的 id、`complete()` 与 `openSection(id)` 回调，完成或跳过当前步骤后，所有权转交给下一项。
+导航是 `settings.section` 账本的投影；导航 label 可以是跟随语言的 thunk，经 `resolveSlotLabel` 解析，并在分区账本更新或 locale revision 变化时重新渲染（`ctx.get('locale')` 可选读取，无硬 locale 依赖）。引导账本按升序投影；当前注册方会收到该条目的 id、`complete()` 与 `openSection(id)` 回调，完成或跳过当前步骤后，所有权转交给下一项。
+
+### 连接恢复
+
+外壳是明确的恢复功能消费方，因此直接注入 Connection，而不把生命周期控制放进 `ctx.remote`。它的私有 hooks compartment 绑定 `ctx.connection.state`，组件只接收选出的状态与调用 `ctx.connection.reconnect()` 的注入回调。`ConnectionIndicator` 拥有内联展示并从 `settings` locale namespace 接收全部可见与无障碍文案；2 秒恢复状态计时器归外壳所有。
 
 ### 文档可用性
 
-在 loopback 页面上，Client 通过 `settings/describe` 加载提供方的 `hasDocument` 能力，且只有在 Host 确认可准备好一份由提供方持有的本地文档时才渲染配置文件操作。该操作调用无路径参数且经浏览器认证的 `settings/openSettingsDocument` Remote；Host 会再次解析提供方路径、在文档缺失时将其创建出来，并交给原生文本编辑器（macOS 上使用 `open -t`，绕过浏览器文件关联；Linux 和 Windows 上使用桌面文件关联；WSL 上经 `wslpath -w` 转换后使用 Windows 文件关联）。原生 Windows 会独立于 `PATH` 解析系统打开程序。打开失败时该操作仍可使用，并渲染本地化错误。临时读取失败或 Host 拓扑变化后，重新打开对话框或重新连接会刷新可用性。非 loopback 页面保留 Client 策略，不提供该原生操作及其 settings 读取。
-
-设置面板会先为桌面标题栏预留空间，再把固定高度的界面居中显示。内容列与导航列分别滚动；导航标题保持固定，插件贡献的设置分类保持完整行高，并在剩余栏位中滚动。
+在 loopback 页面上，Client 通过 `settings/describe` 加载提供方的 `hasDocument` 能力，且只有在 Host 确认可准备好一份由提供方持有的本地文档时才渲染配置文件操作。该操作调用无路径参数且经浏览器认证的 `settings/openSettingsDocument` Remote；Host 会再次解析提供方路径、在文档缺失时将其创建出来，并交给原生文本编辑器（macOS 上使用 `open -t`，绕过浏览器文件关联；Linux 和 Windows 上使用桌面文件关联；WSL 上经 `wslpath -w` 转换后使用 Windows 文件关联）。打开失败时该操作仍可使用，并渲染本地化错误。临时读取失败或 Host 拓扑变化后，重新打开对话框或重新连接会刷新可用性。非 loopback 页面保留 Client 策略，不提供该原生操作及其 settings 读取。
 
 ### 宿主端
 
-宿主端在用户设置 seam 中注册 `ui-onboarding` 与 `ui-settings-navigation`。`ui-settings-models` 提供的欢迎步骤通过既有公开 settings 边界读写其中的 `welcomeNoticeVersion`。外壳只写入有序的 `settings.section` ID，不会改写功能自身的规范注册顺序。
+宿主端在用户设置 seam 中注册 `ui-onboarding`。`ui-settings-models` 提供的欢迎步骤通过既有公开 settings 边界读写其中的 `welcomeNoticeVersion`；外壳本身仍不持有产品策略。
 
 </details>
 
@@ -111,3 +109,5 @@ kind: "package-reference"
 无。
 
 </details>
+
+**运行时不变式：** 不发布伴生入口。settings seam 校验并发布持久 onboarding section，slot core 会拒绝冲突；本地 document action 由 store 与组件测试覆盖。

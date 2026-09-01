@@ -15,6 +15,7 @@ import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 
 let root: string | undefined
@@ -58,6 +59,7 @@ async function boot(configLines: readonly string[]): Promise<Context> {
     "- name: '@deepseek-ai/dsh-agent'",
     "- name: '@deepseek-ai/dsh-system-prompt'",
     "- name: '@deepseek-ai/dsh-tools'",
+    "- name: '@deepseek-ai/dsh-session-projection'",
     "- name: '@deepseek-ai/dsh-tool-todo'",
     ...configLines.length > 0 ? ['  config:', ...configLines] : [],
     '',
@@ -72,6 +74,7 @@ async function boot(configLines: readonly string[]): Promise<Context> {
     ['@deepseek-ai/dsh-agent', AgentRegistry],
     ['@deepseek-ai/dsh-system-prompt', SystemPrompt],
     ['@deepseek-ai/dsh-tools', ToolRuntime],
+    ['@deepseek-ai/dsh-session-projection', SessionProjectionRegistry],
     ['@deepseek-ai/dsh-tool-todo', ToolTodo],
   ])
   ctx.loader.internal = {
@@ -108,7 +111,7 @@ describe('tool-todo real Loader composition through cordis.yml', () => {
     })
     expect(result.isError).toBe(true)
     expect(resultText(result)).toContain('at most one task may be in_progress')
-    expect(owner.session.events.some(e => e.type === 'todo/write')).toBe(false)
+    expect(owner.session.snapshotEvents().some(e => e.type === 'todo/write')).toBe(false)
   }, 30_000)
 
   it('allowParallelInProgress: true permits a parallel write end to end', async () => {
@@ -125,7 +128,7 @@ describe('tool-todo real Loader composition through cordis.yml', () => {
       agent: owner,
     })
     expect(result.isError).toBe(false)
-    expect(owner.session.events.findLast(e => e.type === 'todo/write')?.data.todos).toEqual(PARALLEL_TODOS)
+    expect(owner.session.snapshotEvents().findLast(e => e.type === 'todo/write')?.data.todos).toEqual(PARALLEL_TODOS)
   }, 30_000)
 
   it.each([

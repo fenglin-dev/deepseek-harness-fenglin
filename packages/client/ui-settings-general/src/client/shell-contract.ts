@@ -6,13 +6,15 @@
  * reference graph closes a cycle through ui-sidebar → ui-layout → ui-theme.
  * The settings SLOT types (what registrants contribute) stay in ui-settings.
  */
-import type { HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ConnectionState } from '@deepseek-ai/dsh-client-connection/client'
+import type {
+  HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime,
+} from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-sidebar's SlotMap merge (the 'sidebar.settings' entry)
 // into every program that sees this contract.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // Type-only: pulls the settings slot declarations the shell renders into.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { SettingsNavigationRequest } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 /** One nav row projected from a settings.section registration's options. */
 export interface SettingsSectionRow {
@@ -29,22 +31,20 @@ export interface SettingsOnboardingStep {
 
 /**
  * Registrant-private injected share of the settings shell (assembled in
- * apply): the ledger's nav-row projection as a hooks-compartment source —
- * the shell reads no locale state and subscribes through the bound hook.
+ * apply): connection state and ledger projections arrive as hook-compartment
+ * sources, while the reconnect command remains a plain callback.
  */
 export type SettingsRootInjected = {
+  /** Request a fresh logical generation and physical WebSocket immediately. */
+  reconnect: () => void
   hooks: {
+    /** Connection-owned state for the current Host connection. */
+    connectionState: HostObservable<ConnectionState | undefined>
     /** settings.section ledger projected into ordered nav rows. */
     sections: HostObservable<readonly SettingsSectionRow[]>
     /** settings.onboarding ledger projected into coordinator order. */
     onboardingSteps: HostObservable<readonly SettingsOnboardingStep[]>
-    /** Programmatic requests from feature surfaces such as plugin discovery. */
-    navigation: HostObservable<SettingsNavigationRequest | undefined>
-    /** Durable user-selected vertical order of settings section ids. */
-    sectionOrder: HostObservable<readonly string[]>
   }
-  /** Persist the complete visible order while retaining absent plugin ids. */
-  setSectionOrder: (ids: readonly string[]) => Promise<void>
 }
 
 /**
@@ -55,7 +55,6 @@ export type SettingsRootInjected = {
  */
 export type SettingsRootComponentProps =
   PropsRuntime<'sidebar.settings'>
-  & PropsLocale<'settings'>
   & PropsRenderSlots<
     | 'settings.trigger'
     | 'settings.header'
@@ -65,3 +64,4 @@ export type SettingsRootComponentProps =
     | 'settings.onboarding'
   >
   & InjectFace<SettingsRootInjected>
+  & PropsLocale<'settings'>

@@ -11,8 +11,9 @@ import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ModelsSettingsState, ModelsSettingsStore, ModelsWire } from './store.ts'
+import type { ModelsSettingsState, ModelsSettingsStore } from './store.ts'
 import { onboardingReadiness } from './store.ts'
+import type { ModelsOperations } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { ProviderEditor } from './ProviderEditor.tsx'
 import type { en } from './locales.ts'
@@ -27,8 +28,8 @@ export interface DeepSeekOnboardingInjected {
   }
   /** Shared Models-page join controller. */
   controller: ModelsSettingsStore
-  /** Existing wire face reused by the Models credential editor. */
-  api: ModelsWire
+  /** The Host operations the reused Models credential editor writes through. */
+  operations: ModelsOperations
   /** Settings schema and immutable path callbacks. */
   schema: SettingsSchemaOperations
   /** Feature copy. */
@@ -51,7 +52,7 @@ function assertNever(_value: never): never {
  * @returns the onboarding modal or null when onboarding needs no intervention.
  */
 export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): ReactNode {
-  const { complete, controller, useModels, api, schema, t } = props
+  const { complete, controller, useModels, operations, schema, t } = props
   const state = useModels(snapshot => snapshot)
   const readiness = onboardingReadiness(state)
 
@@ -111,7 +112,7 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
           namespace={namespace}
           schema={schema}
           settingsPath={row.entry.settingsPath}
-          api={api}
+          operations={operations}
           t={t}
           readOnly={false}
           hideTitle

@@ -1,4 +1,4 @@
-import type { Branded } from '@deepseek-ai/dsh-brand'
+import { brandNumber, brandString, type Branded, type BrandedNumber } from '@deepseek-ai/dsh-brand'
 import type {
   AssistantMessage,
   ToolCallId,
@@ -11,12 +11,7 @@ import type {
   ToolSchema,
   UserMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { JsonValue } from './json.ts'
-
-// The lossless-JSON payload type belongs to this client-safe face too: a wire
-// contract carrying JSON data must not import the root entry, which merges
-// `ctx.sessions` (a Host-only SessionStore) into every consumer's program.
-export type { JsonValue } from './json.ts'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 /** Identifies one session in the store (and its persistence artifacts). */
 export type SessionId = Branded<'SessionId'>
@@ -24,11 +19,47 @@ export type SessionId = Branded<'SessionId'>
 /**
  * Brand a string as a {@link SessionId}.
  * @param id - the raw session id string.
- * @returns the same string, branded (a compile-time cast — no runtime cost).
+ * @returns the same string with the session-id brand.
  */
 export function SessionId(id: string): SessionId {
-  return id as SessionId
+  return brandString<SessionId>(id)
 }
+
+/** Sequence number of one existing event in a Session log. */
+export type SessionSeq = BrandedNumber<'SessionSeq'>
+
+/**
+ * Admit a numeric value as an existing Session event position.
+ * @param value - non-negative safe integer admitted by the owning log operation.
+ * @returns the same number with the Session-sequence brand.
+ */
+export function SessionSeq(value: number): SessionSeq {
+  if (!Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
+    throw new TypeError(`SessionSeq must be a non-negative safe integer, got ${String(value)}`)
+  }
+  return brandNumber<SessionSeq>(value)
+}
+
+/** A Session log gap, prefix length, or read offset, which may equal the event count. */
+export type SessionLogOffset = BrandedNumber<'SessionLogOffset'>
+
+/**
+ * Admit a numeric value as a Session log offset.
+ * @param value - non-negative safe integer used as a gap or prefix length.
+ * @returns the same number with the Session-log-offset brand.
+ */
+export function SessionLogOffset(value: number): SessionLogOffset {
+  if (!Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
+    throw new TypeError(`SessionLogOffset must be a non-negative safe integer, got ${String(value)}`)
+  }
+  return brandNumber<SessionLogOffset>(value)
+}
+
+/** Inclusive Session event watermark, or `-1` before any event exists. */
+export type SessionSeqCursor = SessionSeq | -1
+
+/** One existing Session event position, or explicit absence. */
+export type OptionalSessionSeq = SessionSeq | null
 
 /**
  * The on-disk session format version, stamped into every newly-written {@link SessionHeader}
@@ -45,13 +76,13 @@ export function SessionId(id: string): SessionId {
  * wrong read). Only structural changes reach that bar: the header shape, the
  * {@link SessionEvent} envelope, core event semantics, or the surface
  * mechanism (the {@link SurfaceEventType} set and {@link SurfaceOp} variants).
- * Adding an ordinary event type does not bump: the generated known-event guard
- * makes older runtimes refuse logs containing a type they do not understand.
- * When in doubt, bump: a near-identity upgrade step is almost free, a missed
- * bump makes older runtimes read new logs wrong silently. The full mechanism
+ * Adding an ordinary event type does not bump — the per-event
+ * {@link SessionEvent.ignorable} guard covers vocabulary growth instead. When
+ * in doubt, bump: a near-identity upgrade step is almost free, a missed bump
+ * makes older runtimes read new logs wrong silently. The full mechanism
  * (upgrade-step chain, in-memory view conversion, migrate-on-continue) is
- * recorded in the fail-closed-session-event-vocabulary Agent Note
- * (`.agents/notes/implemented/simplification/2026-08-25-fail-closed-session-event-vocabulary.md`).
+ * recorded in the session-log-version-mechanism Agent Note
+ * (`.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md`).
  */
 export const SESSION_FORMAT_VERSION = 0
 
@@ -74,10 +105,10 @@ export interface SessionHeader {
   /** The session this one was forked from (seed lineage), if any. */
   readonly parentSession?: SessionId
   /**
-   * How many leading events were inherited through a seed. Persisting this
-   * boundary lets resume and replay distinguish parent history from child work.
+   * Whether this Session contains a fork-inherited event prefix. The exact prefix
+   * length is Session state rather than ordinary header metadata.
    */
-  readonly seedLength?: number
+  readonly isSeeded: boolean
   /**
    * Coarse product classification for a session created as a subagent child.
    * This is presentation metadata, not proof that the child is continuable.
@@ -107,14 +138,19 @@ export interface CreateSessionOptions {
   /** Initial replay or fork history supplied at construction. */
   readonly seed?: readonly SessionEvent[]
   /**
-   * Storage metadata read once before publication. `seedLength` is explicit
-   * because a resumed seed contains the full stored log, not only its inherited prefix.
+   * Exact fork-inherited prefix length when `meta.isSeeded` is true. A
+   * constructor seed may also contain child-owned setup events after this cut.
+   */
+  readonly inheritedEventCount?: SessionLogOffset
+  /**
+   * Storage metadata read once before publication. `isSeeded` marks fork
+   * lineage; supplying replay history alone does not make it inherited.
    */
   readonly meta?: {
     readonly cwd?: string
     readonly parentSession?: SessionId
     readonly createdAt?: number
-    readonly seedLength?: number
+    readonly isSeeded?: boolean
     readonly origin?: 'subagent'
     readonly delegationDepth?: number
     readonly agentPreset?: string
@@ -130,6 +166,8 @@ export interface RestoredSessionOptions {
   readonly seed: SessionEvent[]
   /** Fresh detached storage metadata to validate and freeze in place. */
   readonly meta: SessionHeader
+  /** Exact number of fork-inherited leading events decoded from storage. */
+  readonly inheritedEventCount: SessionLogOffset
   /** Select the persistence ownership-transfer path. */
   readonly seedSource: 'persistence'
 }
@@ -363,7 +401,7 @@ export type SurfaceEvent = SessionEvent<SurfaceEventType> & { surfaceOp: Surface
  */
 export type SurfaceOp =
   | 'append'
-  | { op: 'replace'; start: number; end: number }
+  | { op: 'replace'; start: SessionSeq; end: SessionSeq }
 
 /**
  * Surface placement and cited source-event seqs for {@link Session.append}. Required on
@@ -377,7 +415,7 @@ export interface SurfaceIntent {
    * absent, the event does not record which earlier events produced the message.
    * Other surface events require a non-empty set when this field is present.
    */
-  sourceEventSeqs?: number[]
+  sourceEventSeqs?: SessionSeq[]
 }
 
 /**
@@ -397,10 +435,21 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
   [K in SessionEventType]: {
     type: K
     /** Monotonic sequence number within the session. */
-    seq: number
+    seq: SessionSeq
     /** Unix epoch milliseconds. */
     time: number
     data: SessionEventMap[K]
+    /**
+     * Marks an event a reader may safely skip when it does not recognize
+     * `type`. Absent means required: a reader meeting an unrecognized type
+     * without this marker MUST refuse to reconstruct the session instead of
+     * silently dropping the event, because an unrecognized required event may
+     * change how the rest of the log is interpreted. A writer sets `true` only
+     * on purely informational records whose loss cannot affect reconstruction;
+     * defaulting to required means a forgotten marker over-refuses (an
+     * inconvenience) rather than silently resuming a gutted session.
+     */
+    ignorable?: true
   } & (K extends SurfaceEventType ? {
     /**
      * Seq numbers of earlier events that this event cites as sources
@@ -410,8 +459,15 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
      * provider stream; when the field is absent, the event does not record which
      * earlier events produced the message.
      */
-    sourceEventSeqs?: number[]
+    sourceEventSeqs?: SessionSeq[]
     /** How this event entered the surface; absent for non-surface events. */
     surfaceOp?: SurfaceOp
   } : object)
 }[T]
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    /** The named Session does not exist; produced by every layer that resolves a SessionId. */
+    'session/not-found': { readonly sessionId: SessionId }
+  }
+}

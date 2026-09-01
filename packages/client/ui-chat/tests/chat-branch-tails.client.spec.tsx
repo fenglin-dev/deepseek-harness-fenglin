@@ -2,8 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type {
   ChatConversationViewNode, ConversationNode,
@@ -39,6 +38,12 @@ const t: ChatNodeViewProps['t'] = makeTranslate(zh, commonZh)
 const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
 const RETRY_ID = 'retry-fixture' as Extract<ConversationNode, { kind: 'model-retry' }>['retryId']
 
+// Recency scans the whole transcript; a detached fixture is its own latest row.
+const useDetachedChat: ChatNodeViewProps['useChat'] = bindSnapshotSelector({
+  subscribe: () => () => {},
+  getSnapshot: () => ({ order: [], nodes: new Map() }),
+} as never)
+
 interface MessageItemProps {
   readonly node: ConversationNode
   readonly t: ChatNodeViewProps['t']
@@ -62,7 +67,7 @@ function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) 
         ? { ...node, referenceLabels }
         : node,
   }
-  const props = { node: viewNode, t: translate, renderMessageImages } as ChatNodeViewProps
+  const props = { node: viewNode, t: translate, renderMessageImages, useChat: useDetachedChat } as ChatNodeViewProps
   switch (node.kind) {
     case 'user':
     case 'steering':
@@ -701,7 +706,7 @@ describe('MessageItem arms', () => {
     // reach it, and the row marker must not claim a form that did not render.
     const cases = [
       { form: 'snapshot', source: { kind: 'plugin', form: 'snapshot', sections: 'not-a-list' }, label: 'plugin' },
-      { form: 'relay', source: { kind: 'subagent-report', form: 'relay' }, label: 'subagent-report' },
+      { form: 'relay', source: { kind: 'agent-message', form: 'relay' }, label: 'agent-message' },
       { form: 'recall', source: { kind: 'session-reference', form: 'recall', references: [{ label: 'x' }] }, label: 'session-reference' },
     ] as const
     for (const { form, source, label } of cases) {
@@ -741,13 +746,13 @@ describe('MessageItem arms', () => {
         kind: 'context',
         seq: 3,
         content: [{ type: 'text', text: 'child report body' }],
-        source: { kind: 'subagent-report', form: 'relay', senderSessionId: 'child-7' },
-        provenance: { role: 'inject', label: 'subagent-report' },
+        source: { kind: 'agent-message', form: 'relay', senderSessionId: 'child-7' },
+        provenance: { role: 'inject', label: 'agent-message' },
         form: 'relay',
       } as never}
       />,
     )
-    fireEvent.click(view.getByRole('button', { name: /^上下文注入\s*subagent-report$/ }))
+    fireEvent.click(view.getByRole('button', { name: /^上下文注入\s*agent-message$/ }))
     expect(view.container.querySelector('[data-context-relay-sender]')?.textContent).toBe('来自会话 child-7')
     expect(view.container.querySelector('[data-context-text]')?.textContent).toBe('child report body')
   })

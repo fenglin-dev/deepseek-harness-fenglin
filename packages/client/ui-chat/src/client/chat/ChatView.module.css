@@ -175,7 +175,9 @@
   position: sticky;
   bottom: 16px;
   /* Above the sticky composer (z-index 7) so the control stays clickable and
-     visible over the input card. */
+     visible over the input card. Exception: while an @/slash menu is open the
+     seat lifts to 9 (ui-conversation ConversationRoot) so the menu is never
+     covered by this control. */
   z-index: 8;
   height: 0;
   display: flex;
@@ -200,11 +202,13 @@
   height: 34px;
   margin-top: -34px;
   padding: 0;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0;
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l3);
   border-radius: 100px;
+  corner-shape: round;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-button-floating-fill);
-  box-shadow: var(--dsw-shadow-lv2);
+  box-shadow: var(--dsw-elevation-panel);
   cursor: pointer;
   pointer-events: auto;
 }

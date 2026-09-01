@@ -11,12 +11,14 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import { assertNever, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
+import { SessionSeq } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 // Empty type imports carry the loader Context merge for the settlement await
 // and the cmdline Context merge for the appExit host value.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
@@ -59,12 +61,16 @@ export const internals: { stdout: HeadlessIo['stdout']; stderr: HeadlessIo['stde
 }
 
 /** Aggregate the last assistant text and turn outcome in one owned interval. */
-function summarize(events: readonly SessionEvent[], firstSeq: number): RunOutcome {
+function summarize(session: Session, firstSeq: SessionLogOffset): RunOutcome {
   let started = false
   let text = ''
   let reason: SessionEvent<'turn/end'>['data']['reason'] | undefined
-  for (const event of events) {
-    if (event.seq < firstSeq) continue
+  const length = session.seq
+  for (let seq = firstSeq; seq < length; seq++) {
+    const event = session.eventAt(SessionSeq(seq))
+    if (event === undefined) {
+      throw new Error(`headless summary cannot read seq ${String(seq)} below captured length ${String(length)}`)
+    }
     if (event.type === 'turn/start') {
       started = true
       continue
@@ -175,7 +181,7 @@ async function run(ctx: Context, task: string, io: HeadlessIo): Promise<void> {
   // that DOES configure one has to join it here first
   // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
   const { agent } = await agents.create({
-    sessionId: SessionId(`session-${randomUUID()}`),
+    sessionId: brandString<SessionId>(`session-${randomUUID()}`),
     meta: { cwd: process.cwd() },
     agentOptions: { provider: selection.provider, model: selection.model },
     setup: (agentCtx) => {
@@ -196,7 +202,7 @@ async function run(ctx: Context, task: string, io: HeadlessIo): Promise<void> {
     stopReasoning()
   }
   await sessions.flush(agent.session)
-  const outcome = summarize(agent.session.events, firstSeq)
+  const outcome = summarize(agent.session, firstSeq)
   io.stdout.write(outcome.text + '\n')
   if (outcome.reason?.kind === 'error') {
     io.stderr.write(`dsh: ${outcome.reason.error.code}: ${outcome.reason.error.message}\n`)

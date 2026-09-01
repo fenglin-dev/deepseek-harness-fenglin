@@ -11,6 +11,7 @@ examples/*/*.jsonl
 .sessions/
 examples/*/.sessions/
 coverage/
+.coverage-times.json
 .doc-typecheck-*/
 .node-next-types-*/
 .oxlint-contract-*/
@@ -30,6 +31,7 @@ python/sdk-runtime/src/deepseek_harness_runtime/runtime/deepseek-harness-sdk-run
 python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/
 python/**/__pycache__/
 python/**/.pytest_cache/
+packages/**/__pycache__/
 apps/web/dist/
 apps/desktop/lib/
 .artifacts/

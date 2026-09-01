@@ -2,23 +2,15 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
-import {
-  CHAT_BACKGROUND_LAYOUT_ATTRIBUTE, COLOR_SCHEME_SOURCE_ATTRIBUTE, DARK_ATTRIBUTE, ThemePresenter,
-} from '@deepseek-ai/dsh-client-ui-layout/src/client/theme-presenter.ts'
+import { DARK_ATTRIBUTE, ThemePresenter } from '@deepseek-ai/dsh-client-ui-layout/src/client/theme-presenter.ts'
 
 const LIGHT_THEME_COLOR = 'rgb(255, 255, 255)'
 const DARK_THEME_COLOR = 'rgb(21, 21, 23)'
 
-function snapshot(
-  colorScheme: 'light' | 'dark',
-  tokens: Record<string, string> = {},
-  background: ThemeSnapshot['background'] = { id: 'none' },
-  preference: ThemeSnapshot['preference'] = colorScheme,
-  fontSize = 14,
-): ThemeSnapshot {
+function snapshot(colorScheme: 'light' | 'dark', tokens: Record<string, string> = {}, fontSize = 14): ThemeSnapshot {
   // The presenter must key off colorScheme, not the id — keep them distinct.
   const active = { id: `${colorScheme}-test`, colorScheme, tokens }
-  return { preference, fontSize, active, themes: [active], background, revision: 1 }
+  return { preference: colorScheme, fontSize, active, themes: [active], revision: 1 }
 }
 
 function clearThemePresentation(): void {
@@ -32,7 +24,6 @@ function themeColorMeta(): HTMLMetaElement | null {
 beforeEach(() => {
   clearThemePresentation()
   document.documentElement.style.removeProperty('color-scheme')
-  document.documentElement.removeAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)
   document.body.removeAttribute(DARK_ATTRIBUTE)
   document.body.removeAttribute('style')
   const style = document.createElement('style')
@@ -51,17 +42,8 @@ describe('ThemePresenter', () => {
     const presenter = new ThemePresenter()
     presenter.apply(snapshot('light'))
     expect(document.documentElement.style.colorScheme).toBe('light')
-    expect(document.documentElement.getAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)).toBe('light')
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
     expect(themeColorMeta()?.content).toBe(LIGHT_THEME_COLOR)
-  })
-
-  it('keeps system following distinct from a fixed dark palette for desktop chrome', () => {
-    const presenter = new ThemePresenter()
-    presenter.apply(snapshot('dark', {}, { id: 'none' }, 'system'))
-    expect(document.documentElement.getAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)).toBe('system')
-    presenter.apply(snapshot('dark'))
-    expect(document.documentElement.getAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)).toBe('dark')
   })
 
   it('dark scheme sets root color-scheme, the attribute, and metadata; switching to light updates one node', () => {
@@ -90,36 +72,21 @@ describe('ThemePresenter', () => {
     expect(document.body.style.getPropertyValue('--dsw-alias-fg')).toBe('')
   })
 
-  it('projects and retracts the selected chat background', () => {
-    const presenter = new ThemePresenter()
-    presenter.apply(snapshot('dark', {}, {
-      id: 'anime-starlight', url: '/anime.webp', layout: 'focus-right',
-    }))
-    expect(document.body.dataset.dshChatBackground).toBe('anime-starlight')
-    expect(document.body.getAttribute(CHAT_BACKGROUND_LAYOUT_ATTRIBUTE)).toBe('focus-right')
-    expect(document.body.style.getPropertyValue('--dsh-chat-background-image')).toContain('/anime.webp')
-    presenter.apply(snapshot('dark'))
-    expect(document.body.hasAttribute('data-dsh-chat-background')).toBe(false)
-    expect(document.body.hasAttribute(CHAT_BACKGROUND_LAYOUT_ATTRIBUTE)).toBe(false)
-    expect(document.body.style.getPropertyValue('--dsh-chat-background-image')).toBe('')
-  })
-
   it('publishes the content font size and follows changes', () => {
     const presenter = new ThemePresenter()
     presenter.apply(snapshot('light'))
     expect(document.body.style.getPropertyValue('--dsh-content-font-size')).toBe('14px')
-    presenter.apply(snapshot('light', {}, { id: 'none' }, 'light', 17))
+    presenter.apply(snapshot('light', {}, 17))
     expect(document.body.style.getPropertyValue('--dsh-content-font-size')).toBe('17px')
   })
 
-  it('dispose removes color-scheme, background, font-size, and applied variables while sparing foreign inline styles', () => {
+  it('dispose removes color-scheme, the attribute, the font-size axis, and every applied variable, sparing foreign inline styles', () => {
     document.body.style.setProperty('--foreign', 'kept')
     const presenter = new ThemePresenter()
     presenter.apply(snapshot('dark', { '--dsw-alias-bg': '#111' }))
     const meta = themeColorMeta()
     presenter.dispose()
     expect(document.documentElement.style.colorScheme).toBe('')
-    expect(document.documentElement.hasAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)).toBe(false)
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
     expect(document.body.style.getPropertyValue('--dsw-alias-bg')).toBe('')
     expect(document.body.style.getPropertyValue('--dsh-content-font-size')).toBe('')

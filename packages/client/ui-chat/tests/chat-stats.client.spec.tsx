@@ -5,8 +5,7 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import type {
   AssistantMessageNode, ChatSnapshot, LegacyConversationSlice, ToolResultNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { StatsLine, deriveStats, formatDuration, type StatsLineProps } from '../src/client/chat/StatsLine.tsx'
@@ -162,6 +161,25 @@ describe('StatsLine', () => {
   function tokenUsage(cacheReadTokens: number, uncachedInputTokens: number) {
     return { uncachedInputTokens, outputTokens: 1, cacheReadTokens, cacheWriteTokens: 0 }
   }
+
+  it('mounts one size observer only while a non-empty line exists', () => {
+    let observers = 0
+    class CountingResizeObserver {
+      constructor(_callback: ResizeObserverCallback) { observers++ }
+      observe(): void {}
+      disconnect(): void {}
+    }
+    vi.stubGlobal('ResizeObserver', CountingResizeObserver)
+    const { set, source } = makeSource()
+    render(<StatsLine {...props(source, {})} />)
+    expect(observers).toBe(0)
+
+    act(() => { set({ nodes: [assistant(1, 1)] }) })
+    expect(observers).toBe(1)
+
+    act(() => { set({ nodes: [assistant(1, 1), assistant(2, 1)] }) })
+    expect(observers).toBe(1)
+  })
 
   it('renders the grouped stats row and hides a brand-new empty session', () => {
     const { source } = makeSource({ nodes: [assistant(1, 1)] })

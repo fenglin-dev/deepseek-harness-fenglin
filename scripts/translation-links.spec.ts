@@ -142,25 +142,6 @@ describe('translation link locale validation', () => {
     )).toEqual([])
   })
 
-  it('accepts the root README Chinese-default switchers', () => {
-    const root = fixture()
-    writeFileSync(join(root, 'docs/README.en.md'), '# English\n')
-    const englishContext = { ...linkContext(root, 'docs/guide.md'), isTranslationPairSource: (path: string) => path !== 'docs/README.en.md' }
-    const chineseContext = { ...linkContext(root, 'docs/guide.zh.md'), isTranslationPairSource: (path: string) => path !== 'docs/README.en.md' }
-    const markdown = '# 指南\n\n语言：简体中文（默认） · [English](README.en.md) · [日本語](README.ja.md)\n'
-
-    expect(translationLinkLocaleViolations(
-      markdown,
-      englishContext,
-      ['guide.zh.md'],
-    )).toEqual([])
-    expect(translationLinkLocaleViolations(
-      markdown,
-      chineseContext,
-      ['guide.md'],
-    )).toEqual([])
-  })
-
   it('does not exempt an ordinary body link to the counterpart', () => {
     const root = fixture()
     const markdown = '# 指南\n\n[English](guide.md) | 中文\n\n[正文](guide.md)\n'

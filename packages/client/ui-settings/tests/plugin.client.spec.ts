@@ -4,18 +4,22 @@ import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject } from '../src/client/index.ts'
 import { SettingsSchemaService } from '../src/client/schema.ts'
 import { SettingsScopeBinder } from '../src/client/settings-scope.ts'
+import { apply as hostApply } from '../src/index.ts'
 
 function bench() {
   const describeCall = vi.fn().mockResolvedValue({
     ok: true, value: { writable: true, hasDocument: true, namespaces: [] },
   })
   const ctx = new Context()
-  ctx.provide('connection', { api: {}, isLoopback: true } as never)
   const remote = new TestRemote(ctx, { settings: { describe: describeCall } })
   return { ctx, describeCall, remote, fiber: ctx.plugin({ inject: [...inject], apply }) }
 }
 
 describe('settings domain base plugin', () => {
+  it('keeps the host Loader entry inert', () => {
+    expect(hostApply).not.toThrow()
+  })
+
   it('mounts the scope service under settingsScope and reads once eagerly', async () => {
     const { ctx, describeCall, fiber } = bench()
     await fiber.await()

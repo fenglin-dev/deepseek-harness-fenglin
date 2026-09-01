@@ -105,9 +105,7 @@ describe('WorkspaceBrowser.module.css list', () => {
     expect(rowDeclarations('.flatSessionRowWithoutStatus .title')?.get('margin-left')).toBe('0')
     expect(rowDeclarations('.searchResultRow')?.get('min-height')).toBe('48px')
     expect(rowDeclarations('.sessionRow.selected')?.get('background'))
-      .toBe('color-mix(in srgb, var(--dsw-alias-state-business-primary) 11%, transparent)')
-    expect(rowDeclarations('.sessionRow.selected')?.get('box-shadow'))
-      .toBe('inset 3px 0 0 color-mix(in srgb, var(--dsw-alias-state-business-primary) 72%, transparent)')
+      .toBe('var(--dsw-alias-interactive-bg-hover)')
   })
 
   it('pins both rail controls to the shared left anchor during the column slide', () => {

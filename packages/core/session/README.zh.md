@@ -49,9 +49,17 @@ session.deriveMessages()         // the derived model history
 
 表层事件（`user/message`、`assistant/message`、`tool/result`）必须声明如何进入有序 surface；原始分片、边界与其他仅日志事件从不产生消息。
 
+### 读取日志
+
+`session.seq` 无需物化数组即可读取当前日志长度，`session.eventAt(seq)` 按序列号读取单个已接受且深度冻结的事件。`session.snapshotEvents(fromSeq?, toSeqExclusive?)` 会物化半开区间的冻结稳定快照；当前完整快照会缓存到下一次追加。只需要长度或单个事件的调用方使用 `seq` 或 `eventAt()`。
+
+会话日志位置使用两种数字类型。`SessionSeq` 标识已有事件或包含端点的事件水位；`SessionLogOffset` 标识间隙、前缀长度或读取边界，并且可以等于事件数量。`SessionSeqCursor` 添加 `-1` 这个“尚无事件”值，`OptionalSessionSeq` 则在缺失本身属于数据时使用 `null`。构造函数会校验非负安全整数，品牌在运行时会被擦除，因此持久 JSON 与 wire 值仍是普通数字。
+
 ### 派生会话的 fork
 
 `ctx.sessions.fork(source, boundary?, childSessionId?)` 选取截至 `boundary` 事件序号（含该事件）的源事件（默认：当前最后一个事件），要求所选前缀结束时没有开放轮次，再创建带谱系元数据的实时子会话。必须在轮次中途分支的工具时委派会裁剪到已完成前缀。
+
+逻辑 `SessionHeader.isSeeded` 字段报告是否存在 fork 历史，而不公开位置整数。`Session.inheritedEventCount` 保留经过校验的精确 `SessionLogOffset`；`ownEvents()` 返回从该切点开始的事件，`isOwnSeq(seq)` 只接受已存在且由 child 拥有的位置。底层带 seed 构造必须显式提供 `seed` 与 `inheritedEventCount`，因为构造 seed 可以在继承前缀之后包含 child 自有的设置事件。
 
 ### 刷新持久状态
 
@@ -83,14 +91,14 @@ session.deriveMessages()         // the derived model history
 | [`src/types.ts`](src/types.ts) | `SessionEventMap`、`SessionEvent`、`UserMessage`、`SessionHeader`、`TurnEndReasonMap` |
 | [`src/surface.ts`](src/surface.ts) | 有序 surface 投影、替换校验、`deriveEventMessage` |
 | [`src/request-header.ts`](src/request-header.ts) | `request/header` 折叠与重建 |
-| [`src/json.ts`](src/json.ts) | 无损 JSON 校验与快照 |
+| [`dsh-util-values`](../../util/values/README.zh.md) | 共享无损 JSON 校验与分离式快照 |
 | [`src/chunk-rows.ts`](src/chunk-rows.ts) | 供持久化后端使用的共享紧凑行存储编解码器 |
 | [`src/repair.ts`](src/repair.ts) | 崩溃遗留日志的冷修复 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式配套：序号、轮次／步骤闭合、工具调用／结果配对 |
 
 ### 追加校验
 
-每次追加都会执行一趟递归处理，对每个嵌套值只读取、校验并复制一次，因此有状态的 getter 无法给校验提供一个值、给存储提供另一个值。非无损 JSON 载荷（BigInt、循环、稀疏数组、`-0`、特殊原型）会在追加位置被拒绝，先于任何后端刷新。表层事件还会校验标记形态、被引用的源事件 seq，以及替换的完整遮蔽节点覆盖。
+每次追加都会使用共享的迭代式 `snapshotJsonValue()` 流程，对每个嵌套值只读取、校验并复制一次，因此有状态的 getter 无法给校验提供一个值、给存储提供另一个值。非无损 JSON 载荷（BigInt、循环、稀疏数组、`-0`、特殊原型）会在追加位置被拒绝，先于任何后端刷新。追加路径会构造每个 `SessionSeq`；surface 事件还会校验标记形态、被引用的源事件序号，以及替换的完整遮蔽节点覆盖。
 
 ### 派生历史
 
@@ -170,7 +178,7 @@ session.deriveMessages()         // the derived model history
 这些限制说明会话存储何时需要特别留意。它们是当前包约束，不是任务积压。
 
 - **`fork()` 仅在实时会话的稳定边界处切分**：所选前缀结束时不得有开放轮次，且源会话必须位于存储中；[fork API](../../../.agents/notes/implemented/feature/2026-06-30-session-store-fork-api.zh.md) 不支持对已持久化但未加载的会话进行 fork。
-- **`SESSION_FORMAT_VERSION` 固定为 `0`**：预发布阶段不承诺广泛兼容性；`Session` 只接受当前 seed 形状，后端拒绝任何其他版本，每个不认识的事件类型也会拒绝重建（[机制](../../../.agents/notes/implemented/simplification/2026-08-25-fail-closed-session-event-vocabulary.zh.md)）。
+- **`SESSION_FORMAT_VERSION` 固定为 `0`**：预发布阶段不承诺广泛兼容性；`Session` 只接受当前 seed 形状，后端拒绝任何其他版本，不认识的事件类型也会拒绝重建，除非信封带 `ignorable` 标记（[机制](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.zh.md)）。
 - **`TurnEndReasonMap` 不含 ACP（Agent Client Protocol）命名的 `refusal`／`max_turn_requests` 变体**：受生产方约束；只有当适配器或循环首次产生这些变体时才加入。
 - **fork 之外没有会话树**：基于分支会话的 pi 风格条目树被推迟，除非消费方需要超越基于边界的 forking 的能力。
 
