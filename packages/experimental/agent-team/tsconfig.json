@@ -6,8 +6,7 @@
   },
   "include": ["src"],
   "references": [
-    
-    { "path": "../../session/session-projection" },{ "path": "../../../vendor/cosmokit" },
+    { "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../util/brand" },
@@ -17,6 +16,7 @@
     { "path": "../../typert/protocol" },
     { "path": "../../subagent/subagent" },
     { "path": "../../session/session-persistence" },
+    { "path": "../../session/session-projection" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }
