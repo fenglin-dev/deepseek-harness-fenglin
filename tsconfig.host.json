@@ -105,6 +105,7 @@
   // suffixes are mutually exclusive, so each aggregate excludes the other's
   // and the package test glob above needs no per-file entry.
   "exclude": [
+    "packages/host/plugin-inventory/tests/**/*",
     "packages/examples/agent-spine-demo/tests/**/*",
     "packages/session/session-persistence-sqlite/**/*",
     "packages/subagent/tool-subagent-report/**/*",
