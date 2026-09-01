@@ -111,17 +111,23 @@ describe('SetupWizard', () => {
     expect(screen.getByText(zh['setup.progress'].replace('{count}', '1'))).toBeTruthy()
   })
 
-  it('opens the standalone IM section and Codex connection center before reaching the success welcome', () => {
+  it('opens phone access second, IM bots third, and Codex fourth before success', () => {
     const h = mount({ modelReady: true })
+    fireEvent.click(screen.getAllByRole('button', { name: zh['setup.connect'] })[0]!)
+    const phoneRequest = h.openSection.mock.calls[0]![0]
+    expect(phoneRequest).toMatchObject({ sectionId: 'pocket', step: 2 })
+    expect(phoneRequest.subsectionId).toBeUndefined()
+    act(() => { phoneRequest.complete() })
+
     fireEvent.click(screen.getAllByRole('button', { name: zh['setup.configure'] })[0]!)
-    const request = h.openSection.mock.calls[0]![0]
-    expect(request).toMatchObject({ sectionId: 'xmanrui-dsh-im', step: 2 })
-    expect(request.subsectionId).toBeUndefined()
-    act(() => { request.complete() })
+    const imRequest = h.openSection.mock.calls[1]![0]
+    expect(imRequest).toMatchObject({ sectionId: 'xmanrui-dsh-im', step: 3 })
+    expect(imRequest.subsectionId).toBeUndefined()
+    act(() => { imRequest.complete() })
 
     fireEvent.click(screen.getByRole('button', { name: zh['setup.connect'] }))
-    const codexRequest = h.openSection.mock.calls[1]![0]
-    expect(codexRequest).toMatchObject({ sectionId: 'external-tools', step: 3 })
+    const codexRequest = h.openSection.mock.calls[2]![0]
+    expect(codexRequest).toMatchObject({ sectionId: 'external-tools', step: 4 })
     act(() => { codexRequest.complete() })
 
     expect(screen.getByRole('heading', { name: zh['setup.success'] })).toBeTruthy()

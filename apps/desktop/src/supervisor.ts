@@ -44,6 +44,7 @@ export class HarnessSupervisor {
   #preReadyExitCount = 0
   #failed = false
   #safeMode = false
+  #primaryStartupFailure: string | undefined
   #stopping = false
 
   /** @param options - Process launch, log destination, and lifecycle observers. */
@@ -108,6 +109,9 @@ export class HarnessSupervisor {
       }
       if (!ready) {
         if (safeModeEligible && !this.#safeMode) {
+          this.#primaryStartupFailure = spawnError === undefined
+            ? `Harness exited before becoming ready (code ${String(code)}, signal ${String(signal)}).`
+            : `Harness could not start: ${spawnError.message}`
           this.#safeMode = true
           this.#log?.write('[desktop] Restarting Harness once with the installation-owned diagnostic profile.\n')
           this.#options.onState('restarting')
@@ -115,6 +119,17 @@ export class HarnessSupervisor {
             this.#restartTimer = undefined
             this.start()
           }, 0)
+          return
+        }
+        if (this.#safeMode) {
+          this.#failed = true
+          const secondary = spawnError === undefined
+            ? `diagnostic safe mode exited before becoming ready (code ${String(code)}, signal ${String(signal)})`
+            : `diagnostic safe mode could not start: ${spawnError.message}`
+          const message = `${this.#primaryStartupFailure ?? 'The active Profile could not start'} ${secondary}.`
+          this.#log?.write(`[desktop] Harness startup failed after one normal and one diagnostic attempt: ${message}\n`)
+          this.#options.onState('failed')
+          this.#options.onFailure({ message })
           return
         }
         this.#preReadyExitCount += 1
@@ -146,6 +161,7 @@ export class HarnessSupervisor {
     this.#restartCount = 0
     this.#preReadyExitCount = 0
     this.#safeMode = false
+    this.#primaryStartupFailure = undefined
     this.start()
     return true
   }
@@ -207,6 +223,7 @@ export class HarnessSupervisor {
     this.#restartCount = 0
     this.#preReadyExitCount = 0
     this.#safeMode = false
+    this.#primaryStartupFailure = undefined
     this.start()
     return true
   }

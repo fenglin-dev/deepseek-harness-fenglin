@@ -1,5 +1,5 @@
 ---
-description: "当前 Cordis Loader 插件状态的只读投影：面向 web GUI 宿主客户端的 pluginInventory 服务及其 pluginInventory/list Remote。"
+description: "为 Web GUI 宿主客户端提供 Cordis Loader 清单以及受保护的 Profile 诊断与恢复 Remote。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-客户端与设置页可以展示宿主当前组合了什么：调用 `pluginInventory/list` 即按 Loader 顺序返回当前的非组条目——条目 id、模块标识、有效启用状态与根 Fiber 阶段（`pending`、`loading`、`active`、`failed` 或 `unloading`；条目没有存活根 Fiber 时为 `null`）。该快照只表示调用当下：Loader 是唯一的生命周期权威，本包不拥有缓存、历史、来源模型、事件流或修改路径。Client 包通过显式的 [`api-remotes`](../../api/remotes/README.zh.md) 组合消费这个 Remote，而不导入 Host 实现。
+客户端与设置页可以展示宿主当前组合了什么：调用 `pluginInventory/list` 即按 Loader 顺序返回当前的非组条目——条目 id、模块标识、有效启用状态与根 Fiber 阶段（`pending`、`loading`、`active`、`failed` 或 `unloading`；条目没有存活根 Fiber 时为 `null`）。Loader 名单只表示调用当下且不缓存；同一受限 Remote 服务还会投影持久 Profile 诊断，并提供固定的 doctor、隔离、恢复、卸载与导出操作，不接受任意命令或路径。Client 包通过显式的 [`api-remotes`](../../api/remotes/README.zh.md) 组合消费这个 Remote，而不导入 Host 实现。
 
 ## 目录
 
@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### 你能用它做什么、不能做什么
 
-该清单是供展示与诊断的快照：客户端可以渲染名单、标出失败条目，并通过比较快照检测变化。它不能启用、停用、添加或移除插件，也不携带历史——已经失败并被移除的 fiber 缺席。由于服务每次调用都读取 Loader，答案总是反映当前组合，而不是缓存视图。
+Loader 清单是供展示与诊断的快照：客户端可以渲染名单、标出失败条目，并通过比较快照检测变化。它不能直接启用或停用任意 Loader 条目，也不携带 Loader 历史——已经失败并被移除的 fiber 缺席。独立的受控方法会通过产品 CLI 执行固定 Profile 操作。隔离卸载残留修复只接受当前 Profile 与服务端持有的诊断身份，然后清理已经停用且不存在插件的陈旧元数据；它不能选择其他软件包或重新安装代码。
 
 -----
 
@@ -93,7 +93,7 @@ Typert 生成由 `./typert` 与 `./remote` 导出的 Host 和 Client Remote 产�
 这些限制说明一个点时刻清单无法告诉客户端什么。它们是当前包约束，不是任务积压。
 
 - **仅表示调用当下**——结果不包含持久的失败历史或订阅；只要不存在存活的根 Fiber，就会报告 `null`，而不区分其原因。
-- **无来源与修改能力**——服务不识别条目由哪个 bundle、profile 或 override 引入，也不能启用、停用、添加或移除插件。
+- **无 Loader 来源与任意修改能力**——名单不识别条目由哪个 bundle 或 override 引入。受控 Profile 操作只接受封闭请求类型，不提供通用 Loader 编辑或命令执行。
 
 <a id="dev-note"></a>
 ### 开发备注

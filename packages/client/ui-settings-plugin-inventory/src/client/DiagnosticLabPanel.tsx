@@ -34,7 +34,9 @@ const SCENARIO_KEYS: Record<DiagnosticLabScenarioId, {
   'host-shadow-compatible': { title: 'lab.scenario.hostCompatible.title', body: 'lab.scenario.hostCompatible.body' },
   'host-shadow-incompatible': { title: 'lab.scenario.hostIncompatible.title', body: 'lab.scenario.hostIncompatible.body' },
   'orphaned-bundle': { title: 'lab.scenario.orphan.title', body: 'lab.scenario.orphan.body' },
+  'quarantine-removal-residue': { title: 'lab.scenario.quarantineRemoval.title', body: 'lab.scenario.quarantineRemoval.body' },
   'client-module-unavailable': { title: 'lab.scenario.clientModule.title', body: 'lab.scenario.clientModule.body' },
+  'loader-package-name-mismatch': { title: 'lab.scenario.loaderPackageNameMismatch.title', body: 'lab.scenario.loaderPackageNameMismatch.body' },
   'module-resolution-missing': { title: 'lab.scenario.module.title', body: 'lab.scenario.module.body' },
   'patch-invalid': { title: 'lab.scenario.patch.title', body: 'lab.scenario.patch.body' },
   'loader-duplicate': { title: 'lab.scenario.duplicate.title', body: 'lab.scenario.duplicate.body' },
@@ -105,7 +107,8 @@ export function DiagnosticLabPanel({
   const chosen = available.filter(scenario => selected.has(scenario.id))
   const running = run?.phase === 'queued' || run?.phase === 'running' || run?.phase === 'restoring'
   const retained = run?.phase === 'active'
-  const occupied = running || retained
+  const recoveryBlocked = run?.recovery === 'failed'
+  const occupied = running || retained || recoveryBlocked
   const progress = run === null || run.totalSteps === 0
     ? 0
     : Math.min(100, Math.round(run.completedSteps / run.totalSteps * 100))
@@ -208,8 +211,13 @@ export function DiagnosticLabPanel({
             >
               {t('lab.export')}
             </Button>
-            {run.phase === 'active' ? (
-              <Button variant="outline" onClick={() => { void restoreAll(run.runId).then(setRun) }}>
+            {run.phase === 'active' || run.recovery === 'failed' ? (
+              <Button variant="outline" onClick={() => {
+                setError(null)
+                void restoreAll(run.runId).then(setRun, (reason: unknown) => {
+                  setError(reason instanceof Error ? reason.message : String(reason))
+                })
+              }}>
                 {t('lab.restoreAll')}
               </Button>
             ) : null}

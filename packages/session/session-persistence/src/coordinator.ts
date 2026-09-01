@@ -335,12 +335,161 @@ function needsLegacyPrefix(event: SessionEvent): boolean {
     case 'user/message':
       return !Object.hasOwn(data, 'id') && Object.hasOwn(data, 'content')
     case 'assistant/message':
-      return !Object.hasOwn(data, 'message') && Object.hasOwn(data, 'content')
-    case 'tool/result':
-      return !Object.hasOwn(data, 'message') && Object.hasOwn(data, 'callId')
+      if (!Object.hasOwn(data, 'message') && Object.hasOwn(data, 'content')) return true
+      return Array.isArray(asRecord(data['message'])?.['content'])
+        && (asRecord(data['message'])?.['content'] as unknown[]).some((block) => {
+          const record = asRecord(block)
+          return record?.['type'] === 'tool-call'
+            && record['id'] === '' && record['name'] === ''
+        })
+    case 'tool/call':
+      return data['callId'] === '' && data['name'] === ''
+    case 'tool/result': {
+      if (!Object.hasOwn(data, 'message') && Object.hasOwn(data, 'callId')) return true
+      const message = asRecord(data['message'])
+      return asRecord(message?.['source'])?.['callId'] === ''
+    }
     default:
       return false
   }
+}
+
+/** Stable identity for an old model response that emitted an empty tool call. */
+function legacyEmptyToolCallId(
+  id: SessionId,
+  seq: number,
+): SessionEvent<'tool/call'>['data']['callId'] {
+  return `legacy-empty-tool-call:${id}:${seq}` as SessionEvent<'tool/call'>['data']['callId']
+}
+
+interface LegacyEmptyToolPair {
+  readonly blockIndex: number
+  readonly callIndex: number
+  readonly resultIndex: number
+  readonly callId: SessionEvent<'tool/call'>['data']['callId']
+  readonly block: Extract<
+    SessionEvent<'assistant/message'>['data']['message']['content'][number],
+    { type: 'tool-call' }
+  >
+  readonly call: SessionEvent<'tool/call'>
+  readonly result: SessionEvent<'tool/result'>
+}
+
+/**
+ * Repair one narrowly identified historical producer defect without accepting
+ * arbitrary malformed tool messages. Affected logs contain an assistant
+ * message whose tool blocks have empty ids and names, immediately followed by
+ * matching empty `tool/call` + `UNKNOWN_TOOL` error-result pairs. No tool body
+ * ran, so assigning stable placeholder identities preserves the failed turn
+ * while making the transcript resumable.
+ *
+ * Any mixed, successful, non-adjacent, or otherwise ambiguous sequence is left
+ * untouched and subsequently rejected by normal session validation.
+ */
+function migrateLegacyEmptyToolCalls(events: readonly SessionEvent[], id: SessionId): SessionEvent[] {
+  let migrated: SessionEvent[] | undefined
+  for (const [assistantIndex, event] of events.entries()) {
+    if (event.type !== 'assistant/message') continue
+    const assistantEvent = event
+    const data = asRecord(assistantEvent.data)
+    const message = asRecord(data?.['message'])
+    const rawContent = message?.['content']
+    if (!Array.isArray(rawContent)) continue
+    const content = assistantEvent.data.message.content
+    const toolBlocks = content
+      .map((block, blockIndex) => ({ block: asRecord(block), blockIndex }))
+      .filter(candidate => candidate.block?.['type'] === 'tool-call')
+    if (toolBlocks.length === 0 || toolBlocks.some(candidate => (
+      candidate.block?.['id'] !== '' || candidate.block['name'] !== ''
+      || typeof candidate.block['arguments'] !== 'string'
+    ))) continue
+
+    const pairs: LegacyEmptyToolPair[] = []
+    for (const [offset, candidate] of toolBlocks.entries()) {
+      const callIndex = assistantIndex + 1 + offset * 2
+      const resultIndex = callIndex + 1
+      const call = events[callIndex]
+      const result = events[resultIndex]
+      if (call?.type !== 'tool/call' || result?.type !== 'tool/result') {
+        pairs.length = 0
+        break
+      }
+      const callEvent = call
+      const resultEvent = result
+      const typedBlock = content[candidate.blockIndex]
+      const callData = asRecord(callEvent.data)
+      const resultData = asRecord(resultEvent.data)
+      const resultMessage = asRecord(resultData?.['message'])
+      const resultSource = asRecord(resultMessage?.['source'])
+      const rawResultContent = resultMessage?.['content']
+      const resultContent: unknown[] | undefined = Array.isArray(rawResultContent)
+        ? rawResultContent
+        : undefined
+      const resultBlock = resultContent === undefined ? undefined : asRecord(resultContent[0])
+      const error = asRecord(resultData?.['error'])
+      if (typedBlock?.type !== 'tool-call'
+        || callData === undefined || resultData === undefined
+        || callData['turn'] !== data?.['turn'] || callData['step'] !== data?.['step']
+        || callData['callId'] !== '' || callData['name'] !== ''
+        || callData['arguments'] !== candidate.block?.['arguments']
+        || resultData['turn'] !== data?.['turn'] || resultData['step'] !== data?.['step']
+        || resultEvent.surfaceOp !== 'append'
+        || resultEvent.sourceEventSeqs?.length !== 1 || resultEvent.sourceEventSeqs[0] !== callEvent.seq
+        || error?.['code'] !== 'UNKNOWN_TOOL'
+        || resultSource?.['kind'] !== 'tool' || resultSource['callId'] !== ''
+        || resultContent === undefined || resultContent.length !== 1
+        || resultBlock?.['type'] !== 'tool-result' || resultBlock['toolCallId'] !== ''
+        || resultBlock['isError'] !== true) {
+        pairs.length = 0
+        break
+      }
+      pairs.push({
+        blockIndex: candidate.blockIndex,
+        callIndex,
+        resultIndex,
+        callId: legacyEmptyToolCallId(id, callEvent.seq),
+        block: typedBlock,
+        call: callEvent,
+        result: resultEvent,
+      })
+    }
+    if (pairs.length !== toolBlocks.length) continue
+
+    migrated ??= [...events]
+    const repairedContent = [...content]
+    for (const pair of pairs) {
+      repairedContent[pair.blockIndex] = {
+        ...pair.block,
+        id: pair.callId,
+        name: 'legacy_invalid_tool',
+      }
+      migrated[pair.callIndex] = {
+        ...pair.call,
+        data: { ...pair.call.data, callId: pair.callId, name: 'legacy_invalid_tool' },
+      }
+      const resultMessage = pair.result.data.message
+      const resultBlock = resultMessage.content[0]
+      migrated[pair.resultIndex] = {
+        ...pair.result,
+        data: {
+          ...pair.result.data,
+          message: {
+            ...resultMessage,
+            source: { ...resultMessage.source, callId: pair.callId },
+            content: [{ ...resultBlock, toolCallId: pair.callId }],
+          },
+        },
+      }
+    }
+    migrated[assistantIndex] = {
+      ...assistantEvent,
+      data: {
+        ...assistantEvent.data,
+        message: { ...assistantEvent.data.message, content: repairedContent },
+      },
+    }
+  }
+  return migrated ?? events as SessionEvent[]
 }
 
 /** Upgrade the removed steering surface event into its current user-message equivalent. */
@@ -548,7 +697,7 @@ function eventMessageId(event: SessionEvent): PersistedMessageId | undefined {
 function snapshotStoredEvents(events: readonly SessionEvent[], id: SessionId): SessionEvent[] {
   assertSupportedEvents(events, id)
   const messageIds = new Map<number, PersistedMessageId>()
-  return events.map((event) => {
+  return migrateLegacyEmptyToolCalls(events, id).map((event) => {
     const migratedStart = migrateLegacyTurnStartEvent(event, id)
     const migratedTurn = migrateLegacyTurnEndEvent(migratedStart, id)
     const migratedSteering = migrateLegacySteeringEvent(migratedTurn, id)
@@ -563,16 +712,17 @@ function snapshotStoredEvents(events: readonly SessionEvent[], id: SessionId): S
 function adoptStoredEvents(events: SessionEvent[], id: SessionId): SessionEvent[] {
   assertSupportedEvents(events, id)
   const messageIds = new Map<number, PersistedMessageId>()
-  for (const [index, event] of events.entries()) {
+  const storedEvents = migrateLegacyEmptyToolCalls(events, id)
+  for (const [index, event] of storedEvents.entries()) {
     const migratedStart = migrateLegacyTurnStartEvent(event, id)
     const migratedTurn = migrateLegacyTurnEndEvent(migratedStart, id)
     const migratedSteering = migrateLegacySteeringEvent(migratedTurn, id)
     const adopted = adoptSessionEvent(migrateLegacyMessageEvent(migratedSteering, id, messageIds))
-    events[index] = adopted
+    storedEvents[index] = adopted
     const messageId = eventMessageId(adopted)
     if (messageId !== undefined) messageIds.set(adopted.seq, messageId)
   }
-  return events
+  return storedEvents
 }
 
 /**

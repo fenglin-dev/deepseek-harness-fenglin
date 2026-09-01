@@ -1,0 +1,15 @@
+{
+  "name": "@dsh-diagnostic-lab/scoped-loader-mismatch",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": "./index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

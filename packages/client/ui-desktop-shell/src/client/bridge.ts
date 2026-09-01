@@ -18,6 +18,44 @@ export interface DesktopCapabilities {
   commandLineAvailable: boolean
 }
 
+/** Active Harness home and the two built-in switch targets. */
+export interface DesktopDataHomeStatus {
+  activePath: string
+  activeKind: 'desktop' | 'official' | 'custom' | 'external'
+  desktopPath: string
+  officialPath: string
+  officialAvailable: boolean
+  managedExternally: boolean
+}
+
+/** Native directory-picker result; only its opaque id can be activated. */
+export type DesktopDataHomeSelectionResult =
+  | { status: 'cancelled' }
+  | { status: 'invalid' | 'not-empty' | 'unreadable'; path: string }
+  | {
+    status: 'selected'
+    selectionKind: DesktopDataHomeSelectionKind
+    selectionId: string
+    path: string
+    entries: readonly string[]
+  }
+
+/** Fixed native-picker validation mode selected by the settings UI. */
+export type DesktopDataHomeSelectionKind = 'existing' | 'empty'
+
+/** Allowlisted switch target accepted by the Electron main process. */
+export type DesktopDataHomeSwitchRequest =
+  | { kind: 'desktop' }
+  | { kind: 'official' }
+  | { kind: 'custom'; selectionId: string }
+  | { kind: 'create'; selectionId: string }
+
+/** Restart state after persisting one data-home choice. */
+export interface DesktopDataHomeSwitchResult {
+  restarting: boolean
+  activePath: string
+}
+
 /** Desktop-owned terminal command state mirrored from the Electron main process. */
 export interface DesktopCliStatus {
   phase: 'unsupported' | 'uninstalled' | 'installed' | 'conflict' | 'broken' | 'setup-required' | 'unsupported-shell'
@@ -56,6 +94,9 @@ export type DesktopReleaseDownloadStatus =
 /** Preference and fixed-log operations exposed by the preload. */
 export interface DesktopShellBridge {
   getCapabilities(): Promise<DesktopCapabilities>
+  getDataHome(): Promise<DesktopDataHomeStatus>
+  chooseDataHome(kind: DesktopDataHomeSelectionKind): Promise<DesktopDataHomeSelectionResult>
+  switchDataHome(request: DesktopDataHomeSwitchRequest): Promise<DesktopDataHomeSwitchResult>
   getPreferences(): Promise<DesktopPreferences>
   updatePreferences(patch: Partial<DesktopPreferences>): Promise<DesktopPreferences>
   onPreferences(callback: (preferences: DesktopPreferences) => void): () => void

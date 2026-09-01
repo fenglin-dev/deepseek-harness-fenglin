@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeepSeek Harness</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    html { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      -webkit-app-region: drag;
+      align-items: center;
+      background: #fff;
+      border-bottom: 1px solid rgb(0 0 0 / 10%);
+      color: #171719;
+      display: flex;
+      font-family: "Segoe UI", sans-serif;
+      height: 36px;
+      margin: 0;
+      overflow: hidden;
+      user-select: none;
+      width: 100%;
+    }
+    #dsh-desktop-titlebar-title {
+      flex: 1;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 36px;
+      min-width: 0;
+      overflow: hidden;
+      padding: 0 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #dsh-desktop-window-controls {
+      -webkit-app-region: no-drag;
+      align-self: stretch;
+      display: flex;
+    }
+    .dsh-desktop-window-control {
+      appearance: none;
+      background: transparent;
+      border: 0;
+      color: inherit;
+      height: 36px;
+      margin: 0;
+      outline: none;
+      padding: 0;
+      position: relative;
+      width: 46px;
+    }
+    .dsh-desktop-window-control:hover { background: rgb(0 0 0 / 8%); }
+    .dsh-desktop-window-control:focus-visible { box-shadow: inset 0 0 0 2px #4176e6; }
+    .dsh-desktop-window-control[data-action="close"]:hover { background: #c42b1c; color: #fff; }
+    .dsh-desktop-window-control::before,
+    .dsh-desktop-window-control::after {
+      border-top: 1px solid currentColor;
+      box-sizing: border-box;
+      content: "";
+      left: 50%;
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+    }
+    .dsh-desktop-window-control[data-action="minimize"]::before { width: 10px; }
+    .dsh-desktop-window-control[data-action="maximize"]::before { border: 1px solid currentColor; height: 10px; width: 10px; }
+    .dsh-desktop-window-control[data-action="maximize"]::after { display: none; }
+    .dsh-desktop-window-control[data-action="maximize"][data-maximized="true"]::before {
+      height: 8px; margin: 1px 0 0 -1px; width: 8px;
+    }
+    .dsh-desktop-window-control[data-action="maximize"][data-maximized="true"]::after {
+      border: 1px solid currentColor; display: block; height: 8px; margin: -2px 0 0 2px; width: 8px;
+    }
+    .dsh-desktop-window-control[data-action="close"]::before,
+    .dsh-desktop-window-control[data-action="close"]::after { width: 12px; }
+    .dsh-desktop-window-control[data-action="close"]::before { transform: translate(-50%, -50%) rotate(45deg); }
+    .dsh-desktop-window-control[data-action="close"]::after { transform: translate(-50%, -50%) rotate(-45deg); }
+    @media (prefers-color-scheme: dark) {
+      body { background: #202024; border-bottom-color: rgb(255 255 255 / 10%); color: #f4f4f5; }
+      .dsh-desktop-window-control:hover { background: rgb(255 255 255 / 10%); }
+    }
+  </style>
+</head>
+<body>
+  <header id="dsh-desktop-titlebar-title">DeepSeek Harness</header>
+  <div id="dsh-desktop-window-controls">
+    <button class="dsh-desktop-window-control" data-action="minimize" type="button"></button>
+    <button class="dsh-desktop-window-control" data-action="maximize" data-maximized="false" type="button"></button>
+    <button class="dsh-desktop-window-control" data-action="close" type="button"></button>
+  </div>
+</body>
+</html>

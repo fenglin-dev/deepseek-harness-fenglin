@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/archived/bug-fix/2026-08-29-windows-custom-titlebar-content-bounds.md
+2026-08-29-windows-custom-titlebar-content-bounds.md: e7c82fd45260ca46ef5f76bf39ed9326906bffa6
+2026-08-29-windows-custom-titlebar-content-bounds.zh.md: 2b4284d121697ed3c4dbeecfa57699af7fe15dcc

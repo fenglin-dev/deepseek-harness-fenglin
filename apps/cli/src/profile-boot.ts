@@ -14,6 +14,7 @@
 import { existsSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -31,6 +32,7 @@ import {
   createProfileDiagnosticReport,
   readProfileDiagnosticReport,
   readProfileManifest,
+  inspectUnresolvableProfileBundleEntries,
   quarantineProfilePluginAfterLoadFailure,
   repairProfileDependencies,
   resolveProfileDir,
@@ -40,6 +42,7 @@ import {
   writeProfileDiagnosticReport,
   type Profile,
   type ProfileDiagnostic,
+  type UnresolvableProfileBundleEntry,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -97,6 +100,17 @@ const PROFILE_ROOT_CONFIG = `# dsh profile root — an empty entry list. The tre
 
 /** Root config filename inside a profile directory. */
 export const PROFILE_ROOT_FILENAME = 'cordis.yml'
+
+/**
+ * Return the installation-maintained shared module fallback anchor used by a
+ * diagnostic Profile. It intentionally sits above the active Profile so bare
+ * imports cannot see that Profile's third-party node_modules.
+ * @param profileDir - Absolute active Profile directory.
+ * @returns File URL whose parent lookup begins at `$DSH_HOME/profiles/node_modules`.
+ */
+export function diagnosticProfileModuleBaseUrl(profileDir: string): string {
+  return pathToFileURL(join(profileDir, '..', 'package.json')).href
+}
 
 /**
  * Resolve the telemetry opt-out switch into its boot patch. ANY non-empty
@@ -327,7 +341,7 @@ function startupFailurePhase(error: unknown) {
   return 'compose' as const
 }
 
-const LOADER_IMPORT_FAILURE = /failed to import loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/iu
+const LOADER_IMPORT_FAILURE = /failed to import loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/giu
 const CLIENT_MODULE_UNAVAILABLE = new RegExp(
   String.raw`client-modules:\s*require\([^\r\n]+\).*?`
   + String.raw`(?:missed the module table|not a materialized module|no registered package factory)`,
@@ -353,16 +367,17 @@ function startupErrorChain(error: unknown): string {
 }
 
 /**
- * Attribute a synchronous client module-table failure to its Loader entry.
+ * Attribute the deepest synchronous Loader module-resolution failure.
  * @param error - startup exception and optional cause chain.
- * @returns the Loader identity only when the diagnostic proves a missing client module supplier.
+ * @returns the Loader identity only when the cause chain proves a missing module.
  */
 export function loaderClientModuleFailure(
   error: unknown,
 ): { readonly entryId: string; readonly moduleName: string } | undefined {
   const diagnostic = startupErrorChain(error)
-  if (!CLIENT_MODULE_UNAVAILABLE.test(diagnostic)) return undefined
-  const match = LOADER_IMPORT_FAILURE.exec(diagnostic)
+  if (!CLIENT_MODULE_UNAVAILABLE.test(diagnostic)
+    && !/ERR_MODULE_NOT_FOUND|Cannot find (?:package|module)/iu.test(diagnostic)) return undefined
+  const match = [...diagnostic.matchAll(LOADER_IMPORT_FAILURE)].at(-1)
   if (match?.[1] === undefined || match[2] === undefined) return undefined
   return { entryId: match[1], moduleName: match[2] }
 }
@@ -492,7 +507,7 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
       exit: code => void shutdown.shutdown(code),
       ready: appReady.service,
     })
-  }, safeMode ? INSTALL_ANCHOR : undefined)
+  }, safeMode ? diagnosticProfileModuleBaseUrl(composed.profile.dir) : undefined)
   app.current = ctx
   if (safeMode) {
     const current = readProfileDiagnosticReport(options.profile)
@@ -566,10 +581,21 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     return await runProfileAttempt(options)
   } catch (error) {
     const loaderFailure = options.safeMode === true ? undefined : loaderClientModuleFailure(error)
-    const externalBundle = loaderFailure !== undefined
-      && configuredExternalBundles(options.profile).includes(loaderFailure.moduleName)
-      ? loaderFailure.moduleName
-      : undefined
+    let ownedFailure: UnresolvableProfileBundleEntry | undefined
+    try {
+      ownedFailure = loaderFailure === undefined ? undefined : inspectUnresolvableProfileBundleEntries({
+        binName: NAME,
+        profile: options.profile,
+        installAnchor: INSTALL_ANCHOR,
+      }).find(failure => failure.entryId === loaderFailure.entryId && failure.moduleName === loaderFailure.moduleName)
+    } catch {
+      ownedFailure = undefined
+    }
+    const externalBundle = ownedFailure?.rootPackage ?? (
+      loaderFailure !== undefined && configuredExternalBundles(options.profile).includes(loaderFailure.moduleName)
+        ? loaderFailure.moduleName
+        : undefined
+    )
     const issue = classifyProfileDiagnostic({
       source: options.safeMode === true ? 'runtime' : 'profile',
       phase: startupFailurePhase(error),
@@ -593,7 +619,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         profile: options.profile,
         installAnchor: INSTALL_ANCHOR,
         runPackageManager: args => runProfilePackageManager(profileDir, args),
-      }, externalBundle, issue)
+      }, externalBundle, issue, ownedFailure === undefined ? 'client-module-unavailable' : 'loader-module-unresolvable')
       quarantined = outcome.status === 'quarantined'
       if (quarantined) {
         process.stderr.write(`${NAME}: quarantined startup-incompatible plugin ${JSON.stringify({

@@ -56,7 +56,7 @@ export interface PluginQuarantineRecord {
   readonly packageSpec: string
   readonly installedVersion?: string
   readonly quarantinedAt: string
-  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable'
+  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable'
   readonly buildApprovalKey?: string
   readonly conflicts: readonly PluginDependencyConflict[]
 }

@@ -3,7 +3,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import {
-  mkdir, readFile, readdir, rename, rm, stat, writeFile,
+  lstat, mkdir, readFile, readdir, readlink, rename, rm, stat, unlink, writeFile,
 } from 'node:fs/promises'
 import {
   dirname, isAbsolute, join, relative, resolve, sep,
@@ -15,7 +15,9 @@ export type DiagnosticLabScenarioId =
   | 'host-shadow-compatible'
   | 'host-shadow-incompatible'
   | 'orphaned-bundle'
+  | 'quarantine-removal-residue'
   | 'client-module-unavailable'
+  | 'loader-package-name-mismatch'
   | 'module-resolution-missing'
   | 'patch-invalid'
   | 'loader-duplicate'
@@ -121,9 +123,12 @@ export interface DiagnosticLabManagerOptions {
   readonly logDirectory: string
   suspendHarness(): Promise<void>
   resumeHarness(): void
-  installProfile(home: string): Promise<void>
+  installProfile(home: string, force: boolean): Promise<void>
   /** Install one closed, integrity-checked diagnostic resource through the product CLI. */
-  installDiagnosticPlugin(home: string, packageName: 'dsh-font'): Promise<void>
+  installDiagnosticPlugin(
+    home: string,
+    packageName: 'dsh-font' | '@dsh-diagnostic-lab/scoped-loader-mismatch',
+  ): Promise<void>
   runDoctor(home: string, repair: boolean): Promise<DiagnosticLabDoctorResult>
   onSnapshot(snapshot: DiagnosticLabRunSnapshot): void
   readonly now?: () => Date
@@ -137,6 +142,8 @@ const SCENARIOS: readonly DiagnosticLabScenario[] = [
   { id: 'host-shadow-compatible', title: 'Compatible Host shadow copy', description: 'Detects a second physical Host package that can converge to the bundled runtime.', expectedCode: 'profile.host-dependency-conflict', targets: ['isolated', 'active-profile'] },
   { id: 'host-shadow-incompatible', title: 'Incompatible Host dependency', description: 'Traces an incompatible dsh-tools edge and verifies quarantine.', expectedCode: 'profile.host-dependency-conflict', targets: ['isolated', 'active-profile'] },
   { id: 'orphaned-bundle', title: 'Orphaned Loader bundle', description: 'Finds a bundle retained after its manageable dependency disappeared.', expectedCode: 'profile.orphaned-bundle', targets: ['isolated', 'active-profile'] },
+  { id: 'quarantine-removal-residue', title: 'Incomplete quarantine removal', description: 'Recreates a legacy uninstall that removed the plugin and quarantine record but left derived Profile state, then verifies bounded cleanup.', expectedCode: 'profile.quarantine-removal-residue', targets: ['isolated', 'active-profile'] },
+  { id: 'loader-package-name-mismatch', title: 'Scoped Loader package-name mismatch', description: 'Installs a safe scoped package whose Bundle Patch names a missing unscoped module, then verifies immediate attribution and quarantine.', expectedCode: 'profile.module-resolution', targets: ['isolated', 'active-profile'] },
   { id: 'client-module-unavailable', title: 'Packaged dsh-font client incompatibility', description: 'Installs the packaged dsh-font 1.1.0 fixture and verifies that the real browser boot path quarantines it without blocking the main UI.', expectedCode: 'profile.module-resolution', targets: ['active-profile'] },
   { id: 'module-resolution-missing', title: 'Missing plugin module', description: 'Attributes a missing module directory to the owning plugin.', expectedCode: 'profile.module-resolution', targets: ['isolated'] },
   { id: 'patch-invalid', title: 'Invalid Profile patch', description: 'Locates malformed Profile YAML without touching the user patch.', expectedCode: 'profile.patch-invalid', targets: ['isolated'] },
@@ -151,7 +158,12 @@ const PRODUCTION_REPAIR_STATUS = {
   'host-shadow-compatible': 'repaired',
   'host-shadow-incompatible': 'quarantined',
   'orphaned-bundle': 'quarantined',
+  'quarantine-removal-residue': 'repaired',
 } as const
+const PRODUCTION_DOCTOR_SCENARIOS = Object.keys(PRODUCTION_REPAIR_STATUS) as Array<
+  keyof typeof PRODUCTION_REPAIR_STATUS
+>
+const DIAGNOSTIC_PACKAGE_SCOPE = '@dsh-diagnostic-lab'
 const MANAGED_PROFILE_FILES = [
   'profiles/web/package.json',
   'profiles/web/pnpm-workspace.yaml',
@@ -167,6 +179,8 @@ const FIXTURES: Record<DiagnosticLabScenarioId, ScenarioFixture> = {
   'host-shadow-compatible': { code: 'profile.host-dependency-conflict', file: 'node_modules/fixture/node_modules/@deepseek-ai/cordis/package.json', content: '{"name":"@deepseek-ai/cordis","version":"3.0.0","diagnostic":"compatible-shadow"}\n', checksum: '3296df1dc0d4d57df1e453f70f757c469010409d3a81da5b229238116edcdf8f', repairedContent: '{"linkedTo":"$HOST"}\n' },
   'host-shadow-incompatible': { code: 'profile.host-dependency-conflict', file: 'node_modules/fixture/node_modules/@deepseek-ai/dsh-tools/package.json', content: '{"name":"@deepseek-ai/dsh-tools","version":"0.0.0-diagnostic","diagnostic":"incompatible-shadow"}\n', checksum: '03d594435d63e8791fa1ca3732ec08e2206a170c148ade9374fb96e3aacd36ee', repairedContent: '{"quarantined":true}\n' },
   'orphaned-bundle': { code: 'profile.orphaned-bundle', file: 'profile/orphaned-bundle.json', content: '{"bundle":"@hecoococ/dsh-lab-orphan","dependency":false}\n', checksum: 'd87932d81021cb20134cfed70aa15bff6ac11cea20304e17dd54382fa91d5e26', repairedContent: '{"bundles":[]}\n' },
+  'quarantine-removal-residue': { code: 'profile.quarantine-removal-residue', file: 'profile/quarantine-removal-residue.json', content: '{"package":"@dsh-diagnostic-lab/quarantine-removal-residue","state":"legacy-uninstall-residue"}\n', checksum: 'fabaf15aaf1b81b1a5b018761927a15a60f823153692439c2b23c5256fe5921b', repairedContent: '{"removed":true}\n' },
+  'loader-package-name-mismatch': { code: 'profile.module-resolution', file: 'profile/scoped-loader-mismatch.json', content: '{"package":"@dsh-diagnostic-lab/scoped-loader-mismatch","version":"1.0.0"}\n', checksum: '891275ddb0053315f3d9ec6f90aa0d7cbee3a5720364d3a8fd10122ff3104967' },
   'client-module-unavailable': { code: 'profile.module-resolution', file: 'profile/dsh-font.json', content: '{"package":"dsh-font","version":"1.1.0","source":"packaged-diagnostic"}\n', checksum: 'ff3cf467522316802d16c7ad88863be9becc9789b2e61f94b121c44e786ffec7' },
   'module-resolution-missing': { code: 'profile.module-resolution', file: 'profile/missing-module.json', content: '{"module":"@hecoococ/dsh-lab-missing","exists":false}\n', checksum: '089ed0ccd5e318ad94cae5ea48017bc946676bfa6f4a66e041740369fbc2f221', repairedContent: '{"disabled":true}\n' },
   'patch-invalid': { code: 'profile.patch-invalid', file: 'profile/cordis.patch.yml', content: '- id: diagnostic-lab\n  config: [unterminated\n', checksum: '69ba3a95f37f79f029ade77436be37cb78c1b8d03c57d9133ae37eab3ea61dd5', repairedContent: '[]\n' },
@@ -205,6 +219,10 @@ function describeUnknown(value: unknown): string {
   }
 }
 
+function unknownArray(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value as readonly unknown[] : []
+}
+
 function isTarget(value: unknown): value is DiagnosticLabTarget {
   return value === 'isolated' || value === 'active-profile'
 }
@@ -221,6 +239,55 @@ async function atomicWrite(path: string, content: string): Promise<void> {
   const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`
   await writeFile(temporary, content, { flag: 'wx', mode: 0o600 })
   await rename(temporary, path)
+}
+
+async function removeWithoutFollowing(path: string): Promise<void> {
+  let metadata
+  try {
+    metadata = await lstat(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  if (metadata.isSymbolicLink()) {
+    await unlink(path)
+    return
+  }
+  await rm(path, { recursive: true, force: true })
+}
+
+async function treeLinksToRun(root: string, runId: string): Promise<boolean> {
+  const runMarker = runId.slice(0, 16)
+  const pending = [root]
+  for (let directory = pending.pop(); directory !== undefined; directory = pending.pop()) {
+    let entries
+    try {
+      entries = await readdir(directory, { withFileTypes: true })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      throw error
+    }
+    for (const entry of entries) {
+      const path = join(directory, entry.name)
+      if (entry.isSymbolicLink()) {
+        const target = await readlink(path)
+        if (target.includes('diagnostic-fixtures') && target.includes(runMarker)) return true
+      } else if (entry.isDirectory()) {
+        pending.push(path)
+      }
+    }
+  }
+  return false
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
 }
 
 function cloneSnapshot(snapshot: DiagnosticLabRunSnapshot): DiagnosticLabRunSnapshot {
@@ -282,12 +349,21 @@ export class DiagnosticLabManager {
       if (!entry.isDirectory()) continue
       const runRoot = join(runsRoot, entry.name)
       const journal = await this.#readJournal(runRoot)
-      if (journal?.state === 'clean') continue
+      if (journal?.state === 'clean' && !await this.#hasRunResidue(journal)) continue
       if (journal?.schema === 2 && journal.state === 'active') {
         retained.push(await this.#readReport(runRoot))
         continue
       }
-      if (journal !== undefined) await this.#restoreRun(runRoot, journal)
+      if (journal !== undefined) {
+        try {
+          await this.#restoreRun(runRoot, { ...journal, state: 'restoring' })
+        } catch (error) {
+          const failed = await this.#recoveryFailureSnapshot(runRoot, journal, error)
+          this.#active = failed
+          this.#publish(failed)
+          return
+        }
+      }
     }
     if (retained.length > 1) {
       throw new Error('desktop: multiple retained diagnostic lab runs require manual recovery')
@@ -299,7 +375,10 @@ export class DiagnosticLabManager {
 
   /** Start one validated serial run and return its initial state. */
   start(request: DiagnosticLabStartRequest): DiagnosticLabRunSnapshot {
-    if (this.#active !== undefined && ['queued', 'running', 'active', 'restoring'].includes(this.#active.phase)) {
+    if (this.#active !== undefined && (
+      ['queued', 'running', 'active', 'restoring'].includes(this.#active.phase)
+      || this.#active.recovery === 'failed'
+    )) {
       throw new Error('desktop: another diagnostic lab run is active')
     }
     if (!isTarget(request.target)) {
@@ -368,12 +447,12 @@ export class DiagnosticLabManager {
   async restoreAll(runId: string): Promise<DiagnosticLabRunSnapshot> {
     const snapshot = this.get(runId)
     if (snapshot.phase === 'restored') return snapshot
-    if (snapshot.phase !== 'active') {
+    if (snapshot.phase !== 'active' && snapshot.recovery !== 'failed') {
       throw new Error('desktop: diagnostic lab run is not awaiting restoration')
     }
     const runRoot = join(this.#options.root, 'runs', runId)
     const journal = await this.#readJournal(runRoot)
-    if (journal?.schema !== 2 || (journal.state !== 'active' && journal.state !== 'restoring')) {
+    if (journal?.schema !== 2 || !['active', 'restoring', 'clean'].includes(journal.state)) {
       throw new Error('desktop: retained diagnostic recovery journal is unavailable')
     }
     this.#replace({ ...snapshot, phase: 'restoring', recovery: 'recovering' })
@@ -399,6 +478,10 @@ export class DiagnosticLabManager {
       }
       await this.#writeReport(runRoot, restored)
       this.#replace(restored)
+      if (suspended) {
+        this.#options.resumeHarness()
+        suspended = false
+      }
       return cloneSnapshot(restored)
     } catch (error) {
       const failed: DiagnosticLabRunSnapshot = {
@@ -410,8 +493,6 @@ export class DiagnosticLabManager {
       await this.#writeReport(runRoot, failed)
       this.#replace(failed)
       throw error
-    } finally {
-      if (suspended) this.#options.resumeHarness()
     }
   }
 
@@ -449,6 +530,8 @@ export class DiagnosticLabManager {
             this.#options.resumeHarness()
             suspended = false
           })
+        } else if (scenarioId === 'loader-package-name-mismatch') {
+          await this.#runLoaderPackageNameMismatchScenario(runRoot)
         } else {
           await this.#runScenario(runRoot, scenarioId)
         }
@@ -482,6 +565,10 @@ export class DiagnosticLabManager {
     let recovery: DiagnosticLabRecoveryState = 'recovering'
     let recoveryFailure: unknown
     try {
+      if (initial.target === 'active-profile' && !suspended) {
+        await this.#options.suspendHarness()
+        suspended = true
+      }
       await this.#writeJournal(runRoot, { ...journal, state: 'restoring' })
       await this.#restoreRun(runRoot, { ...journal, state: 'restoring' })
       recovery = 'clean'
@@ -489,9 +576,10 @@ export class DiagnosticLabManager {
       recovery = 'failed'
       recoveryFailure = error
     }
-    if (suspended) {
+    if (suspended && recovery === 'clean') {
       try {
         this.#options.resumeHarness()
+        suspended = false
       } catch (error) {
         recovery = 'failed'
         recoveryFailure ??= error
@@ -510,6 +598,71 @@ export class DiagnosticLabManager {
     }
     await this.#writeReport(runRoot, terminalSnapshot)
     this.#replace(terminalSnapshot)
+  }
+
+  /** Install the scoped mismatch fixture through the normal CLI and verify immediate quarantine. */
+  async #runLoaderPackageNameMismatchScenario(runRoot: string): Promise<void> {
+    const scenarioId = 'loader-package-name-mismatch' as const
+    const fixture = FIXTURES[scenarioId]
+    const active = this.#requireActive()
+    const home = active.target === 'active-profile'
+      ? this.#options.activeDshHome
+      : join(runRoot, 'runtime', 'doctor-homes', scenarioId)
+    const scenarioRoot = active.target === 'active-profile'
+      ? join(home, 'profiles', 'web', '.diagnostic-lab', active.runId, scenarioId)
+      : join(runRoot, 'runtime', 'scenarios', scenarioId)
+    const boundary = active.target === 'active-profile'
+      ? join(home, 'profiles', 'web', '.diagnostic-lab')
+      : join(runRoot, 'runtime')
+    assertInside(boundary, scenarioRoot)
+    const fixturePath = join(scenarioRoot, fixture.file)
+    const packageName = '@dsh-diagnostic-lab/scoped-loader-mismatch' as const
+    const started = Date.now()
+    let actualCode: string | undefined
+    try {
+      await this.#step(scenarioId, 'baseline')
+      if (existsSync(scenarioRoot)) throw new Error('diagnostic scenario baseline contains stale files')
+      await this.#step(scenarioId, 'inject')
+      await atomicWrite(fixturePath, fixture.content)
+      if (sha256(await readFile(fixturePath)) !== fixture.checksum) {
+        throw new Error('diagnostic fixture integrity check failed')
+      }
+      await this.#options.installDiagnosticPlugin(home, packageName)
+      await this.#step(scenarioId, 'detect')
+      if (!await this.#hasQuarantine(home, packageName, 'loader-module-unresolvable')) {
+        throw new Error('scoped Loader mismatch was not quarantined by post-install preflight')
+      }
+      actualCode = fixture.code
+      await this.#step(scenarioId, 'repair')
+      await this.#step(scenarioId, 'verify')
+      const doctor = await this.#options.runDoctor(home, false)
+      if (!['healthy', 'repaired', 'quarantined'].includes(doctor.status)) {
+        throw new Error(`Profile remained unhealthy after scoped Loader quarantine: ${doctor.status}`)
+      }
+      await this.#step(scenarioId, 'retain')
+      this.#appendResult({
+        scenarioId,
+        phase: 'passed',
+        expectedCode: fixture.code,
+        actualCode,
+        repaired: true,
+        retained: true,
+        disposition: 'quarantined',
+        durationMs: Date.now() - started,
+      })
+    } catch (error) {
+      this.#appendResult({
+        scenarioId,
+        phase: this.#cancelled.has(active.runId) ? 'cancelled' : 'failed',
+        expectedCode: fixture.code,
+        ...(actualCode === undefined ? {} : { actualCode }),
+        repaired: false,
+        retained: existsSync(scenarioRoot),
+        durationMs: Date.now() - started,
+        diagnostic: sanitize(describeUnknown(error), this.#options.activeDshHome),
+      })
+      throw error
+    }
   }
 
   async #runScenario(runRoot: string, scenarioId: DiagnosticLabScenarioId): Promise<void> {
@@ -541,7 +694,12 @@ export class DiagnosticLabManager {
         throw new Error('diagnostic fixture integrity check failed')
       }
       const productionFixture = this.#options.productionDoctorFixtures !== false
-        && ['host-shadow-compatible', 'host-shadow-incompatible', 'orphaned-bundle'].includes(scenarioId)
+        && [
+          'host-shadow-compatible',
+          'host-shadow-incompatible',
+          'orphaned-bundle',
+          'quarantine-removal-residue',
+        ].includes(scenarioId)
       if (productionFixture) await this.#stageProductionDoctorFixture(doctorHome, scenarioId)
       await this.#step(scenarioId, 'detect')
       const inspected = await this.#options.runDoctor(doctorHome, false)
@@ -563,8 +721,7 @@ export class DiagnosticLabManager {
       const expectedDisposition = productionFixture
         ? PRODUCTION_REPAIR_STATUS[scenarioId as keyof typeof PRODUCTION_REPAIR_STATUS]
         : undefined
-      if ((productionFixture && expectedDisposition === 'repaired' && verified.issueCodes.includes(fixture.code))
-        || (productionFixture && expectedDisposition === 'quarantined' && !verified.issueCodes.includes(fixture.code))
+      if ((productionFixture && verified.issueCodes.includes(fixture.code))
         || (!productionFixture && await this.#detectScenario(fixturePath, fixture) === fixture.code)) {
         throw new Error(`diagnostic scenario ${scenarioId} remained unhealthy after repair`)
       }
@@ -666,8 +823,11 @@ export class DiagnosticLabManager {
   }
 
   async #hasClientModuleQuarantine(packageName: 'dsh-font'): Promise<boolean> {
+    return await this.#hasQuarantine(this.#options.activeDshHome, packageName, 'client-module-unavailable')
+  }
+
+  async #hasQuarantine(home: string, packageName: string, reason: string): Promise<boolean> {
     try {
-      const home = this.#options.activeDshHome
       const quarantine = JSON.parse(await readFile(join(home, 'quarantine', 'profile-plugins.json'), 'utf8')) as {
         plugins?: Array<{ packageName?: unknown; reason?: unknown }>
       }
@@ -681,11 +841,11 @@ export class DiagnosticLabManager {
         dsh?: { profile?: { bundles?: unknown[] } }
       }
       const durableRecord = quarantine.plugins?.some(record => (
-        record.packageName === packageName && record.reason === 'client-module-unavailable'
+        record.packageName === packageName && record.reason === reason
       )) === true
       const durableReport = report.status === 'quarantined'
         && report.quarantined?.some(record => (
-          record.packageName === packageName && record.reason === 'client-module-unavailable'
+          record.packageName === packageName && record.reason === reason
         )) === true
         && report.issues?.some(issue => (
           issue.code === 'profile.module-resolution' && issue.attribution?.rootPackage === packageName
@@ -699,7 +859,115 @@ export class DiagnosticLabManager {
     }
   }
 
+  async #stageQuarantineRemovalResidue(home: string): Promise<void> {
+    const profileDir = join(home, 'profiles', 'web')
+    const packageName = '@dsh-diagnostic-lab/quarantine-removal-residue'
+    const manifest = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, unknown>
+      dsh?: { profile?: { bundles?: unknown[] } }
+    }
+    if (manifest.dependencies?.[packageName] !== undefined
+      || manifest.dsh?.profile?.bundles?.includes(packageName) === true
+      || existsSync(join(profileDir, 'node_modules', packageName, 'package.json'))) {
+      throw new Error('diagnostic quarantine-removal fixture package is unexpectedly active')
+    }
+
+    const quarantinePath = join(home, 'quarantine', 'profile-plugins.json')
+    if (existsSync(quarantinePath)) {
+      const durable = JSON.parse(await readFile(quarantinePath, 'utf8')) as {
+        plugins?: Array<{ packageName?: unknown }>
+      }
+      if (durable.plugins?.some(record => record.packageName === packageName) === true) {
+        throw new Error('diagnostic quarantine-removal fixture is still durably quarantined')
+      }
+    }
+
+    const now = (this.#options.now ?? (() => new Date()))().toISOString()
+    const quarantineId = this.#requireActive().runId
+    const staleIssue = {
+      diagnosticId: randomUUID(),
+      code: 'profile.module-resolution',
+      source: 'profile',
+      phase: 'repair',
+      severity: 'blocked',
+      attribution: { rootPackage: packageName },
+      actions: ['restore', 'export'],
+      evidence: ['legacy quarantine uninstall left derived Profile state'],
+    }
+    const staleRecord = {
+      quarantineId,
+      profile: 'web',
+      packageName,
+      packageSpec: '1.0.0',
+      installedVersion: '1.0.0',
+      bundleIndex: 0,
+      quarantinedAt: now,
+      reason: 'client-module-unavailable',
+      conflicts: [],
+    }
+    const repairPath = join(home, 'profile-health', 'web.json')
+    const previousRepair = existsSync(repairPath)
+      ? JSON.parse(await readFile(repairPath, 'utf8')) as Record<string, unknown>
+      : undefined
+    if (previousRepair !== undefined && previousRepair.schema !== 'dsh/profile-dependency-repair/v1') {
+      throw new Error('diagnostic quarantine-removal fixture found an unsupported repair report')
+    }
+    await atomicWrite(repairPath, `${JSON.stringify({
+      ...previousRepair,
+      schema: 'dsh/profile-dependency-repair/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      status: 'quarantined',
+      conflicts: unknownArray(previousRepair?.conflicts),
+      orphanedBundles: unknownArray(previousRepair?.orphanedBundles),
+      quarantined: [
+        ...unknownArray(previousRepair?.quarantined),
+        staleRecord,
+      ],
+      issues: [
+        ...unknownArray(previousRepair?.issues),
+        staleIssue,
+      ],
+    }, undefined, 2)}\n`)
+
+    const diagnosticPath = join(home, 'profile-health', 'web.diagnostics.json')
+    const previousDiagnostic = existsSync(diagnosticPath)
+      ? JSON.parse(await readFile(diagnosticPath, 'utf8')) as Record<string, unknown>
+      : undefined
+    if (previousDiagnostic !== undefined && previousDiagnostic.schema !== 'dsh/profile-diagnostic/v2') {
+      throw new Error('diagnostic quarantine-removal fixture found an unsupported diagnostic report')
+    }
+    await atomicWrite(diagnosticPath, `${JSON.stringify({
+      ...previousDiagnostic,
+      schema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      generatedAt: now,
+      status: 'issues',
+      issues: [
+        ...unknownArray(previousDiagnostic?.issues),
+        staleIssue,
+      ],
+    }, undefined, 2)}\n`)
+
+    const lockfilePath = join(profileDir, 'pnpm-lock.yaml')
+    const lockfile = parseDocument(existsSync(lockfilePath)
+      ? await readFile(lockfilePath, 'utf8')
+      : "lockfileVersion: '9.0'\n\nimporters:\n  .: {}\n")
+    if (lockfile.errors.length > 0) {
+      throw new Error(`diagnostic fixture lockfile is invalid: ${lockfile.errors[0]?.message ?? 'unknown YAML error'}`)
+    }
+    lockfile.setIn(['importers', '.', 'dependencies', packageName], {
+      specifier: '1.0.0',
+      version: '1.0.0',
+    })
+    await atomicWrite(lockfilePath, lockfile.toString())
+  }
+
   async #stageProductionDoctorFixture(home: string, scenarioId: DiagnosticLabScenarioId): Promise<void> {
+    if (scenarioId === 'quarantine-removal-residue') {
+      await this.#stageQuarantineRemovalResidue(home)
+      return
+    }
     const profileDir = join(home, 'profiles', 'web')
     const manifestPath = join(profileDir, 'package.json')
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
@@ -709,13 +977,7 @@ export class DiagnosticLabManager {
     const packageName = `@dsh-diagnostic-lab/${scenarioId}`
     const fixtureRoot = join(home, 'diagnostic-fixtures', this.#requireActive().runId)
     const fixtureDir = join(fixtureRoot, scenarioId)
-    const shadowDir = join(fixtureRoot, `${scenarioId}-dsh-tools`)
-    if (scenarioId !== 'orphaned-bundle') {
-      await atomicWrite(join(shadowDir, 'package.json'), `${JSON.stringify({
-        name: '@deepseek-ai/dsh-tools',
-        version: '0.0.0-diagnostic',
-      }, undefined, 2)}\n`)
-    }
+    const installedDir = join(profileDir, 'node_modules', packageName)
     await atomicWrite(join(fixtureDir, 'package.json'), `${JSON.stringify({
       name: packageName,
       version: '1.0.0',
@@ -735,17 +997,20 @@ export class DiagnosticLabManager {
     if (!manifest.dsh.profile.bundles.includes(packageName)) manifest.dsh.profile.bundles.push(packageName)
     await atomicWrite(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`)
     if (scenarioId !== 'orphaned-bundle') {
-      const workspacePath = join(profileDir, 'pnpm-workspace.yaml')
-      const workspace = await readFile(workspacePath, 'utf8')
-      const shadowSpec = `file:${relative(profileDir, shadowDir).split(sep).join('/')}`
-      const document = parseDocument(workspace)
-      if (document.errors.length > 0) throw new Error(`diagnostic fixture workspace is invalid: ${document.errors[0]?.message ?? 'unknown YAML error'}`)
-      if (scenarioId === 'host-shadow-incompatible') document.set('nodeLinker', 'isolated')
-      document.setIn(['overrides', '@deepseek-ai/dsh-tools'], shadowSpec)
-      await atomicWrite(workspacePath, document.toString())
-    }
-    await this.#options.installProfile(home)
-    if (scenarioId === 'orphaned-bundle') {
+      await atomicWrite(join(installedDir, 'package.json'), `${JSON.stringify({
+        name: packageName,
+        version: '1.0.0',
+        dependencies: scenarioId === 'host-shadow-compatible'
+          ? { '@deepseek-ai/dsh-tools': '*' }
+          : { '@deepseek-ai/dsh-tools': '<0.0.0' },
+        dsh: { bundle: { patch: './cordis.patch.yml' } },
+      }, undefined, 2)}\n`)
+      await atomicWrite(join(installedDir, 'cordis.patch.yml'), '[]\n')
+      await atomicWrite(join(installedDir, 'node_modules', '@deepseek-ai', 'dsh-tools', 'package.json'), `${JSON.stringify({
+        name: '@deepseek-ai/dsh-tools',
+        version: '0.0.0-diagnostic',
+      }, undefined, 2)}\n`)
+    } else {
       manifest.dependencies = Object.fromEntries(
         Object.entries(manifest.dependencies).filter(([name]) => name !== packageName),
       )
@@ -807,10 +1072,10 @@ export class DiagnosticLabManager {
   async #restoreRun(runRoot: string, journal: DiagnosticLabJournal | LegacyDiagnosticLabJournal): Promise<void> {
     if (journal.target === 'active-profile' && journal.backupRoot !== undefined) {
       await this.#restoreActiveProfile(runRoot, journal)
-      await rm(join(this.#options.activeDshHome, 'profiles', 'web', '.diagnostic-lab', journal.runId), { recursive: true, force: true })
-      await rm(join(this.#options.activeDshHome, 'diagnostic-fixtures', journal.runId), { recursive: true, force: true })
-      await this.#options.installProfile(this.#options.activeDshHome)
+      await this.#removeRunResidue(journal)
+      await this.#options.installProfile(this.#options.activeDshHome, true)
       await this.#restoreActiveProfile(runRoot, journal)
+      await this.#verifyRestoredProfile(journal)
     } else {
       await rm(join(runRoot, 'runtime'), { recursive: true, force: true })
     }
@@ -820,6 +1085,90 @@ export class DiagnosticLabManager {
       state: 'clean',
     }
     await this.#writeJournal(runRoot, clean)
+  }
+
+  async #removeRunResidue(journal: DiagnosticLabJournal | LegacyDiagnosticLabJournal): Promise<void> {
+    const profileDir = join(this.#options.activeDshHome, 'profiles', 'web')
+    const runMarker = journal.runId.slice(0, 16)
+    await removeWithoutFollowing(join(profileDir, '.diagnostic-lab', journal.runId))
+    await removeWithoutFollowing(join(this.#options.activeDshHome, 'diagnostic-fixtures', journal.runId))
+    for (const scenarioId of PRODUCTION_DOCTOR_SCENARIOS) {
+      await removeWithoutFollowing(join(profileDir, 'node_modules', DIAGNOSTIC_PACKAGE_SCOPE, scenarioId))
+    }
+    const virtualStore = join(profileDir, 'node_modules', '.pnpm')
+    if (await pathExists(virtualStore)) {
+      for (const entry of await readdir(virtualStore, { withFileTypes: true })) {
+        const path = join(virtualStore, entry.name)
+        const ownedEntry = entry.name.includes('diagnostic-fixtures') && entry.name.includes(runMarker)
+        const linksToRun = !ownedEntry && entry.isDirectory() && await treeLinksToRun(path, journal.runId)
+        if (ownedEntry || linksToRun) await removeWithoutFollowing(path)
+      }
+    }
+  }
+
+  async #hasRunResidue(journal: DiagnosticLabJournal | LegacyDiagnosticLabJournal): Promise<boolean> {
+    if (journal.target !== 'active-profile') return false
+    const profileDir = join(this.#options.activeDshHome, 'profiles', 'web')
+    const runMarker = journal.runId.slice(0, 16)
+    if (await pathExists(join(profileDir, '.diagnostic-lab', journal.runId))
+      || await pathExists(join(this.#options.activeDshHome, 'diagnostic-fixtures', journal.runId))) return true
+    for (const scenarioId of PRODUCTION_DOCTOR_SCENARIOS) {
+      if (await pathExists(join(profileDir, 'node_modules', DIAGNOSTIC_PACKAGE_SCOPE, scenarioId))) return true
+    }
+    const virtualStore = join(profileDir, 'node_modules', '.pnpm')
+    if (!await pathExists(virtualStore)) return false
+    for (const entry of await readdir(virtualStore, { withFileTypes: true })) {
+      if (entry.name.includes('diagnostic-fixtures') && entry.name.includes(runMarker)) return true
+      if (entry.isDirectory() && await treeLinksToRun(join(virtualStore, entry.name), journal.runId)) return true
+    }
+    return false
+  }
+
+  async #verifyRestoredProfile(journal: DiagnosticLabJournal | LegacyDiagnosticLabJournal): Promise<void> {
+    for (const file of journal.files) {
+      const destination = join(this.#options.activeDshHome, file.relativePath)
+      if (!file.existed) {
+        if (await pathExists(destination)) throw new Error(`desktop: diagnostic recovery retained ${file.relativePath}`)
+        continue
+      }
+      const content = await readFile(destination)
+      if (sha256(content) !== file.sha256) throw new Error(`desktop: diagnostic recovery changed ${file.relativePath}`)
+    }
+    if (await this.#hasRunResidue(journal)) throw new Error('desktop: diagnostic recovery retained a test dependency link')
+    const doctor = await this.#options.runDoctor(this.#options.activeDshHome, false)
+    if (!['healthy', 'repaired', 'quarantined'].includes(doctor.status)) {
+      throw new Error(`desktop: diagnostic recovery Doctor failed with status ${doctor.status}`)
+    }
+  }
+
+  async #recoveryFailureSnapshot(
+    runRoot: string,
+    journal: DiagnosticLabJournal | LegacyDiagnosticLabJournal,
+    error: unknown,
+  ): Promise<DiagnosticLabRunSnapshot> {
+    let previous: DiagnosticLabRunSnapshot | undefined
+    try {
+      previous = await this.#readAnyReport(runRoot)
+    } catch (reportError) {
+      console.warn('desktop: could not reuse the previous diagnostic lab report during recovery', reportError)
+    }
+    const failed: DiagnosticLabRunSnapshot = {
+      schema: 2,
+      runId: journal.runId,
+      target: journal.target,
+      scenarioIds: previous?.scenarioIds ?? [],
+      phase: 'failed',
+      completedSteps: previous?.completedSteps ?? 0,
+      totalSteps: previous?.totalSteps ?? 0,
+      recovery: 'failed',
+      startedAt: previous?.startedAt ?? (this.#options.now ?? (() => new Date()))().toISOString(),
+      finishedAt: (this.#options.now ?? (() => new Date()))().toISOString(),
+      results: previous?.results ?? [],
+      diagnostic: sanitize(describeUnknown(error), this.#options.activeDshHome),
+    }
+    await this.#writeJournal(runRoot, { ...journal, schema: 2, state: 'restoring' })
+    await this.#writeReport(runRoot, failed)
+    return failed
   }
 
   async #readJournal(runRoot: string): Promise<DiagnosticLabJournal | LegacyDiagnosticLabJournal | undefined> {
@@ -853,6 +1202,15 @@ export class DiagnosticLabManager {
     const value = JSON.parse(await readFile(path, 'utf8')) as Partial<DiagnosticLabRunSnapshot>
     if (value.schema !== 2 || value.runId !== runRoot.split(/[\\/]/u).at(-1) || value.phase !== 'active') {
       throw new Error(`desktop: unsupported retained diagnostic report ${path}`)
+    }
+    return value as DiagnosticLabRunSnapshot
+  }
+
+  async #readAnyReport(runRoot: string): Promise<DiagnosticLabRunSnapshot> {
+    const path = join(runRoot, 'report.json')
+    const value = JSON.parse(await readFile(path, 'utf8')) as Partial<DiagnosticLabRunSnapshot>
+    if (value.schema !== 2 || value.runId !== runRoot.split(/[\\/]/u).at(-1)) {
+      throw new Error(`desktop: unsupported diagnostic report ${path}`)
     }
     return value as DiagnosticLabRunSnapshot
   }

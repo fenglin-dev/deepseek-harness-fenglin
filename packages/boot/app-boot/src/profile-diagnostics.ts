@@ -57,6 +57,7 @@ export type ProfileDiagnosticCode =
   | 'profile.bundle-invalid'
   | 'profile.module-resolution'
   | 'profile.patch-invalid'
+  | 'profile.quarantine-removal-residue'
   | 'loader.duplicate-entry'
   | 'loader.duplicate-registration'
   | 'loader.unresolved-injection'
@@ -138,7 +139,7 @@ const POSIX_USER_PATH = /\/(?:Users|home)\/[^/\r\n]+/gu
 const PNPM_CODE = /\bERR_PNPM_[A-Z0-9_]+\b/u
 const NODE_CODE = /\b(?:ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EACCES|EPERM|EBUSY|ENOENT|ERR_FS_EISDIR)\b/u
 const RETAINED_BUILD_KEY = /^dsh: pnpm allowBuilds key (".*")$/mu
-const LOADER_ENTRY = /failed to (?:apply|import) loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/iu
+const LOADER_ENTRY = /failed to (?:apply|import) loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/giu
 const FAILED_MODULE = /plugin\(s\) failed to load:\s*([^,\s]+)/iu
 
 const RULES: readonly DiagnosticRule[] = [
@@ -241,6 +242,9 @@ const RULES: readonly DiagnosticRule[] = [
     pattern: /cordis\.patch\.yml|home patch|patch target|!!js|top-level YAML array|empty patch/iu,
   },
   {
+    code: 'profile.quarantine-removal-residue', source: 'profile', severity: 'warning', actions: ['repair', 'export'],
+  },
+  {
     code: 'loader.duplicate-entry', source: 'loader', severity: 'blocked', actions: ['isolate', 'open-config', 'export'],
     pattern: /duplicate loader entry|duplicate entry id/iu,
   },
@@ -324,7 +328,7 @@ function inferredAttribution(
   diagnostic: string,
   supplied: ProfileDiagnosticAttribution | undefined,
 ): ProfileDiagnosticAttribution | undefined {
-  const loader = LOADER_ENTRY.exec(diagnostic)
+  const loader = [...diagnostic.matchAll(LOADER_ENTRY)].at(-1)
   const failedModule = FAILED_MODULE.exec(diagnostic)?.[1]
   const entryId = supplied?.entryId ?? loader?.[1]
   const moduleName = supplied?.moduleName ?? loader?.[2] ?? failedModule
@@ -449,6 +453,28 @@ export function orphanedBundleDiagnostic(packageName: string): ProfileDiagnostic
 }
 
 /**
+ * Build one repairable issue for derived state left after a quarantined plugin was removed.
+ * @param packageName - Inactive plugin named by the stale quarantine report.
+ * @param evidence - Bounded state components that still reference the plugin.
+ * @returns Client-safe warning whose only mutation is the guarded Profile repair.
+ */
+export function quarantineRemovalResidueDiagnostic(
+  packageName: string,
+  evidence: readonly string[],
+): ProfileDiagnostic {
+  return {
+    diagnosticId: randomUUID(),
+    code: 'profile.quarantine-removal-residue',
+    source: 'profile',
+    phase: 'preflight',
+    severity: 'warning',
+    attribution: { rootPackage: packageName },
+    actions: ['repair', 'export'],
+    evidence,
+  }
+}
+
+/**
  * Build one current issue for a plugin retained outside the active Profile.
  * @param packageName - Quarantined root plugin.
  * @param reason - Core quarantine decision.
@@ -456,13 +482,13 @@ export function orphanedBundleDiagnostic(packageName: string): ProfileDiagnostic
  */
 export function quarantinedPluginDiagnostic(
   packageName: string,
-  reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable',
+  reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable',
 ): ProfileDiagnostic {
   const code = reason === 'orphaned-bundle'
     ? 'profile.orphaned-bundle'
     : reason === 'build-script-blocked'
       ? 'pnpm.build-script-blocked'
-      : reason === 'client-module-unavailable'
+      : reason === 'client-module-unavailable' || reason === 'loader-module-unresolvable'
         ? 'profile.module-resolution'
         : 'profile.host-dependency-conflict'
   return {

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-29-settings-native-open-and-navigation-overflow.md
-2026-08-29-settings-native-open-and-navigation-overflow.md: 024188d5354ef383d9ef9efb2ffb8e4bcb363291
-2026-08-29-settings-native-open-and-navigation-overflow.zh.md: b9b07cc6229123da940f8942d0053b961b85ef5f
+2026-08-29-settings-native-open-and-navigation-overflow.md: 7b6b24c9c35e9169b27e8427bdb344c039992edb
+2026-08-29-settings-native-open-and-navigation-overflow.zh.md: 83f06864e2a3a27b3d0f46376906bd3f1c3e1414

@@ -1,4 +1,4 @@
-/** Settings-panel geometry contract for contributed navigation and desktop chrome. */
+/** Settings-panel geometry contract for contributed navigation and short viewports. */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -22,12 +22,10 @@ function declarations(selector: string): Map<string, string> {
 }
 
 describe('SettingsRoot.module.css geometry', () => {
-  it('keeps the desktop title bar outside settings overlays and panel height', () => {
-    expect(declarations('.overlay').get('inset')).toBe('var(--dsh-desktop-titlebar-inset, 0px) 0 0')
-    expect(declarations('.panel').get('height'))
-      .toBe('min(800px, calc(100vh - var(--dsh-desktop-titlebar-inset, 0px) - 48px))')
-    expect(declarations('.onboardingPanel').get('height'))
-      .toBe('min(820px, calc(100vh - var(--dsh-desktop-titlebar-inset, 0px) - 48px))')
+  it('uses the renderer viewport without a desktop-titlebar offset', () => {
+    expect(declarations('.overlay').get('inset')).toBe('0')
+    expect(declarations('.panel').get('height')).toBe('min(800px, calc(100vh - 48px))')
+    expect(declarations('.onboardingPanel').get('height')).toBe('min(820px, calc(100vh - 48px))')
   })
 
   it('gives contributed navigation its own non-collapsing scrollport', () => {

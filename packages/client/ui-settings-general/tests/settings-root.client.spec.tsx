@@ -440,7 +440,7 @@ describe('SettingsPanel navigation', () => {
         openSection: (request: {
           sectionId: string
           subsectionId?: string
-          step: 1 | 2 | 3
+          step: 1 | 2 | 3 | 4
           complete: () => void
         }) => void
       }).openSection({

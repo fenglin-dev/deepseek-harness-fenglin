@@ -13,6 +13,7 @@ import type { PluginDiagnosticsSectionInjected } from '../src/client/PluginDiagn
 import { ExternalToolsSection } from '../src/client/ExternalToolsSection.tsx'
 import { PluginDiscovery } from '../src/client/PluginDiscovery.tsx'
 import { ImportedPluginRestoreSection } from '../src/client/ImportedPluginRestore.tsx'
+import { QuarantineNotice } from '../src/client/QuarantineNotice.tsx'
 import type { PluginInventorySettingsTabInjected } from '../src/client/PluginInventorySettingsTab.tsx'
 
 usePinnedBrowserLanguages('zh-CN')
@@ -72,7 +73,8 @@ async function bench(options: { desktopRestore?: boolean; diagnosticLab?: boolea
     }
   }
   new RemoteService(ctx)
-  ctx.provide('settingsNavigation', { open: vi.fn() } as never)
+  const settingsOpen = vi.fn()
+  ctx.provide('settingsNavigation', { open: settingsOpen } as never)
   const list = vi.fn<() => Promise<ListResult>>()
     .mockResolvedValue({ ok: true, value: EMPTY })
   const startInstall = vi.fn(async () => ({ ok: false as const, error: { code: 'REMOTE_ERROR', message: 'blocked' } }))
@@ -112,6 +114,7 @@ async function bench(options: { desktopRestore?: boolean; diagnosticLab?: boolea
     startInstall,
     getInstall,
     diagnosticLabCatalog,
+    settingsOpen,
   }
 }
 
@@ -157,8 +160,15 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(resolveSlotLabel(diagnostics.options.label)).toBe('诊断')
     const diagnosticsInjected = (diagnostics.inject as unknown as () => PluginDiagnosticsSectionInjected)()
     expect(diagnosticsInjected.diagnosticLab).toBeUndefined()
+    diagnosticsInjected.openPluginMarket('@linxin666/dsh-client-ui-task-board')
+    expect(b.settingsOpen).toHaveBeenCalledWith({
+      sectionId: 'market',
+      subsectionId: 'discover:@linxin666/dsh-client-ui-task-board',
+    })
     expect(b.slots.entries('conversation.hero.pluginDiscovery')[0]?.component).toBe(PluginDiscovery)
-    expect(b.slots.entries('shell.overlay')).toHaveLength(0)
+    const overlays = b.slots.entries('shell.overlay')
+    expect(overlays).toHaveLength(1)
+    expect(overlays[0]?.component).toBe(QuarantineNotice)
     expect(b.list).not.toHaveBeenCalled()
 
     const injected = (entry.inject as unknown as () => PluginInventorySettingsTabInjected)()
@@ -189,7 +199,7 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     await expect(injected.diagnosticLab?.listScenarios()).resolves.toEqual([
       expect.objectContaining({ id: 'orphaned-bundle' }),
     ])
-    expect(b.slots.entries('shell.overlay')).toHaveLength(1)
+    expect(b.slots.entries('shell.overlay')).toHaveLength(2)
     expect(b.diagnosticLabCatalog).toHaveBeenCalledOnce()
     await b.ctx.fiber.dispose()
   })
@@ -227,7 +237,7 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
       expect(sections.find(section => section.options.id === 'plugin-restore')?.component).toBe(ImportedPluginRestoreSection)
       expect(sections.find(section => section.options.id === 'diagnostics')?.component).toBe(PluginDiagnosticsSection)
       expect(b.slots.entries('conversation.hero.pluginDiscovery')[0]?.component).toBe(PluginDiscovery)
-      expect(b.slots.entries('shell.overlay')).toHaveLength(0)
+      expect(b.slots.entries('shell.overlay')).toHaveLength(1)
     })
 
     await fiber.dispose()

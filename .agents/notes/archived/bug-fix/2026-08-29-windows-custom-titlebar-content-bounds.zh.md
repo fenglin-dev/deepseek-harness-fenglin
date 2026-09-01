@@ -1,6 +1,7 @@
-# Agent Note：将 Windows Web 内容约束在自定义标题栏下方
+# Agent Note: 将 Windows Web 内容约束在自定义标题栏下方
 
 Status: implemented
+Archived: 2026-08-31
 
 [English](2026-08-29-windows-custom-titlebar-content-bounds.md) | 中文
 

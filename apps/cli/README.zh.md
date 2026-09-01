@@ -46,6 +46,8 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 
 profile 开始组合前，启动器会检查身份敏感的 Host 包是否被插件安装了影子副本。兼容的声明会通过 Harness 管理的 pnpm `link:` override 收敛到安装目录自有副本；不兼容或收敛后仍冲突的根插件会从活动 profile 移除，并记录到 `$DSH_HOME/quarantine/profile-plugins.json`。如果收敛或隔离仍无法得到干净依赖树，启动会失败，而不会加载混合运行时。`dsh plugin` 改动后也会运行相同检查，因此 Electron、`dsh web` 与其他 profile 启动路径共享同一策略。
 
+在 Windows 上，杀毒软件或文件索引服务短暂占用 pnpm 生成的 `node_modules/*_tmp_<pid>_<sequence>` 目录时，pnpm 的原子目录替换可能失败。`dsh plugin` 只会针对这种特定的 `ERR_PNPM_EPERM` rename 错误执行 3 次有界退避重试。其他权限错误仍会直接失败；如果目标目录在用完重试次数后依然被占用，命令会继续报告 pnpm 的原始诊断，便于用户停止占用文件的进程。
+
 不带选项的 `doctor` 只读运行：健康时退出 `0`，存在冲突时退出 `2`。`--repair` 在无损收敛后退出 `10`，发生隔离后退出 `11`，无法令 profile 安全时退出 `1`。可用 `doctor --retry <quarantine-id>` 重试隔离插件；只有普通健康策略成功时，才会保留其原始依赖说明符与 bundle 位置。
 
 使用 `--dump-default-config` 和 `--dump-config` 可在不启动的情况下检查组合后的配置树。

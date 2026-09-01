@@ -43,7 +43,7 @@
    Modal primitive (--dsw-alias-bg-mask-1 + --dsw-mask-blur). */
 .overlay {
   position: fixed;
-  inset: var(--dsh-desktop-titlebar-inset, 0px) 0 0;
+  inset: 0;
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -68,7 +68,7 @@
   z-index: 1;
   display: flex;
   width: 800px;
-  height: min(800px, calc(100vh - var(--dsh-desktop-titlebar-inset, 0px) - 48px));
+  height: min(800px, calc(100vh - 48px));
   max-width: calc(100vw - 48px);
   border-radius: 24px;
   overflow: hidden;
@@ -336,7 +336,7 @@
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
   width: min(1120px, calc(100vw - 48px));
-  height: min(820px, calc(100vh - var(--dsh-desktop-titlebar-inset, 0px) - 48px));
+  height: min(820px, calc(100vh - 48px));
   overflow: hidden;
   border-radius: 24px;
   background: var(--dsw-alias-bg-layer-2);

@@ -5,6 +5,7 @@ import { extname, isAbsolute } from 'node:path'
 import type { ProfilePackageManagerResult } from '@deepseek-ai/dsh-app-boot'
 
 const NAME = 'dsh'
+const WINDOWS_PNPM_RENAME_RETRY_DELAYS_MS = [500, 1_500, 3_000] as const
 
 function diagnosticStrings(value: unknown, output: string[]): void {
   if (typeof value === 'string') {
@@ -108,6 +109,46 @@ export function normalizePnpmDiagnostic(diagnostic: string): string {
 }
 
 /**
+ * Recognize pnpm's transient Windows directory-swap failure without treating
+ * an ordinary permission error as recoverable.
+ * @param diagnostic - Combined pnpm output.
+ * @param platform - Platform that executed pnpm.
+ * @returns Whether pnpm failed while renaming its own temporary node_modules directory.
+ */
+export function isWindowsPnpmRenameContention(
+  diagnostic: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (platform !== 'win32') return false
+  return /ERR_PNPM_EPERM/iu.test(diagnostic)
+    && /EPERM:\s*operation not permitted,\s*rename/iu.test(diagnostic)
+    && /node_modules[\\/]/iu.test(diagnostic)
+    && /_tmp_\d+_\d+(?:[\\/'"\s]|$)/iu.test(diagnostic)
+}
+
+/**
+ * Select the next bounded delay for a transient Windows pnpm rename failure.
+ * @param diagnostic - Combined pnpm output.
+ * @param completedRetries - Number of retries already attempted.
+ * @param platform - Platform that executed pnpm.
+ * @returns Delay before the next retry, or undefined when the failure is not retryable or the budget is exhausted.
+ */
+export function windowsPnpmRenameRetryDelay(
+  diagnostic: string,
+  completedRetries: number,
+  platform: NodeJS.Platform = process.platform,
+): number | undefined {
+  if (!isWindowsPnpmRenameContention(diagnostic, platform)) return undefined
+  if (!Number.isInteger(completedRetries) || completedRetries < 0) return undefined
+  return WINDOWS_PNPM_RENAME_RETRY_DELAYS_MS[completedRetries]
+}
+
+function waitSynchronously(delayMs: number): void {
+  const signal = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT))
+  Atomics.wait(signal, 0, 0, delayMs)
+}
+
+/**
  * Resolve the pnpm executable selected by the host process.
  * @param environment - environment inherited by the CLI.
  * @returns the configured absolute executable or the ordinary PATH name.
@@ -157,23 +198,44 @@ export function runProfilePackageManager(
   args: readonly string[],
 ): ProfilePackageManagerResult {
   const invocation = resolvePnpmInvocation(process.env, args)
-  const result = spawnSync(invocation.command, invocation.args, {
-    cwd: profileDir,
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024,
-    shell: invocation.shell,
-  })
-  if (result.error !== undefined) {
-    const code = (result.error as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') {
-      const location = invocation.command === 'pnpm' ? 'on PATH' : `at ${invocation.command}`
-      return { exitCode: 127, diagnostic: `${NAME}: pnpm not found ${location}` }
+  const recoveryDiagnostics: string[] = []
+  let completedRetries = 0
+  while (true) {
+    const result = spawnSync(invocation.command, invocation.args, {
+      cwd: profileDir,
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
+      shell: invocation.shell,
+    })
+    if (result.error !== undefined) {
+      const code = (result.error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') {
+        const location = invocation.command === 'pnpm' ? 'on PATH' : `at ${invocation.command}`
+        return { exitCode: 127, diagnostic: `${NAME}: pnpm not found ${location}` }
+      }
+      throw result.error
     }
-    throw result.error
-  }
-  const diagnostic = normalizePnpmDiagnostic([result.stdout, result.stderr].filter(value => value.trim() !== '').join('\n').trim())
-  return {
-    exitCode: result.status ?? 1,
-    ...(diagnostic === '' ? {} : { diagnostic: diagnostic.slice(-64 * 1024) }),
+    const diagnostic = normalizePnpmDiagnostic([result.stdout, result.stderr].filter(value => value.trim() !== '').join('\n').trim())
+    const delayMs = result.status === 0
+      ? undefined
+      : windowsPnpmRenameRetryDelay(diagnostic, completedRetries)
+    if (delayMs !== undefined) {
+      completedRetries += 1
+      recoveryDiagnostics.push(
+        `${NAME}: pnpm hit transient Windows node_modules rename contention; retrying in ${String(delayMs)} ms (${String(completedRetries)}/${String(WINDOWS_PNPM_RENAME_RETRY_DELAYS_MS.length)})`,
+      )
+      waitSynchronously(delayMs)
+      continue
+    }
+    if (result.status !== 0 && isWindowsPnpmRenameContention(diagnostic) && completedRetries > 0) {
+      recoveryDiagnostics.push(
+        `${NAME}: Windows kept the pnpm node_modules destination locked after ${String(completedRetries)} retries`,
+      )
+    }
+    const retainedDiagnostic = [diagnostic, ...recoveryDiagnostics].filter(Boolean).join('\n')
+    return {
+      exitCode: result.status ?? 1,
+      ...(retainedDiagnostic === '' ? {} : { diagnostic: retainedDiagnostic.slice(-64 * 1024) }),
+    }
   }
 }

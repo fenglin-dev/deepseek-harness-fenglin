@@ -70,6 +70,17 @@ describe('desktop CLI launcher', () => {
     }))).toThrow('selection is invalid')
   })
 
+  it('accepts a desktop-created empty-folder home', async () => {
+    const root = await fixture()
+    const dshHome = join(root, 'new configuration')
+    expect(parseDesktopCliSetup(JSON.stringify({
+      schema: 'open-deepseek-harness-desktop/data-home-setup/v1',
+      mode: 'created',
+      dshHome,
+      completedAt: '2026-08-31T00:00:00.000Z',
+    }))).toBe(dshHome)
+  })
+
   it('returns the embedded Harness exit code', async () => {
     const root = await fixture()
     const setup = join(root, 'data-home-setup.json')

@@ -6,7 +6,7 @@
 .content {
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - var(--dsh-desktop-titlebar-inset, 0px) - 48px);
+  max-height: calc(100vh - 48px);
   padding: 28px;
   box-sizing: border-box;
   overflow-y: auto;

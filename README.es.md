@@ -8,7 +8,7 @@ Idiomas: [简体中文](README.md) · [English](README.en.md) · [日本語](REA
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-alpha.1 ya está disponible: descárgala y pruébala](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1).** Integra DeepSeek Harness 0.1.2-alpha.1 y añade el centro de pruebas de diagnóstico, descubrimiento de plugins en tiempo real, aislamiento reforzado y navegación de Ajustes reordenable.
+> **[v0.1.2-alpha.1.1 ya está disponible. Es una actualización de corrección y mejora de v0.1.2-alpha.1: descárgala y pruébala](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1).** Esta versión mantiene DeepSeek Harness 0.1.2-alpha.1 como base del proyecto original y refuerza la gestión de entornos de escritorio, la recuperación de plugins y la estabilidad multiplataforma.
 >
 > Esta es una versión Alpha preliminar. Haz una copia de seguridad de la configuración importante antes de actualizar y adjunta registros o informes de diagnóstico al comunicar problemas.
 
@@ -18,14 +18,20 @@ Open DeepSeek Harness Desktop es una distribución independiente y mantenida por
 >
 > Este repositorio no es un producto oficial de DeepSeek. Sigue en fase preliminar y pueden evolucionar el formato de datos, las políticas de compatibilidad y la instalación.
 
-## Novedades de esta versión
+## Funciones principales actuales
 
-- Importar la configuración oficial a un entorno independiente, compartir directamente un directorio existente o empezar desde cero.
-- Comprobar el origen de plugins y restaurarlos de forma segura desde un directorio fuente o un archivo .tgz.
-- Diagnosticar, reparar y aislar antes del arranque conflictos de pnpm, instancias duplicadas de Cordis, residuos del Loader y plugins fantasma.
-- Copiar texto seleccionado, preguntarlo en una conversación nueva o añadirlo al borrador actual.
-- Bandeja del sistema, reinicio rápido, notificaciones, registros, actualización en la aplicación y registro del comando dsh.
-- Instaladores para Windows x64, macOS arm64/x64 y Linux DEB/RPM.
+- Espacio de conversación con ancho ajustable, navegación por turnos, uso exacto de Token y cola de envío.
+- Importación a un entorno independiente, uso compartido de un directorio existente o inicio desde cero.
+- Descubrimiento de plugins con catálogo real, categorías, estado local e instalación directa.
+- Diagnóstico previo al arranque, ejercicios, cuarentena y recuperación para pnpm, Cordis y Loader.
+- Navegación de Ajustes desplazable, reordenable y persistente.
+- Distribuciones nativas e integración de escritorio para Windows, macOS y Linux.
+
+## Espacio de conversación con IA
+
+Las respuestas terminadas pueden plegar el proceso y el System Prompt. Se puede ajustar el ancho y el tamaño del texto; las tablas Markdown escalan con el contenido, y la navegación compacta por turnos, el uso exacto de Token por respuesta y el resaltado continuo del código facilitan revisar conversaciones largas.
+
+El historial usa tarjetas que distinguen respuestas completadas, canceladas e interrumpidas. Los borradores se conservan al cambiar de sesión y es posible añadir el siguiente mensaje a la cola mientras una sesión continúa. Las imágenes aparecen inmediatamente mientras la compresión y la subida siguen en segundo plano; también se admiten imágenes en la traza, archivos locales subidos y referencias de archivo o sesión que sobreviven a la edición del texto cercano.
 
 ## Primer inicio y entornos de datos independientes
 
@@ -49,7 +55,25 @@ Crea un directorio independiente y vacío sin leer ni importar configuración, s
 
 <p align="center"><img src="./assets/readme/data-home-fresh-en.png" width="900" alt="Crear un entorno DSH independiente y limpio"><br><sub>No se lee ni modifica ninguna configuración DSH existente</sub></p>
 
-Después, el asistente permite configurar la API Key del modelo, bots IM como WeChat o Feishu y una conexión opcional con Codex. Todos los pasos se pueden omitir y completar más tarde en Ajustes.
+### Elegir un directorio de datos independiente
+
+Tanto **Importar a un entorno independiente** como **Empezar desde cero** permiten elegir antes de continuar entre la ubicación administrada predeterminada y una carpeta vacía personalizada. Esa carpeta se convierte en la raíz de datos independiente del cliente; el origen no se modifica ni se sincroniza. En Windows, las sesiones, los Profiles de plugins y otros datos crecientes pueden guardarse en D: u otra unidad no perteneciente al sistema para reducir la presión sobre C:.
+
+<p align="center"><img src="./assets/readme/data-home-import-custom-location-zh.png" width="900" alt="Elegir un directorio vacío al importar configuración"><br><sub>Importación independiente: elegir la ubicación predeterminada o una carpeta vacía antes de copiar</sub></p>
+
+<p align="center"><img src="./assets/readme/data-home-fresh-custom-location-zh.png" width="900" alt="Elegir un directorio vacío al empezar desde cero"><br><sub>Empezar desde cero: guardar los nuevos datos independientes donde elija el usuario</sub></p>
+
+Después de completar la configuración inicial, el directorio de datos todavía se puede cambiar desde **Ajustes → Ajustes generales**. Se puede volver al directorio independiente del cliente, usar directamente el `~/.dsh` oficial, elegir otro directorio DSH existente o crear una configuración nueva en una carpeta vacía. El cambio solo selecciona el directorio que se usará tras reiniciar; no copia, mueve, combina ni elimina los datos originales. Una carpeta vacía vuelve a iniciar el proceso de primera instalación después del reinicio.
+
+<p align="center"><img src="./assets/readme/data-home-switch-after-start-zh.png" width="900" alt="Cambiar el directorio de datos desde Ajustes generales después de entrar"><br><sub>Cambiar de forma segura a una configuración existente o crear otra independiente en una carpeta vacía</sub></p>
+
+Después, el asistente permite configurar la API Key del modelo, conectar el acceso desde el teléfono, preparar bots IM como WeChat o Feishu y conectar Codex opcionalmente. Todos los pasos se pueden omitir y completar más tarde en Ajustes.
+
+## Descubrimiento, instalación y actualización de plugins
+
+«Explorar plugins» consulta el catálogo real de Plugin Marketplace, no una lista fija. Las vistas populares y por categoría muestran Stars, descargas de los últimos 30 días y el estado de instalación local. Los plugins se pueden instalar mediante el flujo controlado o abrir en el mercado completo para consultarlos y administrarlos.
+
+El catálogo se guarda durante 24 horas después de una consulta correcta, por lo que cambiar de categoría no vuelve a descargarlo; el usuario puede forzar una actualización. El estado instalado se obtiene por separado cada vez que se abre la ventana. Los fallos de red muestran la causa real y, si existe una caché antigua, permiten seguir explorando con una advertencia. Los plugins locales conservan información verificable del paquete o repositorio, de modo que el mercado puede identificar el origen en línea y ofrecer **Restaurar**; el origen local no se actualiza directamente y debe restaurarse como versión en línea para participar en las comprobaciones normales.
 
 ## Selección y restauración de plugins importados
 
@@ -71,6 +95,16 @@ Los plugins de terceros comparten el proceso Node.js y el grafo de servicios Cor
 
 Por eso el diagnóstico vive en la composición del Profile y en el arranque, no en otro plugin ordinario. Antes de ejecutar código de terceros lee el manifest, pnpm-lock.yaml, los ajustes del Workspace, el orden de Bundles, el grafo instalado real y el runtime compartido de la instalación actual.
 
+### De la cuarentena al arrancar a una reparación accionable
+
+La protección abarca el arranque y la interfaz principal: primero identifica y retira el plugin incompatible, después informa con claridad de lo aislado y finalmente muestra la causa, la versión original y acciones concretas para actualizar o desinstalar.
+
+<p align="center"><img src="./assets/readme/diagnostics-startup-quarantine-zh.png" width="900" alt="Aislamiento de dsh-font incompatible durante el arranque"><br><sub>Detectar y aislar un plugin incompatible durante el arranque</sub></p>
+
+<p align="center"><img src="./assets/readme/diagnostics-quarantine-notice-zh.png" width="900" alt="Aviso de plugins aislados tras el arranque"><br><sub>Entrar con seguridad y mostrar exactamente qué se aisló</sub></p>
+
+<p align="center"><img src="./assets/readme/diagnostics-repair-guidance-zh.png" width="900" alt="Causa y acciones de reparación en Diagnóstico"><br><sub>Mostrar causa, versión, origen anterior y opciones de recuperación</sub></p>
+
 Los Context, Service y Symbol de Cordis dependen de la identidad física del módulo, no solo de su versión. Dos copias de @deepseek-ai/cordis o dsh-tools con la misma versión pero distinto real path siguen siendo instancias JavaScript diferentes. La inspección recorre cada plugin raíz, sus dependencias directas y transitivas, rangos declarados y rutas finales; los peerDependencies válidos no se marcan como error.
 
 Se comprueban los singletons compartidos del Host, la coherencia entre Profile y lockfile, Bundles huérfanos o duplicados, plugins fantasma, el Store de pnpm, instalaciones incompletas, allowBuilds, permisos de prepare y configuración de deduplicación peer.
@@ -78,6 +112,20 @@ Se comprueban los singletons compartidos del Host, la coherencia entre Profile y
 El orden de reparación es **inspección de solo lectura → convergencia sin pérdida → instalar solo lo necesario → volver a comprobar real paths → cuarentena si hace falta**. Un Profile sano no ejecuta pnpm. Los overrides administrados link: solo se usan cuando el rango es compatible y nunca reducen minimumReleaseAge ni anulan allowBuilds: false. Un comando pnpm correcto no basta: el arranque continúa únicamente cuando las rutas físicas y el Loader vuelven a ser coherentes.
 
 Si la convergencia no puede demostrarse segura, solo se retira el plugin raíz responsable de las dependencias activas y del orden de Bundle. Se conservan su especificación, versión, cadena, motivo y fecha. La cuarentena termina únicamente cuando el paquete ha salido físicamente del Profile, los Host compartidos apuntan a las copias canónicas y la reinspección es correcta. El objetivo es explicar quién falló, por qué, qué protección se aplicó y cuál es el siguiente paso.
+
+Diagnóstico muestra el plugin responsable, su versión, el motivo de la cuarentena y un resumen de la cadena de dependencias. El usuario puede volver a enlazar y recuperar, aprobar el elemento de build identificado, buscar una actualización compatible en el mercado o desinstalar por completo. El plugin solo vuelve al runtime después de superar de nuevo la inspección.
+
+### Centro de ejercicios de diagnóstico
+
+Las versiones de desarrollo e instalada incluyen muestras sin conexión que reproducen copias Host duplicadas, Bundles huérfanos, módulos ausentes, Patch inválidos, Loader duplicados, fallos de ciclo de vida, permisos de build bloqueados y reparaciones interrumpidas. Los escenarios seleccionados se ejecutan en orden y muestran el escenario y la fase actuales, los escenarios restantes, el resultado y la duración. El destino aislado no modifica el Profile del usuario; el modo avanzado con Profile real restaura y reinspecciona al terminar. Si no puede demostrar una recuperación limpia, no reinicia los plugins; guarda resúmenes JSON y de texto anonimizados y permite exportar el informe JSON.
+
+<p align="center"><img src="./assets/readme/diagnostics-lab-sandbox-zh.png" width="900" alt="Escenarios del entorno aislado de Diagnóstico"><br><sub>Entorno aislado: ensayar fallos sin modificar el Profile del usuario</sub></p>
+
+<p align="center"><img src="./assets/readme/diagnostics-lab-live-profile-zh.png" width="900" alt="Modo avanzado con Profile real"><br><sub>Profile real avanzado: verificar cuarentena, recuperación y reinspección</sub></p>
+
+> [!CAUTION]
+>
+> No se garantiza que el ejercicio con el Profile real termine correctamente en esta versión. Haz una copia de seguridad de la configuración o usa un directorio de datos aislado antes de ejecutarlo, ya que existe un riesgo considerable de cierre inesperado. No uses este modo en producción. Si necesitas una prueba real, activa solo un escenario cada vez.
 
 ## Selección de texto y menú contextual
 
@@ -106,8 +154,25 @@ Si la sesión espera una elección, confirmación o respuesta, o el editor está
 - Comprobación de Releases, progreso de descarga, validación de SHA256SUMS y apertura del instalador desde Ajustes generales.
 - Registro y eliminación segura del comando dsh incluido en el PATH del sistema.
 - Barra de título personalizada en Windows/Linux, comportamiento nativo de macOS y acceso limitado de escritura al portapapeles.
-- Seis archivos locales verificados: Plugin Marketplace, dsh-im, dsh-skill-picker, dsh-font, Better Sidebar y dsh-pocket. Si el usuario los desinstala, no se reinstalan solos.
 - Codex y Claude Code se instalan bajo demanda desde Ajustes → Herramientas externas, no se incluyen en el instalador.
+
+### Plugins predefinidos
+
+El instalador incluye cinco presets de inicio como archivos locales con integridad verificada: Plugin Marketplace, dsh-im, dsh-skill-picker, Better Sidebar y dsh-pocket. `dsh-font` se proporciona únicamente como muestra para los ejercicios de diagnóstico. Si el usuario desinstala un preset, el cliente no lo reinstala automáticamente.
+
+<p align="center"><img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="Conectar un teléfono mediante el QR o la dirección LAN de Pocket"><br><sub>Acceso móvil: escanear en la misma red y habilitar acceso público solo cuando sea necesario</sub></p>
+
+<p align="center"><img src="./assets/readme/preset-im-robot-zh.png" width="900" alt="Conectar bots de WeChat y otros servicios mediante dsh-im"><br><sub>Bots IM: WeChat, Feishu, DingTalk, WeCom, QQ, Slack, Telegram, Discord y WhatsApp</sub></p>
+
+La versión local incluida facilita la preparación sin conexión, pero no sigue directamente las actualizaciones del mercado. Al conectarse, se recomienda abrir **Mercado de plugins → Instalados** y pulsar **Restaurar** en cada preset para sustituirlo por la versión en línea. La restauración no puede deshacerse automáticamente; se puede conservar la versión local si se prefiere un paquete fijo sin conexión.
+
+<p align="center"><img src="./assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="Restaurar presets locales como versiones en línea"><br><sub>Recomendado: restaurar al conectarse para participar en las comprobaciones normales de actualización</sub></p>
+
+### Navegación de Ajustes personalizable
+
+La navegación izquierda de Ajustes tiene desplazamiento propio para que las secciones añadidas por plugins no queden recortadas. Las secciones se pueden arrastrar y su orden se guarda localmente, conservándose de forma estable al instalar o quitar plugins. En Windows y Linux, la barra de título y el contenido de Harness usan vistas nativas separadas, por lo que un plugin a pantalla completa no puede cubrir los controles de la ventana.
+
+<p align="center"><img src="./assets/readme/settings-navigation-reorder-zh.png" width="900" alt="Reordenar Ajustes con los tiradores de tres líneas"><br><sub>Arrastra libremente las secciones; las demás filas dejan espacio con suavidad y se guarda el orden final</sub></p>
 
 ## Temas y fondos
 

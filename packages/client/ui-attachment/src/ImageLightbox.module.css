@@ -1,6 +1,6 @@
 .backdrop {
   position: fixed;
-  inset: var(--dsh-desktop-titlebar-inset, 0px) 0 0;
+  inset: 0;
   z-index: 1000;
   display: grid;
   place-items: center;
@@ -20,7 +20,7 @@
 .image {
   position: relative;
   max-width: min(100%, 1600px);
-  max-height: calc(100vh - var(--dsh-desktop-titlebar-inset, 0px) - 80px);
+  max-height: calc(100vh - 80px);
   object-fit: contain;
   border-radius: 12px;
   background: var(--dsw-specific-input-major);
@@ -29,7 +29,7 @@
 
 .close {
   position: fixed;
-  top: calc(var(--dsh-desktop-titlebar-inset, 0px) + 20px);
+  top: 20px;
   right: 20px;
   z-index: 1;
   display: grid;

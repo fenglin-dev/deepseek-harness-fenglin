@@ -3,7 +3,7 @@
 import {
   chmod, copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile,
 } from 'node:fs/promises'
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parseDocument } from 'yaml'
 import {
   extractImportedPluginRestorePlan,
@@ -61,11 +61,68 @@ export interface DesktopDataHomeSource {
 /** Durable first-run decision kept outside the selected Harness home. */
 export interface DesktopDataHomeSetup {
   readonly schema: typeof SETUP_SCHEMA
-  readonly mode: 'fresh' | 'imported' | 'reused' | 'existing' | 'explicit'
+  readonly mode: 'fresh' | 'created' | 'imported' | 'reused' | 'existing' | 'explicit'
   readonly dshHome: string
   readonly source?: string
   readonly importedOnboardingReset?: string
   readonly completedAt: string
+}
+
+/** User-facing classification of the active Harness home. */
+export type DesktopDataHomeKind = 'desktop' | 'official' | 'custom' | 'external'
+
+/** Current and built-in Harness-home choices exposed through the desktop bridge. */
+export interface DesktopDataHomeStatus {
+  readonly activePath: string
+  readonly activeKind: DesktopDataHomeKind
+  readonly desktopPath: string
+  readonly officialPath: string
+  readonly officialAvailable: boolean
+  readonly managedExternally: boolean
+}
+
+/** A validated switch that can be persisted before a complete application restart. */
+export interface DesktopDataHomeSwitchDecision {
+  readonly changed: boolean
+  readonly path: string
+  readonly setup: DesktopDataHomeSetup
+}
+
+/** Opaque renderer request for one of the built-in homes or a native-dialog selection. */
+export type DesktopDataHomeSwitchRequest =
+  | { readonly kind: 'desktop' }
+  | { readonly kind: 'official' }
+  | { readonly kind: 'custom'; readonly selectionId: string }
+  | { readonly kind: 'create'; readonly selectionId: string }
+
+/** Native picker purpose selected by the fixed renderer controls. */
+export type DesktopDataHomeSelectionKind = 'existing' | 'empty'
+
+/** Native directory-picker result; selected paths can be activated only through the opaque id. */
+export type DesktopDataHomeSelectionResult =
+  | { readonly status: 'cancelled' }
+  | { readonly status: 'invalid' | 'not-empty' | 'unreadable'; readonly path: string }
+  | {
+    readonly status: 'selected'
+    readonly selectionKind: DesktopDataHomeSelectionKind
+    readonly selectionId: string
+    readonly path: string
+    readonly entries: readonly string[]
+  }
+
+/** A recovery-page directory classified entirely by the trusted main process. */
+export type DesktopDataHomeRecoverySelection =
+  | {
+    readonly kind: 'existing'
+    readonly path: string
+    readonly entries: readonly string[]
+  }
+  | { readonly kind: 'empty'; readonly path: string }
+
+/** Result returned before Electron begins a complete restart. */
+export interface DesktopDataHomeSwitchResult {
+  readonly restarting: boolean
+  readonly activePath: string
 }
 
 /** Resolve only a setup record that is safe for the current desktop layout. */
@@ -75,6 +132,13 @@ export function resolveRecordedDesktopDataHome(
 ): string | undefined {
   if (setup?.mode === 'reused'
     && setup.source === setup.dshHome
+    && isAbsolute(setup.dshHome)) return setup.dshHome
+  if (setup?.mode === 'created'
+    && setup.source === undefined
+    && isAbsolute(setup.dshHome)) return setup.dshHome
+  if (setup?.mode === 'imported'
+    && typeof setup.source === 'string'
+    && isAbsolute(setup.source)
     && isAbsolute(setup.dshHome)) return setup.dshHome
   if (setup?.dshHome === layout.dshHome) return layout.dshHome
   return undefined
@@ -171,6 +235,33 @@ export async function resolveDesktopDataHomeSource(candidate: string): Promise<D
   return nestedEntries.length > 0 ? { path: nested, entries: nestedEntries } : undefined
 }
 
+/** Resolve an existing empty directory that can become a new Harness home.
+ * @param candidate - Native-picker-selected directory.
+ * @returns The normalized directory, or undefined when it is not empty.
+ */
+export async function resolveEmptyDesktopDataHome(candidate: string): Promise<string | undefined> {
+  const path = resolve(candidate)
+  return (await readdir(path)).length === 0 ? path : undefined
+}
+
+/**
+ * Classify one startup-recovery selection without accepting arbitrary nonempty directories.
+ * Recognized Harness homes win over the empty-directory case, including a selected parent
+ * whose supported data lives in its `.dsh` child.
+ * @param candidate - Native-picker-selected directory.
+ * @returns A supported existing Harness home, an empty new home, or undefined.
+ */
+export async function resolveDesktopDataHomeRecoverySelection(
+  candidate: string,
+): Promise<DesktopDataHomeRecoverySelection | undefined> {
+  const source = await resolveDesktopDataHomeSource(candidate)
+  if (source !== undefined) {
+    return { kind: 'existing', path: source.path, entries: source.entries }
+  }
+  const empty = await resolveEmptyDesktopDataHome(candidate)
+  return empty === undefined ? undefined : { kind: 'empty', path: empty }
+}
+
 /**
  * Return whether a target Harness home already contains user or plugin state.
  * @param dshHome - Independent Harness home to inspect.
@@ -182,6 +273,123 @@ export async function hasDesktopData(dshHome: string): Promise<boolean> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
     throw error
+  }
+}
+
+function desktopOwnedDshHome(layout: DesktopDataHomeLayout): string {
+  return join(layout.desktopRoot, 'dsh-home')
+}
+
+function sameDesktopPath(left: string, right: string): boolean {
+  const normalizedLeft = resolve(left)
+  const normalizedRight = resolve(right)
+  return process.platform === 'win32'
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight
+}
+
+function nestedDesktopPath(parent: string, candidate: string): boolean {
+  const relationship = relative(resolve(parent), resolve(candidate))
+  return relationship !== ''
+    && relationship !== '..'
+    && !relationship.startsWith(`..${sep}`)
+    && !isAbsolute(relationship)
+}
+
+/** Return whether two Harness homes are equal or nested within each other.
+ * @param left - First normalized or user-selected Harness home.
+ * @param right - Second normalized or user-selected Harness home.
+ * @returns Whether copying between the paths could recurse or replace source data.
+ */
+export function desktopDataHomesOverlap(left: string, right: string): boolean {
+  return sameDesktopPath(left, right)
+    || nestedDesktopPath(left, right)
+    || nestedDesktopPath(right, left)
+}
+
+/** Inspect the active home without changing or initializing any directory.
+ * @param layout - Stable desktop and official paths.
+ * @param activePath - Harness home used by the current Electron process.
+ * @returns Current mode plus availability of the built-in choices.
+ */
+export async function inspectDesktopDataHomeStatus(
+  layout: DesktopDataHomeLayout,
+  activePath: string,
+): Promise<DesktopDataHomeStatus> {
+  const desktopPath = desktopOwnedDshHome(layout)
+  let officialAvailable = false
+  try {
+    const officialSource = await resolveDesktopDataHomeSource(layout.officialDshHome)
+    officialAvailable = officialSource !== undefined && sameDesktopPath(officialSource.path, layout.officialDshHome)
+  } catch {
+    // An unreadable official home remains unavailable until its permissions are repaired.
+  }
+  const normalizedActive = resolve(activePath)
+  const activeKind: DesktopDataHomeKind = layout.explicitDshHome
+    ? 'external'
+    : sameDesktopPath(normalizedActive, desktopPath)
+      ? 'desktop'
+      : sameDesktopPath(normalizedActive, layout.officialDshHome)
+        ? 'official'
+        : 'custom'
+  return {
+    activePath: normalizedActive,
+    activeKind,
+    desktopPath,
+    officialPath: layout.officialDshHome,
+    officialAvailable,
+    managedExternally: layout.explicitDshHome,
+  }
+}
+
+/** Resolve a requested existing-home switch without copying or deleting data.
+ * @param layout - Stable desktop and official paths.
+ * @param activePath - Harness home used by the current Electron process.
+ * @param target - Built-in target, existing home, or empty directory selected through the native dialog.
+ * @returns The setup record to persist before restarting the application.
+ */
+export async function resolveDesktopDataHomeSwitch(
+  layout: DesktopDataHomeLayout,
+  activePath: string,
+  target: { readonly kind: 'desktop' }
+    | { readonly kind: 'official' }
+    | { readonly kind: 'custom' | 'create'; readonly path: string },
+): Promise<DesktopDataHomeSwitchDecision> {
+  if (layout.explicitDshHome) {
+    throw new Error('desktop: DSH_HOME is managed by the launch environment')
+  }
+  if (target.kind === 'desktop') {
+    const path = desktopOwnedDshHome(layout)
+    const mode: DesktopDataHomeSetup['mode'] = await hasDesktopData(path) ? 'existing' : 'fresh'
+    return {
+      changed: !sameDesktopPath(path, activePath),
+      path,
+      setup: desktopDataHomeSetup(mode, path),
+    }
+  }
+  if (target.kind === 'create') {
+    const path = await resolveEmptyDesktopDataHome(target.path)
+    if (path === undefined) throw new Error('desktop: selected directory is not empty')
+    return {
+      changed: !sameDesktopPath(path, activePath),
+      path,
+      setup: desktopDataHomeSetup('created', path),
+    }
+  }
+  const candidate = target.kind === 'official' ? layout.officialDshHome : target.path
+  const source = await resolveDesktopDataHomeSource(candidate)
+  if (source === undefined) {
+    throw new Error(target.kind === 'official'
+      ? 'desktop: the official DSH home is unavailable'
+      : 'desktop: selected directory is not a recognized DSH home')
+  }
+  if (target.kind === 'official' && !sameDesktopPath(source.path, layout.officialDshHome)) {
+    throw new Error('desktop: the official DSH home is unavailable')
+  }
+  return {
+    changed: !sameDesktopPath(source.path, activePath),
+    path: source.path,
+    setup: desktopDataHomeSetup('reused', source.path, source.path),
   }
 }
 
@@ -251,8 +459,8 @@ export async function importOfficialDesktopData(
   officialDshHome: string,
   targetDshHome: string,
 ): Promise<DesktopDataImportResult> {
-  if (resolve(officialDshHome) === resolve(targetDshHome)) {
-    throw new Error('desktop: official and isolated Harness homes must differ')
+  if (desktopDataHomesOverlap(officialDshHome, targetDshHome)) {
+    throw new Error('desktop: source and isolated Harness homes must not overlap')
   }
   if (await hasDesktopData(targetDshHome)) {
     throw new Error(`desktop: refusing to import into non-empty Harness home ${targetDshHome}`)
@@ -299,6 +507,7 @@ export async function readDesktopDataHomeSetup(path: string): Promise<DesktopDat
     const value = JSON.parse(await readFile(path, 'utf8')) as Partial<DesktopDataHomeSetup>
     if (value.schema !== SETUP_SCHEMA
       || (value.mode !== 'fresh'
+        && value.mode !== 'created'
         && value.mode !== 'imported'
         && value.mode !== 'reused'
         && value.mode !== 'existing'
@@ -330,7 +539,7 @@ export async function writeDesktopDataHomeSetup(path: string, setup: DesktopData
 
 /**
  * Create a schema-valid setup record for the selected data mode.
- * @param mode - Fresh, imported, reused, existing, or explicit selection.
+ * @param mode - Fresh, created, imported, reused, existing, or explicit selection.
  * @param dshHome - Absolute Harness home selected for this launch mode.
  * @param source - Optional official import source.
  * @returns A timestamped durable setup record.

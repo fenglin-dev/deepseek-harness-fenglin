@@ -47,6 +47,8 @@ With that entry point, success looks like a running app with every plugin active
 
 A profile is how one dsh installation ships different app surfaces: `web`, `headless`, `acp`, `sdk`, and `sdk-minimal` start distinct compositions from the same launcher. A profile lives at `$DSH_HOME/profiles/<name>` and combines installable bundles, its own `cordis.patch.yml`, and `patchReload: live | startup`; omitted reload policy keeps the historical `live` default for custom profiles. The shipped `web` template uses live reload, while the other shipped templates apply patches only at startup. `sdk-minimal` names only its standalone bundle; the other templates retain base-plus-mode stacks. `dsh plugin` creates custom profiles, and a missing bundle or one without a patch declaration fails startup loudly.
 
+The Profile preflight reconciles dependency identity and quarantine state before composition. If an older or interrupted uninstall removed an inactive plugin and its durable quarantine but left lockfile, repair-report, or diagnostic references, inspection reports `profile.quarantine-removal-residue`; repair removes only those stale references and any incomplete package directory, so the absent plugin is not quarantined again.
+
 Your machine-local preferences also live in the Harness home:
 
 - **`.env`** — your ordinary environment layers: the invoking directory's file outranks the Harness-home file, and both sit below the inherited environment. Variables that decide how the process starts (`PATH`, proxies, `DSH_*`, `XDG_*` and similar) are rejected from files: export them instead. For a non-product bin that just wants one directory's `.env`, a missing file is fine and an unloadable one prints one labelled warning line.

@@ -13,9 +13,11 @@ import {
 import {
   extractGitPrepareBuildKey,
   extractIgnoredBuildKey,
+  isWindowsPnpmRenameContention,
   normalizePnpmDiagnostic,
   resolvePnpmInvocation,
   runProfilePackageManager,
+  windowsPnpmRenameRetryDelay,
 } from '../src/profile-package-manager.ts'
 
 afterEach(() => {
@@ -141,6 +143,55 @@ describe('profile plugin package manager', () => {
         diagnostic: JSON.stringify(['add', '--save-exact', archive]),
       })
     } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('retries only pnpm temporary-directory rename contention on Windows', () => {
+    const diagnostic = String.raw`ERR_PNPM_EPERM: [importPackage C:\Users\测试\AppData\Roaming\desktop\profiles\web\node_modules\mime-types] EPERM: operation not permitted, rename 'C:\Users\测试\AppData\Roaming\desktop\profiles\web\node_modules\mime-types_tmp_10020_7' -> 'C:\Users\测试\AppData\Roaming\desktop\profiles\web\node_modules\mime-types'`
+    expect(isWindowsPnpmRenameContention(diagnostic, 'win32')).toBe(true)
+    expect(isWindowsPnpmRenameContention(diagnostic, 'darwin')).toBe(false)
+    expect(windowsPnpmRenameRetryDelay(diagnostic, 0, 'win32')).toBe(500)
+    expect(windowsPnpmRenameRetryDelay(diagnostic, 1, 'win32')).toBe(1_500)
+    expect(windowsPnpmRenameRetryDelay(diagnostic, 2, 'win32')).toBe(3_000)
+    expect(windowsPnpmRenameRetryDelay(diagnostic, 3, 'win32')).toBeUndefined()
+    expect(windowsPnpmRenameRetryDelay(diagnostic, -1, 'win32')).toBeUndefined()
+    expect(isWindowsPnpmRenameContention(
+      'ERR_PNPM_EPERM EPERM: operation not permitted, open C:\\profile\\package.json',
+      'win32',
+    )).toBe(false)
+    expect(isWindowsPnpmRenameContention(
+      String.raw`ERR_PNPM_EPERM EPERM: operation not permitted, rename 'C:\profile\node_modules\mime-types' -> 'C:\profile\node_modules\mime-types-old'`,
+      'win32',
+    )).toBe(false)
+  })
+
+  it('recovers when a packaged pnpm retry clears Windows rename contention', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pnpm-windows-rename-'))
+    const entry = join(root, 'pnpm retry.mjs')
+    const countFile = join(root, 'attempts.txt')
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+    writeFileSync(entry, [
+      "import { existsSync, readFileSync, writeFileSync } from 'node:fs'",
+      `const countFile = ${JSON.stringify(countFile)}`,
+      "const attempts = existsSync(countFile) ? Number(readFileSync(countFile, 'utf8')) + 1 : 1",
+      'writeFileSync(countFile, String(attempts))',
+      'if (attempts === 1) {',
+      String.raw`  process.stderr.write("ERR_PNPM_EPERM: [importPackage C:\\Users\\测试\\profile\\node_modules\\mime-types] EPERM: operation not permitted, rename 'C:\\Users\\测试\\profile\\node_modules\\mime-types_tmp_4321_1' -> 'C:\\Users\\测试\\profile\\node_modules\\mime-types'")`,
+      '  process.exit(1)',
+      '}',
+      "process.stdout.write('installed')",
+    ].join('\n'))
+    vi.stubEnv('DSH_PNPM_BIN', entry)
+    try {
+      Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+      const result = runProfilePackageManager(root, ['add', '@fixture/plugin'])
+      expect(result.exitCode).toBe(0)
+      expect(result.diagnostic).toContain('retrying in 500 ms (1/3)')
+      expect(result.diagnostic).toContain('installed')
+      expect(readFileSync(countFile, 'utf8')).toBe('2')
+    } finally {
+      if (platformDescriptor !== undefined) Object.defineProperty(process, 'platform', platformDescriptor)
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -336,6 +387,53 @@ describe('profile plugin package manager', () => {
         'doctor', '--quarantine-client-module',
         'dsh-font@1.1.0', '71626ed6', '@deepseek-ai/dsh-client-runtime/client',
       ])).toBe(1)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('quarantines a scoped package with a missing unscoped Loader module immediately after add', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-scoped-loader-mismatch-'))
+    const pnpmEntry = join(home, 'pnpm-scoped-loader-mismatch.mjs')
+    const packageName = '@dsh-diagnostic-lab/scoped-loader-mismatch'
+    writeFileSync(pnpmEntry, `
+      import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+      import { dirname, join } from 'node:path'
+      const profileDir = process.cwd()
+      const manifestPath = join(profileDir, 'package.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      const packageName = ${JSON.stringify(packageName)}
+      const packageDir = join(profileDir, 'node_modules', packageName)
+      if (process.argv.includes('add')) {
+        manifest.dependencies = { ...manifest.dependencies, [packageName]: '1.0.0' }
+        mkdirSync(packageDir, { recursive: true })
+        writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+          name: packageName,
+          version: '1.0.0',
+          dsh: { bundle: { patch: './cordis.patch.yml' } },
+        }))
+        writeFileSync(join(packageDir, 'cordis.patch.yml'), '- insert:\\n  - id: diagnostic-scoped-loader-mismatch\\n    name: diagnostic-scoped-loader-mismatch\\n')
+      } else if (manifest.dependencies?.[packageName] === undefined) {
+        rmSync(packageDir, { recursive: true, force: true })
+      }
+      mkdirSync(dirname(manifestPath), { recursive: true })
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\\n')
+    `)
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('DSH_PNPM_BIN', pnpmEntry)
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', ['add', `${packageName}@1.0.0`])).toBe(0)
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining('loader-module-unresolvable'))
+      const quarantineState = JSON.parse(readFileSync(join(home, 'quarantine', 'profile-plugins.json'), 'utf8')) as unknown
+      const profileState = JSON.parse(readFileSync(join(home, 'profiles', 'web', 'package.json'), 'utf8')) as {
+        dependencies?: Record<string, string>
+        dsh?: { profile?: { bundles?: string[] } }
+      }
+      expect(quarantineState)
+        .toMatchObject({ plugins: [{ packageName, reason: 'loader-module-unresolvable' }] })
+      expect(profileState.dependencies).toEqual({})
+      expect(profileState.dsh?.profile?.bundles).not.toContain(packageName)
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

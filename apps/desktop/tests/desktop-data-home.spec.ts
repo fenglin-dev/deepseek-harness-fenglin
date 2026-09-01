@@ -4,13 +4,18 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   desktopDataHomeSetup,
+  desktopDataHomesOverlap,
   hasDesktopData,
   hasImportableDesktopData,
   importOfficialDesktopData,
+  inspectDesktopDataHomeStatus,
   IMPORTED_ONBOARDING_RESET_VERSION,
   readDesktopDataHomeSetup,
   resetImportedDesktopOnboarding,
+  resolveDesktopDataHomeSwitch,
+  resolveDesktopDataHomeRecoverySelection,
   resolveDesktopDataHomeSource,
+  resolveEmptyDesktopDataHome,
   resolveRecordedDesktopDataHome,
   resolveDesktopDataHomeLayout,
   writeDesktopDataHomeSetup,
@@ -108,6 +113,22 @@ describe('desktop data home', () => {
     expect(await readDesktopDataHomeSetup(setupPath)).toBeUndefined()
   })
 
+  it('refuses an import destination nested inside either source tree', async () => {
+    const root = await fixture()
+    const source = join(root, '.dsh')
+    const nestedTarget = join(source, 'portable')
+    const outerTarget = join(root, 'outer')
+    const nestedSource = join(outerTarget, 'source')
+    await mkdir(nestedTarget, { recursive: true })
+    await mkdir(nestedSource, { recursive: true })
+
+    expect(desktopDataHomesOverlap(source, nestedTarget)).toBe(true)
+    expect(desktopDataHomesOverlap(nestedSource, outerTarget)).toBe(true)
+    expect(desktopDataHomesOverlap(source, outerTarget)).toBe(false)
+    await expect(importOfficialDesktopData(source, nestedTarget)).rejects.toThrow('must not overlap')
+    await expect(importOfficialDesktopData(nestedSource, outerTarget)).rejects.toThrow('must not overlap')
+  })
+
   it('resets a copied onboarding acknowledgement once without changing other settings', async () => {
     const root = await fixture()
     const dshHome = join(root, 'dsh-home')
@@ -173,5 +194,115 @@ describe('desktop data home', () => {
     const setup = desktopDataHomeSetup('reused', custom, custom)
 
     expect(resolveRecordedDesktopDataHome(layout, setup)).toBe(custom)
+  })
+
+  it('accepts only supported DSH homes or empty directories for startup recovery', async () => {
+    const root = await fixture()
+    const existing = join(root, 'existing')
+    const parent = join(root, 'parent')
+    const empty = join(root, 'empty')
+    const unrelated = join(root, 'unrelated')
+    await mkdir(join(existing, 'profiles', 'web'), { recursive: true })
+    await writeFile(join(existing, 'profiles', 'web', 'package.json'), '{}\n')
+    await mkdir(join(parent, '.dsh'), { recursive: true })
+    await writeFile(join(parent, '.dsh', 'settings.yaml'), 'locale: zh\n')
+    await mkdir(empty)
+    await mkdir(unrelated)
+    await writeFile(join(unrelated, 'README.md'), 'not a Harness home\n')
+
+    await expect(resolveDesktopDataHomeRecoverySelection(existing)).resolves.toEqual({
+      kind: 'existing', path: existing, entries: ['profiles/web/package.json'],
+    })
+    await expect(resolveDesktopDataHomeRecoverySelection(parent)).resolves.toEqual({
+      kind: 'existing', path: join(parent, '.dsh'), entries: ['settings.yaml'],
+    })
+    await expect(resolveDesktopDataHomeRecoverySelection(empty)).resolves.toEqual({
+      kind: 'empty', path: empty,
+    })
+    await expect(resolveDesktopDataHomeRecoverySelection(unrelated)).resolves.toBeUndefined()
+  })
+
+  it('restores a custom destination created by first-run import', async () => {
+    const root = await fixture()
+    const source = join(root, '.dsh')
+    const custom = join(root, 'imported-dsh')
+    const layout = resolveDesktopDataHomeLayout(join(root, 'app-data'), root, true, {})
+    const setup = desktopDataHomeSetup('imported', custom, source)
+
+    expect(resolveRecordedDesktopDataHome(layout, setup)).toBe(custom)
+    expect(resolveRecordedDesktopDataHome(layout, { ...setup, source: undefined })).toBeUndefined()
+  })
+
+  it('reports built-in, custom, and externally managed data homes', async () => {
+    const root = await fixture()
+    const appData = join(root, 'app-data')
+    const official = join(root, '.dsh')
+    await mkdir(official, { recursive: true })
+    await writeFile(join(official, 'settings.yaml'), 'locale: zh\n')
+    const layout = resolveDesktopDataHomeLayout(appData, root, true, {})
+
+    await expect(inspectDesktopDataHomeStatus(layout, layout.dshHome)).resolves.toMatchObject({
+      activeKind: 'desktop', officialAvailable: true, managedExternally: false,
+    })
+    await expect(inspectDesktopDataHomeStatus(layout, official)).resolves.toMatchObject({
+      activeKind: 'official', officialAvailable: true,
+    })
+    await expect(inspectDesktopDataHomeStatus(layout, join(root, 'portable'))).resolves.toMatchObject({
+      activeKind: 'custom',
+    })
+    const explicit = resolveDesktopDataHomeLayout(appData, root, true, { DSH_HOME: join(root, 'external') })
+    await expect(inspectDesktopDataHomeStatus(explicit, explicit.dshHome)).resolves.toMatchObject({
+      activeKind: 'external', managedExternally: true,
+    })
+  })
+
+  it('switches records without copying, moving, or deleting either home', async () => {
+    const root = await fixture()
+    const layout = resolveDesktopDataHomeLayout(join(root, 'app-data'), root, true, {})
+    const desktop = join(layout.desktopRoot, 'dsh-home')
+    const official = join(root, '.dsh')
+    const custom = join(root, 'portable-dsh')
+    const created = join(root, 'new-dsh')
+    await mkdir(desktop, { recursive: true })
+    await mkdir(official, { recursive: true })
+    await mkdir(join(custom, 'profiles', 'web'), { recursive: true })
+    await mkdir(created)
+    await writeFile(join(desktop, 'settings.yaml'), 'locale: en\n')
+    await writeFile(join(official, 'settings.yaml'), 'locale: zh\n')
+    await writeFile(join(custom, 'profiles', 'web', 'package.json'), '{}\n')
+
+    const officialDecision = await resolveDesktopDataHomeSwitch(layout, desktop, { kind: 'official' })
+    expect(officialDecision).toMatchObject({ changed: true, path: official })
+    expect(officialDecision.setup).toMatchObject({ mode: 'reused', dshHome: official, source: official })
+    const customDecision = await resolveDesktopDataHomeSwitch(layout, official, { kind: 'custom', path: custom })
+    expect(customDecision).toMatchObject({ changed: true, path: custom })
+    expect(await resolveEmptyDesktopDataHome(created)).toBe(created)
+    const createdDecision = await resolveDesktopDataHomeSwitch(layout, custom, { kind: 'create', path: created })
+    expect(createdDecision).toMatchObject({ changed: true, path: created, setup: { mode: 'created' } })
+    expect(resolveRecordedDesktopDataHome(layout, createdDecision.setup)).toBe(created)
+    expect(await hasDesktopData(created)).toBe(false)
+    const desktopDecision = await resolveDesktopDataHomeSwitch(layout, custom, { kind: 'desktop' })
+    expect(desktopDecision.setup.mode).toBe('existing')
+    expect(await readFile(join(desktop, 'settings.yaml'), 'utf8')).toBe('locale: en\n')
+    expect(await readFile(join(official, 'settings.yaml'), 'utf8')).toBe('locale: zh\n')
+    expect(await readFile(join(custom, 'profiles', 'web', 'package.json'), 'utf8')).toBe('{}\n')
+  })
+
+  it('rejects unavailable, unrecognized, and environment-managed switch targets', async () => {
+    const root = await fixture()
+    const layout = resolveDesktopDataHomeLayout(join(root, 'app-data'), root, true, {})
+    const unrelated = join(root, 'unrelated')
+    await mkdir(unrelated)
+    await writeFile(join(unrelated, 'keep.txt'), 'keep')
+
+    await expect(resolveDesktopDataHomeSwitch(layout, layout.dshHome, { kind: 'official' }))
+      .rejects.toThrow('official DSH home is unavailable')
+    await expect(resolveDesktopDataHomeSwitch(layout, layout.dshHome, { kind: 'custom', path: unrelated }))
+      .rejects.toThrow('not a recognized DSH home')
+    await expect(resolveDesktopDataHomeSwitch(layout, layout.dshHome, { kind: 'create', path: unrelated }))
+      .rejects.toThrow('selected directory is not empty')
+    const explicit = resolveDesktopDataHomeLayout(join(root, 'app-data'), root, true, { DSH_HOME: unrelated })
+    await expect(resolveDesktopDataHomeSwitch(explicit, unrelated, { kind: 'desktop' }))
+      .rejects.toThrow('managed by the launch environment')
   })
 })

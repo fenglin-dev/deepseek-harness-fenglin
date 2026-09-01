@@ -8,7 +8,7 @@ Sprachen: [简体中文](README.md) · [English](README.en.md) · [日本語](RE
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-alpha.1 ist verfügbar — jetzt herunterladen und ausprobieren](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1).** Die Version integriert DeepSeek Harness 0.1.2-alpha.1 und ergänzt das Diagnoselabor, die Live-Plugin-Suche, einen stärkeren Plugin-Isolationsschutz und eine frei sortierbare Einstellungsnavigation.
+> **[v0.1.2-alpha.1.1 ist verfügbar. Dieses Korrektur- und Verbesserungsupdate für v0.1.2-alpha.1 kann jetzt heruntergeladen und ausprobiert werden](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1).** Die Version verwendet weiterhin DeepSeek Harness 0.1.2-alpha.1 als Upstream-Basis und verbessert die Verwaltung der Desktop-Umgebung, die Plugin-Wiederherstellung und die plattformübergreifende Stabilität.
 >
 > Dies ist eine Alpha-Vorabversion. Sichern Sie wichtige Konfigurationen vor dem Upgrade und fügen Sie Problemmeldungen relevante Protokolle oder Diagnoseberichte bei.
 
@@ -18,14 +18,20 @@ Open DeepSeek Harness Desktop ist eine unabhängige, von der Community gepflegte
 >
 > Dieses Repository ist kein offizielles DeepSeek-Produkt. Es befindet sich weiterhin in der Vorschau; Datenformate, Kompatibilitätsregeln und Installation können sich noch ändern.
 
-## Höhepunkte dieser Version
+## Aktuelle Hauptfunktionen
 
-- Offizielle Konfiguration in eine unabhängige Umgebung importieren, ein vorhandenes Verzeichnis direkt teilen oder neu beginnen.
-- Plugin-Quellen online prüfen und sicher aus einem Quellverzeichnis oder einer .tgz-Datei wiederherstellen.
-- pnpm-Konflikte, doppelte Cordis-Instanzen, Loader-Reste und Geister-Plugins vor dem Start diagnostizieren, reparieren und isolieren.
-- Markierten Text kopieren, in einer neuen Unterhaltung fragen oder an den aktuellen Entwurf anhängen.
-- Tray, Schnellneustart, Benachrichtigungen, Protokolle, In-App-Update und Registrierung des dsh-Befehls.
-- Pakete für Windows x64, macOS arm64/x64 und Linux DEB/RPM.
+- KI-Unterhaltungsbereich mit einstellbarer Breite, Rundennavigation, exaktem Token-Verbrauch und Sendewarteschlange.
+- Import in eine unabhängige Umgebung, direkte Freigabe eines Verzeichnisses oder sauberer Neustart.
+- Plugin-Suche mit echtem Marktkatalog, Kategorien, lokalem Status und direkter Installation.
+- Diagnose vor dem Start, Übungen, Quarantäne und Wiederherstellung für pnpm, Cordis und Loader.
+- Scrollbare, sortierbare und dauerhaft gespeicherte Einstellungsnavigation.
+- Native Distributionen und Desktop-Integration für Windows, macOS und Linux.
+
+## KI-Unterhaltungsbereich
+
+Abgeschlossene Antworten können Prozessinhalt und System Prompt einklappen. Breite und Schriftgröße sind einstellbar; Markdown-Tabellen skalieren mit dem Text, während kompakte Rundennavigation, exakter Token-Verbrauch pro Antwort und fortlaufende Codehervorhebung lange Unterhaltungen übersichtlich machen.
+
+Der Verlauf zeigt Karten für abgeschlossene, abgebrochene und unterbrochene Antworten. Nicht gesendete Fragen bleiben beim Sitzungswechsel erhalten, und während einer laufenden Sitzung kann die nächste Nachricht in die Sendewarteschlange gelangen. Bilder erscheinen sofort, während Komprimierung und Upload im Hintergrund laufen; Trace-Bilder, hochgeladene lokale Dateien sowie Datei- und Sitzungsreferenzen bleiben auch nach Bearbeitung benachbarten Textes verfügbar.
 
 ## Erster Start und unabhängige Datenumgebungen
 
@@ -49,7 +55,25 @@ Erstellt eine leere, unabhängige Umgebung, ohne bestehende Einstellungen, Sitzu
 
 <p align="center"><img src="./assets/readme/data-home-fresh-en.png" width="900" alt="Leere unabhängige DSH-Umgebung erstellen"><br><sub>Keine bestehende DSH-Konfiguration wird gelesen oder geändert</sub></p>
 
-Anschließend führt der Assistent durch Modell-API-Key, WeChat-/Feishu- und andere IM-Bots sowie eine optionale Codex-Verbindung. Jeder Schritt kann übersprungen und später in den Einstellungen abgeschlossen werden.
+### Unabhängiges Datenverzeichnis frei wählen
+
+Sowohl **In eine unabhängige Umgebung importieren** als auch **Neu beginnen** bieten vor dem Fortfahren die Wahl zwischen dem verwalteten Standard und einem leeren eigenen Ordner. Dieser Ordner wird zum unabhängigen Datenstamm des Clients; die Quelle wird weder verändert noch synchronisiert. Unter Windows können Sitzungen, Plugin-Profile und andere wachsende Daten auf D: oder einem anderen Nicht-Systemlaufwerk liegen und so C: entlasten.
+
+<p align="center"><img src="./assets/readme/data-home-import-custom-location-zh.png" width="900" alt="Beim Import einen leeren eigenen Ordner wählen"><br><sub>Unabhängiger Import: vor dem Kopieren Standardort oder leeren Ordner wählen</sub></p>
+
+<p align="center"><img src="./assets/readme/data-home-fresh-custom-location-zh.png" width="900" alt="Beim Neustart einen leeren eigenen Ordner wählen"><br><sub>Neu beginnen: unabhängige Daten am gewählten Ort speichern</sub></p>
+
+Auch nach der Ersteinrichtung kann das Datenverzeichnis unter **Einstellungen → Allgemeine Einstellungen** gewechselt werden. Benutzer können zum unabhängigen Client-Verzeichnis zurückkehren, das offizielle `~/.dsh` direkt verwenden, ein anderes vorhandenes DSH-Verzeichnis wählen oder in einem leeren Ordner eine neue Konfiguration erstellen. Der Wechsel bestimmt nur das nach dem Neustart verwendete Verzeichnis; ursprüngliche Daten werden weder kopiert noch verschoben, zusammengeführt oder gelöscht. Ein leerer Ordner startet nach dem Neustart erneut den Ersteinrichtungsablauf.
+
+<p align="center"><img src="./assets/readme/data-home-switch-after-start-zh.png" width="900" alt="Datenverzeichnis nach dem Start in den allgemeinen Einstellungen wechseln"><br><sub>Sicher zu einer vorhandenen Konfiguration wechseln oder in einem leeren Ordner eine neue unabhängige Konfiguration erstellen</sub></p>
+
+Anschließend führt der Assistent durch Modell-API-Key, mobilen Zugriff, WeChat-/Feishu- und andere IM-Bots sowie eine optionale Codex-Verbindung. Jeder Schritt kann übersprungen und später in den Einstellungen abgeschlossen werden.
+
+## Plugin-Suche, Installation und Aktualisierung
+
+„Plugins erkunden“ liest den echten Plugin-Marketplace-Katalog statt einer festen Liste. Beliebte und kategorisierte Ansichten zeigen Stars, Downloads der letzten 30 Tage und den lokalen Installationsstatus. Plugins können den geschützten Direktinstallationsablauf verwenden oder im vollständigen Markt angezeigt und verwaltet werden.
+
+Ein erfolgreicher Katalog wird 24 Stunden zwischengespeichert; Kategorien wechseln ohne erneuten vollständigen Abruf, und eine manuelle Aktualisierung bleibt möglich. Der Installationsstatus wird bei jedem Öffnen separat gelesen. Netzwerkfehler zeigen den tatsächlichen Grund und lassen mit einem klaren Hinweis weiterhin alte Cache-Daten zu. Lokal installierte Plugins behalten verifizierbare Paket- oder Repository-Identitäten, sodass der Markt die Online-Quelle erkennen und **Wiederherstellen** anbieten kann. Die lokale Quelle selbst wird nicht aktualisiert und muss für normale Update-Prüfungen in die Online-Version umgewandelt werden.
 
 ## Auswahl und Wiederherstellung importierter Plugins
 
@@ -65,6 +89,16 @@ Drittanbieter-Plugins teilen den Node.js-Prozess und den Cordis-Servicegraphen d
 
 Darum läuft die Diagnose in der Profile-Komposition und Boot-Schicht statt in einem gewöhnlichen Plugin. Vor Drittanbieter-Code liest sie Manifest, pnpm-lock.yaml, Workspace-Einstellungen, Bundle-Reihenfolge, den tatsächlich installierten Graphen und die gemeinsam genutzte Laufzeit der aktuellen Installation.
 
+### Von der Startquarantäne zur ausführbaren Reparatur
+
+Der Schutz reicht vom Start bis in die Hauptoberfläche: Zuerst erkennt und entfernt die Boot-Schicht das inkompatible Plugin, danach meldet der Client die Quarantäne eindeutig, und Diagnostics zeigt Ursache, ursprüngliche Version sowie konkrete Aktualisierungs- oder Deinstallationsaktionen.
+
+<p align="center"><img src="./assets/readme/diagnostics-startup-quarantine-zh.png" width="900" alt="Inkompatibles dsh-font wird beim Start isoliert"><br><sub>Ein inkompatibles Plugin während des Starts erkennen und isolieren</sub></p>
+
+<p align="center"><img src="./assets/readme/diagnostics-quarantine-notice-zh.png" width="900" alt="Hinweis auf isolierte Plugins nach dem Start"><br><sub>Sicher in die Hauptoberfläche gelangen und das Quarantäneergebnis anzeigen</sub></p>
+
+<p align="center"><img src="./assets/readme/diagnostics-repair-guidance-zh.png" width="900" alt="Diagnose zeigt Ursache und Reparaturaktionen"><br><sub>Ursache, Version, ursprüngliche Quelle und ausführbare Wiederherstellung anzeigen</sub></p>
+
 Cordis Context, Service und Symbol hängen von der physischen Modulidentität ab, nicht nur von der Version. Zwei gleich versionierte Kopien von @deepseek-ai/cordis oder dsh-tools an verschiedenen real paths bleiben getrennte JavaScript-Instanzen. Die Prüfung verfolgt jedes Root-Plugin, direkte und transitive Ketten, deklarierte Bereiche und endgültige Pfade; gültige peerDependencies werden nicht beanstandet.
 
 Geprüft werden Host-Singletons, Profile-/Lockfile-Konsistenz, verwaiste oder doppelte Bundles, Geister-Plugins, pnpm Store, unvollständige Installationen, allowBuilds, prepare-Freigaben und Peer-Deduplizierung.
@@ -72,6 +106,20 @@ Geprüft werden Host-Singletons, Profile-/Lockfile-Konsistenz, verwaiste oder do
 Die Reihenfolge lautet **nur lesend prüfen → verlustfrei zusammenführen → nur nötige Abhängigkeiten installieren → real paths erneut prüfen → falls nötig isolieren**. Ein gesundes Profile führt pnpm nicht aus. Verwaltete link:-Overrides gelten nur für kompatible Bereiche und senken niemals minimumReleaseAge oder überschreiben allowBuilds: false. Ein erfolgreicher pnpm-Befehl reicht nicht; erst konsistente physische Pfade und Loader-Zustände erlauben den Start.
 
 Ist sichere Konvergenz nicht beweisbar, wird nur das verursachende Root-Plugin aus aktiven Abhängigkeiten und Bundle-Reihenfolge entfernt. Spezifikation, Version, Kette, Grund und Zeitpunkt bleiben erhalten. Quarantäne ist erst abgeschlossen, wenn das Paket physisch aus dem Profile entfernt ist, gemeinsame Host-Pakete auf kanonische Kopien zeigen und die Nachprüfung besteht. So wird aus einem unlesbaren Stack eine Erklärung: wer scheiterte, warum, welcher Schutz griff und was als Nächstes zu tun ist.
+
+Diagnostics zeigt das verantwortliche Plugin, seine Version, den Quarantänegrund und eine Zusammenfassung der Abhängigkeitskette. Benutzer können neu verlinken und die Wiederherstellung erneut versuchen, das exakt erkannte Build-Element freigeben, im Markt nach einer kompatiblen Aktualisierung suchen oder vollständig deinstallieren. Erst eine erfolgreiche erneute Prüfung bringt das Plugin in die Laufzeit zurück.
+
+### Diagnose-Übungszentrum
+
+Entwicklungs- und Installationsversionen enthalten Offline-Beispiele für Host-Schattenkopien, verwaiste Bundles, fehlende Module, ungültige Patches, doppelte Loader, Lifecycle-Fehler, blockierte Build-Freigaben und unterbrochene Reparaturen. Ausgewählte Szenarien laufen nacheinander und zeigen aktuelles Szenario, Phase, verbleibende Szenarien, Ergebnis und Dauer. Das isolierte Ziel ändert das Benutzer-Profile nicht; der erweiterte Modus für das aktive Profile stellt am Ende wieder her und prüft erneut. Kann eine saubere Wiederherstellung nicht bewiesen werden, starten Profile-Plugins nicht neu; anonymisierte JSON- und Textzusammenfassungen werden gespeichert und der JSON-Bericht kann exportiert werden.
+
+<p align="center"><img src="./assets/readme/diagnostics-lab-sandbox-zh.png" width="900" alt="Isolierte Szenarien im Diagnose-Übungszentrum"><br><sub>Isoliertes Ziel: mehrere Fehler ohne Änderung des Benutzer-Profile erproben</sub></p>
+
+<p align="center"><img src="./assets/readme/diagnostics-lab-live-profile-zh.png" width="900" alt="Erweiterter Modus für das aktive Profile"><br><sub>Aktives Profile: Quarantäne, Wiederherstellung und Nachprüfung verifizieren</sub></p>
+
+> [!CAUTION]
+>
+> In dieser Version ist nicht garantiert, dass die Übung mit dem echten Profile erfolgreich abgeschlossen wird. Sichern Sie vorher die Konfiguration oder verwenden Sie ein isoliertes Datenverzeichnis, da ein erhebliches Absturzrisiko besteht. Verwenden Sie diesen Modus nicht in einer Produktivumgebung. Falls ein echter Test nötig ist, aktivieren Sie jeweils nur ein Szenario.
 
 ## Textauswahl und Kontextmenü
 
@@ -100,8 +148,25 @@ Wartet die Sitzung auf Auswahl, Bestätigung oder Antwort oder ist der Editor ge
 - Release-Prüfung, Downloadfortschritt, SHA256SUMS-Prüfung und Öffnen des Installers in den allgemeinen Einstellungen.
 - Sichere Registrierung und Entfernung des integrierten dsh-Befehls im System-PATH.
 - Eigene Titelleiste unter Windows/Linux, natives macOS-Verhalten und begrenztes Schreiben in die Zwischenablage.
-- Sechs geprüfte lokale Archive: Plugin Marketplace, dsh-im, dsh-skill-picker, dsh-font, Better Sidebar und dsh-pocket. Benutzer-Deinstallationen werden respektiert.
 - Codex und Claude Code werden bei Bedarf über **Einstellungen → Externe Werkzeuge** installiert, nicht in den Installer eingebettet.
+
+### Voreingestellte Plugins
+
+Der Installer enthält fünf Start-Presets als integritätsgeprüfte lokale Archive: Plugin Marketplace, dsh-im, dsh-skill-picker, Better Sidebar und dsh-pocket. `dsh-font` wird ausschließlich als Beispiel für Diagnoseübungen bereitgestellt. Deinstalliert ein Benutzer ein Preset, installiert der Client es nicht automatisch erneut.
+
+<p align="center"><img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="Telefon über Pocket-QR-Code oder LAN-Adresse verbinden"><br><sub>Mobiler Zugriff: im selben Netzwerk scannen und öffentlichen Zugriff nur bei Bedarf aktivieren</sub></p>
+
+<p align="center"><img src="./assets/readme/preset-im-robot-zh.png" width="900" alt="WeChat und weitere IM-Bots über dsh-im verbinden"><br><sub>IM-Bots: WeChat, Feishu, DingTalk, WeCom, QQ, Slack, Telegram, Discord und WhatsApp</sub></p>
+
+Die mitgelieferte lokale Version eignet sich zur Offline-Vorbereitung, folgt Markt-Updates aber nicht direkt. Sobald eine Verbindung besteht, unter **Plugin-Markt → Installiert** bei jedem Preset **Wiederherstellen** wählen, um es durch die Online-Version zu ersetzen. Die Wiederherstellung lässt sich nicht automatisch zurückrollen; eine feste lokale Version kann bei Bedarf beibehalten werden.
+
+<p align="center"><img src="./assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="Lokale Presets als Online-Versionen wiederherstellen"><br><sub>Empfohlen: online wiederherstellen und danach normale Update-Prüfungen erhalten</sub></p>
+
+### Anpassbare Einstellungsnavigation
+
+Die linke Einstellungsnavigation besitzt einen eigenen Scrollbereich, sodass von Plugins hinzugefügte Abschnitte erreichbar bleiben. Abschnitte können gezogen werden; ihre Reihenfolge wird lokal gespeichert und beim Installieren oder Entfernen von Plugins stabil zusammengeführt. Unter Windows und Linux verwenden Titelleiste und Harness-Inhalt getrennte native Ansichten, sodass ein Vollbild-Plugin die Fenstersteuerung nicht überdecken kann.
+
+<p align="center"><img src="./assets/readme/settings-navigation-reorder-zh.png" width="900" alt="Einstellungen über die Drei-Linien-Griffe neu anordnen"><br><sub>Abschnitte frei ziehen; die übrigen Zeilen geben weich Platz frei und die endgültige Reihenfolge wird gespeichert</sub></p>
 
 ## Themes und Hintergründe
 

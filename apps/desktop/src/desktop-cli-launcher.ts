@@ -9,7 +9,7 @@ const SETUP_SCHEMA = 'open-deepseek-harness-desktop/data-home-setup/v1'
 
 interface DesktopCliSetup {
   readonly schema: typeof SETUP_SCHEMA
-  readonly mode: 'fresh' | 'imported' | 'reused' | 'existing' | 'explicit'
+  readonly mode: 'fresh' | 'created' | 'imported' | 'reused' | 'existing' | 'explicit'
   readonly dshHome: string
   readonly completedAt: string
   readonly source?: string
@@ -49,7 +49,7 @@ export function parseDesktopCliSetup(source: string): string {
     throw new Error('desktop dsh: the data-directory selection is damaged; open the desktop app to repair it')
   }
   if (value.schema !== SETUP_SCHEMA
-    || !['fresh', 'imported', 'reused', 'existing', 'explicit'].includes(value.mode ?? '')
+    || !['fresh', 'created', 'imported', 'reused', 'existing', 'explicit'].includes(value.mode ?? '')
     || typeof value.dshHome !== 'string'
     || !isAbsolute(value.dshHome)
     || typeof value.completedAt !== 'string'

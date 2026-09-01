@@ -1,7 +1,8 @@
 /** Reactive owner of desktop bridge snapshots and operations. */
 
 import type {
-  CloseBehavior, DesktopBridge, DesktopCapabilities, DesktopCliStatus, DesktopPreferences,
+  CloseBehavior, DesktopBridge, DesktopCapabilities, DesktopCliStatus, DesktopDataHomeSelectionResult,
+  DesktopDataHomeSelectionKind, DesktopDataHomeStatus, DesktopDataHomeSwitchRequest, DesktopPreferences,
   DesktopReleaseDownloadStatus, DesktopReleaseStatus,
 } from './bridge.ts'
 
@@ -12,6 +13,9 @@ export interface DesktopShellSnapshot {
   release: DesktopReleaseStatus
   releaseDownload: DesktopReleaseDownloadStatus
   commandLine: DesktopCliStatus | null
+  dataHome: DesktopDataHomeStatus | null
+  dataHomeSelection: DesktopDataHomeSelectionResult | null
+  restartPending: boolean
   busy: boolean
   error: string | null
 }
@@ -24,6 +28,9 @@ export class DesktopShellController {
     release: { phase: 'unsupported' },
     releaseDownload: { phase: 'unsupported' },
     commandLine: null,
+    dataHome: null,
+    dataHomeSelection: null,
+    restartPending: false,
     busy: false,
     error: null,
   }
@@ -62,8 +69,9 @@ export class DesktopShellController {
       this.bridge.releases.getStatus(),
       this.bridge.releases.getDownloadStatus(),
       this.bridge.shell.getCommandLine(),
-    ]).then(([capabilities, preferences, release, releaseDownload, commandLine]) => {
-      this.#publish({ capabilities, preferences, release, releaseDownload, commandLine })
+      this.bridge.shell.getDataHome(),
+    ]).then(([capabilities, preferences, release, releaseDownload, commandLine, dataHome]) => {
+      this.#publish({ capabilities, preferences, release, releaseDownload, commandLine, dataHome })
     }).catch((error: unknown) => {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })
     })
@@ -121,6 +129,35 @@ export class DesktopShellController {
     this.#publish({ busy: true, error: null })
     try {
       this.#publish({ commandLine: await this.bridge.shell.removeCommandLine() })
+    } catch (error) {
+      this.#publish({ error: error instanceof Error ? error.message : String(error) })
+    } finally {
+      this.#publish({ busy: false })
+    }
+  }
+
+  /** Open the native picker and retain its opaque validated selection.
+   * @param kind - Whether the picker accepts an existing DSH home or an empty folder.
+   */
+  async chooseDataHome(kind: DesktopDataHomeSelectionKind): Promise<void> {
+    this.#publish({ busy: true, error: null })
+    try {
+      this.#publish({ dataHomeSelection: await this.bridge.shell.chooseDataHome(kind) })
+    } catch (error) {
+      this.#publish({ error: error instanceof Error ? error.message : String(error) })
+    } finally {
+      this.#publish({ busy: false })
+    }
+  }
+
+  /** Persist one validated data-home choice and request a complete desktop restart.
+   * @param request - Built-in target or opaque native-picker selection.
+   */
+  async switchDataHome(request: DesktopDataHomeSwitchRequest): Promise<void> {
+    this.#publish({ busy: true, error: null })
+    try {
+      const result = await this.bridge.shell.switchDataHome(request)
+      this.#publish({ restartPending: result.restarting })
     } catch (error) {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })
     } finally {

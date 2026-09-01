@@ -22,7 +22,9 @@
       .failure[hidden], .slow[hidden], .progress-surface[hidden] { display: none; }
       .failure-message { color: #a12b27; margin: 0 0 10px; }
       .log-path { background: rgb(36 34 31 / 6%); border-radius: 8px; color: inherit; font: 12px/1.5 ui-monospace, monospace; margin: 0 0 16px; overflow-wrap: anywhere; padding: 10px 12px; }
-      .actions { display: flex; gap: 10px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+      .directory-error { color: #a12b27; font-size: 13px; margin: -6px 0 14px; }
+      .directory-error[hidden] { display: none; }
       button { border: 1px solid #c9c5bd; border-radius: 8px; background: #fff; color: inherit; cursor: pointer; font: inherit; padding: 8px 13px; }
       button.primary { background: #24221f; border-color: #24221f; color: #fff; }
       button:disabled { cursor: wait; opacity: .6; }
@@ -53,8 +55,10 @@
       <section id="failure" class="failure" role="alert" hidden>
         <p id="failure-message" class="failure-message"></p>
         <p id="log-path" class="log-path"></p>
+        <p id="directory-error" class="directory-error" role="status" hidden></p>
         <div class="actions">
           <button id="retry" class="primary" type="button">Retry</button>
+          <button id="switch-data-home" type="button">Switch data directory</button>
           <button id="open-logs" type="button">Open log folder</button>
         </div>
       </section>

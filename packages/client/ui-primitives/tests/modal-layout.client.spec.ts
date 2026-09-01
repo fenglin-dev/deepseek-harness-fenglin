@@ -1,4 +1,4 @@
-/** Shared modal geometry contract for desktop chrome and short viewports. */
+/** Shared modal geometry contract for short viewports. */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -22,9 +22,9 @@ function declarations(selector: string): Map<string, string> {
 }
 
 describe('Modal.module.css geometry', () => {
-  it('keeps every body-portaled modal below desktop chrome', () => {
+  it('fills its renderer viewport without a desktop-titlebar offset', () => {
     const root = declarations('.root')
-    expect(root.get('inset')).toBe('var(--dsh-desktop-titlebar-inset, 0px) 0 0')
+    expect(root.get('inset')).toBe('0')
     expect(root.get('box-sizing')).toBe('border-box')
   })
 

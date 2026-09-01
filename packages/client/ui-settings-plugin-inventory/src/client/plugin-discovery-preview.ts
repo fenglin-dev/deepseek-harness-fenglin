@@ -1,13 +1,17 @@
 /** Desktop-owned composition and caching for the compact Plugin Market preview. */
 
 export const PLUGIN_DISCOVERY_CACHE_KEY = 'dsh.desktop.plugin-discovery.v1'
+/** Maximum age of a discovery catalog before the UI requires revalidation. */
 export const PLUGIN_DISCOVERY_CACHE_TTL_MS = 24 * 60 * 60 * 1_000
+/** Synthetic ranking id for the market-wide popular collection. */
 export const PLUGIN_DISCOVERY_POPULAR = 'popular'
 const CACHE_SCHEMA = 'desktop-plugin-discovery-cache/v1' as const
 const CARD_LIMIT = 4
 
+/** Local installation state rendered on one discovery card. */
 export type PreviewState = 'installed' | 'uninstalled' | 'restart' | 'unavailable' | 'unknown'
 
+/** Market registry fields required to rank and render one plugin. */
 export interface MarketRegistryPlugin {
   name: string
   owner: string
@@ -21,23 +25,27 @@ export interface MarketRegistryPlugin {
   deprecated?: boolean
 }
 
+/** Market registry response used to build the compact discovery catalog. */
 export interface MarketRegistrySnapshot {
   updated: string
   categories: Record<string, Record<string, string>>
   plugins: MarketRegistryPlugin[]
 }
 
+/** Active Profile data used to resolve current installation and activation state. */
 export interface MarketInstalledSnapshot {
   installed: Record<string, string>
   repoIdentities?: Record<string, string[]>
   activation?: Record<string, { state?: string }>
 }
 
+/** Localized category metadata retained by the compact catalog. */
 export interface PreviewCategory {
   id: string
   labels: Record<string, string>
 }
 
+/** Cache-safe projection of one registry plugin. */
 export interface CachedPreviewItem {
   id: string
   name: string
@@ -53,6 +61,7 @@ export interface CachedPreviewItem {
   matchNames: string[]
 }
 
+/** Versioned compact catalog with pre-ranked card ids. */
 export interface PluginDiscoveryCatalog {
   schema: typeof CACHE_SCHEMA
   cachedAt: number
@@ -62,10 +71,12 @@ export interface PluginDiscoveryCatalog {
   rankings: Record<string, string[]>
 }
 
+/** Discovery card data combined with current Profile state. */
 export interface PreviewItem extends CachedPreviewItem {
   state: PreviewState
 }
 
+/** Cache read result that distinguishes usable fresh and stale catalogs. */
 export interface PluginDiscoveryCacheRead {
   catalog: PluginDiscoveryCatalog
   stale: boolean
@@ -129,7 +140,13 @@ function storageOrNull(storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeIt
   }
 }
 
-/** Rank once, then fill the popular and category buckets in one pass. */
+/**
+ * Rank once, then fill the popular and category buckets in one pass.
+ *
+ * @param registry - Complete market registry snapshot.
+ * @param cachedAt - Timestamp assigned to the generated catalog.
+ * @returns A bounded, cache-safe catalog for the discovery preview.
+ */
 export function buildPluginDiscoveryCatalog(
   registry: MarketRegistrySnapshot,
   cachedAt: number = Date.now(),
@@ -215,7 +232,14 @@ function previewState(name: string | null, local: MarketInstalledSnapshot | null
   return 'installed'
 }
 
-/** Select at most four pre-ranked cards and merge current local activation state. */
+/**
+ * Select at most four pre-ranked cards and merge current local activation state.
+ *
+ * @param catalog - Compact catalog containing pre-ranked item ids.
+ * @param category - Popular or registry category id to display.
+ * @param local - Current Profile state, or `null` when it could not be read.
+ * @returns The selected cards with current installation states.
+ */
 export function selectPluginDiscoveryItems(
   catalog: PluginDiscoveryCatalog,
   category: string,
@@ -229,7 +253,13 @@ export function selectPluginDiscoveryItems(
   })
 }
 
-/** Read persistent cache first, falling back to the process-local copy. */
+/**
+ * Read persistent cache first, falling back to the process-local copy.
+ *
+ * @param now - Timestamp used to determine whether the catalog is stale.
+ * @param storage - Storage implementation, `null` to use memory only, or omitted for local storage.
+ * @returns A validated cache entry with freshness state, or `null` when no valid entry exists.
+ */
 export function readPluginDiscoveryCache(
   now: number = Date.now(),
   storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null,
@@ -251,7 +281,12 @@ export function readPluginDiscoveryCache(
   return { catalog: memoryCache, stale: now - memoryCache.cachedAt >= PLUGIN_DISCOVERY_CACHE_TTL_MS }
 }
 
-/** Atomically replace the process cache, then best-effort persist it. */
+/**
+ * Atomically replace the process cache, then best-effort persist it.
+ *
+ * @param catalog - Valid catalog that becomes the process-local source immediately.
+ * @param storage - Storage implementation, `null` for memory only, or omitted for local storage.
+ */
 export function writePluginDiscoveryCache(
   catalog: PluginDiscoveryCatalog,
   storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | null,

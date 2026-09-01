@@ -1,4 +1,4 @@
-/** First-run checklist that routes into the existing Models and IM settings pages. */
+/** First-run checklist that routes into the existing Models, phone, IM, and Codex settings pages. */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -6,7 +6,7 @@ import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   IconCheckOutline16, IconChevronDownOutline14, IconCloseOutline16,
-  IconCodeOutline16, IconDataOutline16, IconPersonalizationOutline16, Menu, Modal,
+  IconCodeOutline16, IconDataOutline16, IconLinkOutline16, IconPersonalizationOutline16, Menu, Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ModelsSettingsState, ModelsSettingsStore } from './store.ts'
 import { onboardingReadiness } from './store.ts'
@@ -14,7 +14,7 @@ import type { WelcomeNoticeState, WelcomeNoticeStore } from './welcome-store.ts'
 import type { en } from './locales.ts'
 import css from './SetupWizard.module.css'
 
-type TaskId = 'models' | 'im' | 'codex'
+type TaskId = 'models' | 'phone' | 'im' | 'codex'
 type TaskResult = 'complete' | 'skipped'
 
 interface SetupLocaleState {
@@ -76,20 +76,25 @@ export function SetupWizard(props: SetupWizardProps): ReactNode {
 
   const modelReady = readiness.kind === 'provider-ready'
   const modelResult = modelReady ? 'complete' : results.models
+  const phoneResult = results.phone
   const imResult = results.im
   const codexResult = results.codex
   const finishedCount = Number(modelResult !== undefined)
+    + Number(phoneResult !== undefined)
     + Number(imResult !== undefined)
     + Number(codexResult !== undefined)
-  const allFinished = finishedCount === 3
+  const allFinished = finishedCount === 4
   const allComplete = modelResult === 'complete'
+    && phoneResult === 'complete'
     && imResult === 'complete'
     && codexResult === 'complete'
   const activeStep = modelResult === undefined
     ? 1
-    : imResult === undefined
+    : phoneResult === undefined
       ? 2
-      : codexResult === undefined ? 3 : 4
+      : imResult === undefined
+        ? 3
+        : codexResult === undefined ? 4 : 5
 
   const mark = useCallback((id: TaskId, result: TaskResult) => {
     setResults(previous => ({ ...previous, [id]: result }))
@@ -100,7 +105,8 @@ export function SetupWizard(props: SetupWizardProps): ReactNode {
   }
 
   const rail = [
-    t('setup.step.models'), t('setup.step.messages'), t('setup.step.codex'), t('setup.step.ready'),
+    t('setup.step.models'), t('setup.step.phone'), t('setup.step.messages'),
+    t('setup.step.codex'), t('setup.step.ready'),
   ]
 
   if (welcome.status === 'idle' || welcome.status === 'loading' || welcome.acknowledged) return null
@@ -108,6 +114,7 @@ export function SetupWizard(props: SetupWizardProps): ReactNode {
   return (
     <Modal open title={t('setup.title')} onClose={() => {
       mark('models', 'skipped')
+      mark('phone', 'skipped')
       mark('im', 'skipped')
       mark('codex', 'skipped')
     }} headless className={css.dialog as string}>
@@ -138,6 +145,7 @@ export function SetupWizard(props: SetupWizardProps): ReactNode {
             />
             <button type="button" className={css.close} aria-label={t('setup.close')} onClick={() => {
               mark('models', 'skipped')
+              mark('phone', 'skipped')
               mark('im', 'skipped')
               mark('codex', 'skipped')
             }}>
@@ -181,6 +189,24 @@ export function SetupWizard(props: SetupWizardProps): ReactNode {
                   onSkip={() => { mark('models', 'skipped') }}
                 />
                 <TaskRow
+                  icon={<IconLinkOutline16 size={20} />}
+                  title={t('setup.phone.title')}
+                  description={t('setup.phone.description')}
+                  status={phoneResult}
+                  statusLabel={phoneResult === 'complete'
+                    ? t('setup.completed')
+                    : phoneResult === 'skipped' ? t('setup.skipped') : t('setup.optional')}
+                  configureLabel={phoneResult === undefined ? t('setup.connect') : t('setup.reconfigure')}
+                  skipLabel={t('setup.skip')}
+                  onConfigure={() => {
+                    openSection({
+                      sectionId: 'pocket', step: 2,
+                      complete: () => { mark('phone', 'complete') },
+                    })
+                  }}
+                  onSkip={() => { mark('phone', 'skipped') }}
+                />
+                <TaskRow
                   icon={<IconPersonalizationOutline16 size={20} />}
                   title={t('setup.im.title')}
                   description={t('setup.im.description')}
@@ -192,7 +218,7 @@ export function SetupWizard(props: SetupWizardProps): ReactNode {
                   skipLabel={t('setup.skip')}
                   onConfigure={() => {
                     openSection({
-                      sectionId: 'xmanrui-dsh-im', step: 2,
+                      sectionId: 'xmanrui-dsh-im', step: 3,
                       complete: () => { mark('im', 'complete') },
                     })
                   }}
@@ -210,7 +236,7 @@ export function SetupWizard(props: SetupWizardProps): ReactNode {
                   skipLabel={t('setup.skip')}
                   onConfigure={() => {
                     openSection({
-                      sectionId: 'external-tools', step: 3,
+                      sectionId: 'external-tools', step: 4,
                       complete: () => { mark('codex', 'complete') },
                     })
                   }}
@@ -220,6 +246,7 @@ export function SetupWizard(props: SetupWizardProps): ReactNode {
               <footer className={css.footer}>
                 <button type="button" className={css.skipAll} onClick={() => {
                   mark('models', 'skipped')
+                  mark('phone', 'skipped')
                   mark('im', 'skipped')
                   mark('codex', 'skipped')
                 }}>

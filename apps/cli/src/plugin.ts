@@ -21,9 +21,12 @@ import {
   initProfile,
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
+  inspectUnresolvableProfileBundleEntries,
+  inspectQuarantineRemovalResidue,
   orphanedBundleDiagnostic,
   PROFILE_TEMPLATES,
   profileDependencyConflictDiagnostic,
+  quarantineRemovalResidueDiagnostic,
   quarantineProfilePluginAfterLoadFailure,
   readProfileManifest,
   readProfileDiagnosticReport,
@@ -296,6 +299,16 @@ export function runPlugin(profile: string, args: readonly string[]): number {
         installAnchor: INSTALL_ANCHOR,
       })
       const conflicts = inspectProfileDependencies({ binName: NAME, profile, installAnchor: INSTALL_ANCHOR })
+      const quarantineRemovalResidue = inspectQuarantineRemovalResidue({
+        binName: NAME,
+        profile,
+        installAnchor: INSTALL_ANCHOR,
+      })
+      const loaderFailures = inspectUnresolvableProfileBundleEntries({
+        binName: NAME,
+        profile,
+        installAnchor: INSTALL_ANCHOR,
+      })
       outcome = {
         schema: 'dsh/profile-dependency-repair/v1' as const,
         diagnosticSchema: 'dsh/profile-diagnostic/v2' as const,
@@ -310,11 +323,27 @@ export function runPlugin(profile: string, args: readonly string[]): number {
             conflict.dependencyChain,
           )),
           ...orphanedBundles.map(bundle => orphanedBundleDiagnostic(bundle.packageName)),
+          ...quarantineRemovalResidue.map(residue => quarantineRemovalResidueDiagnostic(
+            residue.packageName,
+            residue.staleComponents,
+          )),
+          ...loaderFailures.map(failure => classifyProfileDiagnostic({
+            source: 'profile',
+            phase: 'import',
+            value: `failed to import loader entry ${failure.entryId} (${failure.moduleName}): ERR_MODULE_NOT_FOUND`,
+            attribution: {
+              rootPackage: failure.rootPackage,
+              entryId: failure.entryId,
+              moduleName: failure.moduleName,
+            },
+          })),
         ],
       }
     }
     const normalized = !mutatesProfile
-      && (outcome.conflicts.length > 0 || (outcome.orphanedBundles?.length ?? 0) > 0)
+      && (outcome.conflicts.length > 0
+        || (outcome.orphanedBundles?.length ?? 0) > 0
+        || (outcome.issues?.length ?? 0) > 0)
       ? { ...outcome, status: 'failed' as const }
       : outcome
     process.stdout.write(`${JSON.stringify(normalized, undefined, 2)}\n`)
@@ -371,7 +400,9 @@ export function runPlugin(profile: string, args: readonly string[]): number {
       process.stderr.write(`${NAME}: profile dependency health ${JSON.stringify(dependencyHealth)}\n`)
     }
     const packageName = addedRegistryPackageName(args)
-    const verificationFailure = packageName === undefined
+    const quarantinedAfterInstall = packageName !== undefined
+      && dependencyHealth.quarantined.some(record => record.packageName === packageName)
+    const verificationFailure = packageName === undefined || quarantinedAfterInstall
       ? undefined
       : verifyRegistryPackageInstall(dir, packageName)
     if (verificationFailure !== undefined) {

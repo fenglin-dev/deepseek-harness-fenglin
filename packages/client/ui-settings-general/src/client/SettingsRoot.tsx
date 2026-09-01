@@ -94,6 +94,7 @@ type OnboardingPanelProps = {
 
 const ONBOARDING_SECTION_STEPS = [
   'onboarding.step.models',
+  'onboarding.step.phone',
   'onboarding.step.messages',
   'onboarding.step.codex',
   'onboarding.step.ready',

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-26-desktop-data-source-selection.md
-2026-08-26-desktop-data-source-selection.md: 16d3bf843b184e40ffc13048f73062501b58b27b
-2026-08-26-desktop-data-source-selection.zh.md: 4c2033f8a44b7ea2b69fcdc3113c8c6ec765e5cc
+2026-08-26-desktop-data-source-selection.md: c84f72c237c5bd914fcd361d0ef0f0a37621a961
+2026-08-26-desktop-data-source-selection.zh.md: c0c55876773f3b0a39118d280ec0da85ceddc243

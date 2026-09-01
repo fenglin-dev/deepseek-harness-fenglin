@@ -1,4 +1,4 @@
-/** Onboarding geometry contract for desktop title bars and short windows. */
+/** Onboarding geometry contract for short windows. */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -24,13 +24,13 @@ function declarations(css: string, selector: string): Map<string, string> {
 }
 
 describe('settings onboarding geometry', () => {
-  it('subtracts desktop chrome from every viewport-sized surface', () => {
+  it('fits every surface to its renderer viewport', () => {
     const onboarding = stylesheet('OnboardingModal.module.css')
     const wizard = stylesheet('SetupWizard.module.css')
     expect(declarations(onboarding, '.content').get('max-height'))
-      .toBe('calc(100vh - var(--dsh-desktop-titlebar-inset, 0px) - 48px)')
+      .toBe('calc(100vh - 48px)')
     expect(declarations(wizard, '.dialog').get('height'))
-      .toBe('min(820px, calc(100vh - var(--dsh-desktop-titlebar-inset, 0px) - 48px))')
+      .toBe('min(820px, calc(100vh - 48px))')
     expect(declarations(wizard, '.dialog').get('--dsh-scrollbar-thumb'))
       .toBe('var(--dsw-alias-scrollbar-bg-l2)')
   })

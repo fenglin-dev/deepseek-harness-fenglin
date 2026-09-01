@@ -11,7 +11,12 @@ export interface SettingsSectionBox {
   height: number
 }
 
-/** Remove empty and duplicate ids without trusting durable data blindly. */
+/**
+ * Remove empty and duplicate ids from a durable navigation order.
+ *
+ * @param order - Stored section ids in their requested order.
+ * @returns The first occurrence of each non-empty id.
+ */
 export function normalizeSectionOrder(order: readonly string[]): readonly string[] {
   const seen = new Set<string>()
   return order.filter((id) => {
@@ -24,6 +29,10 @@ export function normalizeSectionOrder(order: readonly string[]): readonly string
 /**
  * Apply a durable id order to the currently registered rows. Newly registered
  * plugin sections remain visible at the end in their canonical ledger order.
+ *
+ * @param rows - Currently registered settings rows in canonical order.
+ * @param storedOrder - Durable section ids, which may include absent plugins.
+ * @returns Registered rows ordered by durable ids, followed by new rows.
  */
 export function orderSettingsSections(
   rows: readonly SettingsSectionRow[],
@@ -38,7 +47,16 @@ export function orderSettingsSections(
   return ordered
 }
 
-/** Compute one visible row move and preserve stale ids for reinstalled plugins. */
+/**
+ * Compute one visible row move and preserve stale ids for reinstalled plugins.
+ *
+ * @param visibleIds - Ids currently rendered in the navigation list.
+ * @param storedOrder - Durable ids, including any currently absent plugin sections.
+ * @param draggedId - Visible section being moved.
+ * @param targetId - Visible section that defines the insertion edge.
+ * @param position - Edge of the target at which to insert the dragged section.
+ * @returns The updated visible order followed by preserved absent ids.
+ */
 export function moveSettingsSection(
   visibleIds: readonly string[],
   storedOrder: readonly string[],
@@ -58,7 +76,14 @@ export function moveSettingsSection(
   return [...next, ...hidden]
 }
 
-/** Resolve an insertion index by comparing the dragged row center with every remaining row center. */
+/**
+ * Resolve an insertion index from the dragged row center and the remaining row centers.
+ *
+ * @param boxes - Measured boxes for all visible rows.
+ * @param sourceIndex - Original index of the dragged row.
+ * @param draggedCenterY - Current viewport Y coordinate of the dragged row center.
+ * @returns The bounded index at which the dragged row would be inserted.
+ */
 export function settingsSectionTargetIndex(
   boxes: readonly SettingsSectionBox[],
   sourceIndex: number,
@@ -75,7 +100,15 @@ export function settingsSectionTargetIndex(
   return Math.min(boxes.length - 1, target)
 }
 
-/** Translate one non-dragged row so it fills the source slot and leaves the target slot empty. */
+/**
+ * Translate one non-dragged row to fill the source slot and leave the target slot empty.
+ *
+ * @param boxes - Measured boxes for all visible rows.
+ * @param sourceIndex - Original index of the dragged row.
+ * @param targetIndex - Current insertion index of the dragged row.
+ * @param rowIndex - Index of the non-dragged row being rendered.
+ * @returns The vertical translation in pixels for the rendered row.
+ */
 export function settingsSectionRowShift(
   boxes: readonly SettingsSectionBox[],
   sourceIndex: number,
@@ -93,7 +126,15 @@ export function settingsSectionRowShift(
   return 0
 }
 
-/** Move one visible id to a resolved insertion index while retaining absent plugin ids. */
+/**
+ * Move one visible id to a resolved insertion index while retaining absent plugin ids.
+ *
+ * @param visibleIds - Ids currently rendered in the navigation list.
+ * @param storedOrder - Durable ids, including any currently absent plugin sections.
+ * @param draggedId - Visible section being moved.
+ * @param targetIndex - Bounded insertion index in the visible list.
+ * @returns The updated visible order followed by preserved absent ids.
+ */
 export function moveSettingsSectionToIndex(
   visibleIds: readonly string[],
   storedOrder: readonly string[],
@@ -109,7 +150,16 @@ export function moveSettingsSectionToIndex(
   return [...next, ...hidden]
 }
 
-/** rAF auto-scroll velocity near a scrollport edge. */
+/**
+ * Resolve request-animation-frame auto-scroll velocity near a scrollport edge.
+ *
+ * @param pointerY - Current viewport Y coordinate of the pointer.
+ * @param top - Top edge of the scrollport.
+ * @param bottom - Bottom edge of the scrollport.
+ * @param edge - Size in pixels of each active edge zone.
+ * @param maximum - Maximum absolute scroll delta per animation frame.
+ * @returns A signed scroll delta, or zero outside the edge zones.
+ */
 export function settingsSectionAutoScroll(
   pointerY: number,
   top: number,

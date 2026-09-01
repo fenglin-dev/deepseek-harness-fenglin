@@ -18,6 +18,11 @@ function installBridge(): ReturnType<typeof vi.fn> {
         platform: 'darwin', packaged: true, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
         commandLineAvailable: true,
       })),
+      getDataHome: vi.fn(() => Promise.resolve({
+        activePath: '/desktop/dsh-home', activeKind: 'desktop', desktopPath: '/desktop/dsh-home',
+        officialPath: '/home/user/.dsh', officialAvailable: true, managedExternally: false,
+      })),
+      chooseDataHome: vi.fn(), switchDataHome: vi.fn(),
       getPreferences: vi.fn(() => Promise.resolve({
         closeBehavior: 'tray', notificationsEnabled: true, launchAtLoginEnabled: false,
       })),

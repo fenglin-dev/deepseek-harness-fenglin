@@ -223,7 +223,8 @@
         --detail-surface: rgb(236 244 255 / 84%);
         background: linear-gradient(135deg, var(--detail-surface), transparent 58%);
         min-width: 0;
-        overflow: hidden;
+        overflow-x: hidden;
+        overflow-y: auto;
         padding: 46px 52px 36px;
         position: relative;
         transition: background 180ms ease;
@@ -265,18 +266,107 @@
       .help-button:focus-visible { outline: 2px solid var(--detail-accent); outline-offset: 2px; }
       .risk { background: #fff8e9; border: 1px solid #edce91; border-radius: 10px; color: #9a6207; font-size: 13px; line-height: 1.5; margin: 0 0 20px; max-width: 640px; padding: 11px 14px; }
       .risk[hidden] { display: none; }
-      .facts { margin: 0; }
+      .detail-stage {
+        display: grid;
+        grid-template-areas: "stage";
+        min-height: 330px;
+        position: relative;
+      }
+      .facts {
+        grid-area: stage;
+        margin: 0;
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateX(0);
+        transition: opacity 180ms ease, transform 260ms cubic-bezier(.22, .8, .24, 1), visibility 0s linear 0s;
+        visibility: visible;
+      }
+      .detail-stage[data-step="destination"] .facts {
+        opacity: 0;
+        pointer-events: none;
+        transform: translateX(-18px);
+        transition: opacity 160ms ease, transform 220ms ease, visibility 0s linear 220ms;
+        visibility: hidden;
+      }
       .fact { border-bottom: 1px solid #e6e7ea; padding: 18px 0; }
       .fact:last-child { border-bottom: 0; }
       .fact dt { font-size: 14px; font-weight: 620; margin-bottom: 6px; }
       .fact dd { color: #696d76; font-size: 13px; line-height: 1.55; margin: 0; }
+      .destination-panel {
+        grid-area: stage;
+        margin: 0;
+        max-width: 680px;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateX(18px);
+        transition: opacity 160ms ease, transform 220ms ease, visibility 0s linear 220ms;
+        visibility: hidden;
+      }
+      .detail-stage[data-step="destination"] .destination-panel {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateX(0);
+        transition: opacity 200ms ease 70ms, transform 280ms cubic-bezier(.22, .8, .24, 1) 50ms, visibility 0s linear 0s;
+        visibility: visible;
+      }
+      .destination-panel h2 { color: var(--detail-accent); font-size: 16px; margin: 0 0 8px; }
+      .destination-summary { color: #696d76; line-height: 1.55; margin: 0 0 18px; }
+      .target-choices { display: grid; gap: 12px; }
+      .target-choice {
+        align-items: flex-start;
+        appearance: none;
+        background: rgb(255 255 255 / 72%);
+        border: 1px solid #dfe2e8;
+        border-radius: 14px;
+        color: inherit;
+        cursor: pointer;
+        display: grid;
+        gap: 0 14px;
+        grid-template-columns: 22px 1fr;
+        padding: 17px 18px;
+        text-align: left;
+        transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+        width: 100%;
+      }
+      .target-choice:hover { background: #fff; border-color: #c8cfdb; transform: translateY(-1px); }
+      .target-choice:focus-visible { outline: 2px solid var(--detail-accent); outline-offset: 2px; }
+      .target-choice[aria-checked="true"] {
+        background: rgb(255 255 255 / 92%);
+        border-color: var(--detail-accent);
+        box-shadow: 0 8px 24px rgb(30 55 105 / 8%), 0 0 0 3px color-mix(in srgb, var(--detail-accent) 10%, transparent);
+      }
+      .target-radio { border: 1.5px solid #a7abb3; border-radius: 50%; height: 20px; margin-top: 2px; width: 20px; }
+      .target-choice[aria-checked="true"] .target-radio { border: 5px solid var(--detail-accent); }
+      .target-copy { display: grid; gap: 5px; min-width: 0; }
+      .target-copy strong { font-size: 14px; font-weight: 650; }
+      .target-copy span { color: #696d76; font-size: 13px; line-height: 1.5; }
+      .target-path { color: #555b66; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+      .target-path[hidden] { display: none; }
+      .target-action {
+        appearance: none;
+        background: #fff;
+        border: 1px solid #cfd3da;
+        border-radius: 8px;
+        color: var(--detail-accent);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 610;
+        justify-self: start;
+        margin-top: 5px;
+        padding: 7px 10px;
+      }
+      .target-action:hover { background: #f5f7fa; border-color: #b8bec8; }
+      .target-error { color: #bc433d; font-size: 12px; line-height: 1.45; margin: 11px 0 0 36px; }
+      .target-error[hidden] { display: none; }
       .footer { align-items: center; border-top: 1px solid #e6e7ea; display: flex; justify-content: space-between; padding: 0 52px; }
       .compare-link { appearance: none; background: transparent; border: 0; color: #286be8; cursor: pointer; padding: 8px 0; }
       .compare-link:hover { text-decoration: underline; }
       .actions { display: flex; gap: 12px; }
       .action { appearance: none; border-radius: 8px; cursor: pointer; min-width: 104px; padding: 10px 20px; }
+      .action[hidden] { display: none; }
       .action.secondary { background: #fff; border: 1px solid #c8cbd1; color: #171719; }
       .action.primary { background: #171719; border: 1px solid #171719; color: #fff; min-width: 154px; }
+      .action:disabled { cursor: not-allowed; filter: none; opacity: .45; }
       .action:hover { filter: brightness(.96); }
       .action:focus-visible, .compare-link:focus-visible { outline: 2px solid #4176e6; outline-offset: 2px; }
       .overlay { align-items: center; background: rgb(15 18 24 / 42%); display: flex; inset: 0; justify-content: center; padding: 34px; position: fixed; z-index: 10; }
@@ -313,6 +403,14 @@
         .source-action { background: #292b31; border-color: #494c55; color: #a8c4f7; }
         .source-action:hover { background: #30333a; border-color: #626670; }
         .brand-copy small, .language-inline-label, .choice-description, .fact dd, .comparison-note { color: #a8abb3; }
+        .destination-summary, .target-copy span { color: #a8abb3; }
+        .target-choice { background: rgb(36 38 43 / 78%); border-color: #40434b; }
+        .target-choice:hover, .target-choice[aria-checked="true"] { background: #292c32; border-color: var(--detail-accent); }
+        .target-radio { border-color: #747986; }
+        .target-path { color: #b7bac3; }
+        .target-action { background: #292b31; border-color: #494c55; }
+        .target-action:hover { background: #30333a; border-color: #626670; }
+        .target-error { color: #f08a82; }
         .language-trigger, .help-button, .action.secondary { background: linear-gradient(180deg, #292b31, #24262b); border-color: #494c55; color: #f4f4f5; }
         .language-trigger:hover { background: #2d2f35; border-color: #626670; }
         .language-trigger[aria-expanded="true"] { border-color: #657ba7; box-shadow: 0 0 0 3px rgb(120 163 243 / 10%); }
@@ -351,7 +449,7 @@
         .action.primary { background: #f4f4f5; border-color: #f4f4f5; color: #191a1e; }
       }
       @media (prefers-reduced-motion: reduce) {
-        .choice, .detail, .detail-heading h1, .development-toggle, .language-trigger, .language-chevron { transition: none; }
+        .choice, .detail, .detail-heading h1, .development-toggle, .language-trigger, .language-chevron, .target-choice, .facts, .destination-panel { transition: none; }
       }
       @media (max-width: 860px) {
         .content { grid-template-columns: 1fr; overflow: auto; }
@@ -406,17 +504,34 @@
         <article id="detail" class="detail" data-mode="imported">
           <div class="detail-heading"><h1 id="detail-title"></h1><button id="help" class="help-button" type="button" aria-label="查看三个选项的区别"><img src="question-outline-14.svg" alt=""></button></div>
           <p id="risk" class="risk" hidden></p>
-          <dl class="facts">
-            <div class="fact"><dt data-copy="locationLabel">数据位置</dt><dd id="location-value"></dd></div>
-            <div class="fact"><dt data-copy="sharingLabel">共享范围</dt><dd id="sharing-value"></dd></div>
-            <div class="fact"><dt data-copy="pluginsLabel">已有插件</dt><dd id="plugins-value"></dd></div>
-            <div class="fact"><dt data-copy="buildsLabel">构建权限</dt><dd id="builds-value"></dd></div>
-          </dl>
+          <div id="detail-stage" class="detail-stage" data-step="details">
+            <dl id="facts" class="facts">
+              <div class="fact"><dt data-copy="locationLabel">数据位置</dt><dd id="location-value"></dd></div>
+              <div class="fact"><dt data-copy="sharingLabel">共享范围</dt><dd id="sharing-value"></dd></div>
+              <div class="fact"><dt data-copy="pluginsLabel">已有插件</dt><dd id="plugins-value"></dd></div>
+              <div class="fact"><dt data-copy="buildsLabel">构建权限</dt><dd id="builds-value"></dd></div>
+            </dl>
+            <section id="destination-panel" class="destination-panel" aria-hidden="true">
+              <h2 data-copy="destinationTitle">选择配置目录</h2>
+              <p id="destination-summary" class="destination-summary"></p>
+              <div id="target-choices" class="target-choices" role="radiogroup" aria-label="配置目录位置">
+                <div class="target-choice" role="radio" aria-checked="true" tabindex="0" data-target="default">
+                  <span class="target-radio" aria-hidden="true"></span>
+                  <span class="target-copy"><strong data-copy="defaultTargetTitle">默认设置</strong><span data-copy="defaultTargetSummary">使用桌面版管理的独立目录，升级和修复时最省心。</span><code id="default-target-path" class="target-path"></code></span>
+                </div>
+                <div class="target-choice" role="radio" aria-checked="false" tabindex="0" data-target="custom">
+                  <span class="target-radio" aria-hidden="true"></span>
+                  <span class="target-copy"><strong data-copy="customTargetTitle">自定义配置目录</strong><span data-copy="customTargetSummary">选择一个空文件夹作为此客户端的独立配置目录。</span><code id="custom-target-path" class="target-path" hidden></code><button id="choose-target" class="target-action" type="button" data-copy="chooseTarget">选择空文件夹</button></span>
+                </div>
+              </div>
+              <p id="custom-target-error" class="target-error" hidden></p>
+            </section>
+          </div>
         </article>
       </section>
       <footer class="footer">
         <button id="compare" class="compare-link" type="button" data-copy="compare">查看完整对比</button>
-        <div class="actions"><button id="cancel" class="action secondary" type="button" data-copy="cancel">取消</button><button id="continue" class="action primary" type="button" data-copy="continue">使用此配置</button></div>
+        <div class="actions"><button id="back" class="action secondary" type="button" data-copy="back" hidden>上一步</button><button id="continue" class="action primary" type="button" data-copy="continue">继续</button></div>
       </footer>
     </main>
     <div id="overlay" class="overlay" hidden>

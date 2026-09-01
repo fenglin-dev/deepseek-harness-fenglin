@@ -18,4 +18,17 @@ describe('desktop loading page', () => {
     expect(preload).toContain("ipcRenderer.send('dsh:desktop:theme-source', source)")
     expect(preload).toContain("attributeFilter: ['data-dsh-color-scheme-source']")
   })
+
+  it('offers a bounded data-home recovery action only after startup failure', async () => {
+    const html = await readFile(new URL('../src/loading.html', import.meta.url), 'utf8')
+    const preload = await readFile(new URL('../src/preload.ts', import.meta.url), 'utf8')
+
+    expect(html).toContain('id="switch-data-home"')
+    expect(html).toContain('id="directory-error"')
+    expect(preload).toContain("ipcRenderer.invoke('dsh:desktop:data-home:choose-recovery')")
+    expect(preload).toContain("selection.selectionKind === 'empty'")
+    expect(preload).toContain("{ kind: 'create', selectionId: selection.selectionId }")
+    expect(preload).toContain("{ kind: 'custom', selectionId: selection.selectionId }")
+    expect(preload).not.toContain("{ kind: 'custom', path:")
+  })
 })

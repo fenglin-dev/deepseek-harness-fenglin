@@ -12,17 +12,19 @@ Status: implemented
 
 ## 决策
 
-桌面宿主通过窄范围 Electron Bridge 提供版本化诊断演练中心。目录包含十个固定场景标识和固定样本字节：兼容与不兼容 Host 影子副本、孤立 Bundle、安装包内 `dsh-font` 客户端不兼容、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断。渲染层只能选择这些标识，以及隔离沙箱或需明确确认的当前 Profile。
+桌面宿主通过窄范围 Electron Bridge 提供版本化诊断演练中心。目录包含十二个固定场景标识和固定样本字节：兼容与不兼容 Host 影子副本、孤立 Bundle、旧版隔离卸载残留、scoped 根包与 unscoped Loader 包名不匹配、安装包内 `dsh-font` 客户端不兼容、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断。渲染层只能选择这些标识，以及隔离沙箱或需明确确认的当前 Profile。
 
 每个选中场景只注入一次。成功运行进入持久的 `active` 阶段，不再自动清理。本次运行的文件、包管理器状态、修复处置和隔离记录会一直保留，直到用户点击**全部恢复**。报告保留预期与实际产品错误码、修复处置、耗时和经过限长脱敏的诊断。
 
 默认沙箱会在 Electron `userData` 下使用本次运行专属的 home。它会经过正式 Doctor 边界并保留运行时，但不会影响当前 Profile 顶部统计。这是刻意的边界：沙箱证据显示在演练卡片与报告里，不能伪装成用户真实 Profile 的问题。
 
-当前 Profile 模式只开放四种经过真实产品链路验证的场景：兼容 Host 影子副本、不兼容 Host 依赖、孤立 Bundle，以及安装包内 `dsh-font 1.1.0` 的客户端不兼容。写入前 Harness 会暂停，桌面宿主会备份白名单内的 Profile 清单、Workspace 策略、锁文件、Patch、隔离记录和健康报告。前三种样本通过内置 pnpm 与正式 `dsh plugin --profile web doctor --repair` 完成真实的依赖统一或隔离。`dsh-font` 被固定为完整性校验的 `diagnostic` 资源，普通启动与手动预装流程都不会安装；只有演练中心会通过 `dsh plugin add` 临时装入，再恢复真实浏览器，等待客户端 Loader 恢复链路写入 `profile.module-resolution`、撤下 Bundle 并隔离插件。因此常规诊断看到的就是保护真实用户启动的同一种记录。
+当前 Profile 模式只开放六种经过真实产品链路验证的场景：兼容 Host 影子副本、不兼容 Host 依赖、孤立 Bundle、旧版隔离卸载残留、scoped Loader 包名不匹配，以及安装包内 `dsh-font 1.1.0` 的客户端不兼容。写入前 Harness 会暂停，桌面宿主会备份白名单内的 Profile 清单、Workspace 策略、锁文件、Patch、隔离记录和健康报告。Host 影子样本只安装在自己的 `@dsh-diagnostic-lab/*` 命名空间根目录下，绝不替换 Profile 全局 Host override，也不修改 `nodeLinker`。前四种样本仍通过正式 `dsh plugin --profile web doctor --repair` 链路完成真实的依赖统一、隔离或状态收敛。隔离卸载演练会重建旧卸载器留下的精确不一致形态：插件、活动 manifest 条目与持久隔离已经消失，但受限的修复报告、诊断报告和 lockfile 引用仍然存在。正式 Doctor 必须报告 `profile.quarantine-removal-residue`，只清理这些派生状态，并保留其他无关 incident。`dsh-font` 被固定为完整性校验的 `diagnostic` 资源，普通启动与手动预装流程都不会安装；只有演练中心会通过 `dsh plugin add` 临时装入，再恢复真实浏览器，等待客户端 Loader 恢复链路写入 `profile.module-resolution`、撤下 Bundle 并隔离插件。因此常规诊断看到的就是保护真实用户启动的同一种记录。
+
+第六个当前 Profile 场景会通过普通插件 CLI 安装经过完整性固定的 `@dsh-diagnostic-lab/scoped-loader-mismatch@1.0.0` 资源。其根包使用 scoped 名称，而 Bundle Patch 故意指向不存在的 unscoped Loader 模块。安装后 Profile 预检必须把最终 entry 唯一归属到这个直接根包，立即以 `loader-module-unresolvable` 隔离，并保留真实的诊断计数与解决操作。沙箱模式会在本次运行专属 DSH home 中执行同一包，因此其隔离不会改变活动 Profile。该场景排在 `dsh-font` 之前，后者继续作为最后一个浏览器恢复演练。
 
 恢复日志区分四种状态。`injecting` 与 `restoring` 表示未完成事务，进程中断后必须在加载 Profile 插件前自动回滚；`active` 表示用户主动保留的演练，应用重启后应重新连接到界面；`clean` 表示全部恢复已经完成。这样既不会让崩溃恢复误删演示现场，也不会放行只写了一半的修改。
 
-“全部恢复”是一项明确事务。当前 Profile 模式会再次暂停 Harness，恢复已备份的受管文件，只删除演练命名空间和固定样本源目录，使用内置包管理器裁剪诊断插件，重新落回备份的精确字节，然后恢复 Harness。沙箱模式只删除本次运行的 runtime。取消或断言失败会自动回滚，因为此时尚未建立有效的演练现场。
+“全部恢复”是一项明确事务。当前 Profile 模式会再次暂停 Harness，恢复已备份的受管文件，只删除演练命名空间、固定样本源目录、命名空间内的已安装根和可归因于本次运行的 pnpm 链接，再执行离线强制依赖重建。随后重新落回并校验备份文件的精确哈希，确认没有本次运行的路径或符号链接残留，并通过最终只读 Doctor 后才把恢复日志标为 clean。只有所有检查都成功，Harness 才会恢复；恢复失败时保留可重试入口、禁止再次演练并维持 Harness 停止。下次启动会把失败恢复交给界面，并继续进入受监管的安全模式，而不是让桌面应用直接退出；安全模式的裸模块导入使用有效的 `file:` 基准 URL。沙箱模式只删除本次运行的 runtime。取消或断言失败会自动回滚，因为此时尚未建立有效的演练现场。
 
 ## 曾考虑的替代方案
 
@@ -42,4 +44,4 @@ Status: implemented
 
 活动任务由 Electron 主进程和 schema 2 恢复日志/报告持有。`current` Bridge 操作使重载后的渲染页面能够重新连接；根级 `shell.overlay` 卡片显示注入进度、现场保留状态、通过/失败数量和“全部恢复”。隐藏卡片只改变展示。
 
-聚焦测试固定了单次注入、沙箱持久状态、真实 Profile 隔离统计、显式全部恢复、重启后重新连接、取消回滚、报告脱敏、受限 Preload Bridge、设置页呈现和类型安全的本地化。本桌面能力的验证通道不包含浏览器回放或 Playwright。
+聚焦测试固定了单次注入、样本不会写入 Profile 全局 Host override、沙箱持久状态、真实 Profile 隔离统计、旧版卸载残留的写入与有界清理、强制依赖恢复、clean 日志下的残留恢复、失败关闭的重启行为、有效的安全模式模块 URL、重启后重新连接、取消回滚、报告脱敏、受限 Preload Bridge、设置页呈现和类型安全的本地化。本桌面能力的验证通道不包含浏览器回放或 Playwright。

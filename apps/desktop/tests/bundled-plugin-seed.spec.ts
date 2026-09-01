@@ -68,6 +68,7 @@ describe('bundled plugin seed', () => {
       ['dsh-better-sidebar', 'startup'],
       ['dsh-pocket', 'startup'],
       ['dsh-font', 'diagnostic'],
+      ['@dsh-diagnostic-lab/scoped-loader-mismatch', 'diagnostic'],
     ])
     for (const entry of manifest.plugins.filter(candidate => (
       candidate.installPolicy !== 'diagnostic' && !candidate.registrySpec?.startsWith('github:')
@@ -77,6 +78,8 @@ describe('bundled plugin seed', () => {
     const diagnosticEntry = manifest.plugins.find(entry => entry.packageName === 'dsh-font')
     expect(diagnosticEntry).toMatchObject({ version: '1.1.0', installPolicy: 'diagnostic' })
     expect(diagnosticEntry?.registrySpec).toBeUndefined()
+    expect(manifest.plugins.find(entry => entry.packageName === '@dsh-diagnostic-lab/scoped-loader-mismatch'))
+      .toMatchObject({ version: '1.0.0', installPolicy: 'diagnostic' })
     expect(new Set(manifest.plugins.map(entry => entry.seedId)).size).toBe(manifest.plugins.length)
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-better-sidebar')?.approvedBuilds)
       .toEqual(['node-pty'])

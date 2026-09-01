@@ -1,5 +1,5 @@
 ---
-description: "Read-only projection of the current Cordis Loader plugin state: the pluginInventory service and its pluginInventory/list Remote for web GUI host clients."
+description: "Cordis Loader inventory plus guarded Profile diagnostics and recovery Remotes for web GUI host clients."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Clients and settings pages can show what is currently composed in the host: calling `pluginInventory/list` returns the current non-group Loader entries in Loader order — entry id, module specifier, effective enablement, and root Fiber phase (`pending`, `loading`, `active`, `failed`, or `unloading`, or `null` when an entry has no live root Fiber). The snapshot is point-in-time: the Loader is the sole lifecycle authority, and this package owns no cache, history, provenance model, event stream, or mutation path. Client packages consume the Remote through the explicit [`api-remotes`](../../api/remotes/README.md) assembly rather than importing the Host implementation.
+Clients and settings pages can show what is currently composed in the host: calling `pluginInventory/list` returns the current non-group Loader entries in Loader order — entry id, module specifier, effective enablement, and root Fiber phase (`pending`, `loading`, `active`, `failed`, or `unloading`, or `null` when an entry has no live root Fiber). The Loader roster is point-in-time and uncached; the same restricted Remote service also projects durable Profile diagnostics and exposes fixed doctor, quarantine, recovery, uninstall, and export operations without accepting arbitrary commands or paths. Client packages consume the Remote through the explicit [`api-remotes`](../../api/remotes/README.md) assembly rather than importing the Host implementation.
 
 ## Table of Contents
 
@@ -33,7 +33,7 @@ Each row is one non-group Loader entry: its entry id, the exact module specifier
 
 ### What you can and cannot do with it
 
-The inventory is a snapshot for display and diagnostics: a client can render the roster, flag failed entries, and detect changes by comparing snapshots. It cannot enable, disable, add, or remove plugins, and it carries no history — a fiber that already failed and was removed is absent. Because the service reads the Loader on every call, the answer always reflects the current composition rather than a cached view.
+The Loader inventory is a snapshot for display and diagnostics: a client can render the roster, flag failed entries, and detect changes by comparing snapshots. It cannot directly enable or disable arbitrary Loader entries, and it carries no Loader history — a fiber that already failed and was removed is absent. Separate guarded methods run the product CLI for fixed Profile operations. A quarantine-removal residue repair receives only the current Profile and server-owned diagnostic identity, then removes stale metadata for a plugin that is already inactive and absent; it cannot select another package or reinstall code.
 
 -----
 
@@ -93,7 +93,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define what a point-in-time inventory cannot tell a client. They are current package constraints, not a task backlog.
 
 - **Point-in-time state only** — the result contains no durable failure history or subscription; a missing root Fiber is reported as `null`, regardless of why no live root exists.
-- **No provenance or mutation** — the service does not identify which bundle, profile, or override introduced an entry, and it cannot enable, disable, add, or remove plugins.
+- **No Loader provenance or arbitrary mutation** — the roster does not identify which bundle or override introduced an entry. Guarded Profile operations accept closed request types; they are not general Loader editing or command execution.
 
 <a id="dev-note"></a>
 ### Dev Note

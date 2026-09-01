@@ -1,7 +1,7 @@
 /* Full-viewport layer (figma Mask + Dialog 451:18655): mask + centered card. */
 .root {
   position: fixed;
-  inset: var(--dsh-desktop-titlebar-inset, 0px) 0 0;
+  inset: 0;
   z-index: 1000;
   display: flex;
   align-items: center;

@@ -18,6 +18,7 @@ import type {
 import type { PluginDiscoveryProps } from '../src/client/PluginDiscovery.tsx'
 import type {
   PluginDoctorId,
+  PluginDoctorRequest,
   PluginDoctorSnapshot,
   PluginInstallId,
   PluginInstallRequest,
@@ -457,10 +458,10 @@ describe('PluginDiagnosticsSection', () => {
     const startQuarantineRetry = vi.fn()
     const uninstallQuarantine = vi.fn()
     const scenario = {
-      id: 'host-shadow-compatible',
-      title: 'Compatible Host shadow',
-      description: 'Detect a second physical Host instance.',
-      expectedCode: 'HOST_SHADOW_COMPATIBLE',
+      id: 'quarantine-removal-residue',
+      title: 'Quarantine removal residue',
+      description: 'Detect stale derived state after a legacy uninstall.',
+      expectedCode: 'profile.quarantine-removal-residue',
       targets: ['isolated', 'active-profile'],
     } satisfies DiagnosticLabScenario
     const queued = {
@@ -501,11 +502,11 @@ describe('PluginDiagnosticsSection', () => {
 
     expect(await screen.findByRole('heading', { name: en['lab.title'] })).toBeTruthy()
     expect(listScenarios).toHaveBeenCalledOnce()
-    expect(screen.getByText(en['lab.scenario.hostCompatible.title'])).toBeTruthy()
+    expect(screen.getByText(en['lab.scenario.quarantineRemoval.title'])).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en['lab.start'] }))
     await waitFor(() => {
       expect(start).toHaveBeenCalledWith({
-        scenarioIds: ['host-shadow-compatible'],
+        scenarioIds: ['quarantine-removal-residue'],
         target: 'isolated',
       })
     })
@@ -571,6 +572,57 @@ describe('PluginDiagnosticsSection', () => {
     const restoreButton = await screen.findByRole('button', { name: en['lab.restoreAll'] })
     fireEvent.click(restoreButton)
     await waitFor(() => { expect(restoreAll).toHaveBeenCalledWith(active.runId) })
+  })
+
+  it('blocks another exercise and keeps recovery retryable after restoration fails', async () => {
+    const scenario = {
+      id: 'host-shadow-incompatible',
+      title: 'Incompatible Host dependency',
+      description: 'Retain recovery controls after a failed restore.',
+      expectedCode: 'profile.host-dependency-conflict',
+      targets: ['isolated', 'active-profile'],
+    } satisfies DiagnosticLabScenario
+    const failed = {
+      schema: 2,
+      runId: 'lab-run-recovery-failed',
+      target: 'active-profile',
+      scenarioIds: [scenario.id],
+      phase: 'failed',
+      completedSteps: 5,
+      totalSteps: 6,
+      recovery: 'failed',
+      startedAt: '2026-08-31T00:00:00.000Z',
+      results: [],
+      diagnostic: 'dependency graph restoration could not be verified',
+    } satisfies DiagnosticLabRunSnapshot
+    const restored = { ...failed, phase: 'restored', recovery: 'clean' } satisfies DiagnosticLabRunSnapshot
+    const restoreAll = vi.fn(async () => restored)
+    render(<PluginDiagnosticsSection {...({
+      t,
+      list: async () => diagnosticsSnapshot,
+      startDependencyDoctor: vi.fn(),
+      getDependencyDoctor: vi.fn(),
+      getInstall: vi.fn(),
+      startUninstall: vi.fn(),
+      startQuarantineRetry: vi.fn(),
+      uninstallQuarantine: vi.fn(),
+      dismissDependencyHealth: vi.fn(),
+      diagnosticLab: {
+        listScenarios: vi.fn(async () => [scenario]),
+        current: vi.fn(async () => failed),
+        start: vi.fn(async () => failed),
+        getRun: vi.fn(async () => failed),
+        cancel: vi.fn(async () => failed),
+        restoreAll,
+        exportReport: vi.fn(async () => '{}'),
+        subscribe: vi.fn(() => () => {}),
+      },
+    } as PluginDiagnosticsSectionProps)} />)
+
+    expect(await screen.findByText(failed.diagnostic)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en['lab.start'] }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: en['lab.restoreAll'] }))
+    await waitFor(() => { expect(restoreAll).toHaveBeenCalledWith(failed.runId) })
   })
 
   it('runs a current read-only check and presents the structured result', async () => {
@@ -659,6 +711,50 @@ describe('PluginDiagnosticsSection', () => {
     await waitFor(() => { expect(startDependencyDoctor).toHaveBeenLastCalledWith({ profile: 'web', repair: true }) })
   })
 
+  it('offers a focused repair for stale quarantine removal state', async () => {
+    const residue = {
+      ...healthy,
+      phase: 'issues' as const,
+      exitCode: 2,
+      report: {
+        ...healthy.report!,
+        status: 'failed' as const,
+        issues: [{
+          diagnosticId: 'diagnostic-residue-1',
+          code: 'profile.quarantine-removal-residue' as const,
+          source: 'profile' as const,
+          phase: 'preflight' as const,
+          severity: 'warning' as const,
+          attribution: { rootPackage: 'dsh-font' },
+          actions: ['repair', 'export'] as const,
+          evidence: ['repair-report', 'diagnostic-report', 'lockfile-importer'],
+        }],
+      },
+    } satisfies PluginDoctorSnapshot
+    const startDependencyDoctor = vi.fn(async (request: PluginDoctorRequest) => (
+      request.repair ? healthy : residue
+    ))
+    render(<PluginDiagnosticsSection {...({
+      t,
+      list: async () => diagnosticsSnapshot,
+      startDependencyDoctor,
+      getDependencyDoctor: vi.fn(),
+      getInstall: vi.fn(),
+      startUninstall: vi.fn(),
+      startQuarantineRetry: vi.fn(),
+      uninstallQuarantine: vi.fn(),
+      dismissDependencyHealth: vi.fn(),
+    } as PluginDiagnosticsSectionProps)} />)
+
+    fireEvent.click(screen.getByRole('button', { name: en['diagnostics.check'] }))
+    expect(await screen.findByText(en['diagnostics.issue.quarantineRemovalResidue'])).toBeTruthy()
+    expect(screen.getByText('dsh-font')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en['diagnostics.repairQuarantineRemovalResidue'] }))
+    await waitFor(() => {
+      expect(startDependencyDoctor).toHaveBeenLastCalledWith({ profile: 'web', repair: true })
+    })
+  })
+
   it('confirms and starts the standard removal for an active conflicting plugin', async () => {
     const removed: PluginInstallSnapshot = {
       installId: 'remove-conflict-1' as PluginInstallId,
@@ -729,6 +825,105 @@ describe('PluginDiagnosticsSection', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: en['health.uninstall.confirm.acknowledge'] }))
     fireEvent.click(confirm)
     await waitFor(() => { expect(uninstallQuarantine).toHaveBeenCalledWith({ quarantineId: 'quarantine-1' }) })
+  })
+
+  it.each([
+    'client-module-unavailable',
+    'loader-module-unresolvable',
+  ] as const)('removes a %s plugin before opening its market update', async (reason) => {
+    const quarantinedSnapshot = {
+      entries: [],
+      dependencyHealth: {
+        lastRepair: null,
+        issues: [],
+        safeMode: null,
+        quarantined: [{
+          quarantineId: 'quarantine-task-board',
+          profile: 'web',
+          packageName: '@linxin666/dsh-client-ui-task-board',
+          packageSpec: '^0.3.6',
+          installedVersion: '0.3.6',
+          quarantinedAt: '2026-08-31T08:00:00.000Z',
+          reason,
+          conflicts: [],
+        }],
+      },
+    } as unknown as Snapshot
+    const startQuarantineRetry = vi.fn()
+    const uninstallQuarantine = vi.fn(async () => true)
+    const openPluginMarket = vi.fn()
+    render(<PluginDiagnosticsSection {...({
+      t,
+      list: async () => quarantinedSnapshot,
+      startDependencyDoctor: vi.fn(),
+      getDependencyDoctor: vi.fn(),
+      getInstall: vi.fn(),
+      startUninstall: vi.fn(),
+      startQuarantineRetry,
+      uninstallQuarantine,
+      dismissDependencyHealth: vi.fn(),
+      openPluginMarket,
+    } as PluginDiagnosticsSectionProps)} />)
+
+    expect((await screen.findAllByText(en[`health.quarantine.solution.${reason}`])).length).toBe(2)
+    expect(screen.getByText('0.3.6')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en['health.quarantine.action.findUpdate'] }))
+    expect(screen.getByRole('heading', { name: en['health.update.confirm.title'] })).toBeTruthy()
+    fireEvent.click(screen.getByRole('checkbox', { name: en['health.update.confirm.acknowledge'] }))
+    fireEvent.click(screen.getByRole('button', { name: en['health.update.confirm.action'] }))
+
+    await waitFor(() => {
+      expect(uninstallQuarantine).toHaveBeenCalledWith({ quarantineId: 'quarantine-task-board' })
+      expect(openPluginMarket).toHaveBeenCalledWith('@linxin666/dsh-client-ui-task-board')
+    })
+    expect(startQuarantineRetry).not.toHaveBeenCalled()
+  })
+
+  it('offers dependency convergence as the direct repair for a convergence quarantine', async () => {
+    const quarantinedSnapshot = {
+      entries: [],
+      dependencyHealth: {
+        lastRepair: null,
+        issues: [],
+        safeMode: null,
+        quarantined: [{
+          quarantineId: 'quarantine-convergence',
+          profile: 'web',
+          packageName: 'fixture-plugin',
+          packageSpec: '^1.2.0',
+          installedVersion: '1.2.3',
+          quarantinedAt: '2026-08-31T08:00:00.000Z',
+          reason: 'convergence-failed',
+          conflicts: [],
+        }],
+      },
+    } as unknown as Snapshot
+    const running = {
+      installId: 'retry-convergence' as PluginInstallId,
+      profile: 'web',
+      packageSpec: '^1.2.0',
+      command: 'dsh plugin --profile web doctor --retry quarantine-convergence',
+      phase: 'running',
+    } satisfies PluginInstallSnapshot
+    const startQuarantineRetry = vi.fn(async () => running)
+    render(<PluginDiagnosticsSection {...({
+      t,
+      list: async () => quarantinedSnapshot,
+      startDependencyDoctor: vi.fn(),
+      getDependencyDoctor: vi.fn(),
+      getInstall: vi.fn(async () => running),
+      startUninstall: vi.fn(),
+      startQuarantineRetry,
+      uninstallQuarantine: vi.fn(),
+      dismissDependencyHealth: vi.fn(),
+      openPluginMarket: vi.fn(),
+    } as PluginDiagnosticsSectionProps)} />)
+
+    expect((await screen.findAllByText(en['health.quarantine.solution.convergence-failed'])).length).toBe(2)
+    fireEvent.click(screen.getByRole('button', { name: en['health.quarantine.action.convergeRetry'] }))
+    await waitFor(() => {
+      expect(startQuarantineRetry).toHaveBeenCalledWith({ quarantineId: 'quarantine-convergence' })
+    })
   })
 
   it('reports enabled Loader entries whose root Fiber failed', async () => {

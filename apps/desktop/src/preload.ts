@@ -1,4 +1,4 @@
-/** Narrow update bridge plus desktop-owned Windows and Linux title-bar chrome. */
+/** Narrow update bridge for the trusted Harness renderer. */
 
 import { contextBridge, ipcRenderer } from 'electron'
 import type { OpenLogResult } from './log-reveal.ts'
@@ -7,6 +7,13 @@ import type { DesktopReleaseStatus } from './release-checker.ts'
 import type { DesktopReleaseDownloadStatus } from './release-downloader.ts'
 import type { SourceUpdateResult, SourceUpdateStatus } from './source-updater.ts'
 import type { DesktopCliStatus } from './desktop-cli-registration.ts'
+import type {
+  DesktopDataHomeSelectionResult,
+  DesktopDataHomeSelectionKind,
+  DesktopDataHomeStatus,
+  DesktopDataHomeSwitchRequest,
+  DesktopDataHomeSwitchResult,
+} from './desktop-data-home.ts'
 import type { DesktopChatBackground } from './chat-background-store.ts'
 import type {
   BundledPluginDeferredStartResult,
@@ -19,7 +26,6 @@ import type {
   DiagnosticLabScenario,
   DiagnosticLabStartRequest,
 } from './diagnostic-lab.ts'
-import { CUSTOM_WINDOW_TITLE_BAR_HEIGHT, usesCustomWindowFrame } from './window-frame.ts'
 import {
   parseDesktopStartupProgress,
   type DesktopStartupProgress,
@@ -51,6 +57,9 @@ export interface DesktopCapabilities {
 /** Narrow desktop-shell preference and diagnostics bridge. */
 export interface DesktopShellBridge {
   getCapabilities(): Promise<DesktopCapabilities>
+  getDataHome(): Promise<DesktopDataHomeStatus>
+  chooseDataHome(kind: DesktopDataHomeSelectionKind): Promise<DesktopDataHomeSelectionResult>
+  switchDataHome(request: DesktopDataHomeSwitchRequest): Promise<DesktopDataHomeSwitchResult>
   getPreferences(): Promise<DesktopPreferences>
   updatePreferences(patch: DesktopPreferencesPatch): Promise<DesktopPreferences>
   onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
@@ -114,6 +123,13 @@ export interface DesktopChatBackgroundBridge {
 
 const shellBridge: DesktopShellBridge = {
   getCapabilities: () => ipcRenderer.invoke('dsh:desktop:capabilities') as Promise<DesktopCapabilities>,
+  getDataHome: () => ipcRenderer.invoke('dsh:desktop:data-home:get') as Promise<DesktopDataHomeStatus>,
+  chooseDataHome: kind => ipcRenderer.invoke(
+    'dsh:desktop:data-home:choose', kind,
+  ) as Promise<DesktopDataHomeSelectionResult>,
+  switchDataHome: request => ipcRenderer.invoke(
+    'dsh:desktop:data-home:switch', request,
+  ) as Promise<DesktopDataHomeSwitchResult>,
   getPreferences: () => ipcRenderer.invoke('dsh:desktop:preferences:get') as Promise<DesktopPreferences>,
   updatePreferences: patch => ipcRenderer.invoke('dsh:desktop:preferences:update', patch) as Promise<DesktopPreferences>,
   onPreferences(callback) {
@@ -255,8 +271,13 @@ function installLoadingPage(): void {
       title: 'DeepSeek Harness 启动失败',
       description: '内置 Harness 连续三次未能完成启动。你可以重试或打开日志目录查看详情。',
       retry: '重新启动',
+      switchDataHome: '切换配置目录',
       logs: '打开日志目录',
       logLabel: '日志：',
+      invalidDataHome: '请选择受支持的 DSH 配置目录，或选择一个完全空的目录来新建配置。',
+      unreadableDataHome: '无法读取所选目录，请检查目录权限后重试。',
+      unchangedDataHome: '当前已在使用这个配置目录，请选择其他目录。',
+      switchDataHomeFailed: '配置目录切换失败，请重试或查看日志。',
       slow: '启动时间较长，你可以打开 Harness 日志查看当前进度。',
       stages: {
         'preparing-desktop': '正在准备桌面环境',
@@ -276,8 +297,13 @@ function installLoadingPage(): void {
       title: 'DeepSeek Harness could not start',
       description: 'The embedded Harness failed to become ready after three attempts. Retry or open the log folder for details.',
       retry: 'Retry',
+      switchDataHome: 'Switch data directory',
       logs: 'Open log folder',
       logLabel: 'Log: ',
+      invalidDataHome: 'Choose a supported DSH data directory, or a completely empty folder for a new configuration.',
+      unreadableDataHome: 'The selected directory cannot be read. Check its permissions and try again.',
+      unchangedDataHome: 'This configuration directory is already active. Choose a different directory.',
+      switchDataHomeFailed: 'Could not switch the configuration directory. Retry or inspect the log.',
       slow: 'Startup is taking longer than expected. Open the Harness log to inspect its progress.',
       stages: {
         'preparing-desktop': 'Preparing desktop environment',
@@ -302,14 +328,17 @@ function installLoadingPage(): void {
   const message = document.querySelector<HTMLElement>('#failure-message')
   const logPath = document.querySelector<HTMLElement>('#log-path')
   const retry = document.querySelector<HTMLButtonElement>('#retry')
+  const switchDataHome = document.querySelector<HTMLButtonElement>('#switch-data-home')
   const openLogs = document.querySelector<HTMLButtonElement>('#open-logs')
+  const directoryError = document.querySelector<HTMLElement>('#directory-error')
   const slow = document.querySelector<HTMLElement>('#slow')
   const slowMessage = document.querySelector<HTMLElement>('#slow-message')
   const openSlowLog = document.querySelector<HTMLButtonElement>('#open-slow-log')
   if (
     title === null || description === null || progress === null || progressSurface === null
     || progressBar === null || progressTask === null || progressPercent === null || failure === null
-    || message === null || logPath === null || retry === null || openLogs === null
+    || message === null || logPath === null || retry === null || switchDataHome === null
+    || openLogs === null || directoryError === null
     || slow === null || slowMessage === null || openSlowLog === null
   ) return
   title.textContent = copy.startupTitle
@@ -361,181 +390,51 @@ function installLoadingPage(): void {
   message.textContent = query.get('message') ?? copy.description
   logPath.textContent = `${copy.logLabel}${query.get('logPath') ?? ''}`
   retry.textContent = copy.retry
+  switchDataHome.textContent = copy.switchDataHome
   progressSurface.hidden = true
   failure.hidden = false
   retry.addEventListener('click', () => {
     retry.disabled = true
     void ipcRenderer.invoke('dsh:harness:retry').finally(() => { retry.disabled = false })
   })
-}
-
-const TITLE_BAR_STYLE = `
-  html.dsh-desktop-custom-frame {
-    box-sizing: border-box !important;
-    height: 100%;
-    overflow: hidden;
-    padding-top: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px !important;
+  const showDirectoryError = (value: string): void => {
+    directoryError.textContent = value
+    directoryError.hidden = false
   }
-  html.dsh-desktop-custom-frame body {
-    box-sizing: border-box;
-    height: 100% !important;
-    margin: 0 !important;
-    min-height: 100% !important;
-  }
-  html.dsh-desktop-custom-frame #root {
-    transform: translateZ(0) !important;
-  }
-  #dsh-desktop-titlebar {
-    -webkit-app-region: drag;
-    align-items: center;
-    background: color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 94%, transparent);
-    border-bottom: 1px solid var(--dsw-alias-border-l2, rgb(0 0 0 / 10%));
-    color: var(--dsw-alias-label-primary, #171719);
-    display: flex;
-    font-family: var(--dsw-font-family, "Segoe UI", sans-serif);
-    height: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px;
-    inset: 0 0 auto;
-    position: fixed;
-    user-select: none;
-    z-index: 2147483647;
-  }
-  #dsh-desktop-titlebar-title {
-    flex: 1;
-    font-size: 12px;
-    font-weight: 500;
-    line-height: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px;
-    min-width: 0;
-    overflow: hidden;
-    padding: 0 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  #dsh-desktop-window-controls {
-    -webkit-app-region: no-drag;
-    align-self: stretch;
-    display: flex;
-  }
-  .dsh-desktop-window-control {
-    appearance: none;
-    background: transparent;
-    border: 0;
-    color: inherit;
-    height: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px;
-    margin: 0;
-    outline: none;
-    padding: 0;
-    position: relative;
-    width: 46px;
-  }
-  .dsh-desktop-window-control:hover { background: var(--dsw-alias-bg-mask-2, rgb(0 0 0 / 8%)); }
-  .dsh-desktop-window-control:focus-visible { box-shadow: inset 0 0 0 2px #4176e6; }
-  .dsh-desktop-window-control[data-action="close"]:hover { background: #c42b1c; color: #fff; }
-  .dsh-desktop-window-control::before,
-  .dsh-desktop-window-control::after {
-    box-sizing: border-box;
-    content: "";
-    left: 50%;
-    position: absolute;
-    top: 50%;
-    transform: translate(-50%, -50%);
-  }
-  .dsh-desktop-window-control[data-action="minimize"]::before { border-top: 1px solid currentColor; width: 10px; }
-  .dsh-desktop-window-control[data-action="maximize"]::before { border: 1px solid currentColor; height: 10px; width: 10px; }
-  .dsh-desktop-window-control[data-action="maximize"][data-maximized="true"]::before {
-    height: 8px;
-    margin: 1px 0 0 -1px;
-    width: 8px;
-  }
-  .dsh-desktop-window-control[data-action="maximize"][data-maximized="true"]::after {
-    border: 1px solid currentColor;
-    height: 8px;
-    margin: -2px 0 0 2px;
-    width: 8px;
-  }
-  .dsh-desktop-window-control[data-action="close"]::before,
-  .dsh-desktop-window-control[data-action="close"]::after { border-top: 1px solid currentColor; width: 12px; }
-  .dsh-desktop-window-control[data-action="close"]::before { transform: translate(-50%, -50%) rotate(45deg); }
-  .dsh-desktop-window-control[data-action="close"]::after { transform: translate(-50%, -50%) rotate(-45deg); }
-  @media (prefers-color-scheme: dark) {
-    #dsh-desktop-titlebar { background: color-mix(in srgb, var(--dsw-alias-bg-base, #202024) 94%, transparent); color: var(--dsw-alias-label-primary, #f4f4f5); }
-  }
-`
-
-function installCustomTitleBar(): void {
-  const root = document.documentElement
-  root.classList.add('dsh-desktop-custom-frame')
-
-  const style = document.createElement('style')
-  style.id = 'dsh-desktop-titlebar-style'
-  style.textContent = TITLE_BAR_STYLE
-  document.head.append(style)
-
-  // Force inline styles — highest priority, cannot be overridden by the web app's CSS.
-  root.style.setProperty('padding-top', `${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px`, 'important')
-  root.style.setProperty('box-sizing', 'border-box', 'important')
-  const rootEl = document.getElementById('root')
-  if (rootEl) rootEl.style.setProperty('transform', 'translateZ(0)', 'important')
-
-  const titleBar = document.createElement('header')
-  titleBar.id = 'dsh-desktop-titlebar'
-  titleBar.setAttribute('role', 'banner')
-
-  const title = document.createElement('div')
-  title.id = 'dsh-desktop-titlebar-title'
-  const syncTitle = (): void => {
-    title.textContent = document.title || 'DeepSeek Harness'
-  }
-  syncTitle()
-  const documentTitle = document.querySelector('title')
-  if (documentTitle !== null) new MutationObserver(syncTitle).observe(documentTitle, { childList: true })
-  titleBar.append(title)
-
-  const controls = document.createElement('div')
-  controls.id = 'dsh-desktop-window-controls'
-  const chinese = navigator.language.toLowerCase().startsWith('zh')
-  const labels = chinese
-    ? { minimize: '最小化', maximize: '最大化', restore: '还原', close: '关闭' }
-    : { minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', close: 'Close' }
-
-  const minimize = document.createElement('button')
-  minimize.className = 'dsh-desktop-window-control'
-  minimize.dataset.action = 'minimize'
-  minimize.type = 'button'
-  minimize.ariaLabel = labels.minimize
-  minimize.addEventListener('click', () => {
-    ipcRenderer.send('dsh:window:minimize')
+  switchDataHome.addEventListener('click', () => {
+    switchDataHome.disabled = true
+    directoryError.hidden = true
+    void ipcRenderer.invoke('dsh:desktop:data-home:choose-recovery').then(async (value) => {
+      const selection = value as DesktopDataHomeSelectionResult
+      if (selection.status === 'cancelled') return
+      if (selection.status !== 'selected') {
+        showDirectoryError(selection.status === 'unreadable'
+          ? copy.unreadableDataHome
+          : copy.invalidDataHome)
+        return
+      }
+      const request: DesktopDataHomeSwitchRequest = selection.selectionKind === 'empty'
+        ? { kind: 'create', selectionId: selection.selectionId }
+        : { kind: 'custom', selectionId: selection.selectionId }
+      const switched = await ipcRenderer.invoke(
+        'dsh:desktop:data-home:switch', request,
+      ) as DesktopDataHomeSwitchResult
+      if (!switched.restarting) showDirectoryError(copy.unchangedDataHome)
+    }).catch(() => {
+      showDirectoryError(copy.switchDataHomeFailed)
+    }).finally(() => {
+      switchDataHome.disabled = false
+    })
   })
-
-  const maximize = document.createElement('button')
-  maximize.className = 'dsh-desktop-window-control'
-  maximize.dataset.action = 'maximize'
-  maximize.dataset.maximized = 'false'
-  maximize.type = 'button'
-  maximize.ariaLabel = labels.maximize
-  maximize.addEventListener('click', () => {
-    ipcRenderer.send('dsh:window:toggle-maximize')
+  void ipcRenderer.invoke('dsh:desktop:data-home:get').then((value) => {
+    const status = value as DesktopDataHomeStatus
+    if (status.managedExternally) switchDataHome.hidden = true
+  }, () => {
+    // Keep the recovery action visible when capability probing fails.
   })
-  ipcRenderer.on('dsh:window:maximized', (_event, maximized: boolean) => {
-    maximize.dataset.maximized = String(maximized)
-    maximize.ariaLabel = maximized ? labels.restore : labels.maximize
-  })
-
-  const close = document.createElement('button')
-  close.className = 'dsh-desktop-window-control'
-  close.dataset.action = 'close'
-  close.type = 'button'
-  close.ariaLabel = labels.close
-  close.addEventListener('click', () => {
-    ipcRenderer.send('dsh:window:close')
-  })
-
-  controls.append(minimize, maximize, close)
-  titleBar.append(controls)
-  document.body.prepend(titleBar)
 }
 
 window.addEventListener('DOMContentLoaded', () => {
   installDesktopThemeSync()
   installLoadingPage()
-  if (usesCustomWindowFrame(process.platform)) installCustomTitleBar()
 }, { once: true })

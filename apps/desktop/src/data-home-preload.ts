@@ -9,6 +9,14 @@ type DataHomeSourceResult =
   | { readonly status: 'invalid' | 'unreadable'; readonly path: string }
   | { readonly status: 'cancelled' }
 
+type DataHomeTargetResult =
+  | { readonly status: 'selected'; readonly selectionId: string; readonly path: string }
+  | { readonly status: 'not-empty' | 'overlap' | 'unreadable'; readonly path: string }
+  | { readonly status: 'cancelled' }
+
+type DataHomeTargetMode = 'default' | 'custom'
+type DataHomeStep = 'details' | 'destination'
+
 function isDataHomeMode(value: string | null): value is DataHomeMode {
   return value === 'imported' || value === 'reused' || value === 'fresh'
 }
@@ -27,8 +35,8 @@ const zh = {
   importSummary: '复制用户数据和插件清单，进入后可选择恢复插件。', reuseTitle: '直接使用此配置',
   reuseSummary: '与所选目录共享设置、凭据、会话和插件。', freshTitle: '全新开始',
   freshSummary: '不导入任何现有数据。', locationLabel: '数据位置', sharingLabel: '共享范围',
-  pluginsLabel: '已有插件', buildsLabel: '构建权限', compare: '查看完整对比', cancel: '取消',
-  continue: '使用此配置', comparisonTitle: '这三个选项有什么区别？', suitableLabel: '适合谁',
+  pluginsLabel: '已有插件', buildsLabel: '构建权限', compare: '查看完整对比', back: '上一步',
+  continue: '继续', comparisonTitle: '这三个选项有什么区别？', suitableLabel: '适合谁',
   compareImportLocation: '将所选目录中的设置、凭据、会话、Skills 等用户数据复制到桌面版独立目录。', compareReuseLocation: '直接使用所选 DSH 配置目录。',
   compareFreshLocation: '创建新的桌面版独立目录。', compareImportSharing: '不共享；复制后互不影响。',
   compareReuseSharing: '共享；两端修改会互相影响。', compareFreshSharing: '不共享任何既有数据。',
@@ -44,6 +52,13 @@ const zh = {
   sourceRequired: '需要先选择已有配置目录。', sourceInvalid: '这里不像有效的 DSH 配置目录，请重新选择。',
   sourceReadFailed: '无法读取此目录，请检查权限后重试。',
   simulateMissingSource: '开发：模拟未找到配置', restoreDetectedSource: '开发：恢复真实检测',
+  destinationTitle: '选择配置目录', destinationSummary: '决定桌面版将把独立配置保存在哪里。来源目录不会被修改。',
+  defaultTargetTitle: '默认设置', defaultTargetSummary: '使用桌面版管理的独立目录，升级和修复时最省心。',
+  customTargetTitle: '自定义配置目录', customTargetSummary: '选择一个空文件夹作为此客户端的独立配置目录。',
+  chooseTarget: '选择空文件夹', changeTarget: '更换文件夹', targetRequired: '请先选择一个空文件夹。',
+  targetNotEmpty: '所选文件夹不是空的，请选择或新建空文件夹。', targetUnreadable: '无法读取所选文件夹，请检查权限。',
+  targetOverlap: '配置目录不能位于导入来源内部，也不能包含导入来源。',
+  targetGroupLabel: '配置目录位置',
 }
 
 const en: typeof zh = {
@@ -51,8 +66,8 @@ const en: typeof zh = {
   importSummary: 'Copy user data and the plugin list, then choose which plugins to restore.', reuseTitle: 'Use this configuration directly',
   reuseSummary: 'Share settings, credentials, sessions, and plugins with the selected directory.', freshTitle: 'Start fresh',
   freshSummary: 'Do not import any existing data.', locationLabel: 'Data location', sharingLabel: 'Sharing',
-  pluginsLabel: 'Existing plugins', buildsLabel: 'Build approvals', compare: 'View full comparison', cancel: 'Cancel',
-  continue: 'Use this configuration', comparisonTitle: 'How do these options differ?', suitableLabel: 'Best for',
+  pluginsLabel: 'Existing plugins', buildsLabel: 'Build approvals', compare: 'View full comparison', back: 'Back',
+  continue: 'Continue', comparisonTitle: 'How do these options differ?', suitableLabel: 'Best for',
   compareImportLocation: 'Copy user settings, credentials, sessions, Skills, and other supported data from the selected directory into an independent desktop directory.', compareReuseLocation: 'Use the selected DSH configuration directory directly.',
   compareFreshLocation: 'Create a new independent desktop directory.', compareImportSharing: 'Not shared; each side changes independently.',
   compareReuseSharing: 'Shared; changes on either side affect the other.', compareFreshSharing: 'No existing data is shared.',
@@ -68,6 +83,13 @@ const en: typeof zh = {
   sourceRequired: 'Choose an existing configuration directory first.', sourceInvalid: 'This does not look like a valid DSH configuration directory. Choose another directory.',
   sourceReadFailed: 'This directory cannot be read. Check its permissions and try again.',
   simulateMissingSource: 'Dev: simulate missing config', restoreDetectedSource: 'Dev: restore detected config',
+  destinationTitle: 'Choose configuration location', destinationSummary: 'Choose where Desktop keeps its independent configuration. The source directory is left unchanged.',
+  defaultTargetTitle: 'Default location', defaultTargetSummary: 'Use the desktop-managed independent directory for the simplest upgrades and repairs.',
+  customTargetTitle: 'Custom configuration directory', customTargetSummary: 'Choose an empty folder for this client\'s independent configuration.',
+  chooseTarget: 'Choose empty folder', changeTarget: 'Change folder', targetRequired: 'Choose an empty folder first.',
+  targetNotEmpty: 'The selected folder is not empty. Choose or create an empty folder.', targetUnreadable: 'The selected folder cannot be read. Check its permissions.',
+  targetOverlap: 'The configuration directory cannot be inside the import source or contain it.',
+  targetGroupLabel: 'Configuration location',
 }
 
 const details: Record<'zh' | 'en', Record<DataHomeMode, DetailCopy>> = {
@@ -152,6 +174,17 @@ window.addEventListener('DOMContentLoaded', () => {
   const overlay = required('#overlay')
   const detailPanel = required('#detail')
   const detailTitle = required('#detail-title')
+  const detailStage = required('#detail-stage')
+  const destinationPanel = required('#destination-panel')
+  const destinationSummary = required('#destination-summary')
+  const targetChoicesGroup = required('#target-choices')
+  const targetChoices = [...document.querySelectorAll<HTMLElement>('.target-choice')]
+  const defaultTargetPath = required('#default-target-path')
+  const customTargetPath = required('#custom-target-path')
+  const customTargetError = required('#custom-target-error')
+  const chooseTargetButton = required('#choose-target') as HTMLButtonElement
+  const backButton = required('#back') as HTMLButtonElement
+  const continueButton = required('#continue') as HTMLButtonElement
   const risk = required('#risk')
   const location = required('#location-value')
   const sharing = required('#sharing-value')
@@ -162,12 +195,17 @@ window.addEventListener('DOMContentLoaded', () => {
   const requestedMode = parameters.get('selected')
   const defaultSource = parameters.get('defaultSource')?.trim() || undefined
   const sourceCandidate = parameters.get('sourceCandidate')?.trim() || undefined
+  const builtInTarget = parameters.get('defaultTarget')?.trim() || ''
   let source = parameters.get('source')?.trim() || undefined
   let sourceState: 'valid' | 'missing' | 'unreadable' = parameters.get('sourceStatus') === 'unreadable'
     ? 'unreadable'
     : source === undefined ? 'missing' : 'valid'
   let sourceErrorKind: 'invalid' | 'unreadable' | undefined
   let selected: DataHomeMode = isDataHomeMode(requestedMode) ? requestedMode : 'imported'
+  let step: DataHomeStep = 'details'
+  let targetMode: DataHomeTargetMode = 'default'
+  let customTarget: { readonly selectionId: string; readonly path: string } | undefined
+  let targetErrorKind: 'not-empty' | 'overlap' | 'unreadable' | undefined
   let simulateMissingSource = false
   let selectionBeforeSimulation: DataHomeMode | undefined
 
@@ -204,6 +242,45 @@ window.addEventListener('DOMContentLoaded', () => {
     simulateMissingSourceButton.ariaPressed = String(simulateMissingSource)
   }
 
+  const selectedTargetPath = (): string | undefined => targetMode === 'default'
+    ? builtInTarget || undefined
+    : customTarget?.path
+
+  const renderDestination = (): void => {
+    const copy = language === 'zh' ? zh : en
+    targetChoicesGroup.ariaLabel = copy.targetGroupLabel
+    defaultTargetPath.textContent = builtInTarget
+    defaultTargetPath.hidden = builtInTarget.length === 0
+    customTargetPath.textContent = customTarget?.path ?? ''
+    customTargetPath.hidden = customTarget === undefined
+    chooseTargetButton.textContent = customTarget === undefined ? copy.chooseTarget : copy.changeTarget
+    customTargetError.textContent = targetErrorKind === 'not-empty'
+      ? copy.targetNotEmpty
+      : targetErrorKind === 'overlap' ? copy.targetOverlap
+        : targetErrorKind === 'unreadable' ? copy.targetUnreadable : targetMode === 'custom' && customTarget === undefined
+          ? copy.targetRequired
+          : ''
+    customTargetError.hidden = customTargetError.textContent.length === 0
+    for (const choice of targetChoices) choice.ariaChecked = String(choice.dataset.target === targetMode)
+    continueButton.disabled = targetMode === 'custom' && customTarget === undefined
+  }
+
+  const renderStep = (): void => {
+    const destinationVisible = step === 'destination' && selected !== 'reused'
+    risk.hidden = details[language][selected].risk === undefined
+    backButton.hidden = !destinationVisible
+    detailStage.dataset.step = destinationVisible ? 'destination' : 'details'
+    destinationPanel.ariaHidden = String(!destinationVisible)
+    destinationPanel.inert = !destinationVisible
+    if (destinationVisible) {
+      const copy = language === 'zh' ? zh : en
+      destinationSummary.textContent = copy.destinationSummary
+      renderDestination()
+    } else {
+      continueButton.disabled = false
+    }
+  }
+
   const renderCopy = (): void => {
     const copy = language === 'zh' ? zh : en
     document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'
@@ -220,6 +297,7 @@ window.addEventListener('DOMContentLoaded', () => {
       element.textContent = copy[key]
     }
     renderSource()
+    renderDestination()
   }
 
   const select = (mode: DataHomeMode): void => {
@@ -234,6 +312,19 @@ window.addEventListener('DOMContentLoaded', () => {
     sharing.textContent = detail.sharing
     plugins.textContent = detail.plugins
     builds.textContent = detail.builds
+    renderStep()
+  }
+
+  const enterDestinationStep = (): void => {
+    step = 'destination'
+    renderStep()
+    targetChoices.find(choice => choice.dataset.target === targetMode)?.focus()
+  }
+
+  const leaveDestinationStep = (): void => {
+    step = 'details'
+    renderStep()
+    choices.find(choice => choice.dataset.mode === selected)?.focus()
   }
   const chooseSource = async (modeAfterSelection?: DataHomeMode): Promise<void> => {
     chooseSourceButton.disabled = true
@@ -255,12 +346,39 @@ window.addEventListener('DOMContentLoaded', () => {
       sourceState = 'valid'
       sourceErrorKind = undefined
       renderSource()
-      if (modeAfterSelection !== undefined) select(modeAfterSelection)
+      if (modeAfterSelection !== undefined) {
+        select(modeAfterSelection)
+      }
     } catch {
       sourceErrorKind = 'unreadable'
       renderSource()
     } finally {
       chooseSourceButton.disabled = false
+    }
+  }
+  const chooseTarget = async (): Promise<void> => {
+    chooseTargetButton.disabled = true
+    targetErrorKind = undefined
+    renderDestination()
+    try {
+      const result = await ipcRenderer.invoke('dsh:data-home:choose-target') as DataHomeTargetResult
+      if (result.status === 'cancelled') return
+      if (result.status !== 'selected') {
+        customTarget = undefined
+        targetErrorKind = result.status
+        renderDestination()
+        return
+      }
+      customTarget = { selectionId: result.selectionId, path: result.path }
+      targetMode = 'custom'
+      targetErrorKind = undefined
+      renderDestination()
+    } catch {
+      customTarget = undefined
+      targetErrorKind = 'unreadable'
+      renderDestination()
+    } finally {
+      chooseTargetButton.disabled = false
     }
   }
   for (const choice of choices) {
@@ -270,19 +388,42 @@ window.addEventListener('DOMContentLoaded', () => {
         void chooseSource(mode)
         return
       }
+      step = 'details'
       select(mode)
     })
   }
+  for (const choice of targetChoices) {
+    choice.addEventListener('click', (event) => {
+      if (event.target === chooseTargetButton) return
+      const requestedTarget = choice.dataset.target === 'custom' ? 'custom' : 'default'
+      targetMode = requestedTarget
+      targetErrorKind = undefined
+      renderDestination()
+      if (requestedTarget === 'custom' && customTarget === undefined) void chooseTarget()
+    })
+    choice.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      event.preventDefault()
+      choice.click()
+    })
+  }
+  chooseTargetButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    targetMode = 'custom'
+    void chooseTarget()
+  })
   chooseSourceButton.addEventListener('click', () => { void chooseSource() })
   simulateMissingSourceButton.addEventListener('click', () => {
     if (!development) return
     simulateMissingSource = !simulateMissingSource
     if (simulateMissingSource) {
       selectionBeforeSimulation = selected
+      step = 'details'
       select('fresh')
     } else if (selectionBeforeSimulation !== undefined) {
       const restoredSelection = selectionBeforeSimulation
       selectionBeforeSimulation = undefined
+      step = 'details'
       select(restoredSelection)
     }
     renderSource()
@@ -298,6 +439,13 @@ window.addEventListener('DOMContentLoaded', () => {
     if (result.status !== 'invalid' && result.status !== 'unreadable') return
     sourceErrorKind = result.status
     renderSource()
+  })
+  ipcRenderer.on('dsh:data-home:target-error', (_event, result: DataHomeTargetResult) => {
+    if (result.status !== 'not-empty' && result.status !== 'overlap' && result.status !== 'unreadable') return
+    customTarget = undefined
+    targetMode = 'custom'
+    targetErrorKind = result.status
+    renderDestination()
   })
 
   const closeLanguageMenu = (restoreFocus = false): void => {
@@ -346,15 +494,44 @@ window.addEventListener('DOMContentLoaded', () => {
   close.addEventListener('click', hideComparison)
   required('#acknowledge').addEventListener('click', hideComparison)
   overlay.addEventListener('click', (event) => { if (event.target === overlay) hideComparison() })
-  required('#continue').addEventListener('click', () => {
+
+  const submitSelection = (): void => {
+    if (selected === 'reused') {
+      if (source !== undefined) ipcRenderer.send('dsh:data-home:selected', { mode: selected, source })
+      return
+    }
+    const target = targetMode === 'default'
+      ? { kind: 'default' as const }
+      : customTarget === undefined ? undefined : { kind: 'custom' as const, selectionId: customTarget.selectionId }
+    if (target === undefined) {
+      targetErrorKind = 'unreadable'
+      renderDestination()
+      return
+    }
+    ipcRenderer.send('dsh:data-home:selected', selected === 'fresh'
+      ? { mode: selected, target }
+      : { mode: selected, source, target })
+  }
+
+  continueButton.addEventListener('click', () => {
     if (selected !== 'fresh' && displayedSource() === undefined) {
       void chooseSource(selected)
       return
     }
-    ipcRenderer.send('dsh:data-home:selected', selected === 'fresh' ? { mode: selected } : { mode: selected, source })
+    if (selected !== 'reused' && step === 'details') {
+      enterDestinationStep()
+      return
+    }
+    if (selected !== 'reused' && selectedTargetPath() === undefined) {
+      targetErrorKind = 'unreadable'
+      renderDestination()
+      return
+    }
+    submitSelection()
   })
-  required('#cancel').addEventListener('click', () => {
-    ipcRenderer.send('dsh:data-home:cancelled')
+  backButton.addEventListener('click', () => {
+    if (step === 'destination') leaveDestinationStep()
+    else ipcRenderer.send('dsh:data-home:cancelled')
   })
   window.addEventListener('keydown', (event) => {
     if (!languageMenu.hidden) {
@@ -372,10 +549,8 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     if (event.key === 'Escape' && !overlay.hidden) hideComparison()
     else if (event.key === 'Escape') ipcRenderer.send('dsh:data-home:cancelled')
-    else if (event.key === 'Enter' && overlay.hidden && !(event.target instanceof HTMLButtonElement)) {
-      if (selected !== 'fresh' && displayedSource() === undefined) void chooseSource(selected)
-      else ipcRenderer.send('dsh:data-home:selected', selected === 'fresh' ? { mode: selected } : { mode: selected, source })
-    }
+    else if (event.key === 'Enter' && overlay.hidden
+      && !(event.target instanceof HTMLButtonElement)) continueButton.click()
   })
   renderCopy()
   select(selected)

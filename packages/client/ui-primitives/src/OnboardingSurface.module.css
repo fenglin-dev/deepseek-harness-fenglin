@@ -2,7 +2,7 @@
    the complete workspace instead of presenting another settings modal. */
 .onboardingOverlay {
   position: fixed;
-  inset: var(--dsh-desktop-titlebar-inset, 0px) 0 0;
+  inset: 0;
   z-index: 1100;
 }
 

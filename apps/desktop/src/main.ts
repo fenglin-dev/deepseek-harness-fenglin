@@ -1,13 +1,14 @@
 /** Electron application host for the existing DeepSeek Harness Web GUI. */
 
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir, userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, session, shell, Tray,
-  type MenuItemConstructorOptions, type MessageBoxOptions,
+  type MenuItemConstructorOptions, type MessageBoxOptions, type WebContents, type WebPreferences,
 } from 'electron'
 import { appendBundledPluginFailure, verifyBundledPluginArchive } from './bundled-plugin-seed.ts'
 import {
@@ -41,7 +42,11 @@ import { DesktopReleaseChecker, isAllowedReleaseUrl, type DesktopReleaseStatus }
 import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus } from './release-downloader.ts'
 import { SourceUpdater } from './source-updater.ts'
 import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycle.ts'
-import { usesCustomWindowFrame, withCustomWindowFrameInset } from './window-frame.ts'
+import { isDesktopRenderer, withDesktopWindowMetadata } from './window-frame.ts'
+import {
+  createDesktopWindowSurface,
+  type DesktopWindowSurface,
+} from './desktop-window-surface.ts'
 import {
   DiagnosticLabManager,
   type DiagnosticLabDoctorResult,
@@ -51,17 +56,26 @@ import {
 import { parseStartupBuildApproval } from './startup-build-approval.ts'
 import {
   desktopDataHomeSetup,
+  desktopDataHomesOverlap,
   hasDesktopData,
   IMPORTED_ONBOARDING_RESET_VERSION,
   importOfficialDesktopData,
+  inspectDesktopDataHomeStatus,
   readDesktopDataHomeSetup,
   resetImportedDesktopOnboarding,
+  resolveDesktopDataHomeSwitch,
   resolveDesktopDataHomeSource,
+  resolveDesktopDataHomeRecoverySelection,
+  resolveEmptyDesktopDataHome,
   resolveRecordedDesktopDataHome,
   resolveDesktopDataHomeLayout,
   writeDesktopDataHomeSetup,
   type DesktopDataHomeSource,
   type DesktopDataHomeLayout,
+  type DesktopDataHomeSelectionResult,
+  type DesktopDataHomeSelectionKind,
+  type DesktopDataHomeSwitchRequest,
+  type DesktopDataHomeSwitchResult,
 } from './desktop-data-home.ts'
 import { mapBundledPluginProgress, type DesktopStartupProgress } from './startup-progress.ts'
 import {
@@ -98,8 +112,11 @@ const WINDOW_ICON = fileURLToPath(new URL('./icon.png', import.meta.url))
 const DEVELOPMENT_DOCK_ICON = fileURLToPath(new URL('./dev-dock-icon.png', import.meta.url))
 const MACOS_TRAY_ICON = fileURLToPath(new URL('./tray-iconTemplate.png', import.meta.url))
 const PRELOAD = fileURLToPath(new URL('./preload.cjs', import.meta.url))
+const TITLEBAR_PAGE = fileURLToPath(new URL('./titlebar.html', import.meta.url))
+const TITLEBAR_PRELOAD = fileURLToPath(new URL('./titlebar-preload.cjs', import.meta.url))
 const DATA_HOME_PAGE = fileURLToPath(new URL('./data-home.html', import.meta.url))
 const DATA_HOME_PRELOAD = fileURLToPath(new URL('./data-home-preload.cjs', import.meta.url))
+const DATA_HOME_SELECTION_LIFETIME_MS = 5 * 60_000
 const DEFAULT_SOURCE_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const DESKTOP_DATA_HOME = resolveDesktopDataHomeLayout(
   app.getPath('appData'),
@@ -114,6 +131,7 @@ app.setPath('sessionData', DESKTOP_DATA_HOME.sessionData)
 app.setAppLogsPath(DESKTOP_DATA_HOME.logs)
 
 let mainWindow: BrowserWindow | undefined
+let mainSurface: DesktopWindowSurface | undefined
 let supervisor: HarnessSupervisor | undefined
 let harnessOrigin: string | undefined
 let lifecycle: DesktopLifecycle | undefined
@@ -133,6 +151,12 @@ let diagnosticLabManager: DiagnosticLabManager | undefined
 let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
 let desktopThemeSource: DesktopThemeSource = 'system'
 const reportedDesktopReadiness = new Set<'client' | 'event-dispatch'>()
+const pendingDataHomeSelections = new Map<string, {
+  readonly rendererId: number
+  readonly selectionKind: DesktopDataHomeSelectionKind
+  readonly path: string
+  readonly expiresAt: number
+}>()
 
 async function appendDesktopStartupLog(message: string): Promise<void> {
   if (harnessLogPath === '') return
@@ -143,12 +167,35 @@ async function appendDesktopStartupLog(message: string): Promise<void> {
 type DataHomeSelection = 'imported' | 'reused' | 'fresh'
 
 type DataHomeChoice =
-  | { readonly mode: 'fresh' }
-  | { readonly mode: 'imported' | 'reused'; readonly source: string }
+  | { readonly mode: 'fresh'; readonly target: string; readonly customTarget: boolean }
+  | {
+    readonly mode: 'imported'
+    readonly source: string
+    readonly target: string
+    readonly customTarget: boolean
+  }
+  | { readonly mode: 'reused'; readonly source: string }
+
+type DataHomeChoiceRequest =
+  | {
+    readonly mode: 'fresh'
+    readonly target: { readonly kind: 'default' } | { readonly kind: 'custom'; readonly selectionId: string }
+  }
+  | {
+    readonly mode: 'imported'
+    readonly source: string
+    readonly target: { readonly kind: 'default' } | { readonly kind: 'custom'; readonly selectionId: string }
+  }
+  | { readonly mode: 'reused'; readonly source: string }
 
 type DataHomeSourceResult =
   | { readonly status: 'valid'; readonly path: string; readonly entries: readonly string[] }
   | { readonly status: 'invalid' | 'unreadable'; readonly path: string }
+  | { readonly status: 'cancelled' }
+
+type DataHomeTargetResult =
+  | { readonly status: 'selected'; readonly selectionId: string; readonly path: string }
+  | { readonly status: 'not-empty' | 'overlap' | 'unreadable'; readonly path: string }
   | { readonly status: 'cancelled' }
 
 class DesktopDataHomeSelectionCancelledError extends Error {
@@ -171,7 +218,10 @@ function applyDesktopThemeSource(source: DesktopThemeSource): void {
   nativeTheme.themeSource = source
   const window = mainWindow
   if (window !== undefined && !window.isDestroyed()) {
-    window.setBackgroundColor(desktopThemeBackground(source, nativeTheme.shouldUseDarkColors))
+    const background = desktopThemeBackground(source, nativeTheme.shouldUseDarkColors)
+    mainSurface?.setBackgroundColor(background)
+    mainSurface?.sendTitlebar('dsh:window:theme', nativeTheme.shouldUseDarkColors)
+    if (mainSurface === undefined) window.setBackgroundColor(background)
   }
 }
 
@@ -228,17 +278,37 @@ function isDataHomeSelection(value: unknown): value is DataHomeSelection {
   return value === 'imported' || value === 'reused' || value === 'fresh'
 }
 
-function isDataHomeChoice(value: unknown): value is DataHomeChoice {
+function isDataHomeChoiceRequest(value: unknown): value is DataHomeChoiceRequest {
   if (typeof value !== 'object' || value === null || !('mode' in value)
     || !isDataHomeSelection(value.mode)) return false
-  if (value.mode === 'fresh') return true
-  return 'source' in value && typeof value.source === 'string' && value.source.trim().length > 0
+  if (value.mode === 'reused') {
+    return 'source' in value && typeof value.source === 'string' && value.source.trim().length > 0
+  }
+  if (value.mode === 'imported'
+    && (!('source' in value) || typeof value.source !== 'string' || value.source.trim().length === 0)) return false
+  if (!('target' in value) || typeof value.target !== 'object' || value.target === null
+    || !('kind' in value.target)) return false
+  if (value.target.kind === 'default') return true
+  return value.target.kind === 'custom'
+    && 'selectionId' in value.target
+    && typeof value.target.selectionId === 'string'
+    && /^[0-9a-f-]{36}$/u.test(value.target.selectionId)
+}
+
+function isDesktopDataHomeSwitchRequest(value: unknown): value is DesktopDataHomeSwitchRequest {
+  if (typeof value !== 'object' || value === null || !('kind' in value)) return false
+  if (value.kind === 'desktop' || value.kind === 'official') return true
+  return (value.kind === 'custom' || value.kind === 'create')
+    && 'selectionId' in value
+    && typeof value.selectionId === 'string'
+    && /^[0-9a-f-]{36}$/u.test(value.selectionId)
 }
 
 async function showDataHomeChooser(
   defaultSource: DesktopDataHomeSource | undefined,
   defaultSourceUnreadable: boolean,
   defaultSourceCandidate: string,
+  defaultTarget: string,
 ): Promise<DataHomeChoice> {
   const chooser = new BrowserWindow({
     title: APP_NAME,
@@ -262,10 +332,13 @@ async function showDataHomeChooser(
 
   return new Promise<DataHomeChoice>((resolve, reject) => {
     let settled = false
+    const pendingTargets = new Map<string, { readonly path: string; readonly expiresAt: number }>()
     const cleanup = (): void => {
       ipcMain.removeListener('dsh:data-home:selected', handleSelection)
       ipcMain.removeListener('dsh:data-home:cancelled', handleCancellation)
       ipcMain.removeHandler('dsh:data-home:choose-source')
+      ipcMain.removeHandler('dsh:data-home:choose-target')
+      pendingTargets.clear()
     }
     const closeChooser = (): void => {
       cleanup()
@@ -285,22 +358,60 @@ async function showDataHomeChooser(
       reject(error instanceof Error ? error : new Error(String(error)))
     }
     const handleSelection = (event: Electron.IpcMainEvent, value: unknown): void => {
-      if (event.sender !== chooser.webContents || !isDataHomeChoice(value)) return
-      if (value.mode === 'fresh') {
-        finish({ mode: 'fresh' })
-        return
-      }
-      void resolveDesktopDataHomeSource(value.source).then((source) => {
-        if (settled) return
-        if (source === undefined) {
-          event.sender.send('dsh:data-home:source-error', { status: 'invalid', path: value.source })
+      if (event.sender !== chooser.webContents || !isDataHomeChoiceRequest(value)) return
+      void (async () => {
+        let source: DesktopDataHomeSource | undefined
+        if (value.mode !== 'fresh') {
+          try {
+            source = await resolveDesktopDataHomeSource(value.source)
+          } catch {
+            if (!settled) event.sender.send('dsh:data-home:source-error', { status: 'unreadable', path: value.source })
+            return
+          }
+          if (source === undefined) {
+            if (!settled) event.sender.send('dsh:data-home:source-error', { status: 'invalid', path: value.source })
+            return
+          }
+        }
+        if (value.mode === 'reused') {
+          if (source === undefined) return
+          finish({ mode: 'reused', source: source.path })
           return
         }
-        finish({ mode: value.mode, source: source.path })
-      }).catch(() => {
-        if (settled) return
-        event.sender.send('dsh:data-home:source-error', { status: 'unreadable', path: value.source })
-      })
+        let target = defaultTarget
+        let customTarget = false
+        if (value.target.kind === 'custom') {
+          const pending = pendingTargets.get(value.target.selectionId)
+          if (pending === undefined || pending.expiresAt < Date.now()) {
+            pendingTargets.delete(value.target.selectionId)
+            event.sender.send('dsh:data-home:target-error', { status: 'unreadable', path: '' })
+            return
+          }
+          pendingTargets.delete(value.target.selectionId)
+          let resolvedTarget: string | undefined
+          try {
+            resolvedTarget = await resolveEmptyDesktopDataHome(pending.path)
+          } catch {
+            event.sender.send('dsh:data-home:target-error', { status: 'unreadable', path: pending.path })
+            return
+          }
+          if (resolvedTarget === undefined) {
+            event.sender.send('dsh:data-home:target-error', { status: 'not-empty', path: pending.path })
+            return
+          }
+          target = resolvedTarget
+          customTarget = true
+        }
+        if (value.mode === 'imported' && source !== undefined && desktopDataHomesOverlap(source.path, target)) {
+          event.sender.send('dsh:data-home:target-error', { status: 'overlap', path: target })
+          return
+        }
+        if (value.mode === 'fresh') finish({ mode: 'fresh', target, customTarget })
+        else {
+          if (source === undefined) return
+          finish({ mode: 'imported', source: source.path, target, customTarget })
+        }
+      })().catch(fail)
     }
     const handleCancellation = (event: Electron.IpcMainEvent): void => {
       if (event.sender === chooser.webContents) finish()
@@ -324,6 +435,30 @@ async function showDataHomeChooser(
         return { status: 'unreadable', path: candidate }
       }
     })
+    ipcMain.handle('dsh:data-home:choose-target', async (event): Promise<DataHomeTargetResult> => {
+      if (event.sender !== chooser.webContents) throw new Error('desktop: invalid data-home target requester')
+      const result = await dialog.showOpenDialog(chooser, {
+        title: app.getLocale().toLowerCase().startsWith('zh')
+          ? '选择空文件夹作为配置目录'
+          : 'Choose an empty folder for the configuration',
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      const candidate = result.filePaths[0]
+      if (result.canceled || candidate === undefined) return { status: 'cancelled' }
+      let path: string | undefined
+      try {
+        path = await resolveEmptyDesktopDataHome(candidate)
+      } catch {
+        return { status: 'unreadable', path: candidate }
+      }
+      if (path === undefined) return { status: 'not-empty', path: candidate }
+      const selectionId = randomUUID()
+      for (const [id, pending] of pendingTargets) {
+        if (pending.expiresAt < Date.now()) pendingTargets.delete(id)
+      }
+      pendingTargets.set(selectionId, { path, expiresAt: Date.now() + DATA_HOME_SELECTION_LIFETIME_MS })
+      return { status: 'selected', selectionId, path }
+    })
     chooser.once('closed', () => { finish() })
     chooser.once('ready-to-show', () => {
       chooser.show()
@@ -335,6 +470,7 @@ async function showDataHomeChooser(
       defaultSource: defaultSource?.path ?? '',
       sourceCandidate: defaultSourceCandidate,
       sourceStatus: defaultSourceUnreadable ? 'unreadable' : defaultSource === undefined ? 'missing' : 'valid',
+      defaultTarget,
       development: app.isPackaged ? 'false' : 'true',
     } }).catch(fail)
   })
@@ -381,19 +517,24 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
   }
 
   const copy = dataHomeCopy()
-  const selection = await showDataHomeChooser(defaultSource, defaultSourceUnreadable, layout.officialDshHome)
+  const selection = await showDataHomeChooser(
+    defaultSource,
+    defaultSourceUnreadable,
+    layout.officialDshHome,
+    layout.dshHome,
+  )
   if (selection.mode === 'imported') {
     try {
-      await importOfficialDesktopData(selection.source, layout.dshHome)
+      await importOfficialDesktopData(selection.source, selection.target)
       await writeDesktopDataHomeSetup(
         layout.setupFile,
-        desktopDataHomeSetup('imported', layout.dshHome, selection.source),
+        desktopDataHomeSetup('imported', selection.target, selection.source),
       )
       await dialog.showMessageBox({
         type: 'info', title: copy.completeTitle, message: copy.completeMessage,
-        detail: layout.dshHome, buttons: ['OK'], noLink: true,
+        detail: selection.target, buttons: ['OK'], noLink: true,
       })
-      return layout.dshHome
+      return selection.target
     } catch (error) {
       dialog.showErrorBox(copy.failedTitle, error instanceof Error ? error.message : String(error))
       throw error
@@ -408,9 +549,9 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
   }
   await writeDesktopDataHomeSetup(
     layout.setupFile,
-    desktopDataHomeSetup('fresh', layout.dshHome),
+    desktopDataHomeSetup(selection.customTarget ? 'created' : 'fresh', selection.target),
   )
-  return layout.dshHome
+  return selection.target
 }
 
 function applyLaunchAtLogin(enabled: boolean): void {
@@ -419,10 +560,7 @@ function applyLaunchAtLogin(enabled: boolean): void {
 }
 
 function publishPreferences(): void {
-  const window = mainWindow
-  if (window !== undefined && !window.isDestroyed()) {
-    window.webContents.send('dsh:desktop:preferences', preferences)
-  }
+  mainSurface?.send('dsh:desktop:preferences', preferences)
   refreshTrayMenu()
 }
 
@@ -701,22 +839,20 @@ async function resolveStartupBuildApproval(
 }
 
 function assertMainRenderer(sender: Electron.WebContents): void {
-  if (mainWindow === undefined || mainWindow.isDestroyed() || sender !== mainWindow.webContents) {
-    throw new Error('desktop: bundled plugin request came from an untrusted renderer')
+  if (mainSurface === undefined || mainSurface.window.isDestroyed()
+    || !isDesktopRenderer(sender, mainSurface.renderer)) {
+    throw new Error('desktop: request came from an untrusted renderer')
   }
 }
 
 function publishStartupProgress(next: DesktopStartupProgress): void {
   startupProgress = next
-  const window = mainWindow
-  if (window !== undefined && !window.isDestroyed()) {
-    window.webContents.send('dsh:startup-progress', startupProgress)
-  }
+  mainSurface?.send('dsh:startup-progress', startupProgress)
 }
 
 function showLoading(state: HarnessState, failure?: HarnessFailure & { logPath: string }): void {
-  if (mainWindow === undefined || mainWindow.isDestroyed() || state === 'ready' || state === 'stopped') return
-  void mainWindow.loadFile(LOADING_PAGE, {
+  if (mainSurface === undefined || mainSurface.window.isDestroyed() || state === 'ready' || state === 'stopped') return
+  void mainSurface.loadFile(LOADING_PAGE, {
     query: {
       state,
       stage: startupProgress.stage,
@@ -727,12 +863,12 @@ function showLoading(state: HarnessState, failure?: HarnessFailure & { logPath: 
   })
 }
 
-function configureNavigation(window: BrowserWindow): void {
-  window.webContents.on('will-navigate', (event, target) => {
+function configureNavigation(renderer: WebContents): void {
+  renderer.on('will-navigate', (event, target) => {
     if (harnessOrigin !== undefined && new URL(target).origin === harnessOrigin) return
     event.preventDefault()
   })
-  window.webContents.setWindowOpenHandler(({ url }) => {
+  renderer.setWindowOpenHandler(({ url }) => {
     let parsed: URL
     try {
       parsed = new URL(url)
@@ -742,18 +878,18 @@ function configureNavigation(window: BrowserWindow): void {
     if (parsed.protocol === 'https:') void shell.openExternal(parsed.href)
     return { action: 'deny' }
   })
-  window.webContents.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
-    return contents === window.webContents && allowsHarnessPermission(
+  renderer.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
+    return contents === renderer && allowsHarnessPermission(
       permission,
       details.requestingUrl ?? requestingOrigin,
       harnessOrigin,
       details.isMainFrame,
     )
   })
-  window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+  renderer.session.setPermissionRequestHandler((contents, permission, callback, details) => {
     const requestingUrl = 'requestingUrl' in details ? details.requestingUrl : undefined
     const isMainFrame = 'isMainFrame' in details && details.isMainFrame
-    callback(contents === window.webContents && allowsHarnessPermission(
+    callback(contents === renderer && allowsHarnessPermission(
       permission,
       requestingUrl,
       harnessOrigin,
@@ -763,43 +899,72 @@ function configureNavigation(window: BrowserWindow): void {
 }
 
 function createWindow(): BrowserWindow {
-  const customWindowFrame = usesCustomWindowFrame(process.platform)
-  const window = new BrowserWindow({
-    title: APP_NAME,
-    width: 1440,
-    height: 920,
-    minWidth: 960,
-    minHeight: 640,
-    backgroundColor: desktopThemeBackground(desktopThemeSource, nativeTheme.shouldUseDarkColors),
-    icon: WINDOW_ICON,
-    frame: !customWindowFrame,
-    show: false,
-    webPreferences: {
+  const rendererPreferences: WebPreferences = {
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: true,
+    preload: PRELOAD,
+    additionalArguments: [app.isPackaged ? '--dsh-packaged' : '--dsh-source'],
+  }
+  const surface = createDesktopWindowSurface({
+    platform: process.platform,
+    window: {
+      title: APP_NAME,
+      width: 1440,
+      height: 920,
+      minWidth: 960,
+      minHeight: 640,
+      backgroundColor: desktopThemeBackground(desktopThemeSource, nativeTheme.shouldUseDarkColors),
+      icon: WINDOW_ICON,
+      show: false,
+    },
+    rendererPreferences,
+    titlebarPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      preload: PRELOAD,
-      additionalArguments: [app.isPackaged ? '--dsh-packaged' : '--dsh-source'],
+      preload: TITLEBAR_PRELOAD,
+    },
+    titlebarPage: TITLEBAR_PAGE,
+    onSplitFailure: (error) => {
+      console.error('desktop: could not create split title-bar renderer; using the native frame', error)
+      void appendDesktopStartupLog(`Split title-bar renderer unavailable: ${error instanceof Error ? error.message : String(error)}`)
     },
   })
-  configureNavigation(window)
-  if (customWindowFrame) {
-    const sendMaximizedState = (): void => {
-      window.webContents.send('dsh:window:maximized', window.isMaximized())
+  const { window } = surface
+  configureNavigation(surface.renderer)
+  surface.renderer.on('page-title-updated', (_event, title) => {
+    if (title !== '') surface.sendTitlebar('dsh:window:title', title)
+  })
+  if (surface.titlebarRenderer !== undefined) {
+    const syncTitlebarState = (): void => {
+      surface.layout()
+      surface.sendTitlebar('dsh:window:maximized', window.isMaximized())
+      surface.sendTitlebar('dsh:window:title', surface.renderer.getTitle() || APP_NAME)
+      surface.sendTitlebar('dsh:window:theme', nativeTheme.shouldUseDarkColors)
     }
-    window.on('maximize', sendMaximizedState)
-    window.on('unmaximize', sendMaximizedState)
+    window.on('maximize', syncTitlebarState)
+    window.on('unmaximize', syncTitlebarState)
+    void surface.initialize().then(syncTitlebarState, (error: unknown) => {
+      console.error('desktop: could not load the custom title bar', error)
+    })
   }
   window.once('ready-to-show', () => {
     if (!hiddenLaunch && lifecycle?.isQuitting !== true) window.show()
   })
-  window.on('close', (event) => { lifecycle?.onWindowClose(event) })
+  window.on('close', (event) => {
+    lifecycle?.onWindowClose(event)
+    if (!event.defaultPrevented) surface.dispose()
+  })
   window.on('closed', () => {
+    surface.dispose()
+    if (mainSurface === surface) mainSurface = undefined
     if (mainWindow === window) mainWindow = undefined
   })
   mainWindow = window
+  mainSurface = surface
   if (harnessOrigin === undefined) showLoading('starting')
-  else void window.loadURL(withCustomWindowFrameInset(harnessOrigin, process.platform))
+  else void surface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))
   return window
 }
 
@@ -859,18 +1024,153 @@ async function startApplication(): Promise<void> {
   })
   releaseChecker?.subscribe((status) => {
     releaseDownloader?.resetForRelease(status)
-    const window = mainWindow
-    if (window !== undefined && !window.isDestroyed()) window.webContents.send('dsh:desktop:release-status', status)
+    mainSurface?.send('dsh:desktop:release-status', status)
   })
   releaseDownloader?.subscribe((status) => {
-    const window = mainWindow
-    if (window !== undefined && !window.isDestroyed()) {
-      window.webContents.send('dsh:desktop:release-download-status', status)
+    mainSurface?.send('dsh:desktop:release-download-status', status)
+  })
+  ipcMain.handle('dsh:desktop:capabilities', (event) => {
+    assertMainRenderer(event.sender)
+    return desktopCapabilities()
+  })
+  ipcMain.handle('dsh:desktop:data-home:get', (event) => {
+    assertMainRenderer(event.sender)
+    return inspectDesktopDataHomeStatus(DESKTOP_DATA_HOME, dshHome)
+  })
+  ipcMain.handle('dsh:desktop:data-home:choose', async (
+    event,
+    selectionKind: unknown,
+  ): Promise<DesktopDataHomeSelectionResult> => {
+    assertMainRenderer(event.sender)
+    if (selectionKind !== 'existing' && selectionKind !== 'empty') {
+      throw new TypeError('desktop: invalid data-home selection kind')
+    }
+    const surface = mainSurface
+    if (surface === undefined) throw new Error('desktop: main window is unavailable')
+    const result = await dialog.showOpenDialog(surface.window, {
+      title: app.getLocale().toLowerCase().startsWith('zh')
+        ? selectionKind === 'empty' ? '选择空文件夹以创建新配置' : '选择已有 DSH 配置目录'
+        : selectionKind === 'empty' ? 'Choose an empty folder for a new configuration' : 'Choose an existing DSH data directory',
+      properties: ['openDirectory'],
+    })
+    const candidate = result.filePaths[0]
+    if (result.canceled || candidate === undefined) return { status: 'cancelled' }
+    let selectedPath: string | undefined
+    let entries: readonly string[] = []
+    try {
+      if (selectionKind === 'empty') {
+        selectedPath = await resolveEmptyDesktopDataHome(candidate)
+        if (selectedPath === undefined) return { status: 'not-empty', path: candidate }
+      } else {
+        const source: DesktopDataHomeSource | undefined = await resolveDesktopDataHomeSource(candidate)
+        if (source === undefined) return { status: 'invalid', path: candidate }
+        selectedPath = source.path
+        entries = source.entries
+      }
+    } catch {
+      return { status: 'unreadable', path: candidate }
+    }
+    const now = Date.now()
+    for (const [selectionId, pending] of pendingDataHomeSelections) {
+      if (pending.expiresAt <= now || pending.rendererId === event.sender.id) {
+        pendingDataHomeSelections.delete(selectionId)
+      }
+    }
+    const selectionId = randomUUID()
+    pendingDataHomeSelections.set(selectionId, {
+      rendererId: event.sender.id,
+      selectionKind,
+      path: selectedPath,
+      expiresAt: now + DATA_HOME_SELECTION_LIFETIME_MS,
+    })
+    return { status: 'selected', selectionKind, selectionId, path: selectedPath, entries }
+  })
+  ipcMain.handle('dsh:desktop:data-home:choose-recovery', async (
+    event,
+  ): Promise<DesktopDataHomeSelectionResult> => {
+    assertMainRenderer(event.sender)
+    const surface = mainSurface
+    if (surface === undefined) throw new Error('desktop: main window is unavailable')
+    const result = await dialog.showOpenDialog(surface.window, {
+      title: app.getLocale().toLowerCase().startsWith('zh')
+        ? '切换或新建 DSH 配置目录'
+        : 'Switch or create a DSH data directory',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    const candidate = result.filePaths[0]
+    if (result.canceled || candidate === undefined) return { status: 'cancelled' }
+    let selection
+    try {
+      selection = await resolveDesktopDataHomeRecoverySelection(candidate)
+    } catch {
+      return { status: 'unreadable', path: candidate }
+    }
+    if (selection === undefined) return { status: 'invalid', path: candidate }
+    const now = Date.now()
+    for (const [selectionId, pending] of pendingDataHomeSelections) {
+      if (pending.expiresAt <= now || pending.rendererId === event.sender.id) {
+        pendingDataHomeSelections.delete(selectionId)
+      }
+    }
+    const selectionId = randomUUID()
+    pendingDataHomeSelections.set(selectionId, {
+      rendererId: event.sender.id,
+      selectionKind: selection.kind,
+      path: selection.path,
+      expiresAt: now + DATA_HOME_SELECTION_LIFETIME_MS,
+    })
+    return {
+      status: 'selected',
+      selectionKind: selection.kind,
+      selectionId,
+      path: selection.path,
+      entries: selection.kind === 'existing' ? selection.entries : [],
     }
   })
-  ipcMain.handle('dsh:desktop:capabilities', () => desktopCapabilities())
-  ipcMain.handle('dsh:desktop:preferences:get', () => preferences)
-  ipcMain.handle('dsh:desktop:preferences:update', (_event, patch: unknown) => updatePreferences(patch))
+  ipcMain.handle('dsh:desktop:data-home:switch', async (
+    event,
+    request: unknown,
+  ): Promise<DesktopDataHomeSwitchResult> => {
+    assertMainRenderer(event.sender)
+    if (!isDesktopDataHomeSwitchRequest(request)) throw new TypeError('desktop: invalid data-home switch request')
+    let target: { readonly kind: 'desktop' }
+      | { readonly kind: 'official' }
+      | { readonly kind: 'custom' | 'create'; readonly path: string }
+    if (request.kind === 'custom' || request.kind === 'create') {
+      const pending = pendingDataHomeSelections.get(request.selectionId)
+      const expectedSelectionKind: DesktopDataHomeSelectionKind = request.kind === 'create' ? 'empty' : 'existing'
+      if (pending === undefined
+        || pending.rendererId !== event.sender.id
+        || pending.selectionKind !== expectedSelectionKind
+        || pending.expiresAt <= Date.now()) {
+        pendingDataHomeSelections.delete(request.selectionId)
+        throw new Error('desktop: selected data directory expired; choose it again')
+      }
+      target = { kind: request.kind, path: pending.path }
+    } else {
+      target = request
+    }
+    const decision = await resolveDesktopDataHomeSwitch(
+      DESKTOP_DATA_HOME,
+      dshHome,
+      target,
+    )
+    if (request.kind === 'custom' || request.kind === 'create') {
+      pendingDataHomeSelections.delete(request.selectionId)
+    }
+    if (!decision.changed) return { restarting: false, activePath: dshHome }
+    await writeDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile, decision.setup)
+    setTimeout(requestDesktopRestart, 250)
+    return { restarting: true, activePath: decision.path }
+  })
+  ipcMain.handle('dsh:desktop:preferences:get', (event) => {
+    assertMainRenderer(event.sender)
+    return preferences
+  })
+  ipcMain.handle('dsh:desktop:preferences:update', (event, patch: unknown) => {
+    assertMainRenderer(event.sender)
+    return updatePreferences(patch)
+  })
   ipcMain.handle('dsh:desktop:chat-background:read', (event) => {
     assertMainRenderer(event.sender)
     return chatBackgroundStore?.read()
@@ -880,7 +1180,10 @@ async function startApplication(): Promise<void> {
     if (chatBackgroundStore === undefined) throw new Error('desktop: chat background store is unavailable')
     return chatBackgroundStore.write(background)
   })
-  ipcMain.handle('dsh:desktop:log:open', () => openHarnessLog())
+  ipcMain.handle('dsh:desktop:log:open', (event) => {
+    assertMainRenderer(event.sender)
+    return openHarnessLog()
+  })
   ipcMain.handle('dsh:desktop:cli:get', async (event): Promise<DesktopCliStatus> => {
     assertMainRenderer(event.sender)
     if (desktopCliManager === undefined) throw new Error('desktop: command-line manager is unavailable')
@@ -923,12 +1226,14 @@ async function startApplication(): Promise<void> {
     reportedDesktopReadiness.add(phase)
     void appendDesktopStartupLog(phase === 'client' ? 'client ready' : 'event-dispatch is ready')
   })
-  ipcMain.handle('dsh:desktop:releases:get', (): DesktopReleaseStatus => (
-    releaseChecker?.status ?? { phase: 'unsupported' }
-  ))
-  ipcMain.handle('dsh:desktop:releases:check', () => (
-    releaseChecker?.check() ?? Promise.resolve({ phase: 'unsupported' } satisfies DesktopReleaseStatus)
-  ))
+  ipcMain.handle('dsh:desktop:releases:get', (event): DesktopReleaseStatus => {
+    assertMainRenderer(event.sender)
+    return releaseChecker?.status ?? { phase: 'unsupported' }
+  })
+  ipcMain.handle('dsh:desktop:releases:check', (event) => {
+    assertMainRenderer(event.sender)
+    return releaseChecker?.check() ?? Promise.resolve({ phase: 'unsupported' } satisfies DesktopReleaseStatus)
+  })
   ipcMain.handle('dsh:desktop:releases:open', async (event, releaseUrl: unknown) => {
     assertMainRenderer(event.sender)
     if (typeof releaseUrl !== 'string' || !isAllowedReleaseUrl(releaseUrl)) {
@@ -952,14 +1257,19 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return releaseDownloader?.open() ?? Promise.resolve({ error: 'Release downloads are unavailable.' })
   })
-  ipcMain.handle('dsh:source-update:check', () => updater.check())
-  ipcMain.handle('dsh:source-update:upgrade', (_event, expectedCommit: unknown) => {
+  ipcMain.handle('dsh:source-update:check', (event) => {
+    assertMainRenderer(event.sender)
+    return updater.check()
+  })
+  ipcMain.handle('dsh:source-update:upgrade', (event, expectedCommit: unknown) => {
+    assertMainRenderer(event.sender)
     if (typeof expectedCommit !== 'string' || !/^[0-9a-f]{40}$/u.test(expectedCommit)) {
       throw new TypeError('desktop: invalid expected update commit')
     }
     return updater.upgrade(expectedCommit)
   })
-  ipcMain.handle('dsh:source-update:restart', () => {
+  ipcMain.handle('dsh:source-update:restart', (event) => {
+    assertMainRenderer(event.sender)
     setTimeout(() => {
       requestDesktopRestart()
     }, 250)
@@ -972,8 +1282,14 @@ async function startApplication(): Promise<void> {
     }, 250)
     return { restarting: true as const }
   })
-  ipcMain.handle('dsh:harness:retry', () => ({ started: supervisor?.retry() ?? false }))
-  ipcMain.handle('dsh:harness:open-logs', () => openHarnessLog())
+  ipcMain.handle('dsh:harness:retry', (event) => {
+    assertMainRenderer(event.sender)
+    return { started: supervisor?.retry() ?? false }
+  })
+  ipcMain.handle('dsh:harness:open-logs', (event) => {
+    assertMainRenderer(event.sender)
+    return openHarnessLog()
+  })
   ipcMain.handle('dsh:desktop:bundled-plugins:start', (event, request: unknown): BundledPluginStartResult => {
     assertMainRenderer(event.sender)
     if (request === null || typeof request !== 'object') throw new TypeError('desktop: invalid bundled plugin request')
@@ -1138,18 +1454,19 @@ async function startApplication(): Promise<void> {
     return diagnosticLabManager.exportReport(runId)
   })
   ipcMain.on('dsh:window:minimize', (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (window === mainWindow && usesCustomWindowFrame(process.platform)) window.minimize()
+    const surface = mainSurface
+    if (surface !== undefined && isDesktopRenderer(event.sender, surface.titlebarRenderer)) surface.window.minimize()
   })
   ipcMain.on('dsh:window:toggle-maximize', (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (window !== mainWindow || !usesCustomWindowFrame(process.platform)) return
+    const surface = mainSurface
+    if (surface === undefined || !isDesktopRenderer(event.sender, surface.titlebarRenderer)) return
+    const window = surface.window
     if (window.isMaximized()) window.unmaximize()
     else window.maximize()
   })
   ipcMain.on('dsh:window:close', (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (window === mainWindow && usesCustomWindowFrame(process.platform)) window.close()
+    const surface = mainSurface
+    if (surface !== undefined && isDesktopRenderer(event.sender, surface.titlebarRenderer)) surface.window.close()
   })
   lifecycle = createDesktopLifecycle({
     getWindow: () => mainWindow,
@@ -1358,8 +1675,8 @@ async function startApplication(): Promise<void> {
       publishStartupProgress({ stage: 'ready', progress: 100 })
       const readyOrigin = harnessOrigin
       setTimeout(() => {
-        if (harnessOrigin !== readyOrigin || mainWindow === undefined || mainWindow.isDestroyed()) return
-        void mainWindow.loadURL(withCustomWindowFrameInset(url, process.platform))
+        if (harnessOrigin !== readyOrigin || mainSurface === undefined || mainSurface.window.isDestroyed()) return
+        void mainSurface.loadURL(withDesktopWindowMetadata(url, process.platform))
       }, 120)
       if (recovering) {
         recovering = false
@@ -1387,9 +1704,9 @@ async function startApplication(): Promise<void> {
     logDirectory: join(app.getPath('logs'), 'diagnostic-lab'),
     suspendHarness: async () => { await supervisor?.stop() },
     resumeHarness: () => { supervisor?.resume() },
-    installProfile: async (home) => {
+    installProfile: async (home, force) => {
       await runPackageManagerInvocation(
-        ['install', '--offline', '--ignore-scripts'],
+        ['install', '--offline', '--ignore-scripts', ...(force ? ['--force'] : [])],
         join(home, 'profiles', 'web'),
         { ...harnessEnvironment, DSH_HOME: home },
         launchOptions,
@@ -1418,13 +1735,14 @@ async function startApplication(): Promise<void> {
       return parseDiagnosticLabDoctorOutput(output)
     },
     onSnapshot: (snapshot: DiagnosticLabRunSnapshot) => {
-      const window = mainWindow
-      if (window !== undefined && !window.isDestroyed()) {
-        window.webContents.send('dsh:desktop:diagnostic-lab:status', snapshot)
-      }
+      mainSurface?.send('dsh:desktop:diagnostic-lab:status', snapshot)
     },
   })
-  await diagnosticLabManager.recoverPending()
+  try {
+    await diagnosticLabManager.recoverPending()
+  } catch (error) {
+    console.error('desktop: diagnostic lab startup recovery failed; continuing with supervised Harness startup', error)
+  }
   supervisor.start()
 
   if (releaseChecker !== undefined) {

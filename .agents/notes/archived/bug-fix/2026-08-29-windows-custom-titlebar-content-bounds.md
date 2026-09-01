@@ -1,6 +1,7 @@
 # Agent Note: Bound Windows Web content below the custom title bar
 
 Status: implemented
+Archived: 2026-08-31
 
 English | [中文](2026-08-29-windows-custom-titlebar-content-bounds.zh.md)
 

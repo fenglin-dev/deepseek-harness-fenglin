@@ -12,6 +12,7 @@ import { PluginDiscovery } from './PluginDiscovery.tsx'
 import type { PluginDiscoveryInjected } from './PluginDiscovery.tsx'
 import { ExternalToolsSection, type ExternalToolsSectionInjected } from './ExternalToolsSection.tsx'
 import { DiagnosticLabProgressCard } from './DiagnosticLabProgressCard.tsx'
+import { QuarantineNotice, type QuarantineNoticeInjected } from './QuarantineNotice.tsx'
 import {
   ImportedPluginRestoreSection,
   importedPluginRestoreInjected,
@@ -144,6 +145,9 @@ export function apply(ctx: ClientContext): void {
       if (!result.ok) throw new Error(`pluginInventory.dismissDependencyHealth failed: ${result.error.code}: ${result.error.message}`)
       return result.value
     },
+    openPluginMarket: (packageName) => {
+      ctx.settingsNavigation.open({ sectionId: 'market', subsectionId: `discover:${packageName}` })
+    },
   })
   const startControlledInstall = (request: Parameters<typeof startPluginInstall>[0]) => startPluginInstall(
     request,
@@ -162,6 +166,11 @@ export function apply(ctx: ClientContext): void {
     openSettings: (sectionId, subsectionId) => {
       ctx.settingsNavigation.open({ sectionId, ...(subsectionId === undefined ? {} : { subsectionId }) })
     },
+  })
+  const quarantineNoticeInjected = (): QuarantineNoticeInjected => ({
+    list,
+    dismissDependencyHealth: diagnosticsInjected().dismissDependencyHealth,
+    openDiagnostics: () => { ctx.settingsNavigation.open({ sectionId: 'diagnostics' }) },
   })
   const externalToolsInjected = (): ExternalToolsSectionInjected => ({
     list,
@@ -212,6 +221,13 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: diagnosticsInjected,
   }, PluginDiagnosticsSection))
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'plugin-quarantine-notice',
+    order: 70,
+    locale: NS,
+    inject: quarantineNoticeInjected,
+  }, QuarantineNotice))
   if (diagnosticLab !== undefined) {
     ctx.slots.inject('shell.overlay', () => ctx.slots.register({
       name: 'shell.overlay',

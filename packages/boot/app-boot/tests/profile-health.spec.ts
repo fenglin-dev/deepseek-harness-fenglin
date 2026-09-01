@@ -16,8 +16,12 @@ import {
   initProfile,
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
+  inspectUnresolvableProfileBundleEntries,
   listQuarantinedProfilePlugins,
+  inspectQuarantineRemovalResidue,
   quarantineProfilePluginAfterLoadFailure,
+  readLastProfileRepairReport,
+  readProfileDiagnosticReport,
   readProfileManifest,
   repairProfileDependencies,
   retryQuarantinedProfilePlugin,
@@ -216,6 +220,130 @@ describe('profile shared Host dependency inspection', () => {
 })
 
 describe('profile composition inspection', () => {
+  it('attributes a scoped bundle whose patch loads a missing unscoped module and quarantines it', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, [])
+    const packageName = '@dsh-diagnostic-lab/scoped-loader-mismatch'
+    const pluginDir = join(profileDir, 'node_modules', packageName)
+    writeManifest(join(pluginDir, 'package.json'), {
+      name: packageName,
+      version: '1.0.0',
+      exports: './index.js',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+    writeFileSync(join(pluginDir, 'index.js'), 'export function apply() {}\n')
+    writeFileSync(join(pluginDir, 'cordis.patch.yml'), '- insert:\n  - id: diagnostic-scoped-loader-mismatch\n    name: diagnostic-scoped-loader-mismatch\n    config: {}\n')
+    writeProfileManifest(profileDir, {
+      name: 'dsh-profile-web',
+      dependencies: { [packageName]: '1.0.0' },
+      dsh: { profile: { bundles: [packageName] } },
+    })
+
+    expect(inspectUnresolvableProfileBundleEntries({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toEqual([expect.objectContaining({
+      rootPackage: packageName,
+      entryId: 'diagnostic-scoped-loader-mismatch',
+      moduleName: 'diagnostic-scoped-loader-mismatch',
+      patchPath: join(pluginDir, 'cordis.patch.yml'),
+    })])
+
+    const result = repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      now: () => new Date('2026-09-01T08:00:00.000Z'),
+      runPackageManager: () => {
+        if (readProfileManifest('test', profileDir).dependencies?.[packageName] === undefined) {
+          rmSync(pluginDir, { recursive: true, force: true })
+        }
+        return { exitCode: 0 }
+      },
+    })
+
+    expect(result).toMatchObject({
+      status: 'quarantined',
+      quarantined: [{ packageName, reason: 'loader-module-unresolvable' }],
+      issues: [{
+        code: 'profile.module-resolution',
+        attribution: {
+          rootPackage: packageName,
+          entryId: 'diagnostic-scoped-loader-mismatch',
+          moduleName: 'diagnostic-scoped-loader-mismatch',
+        },
+      }],
+    })
+    expect(readProfileManifest('test', profileDir).dependencies?.[packageName]).toBeUndefined()
+  })
+
+  it('does not claim a missing Loader module when the user patch targets its entry', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, [])
+    const packageName = '@dsh-diagnostic-lab/scoped-loader-mismatch'
+    const pluginDir = join(profileDir, 'node_modules', packageName)
+    writeManifest(join(pluginDir, 'package.json'), {
+      name: packageName,
+      version: '1.0.0',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+    writeFileSync(join(pluginDir, 'cordis.patch.yml'), '- insert:\n  - id: diagnostic-entry\n    name: missing-loader-module\n')
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), '- id: diagnostic-entry\n  disabled: true\n')
+    writeProfileManifest(profileDir, {
+      dependencies: { [packageName]: '1.0.0' },
+      dsh: { profile: { bundles: [packageName] } },
+    })
+
+    expect(inspectUnresolvableProfileBundleEntries({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toEqual([])
+  })
+
+  it('does not quarantine resolvable aliases, Loader directives, relative modules, or ambiguous bundle owners', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, [])
+    const bundles = ['fixture-origin-a', 'fixture-origin-b', 'fixture-origin-c']
+    for (const packageName of bundles) {
+      const packageDir = join(profileDir, 'node_modules', packageName)
+      writeManifest(join(packageDir, 'package.json'), {
+        name: packageName,
+        version: '1.0.0',
+        dsh: { bundle: { patch: './cordis.patch.yml' } },
+      })
+    }
+    writeFileSync(join(profileDir, 'node_modules', 'fixture-origin-a', 'inside.js'), 'export default {}\n')
+    writeFileSync(join(profileDir, 'node_modules', 'fixture-origin-a', 'cordis.patch.yml'), [
+      '- insert:',
+      '  - id: alias-entry',
+      '    name: alias-loader',
+      '  - id: relative-entry',
+      '    name: ./inside.js',
+      '  - id: include-entry',
+      '    name: cordis:include',
+      '',
+    ].join('\n'))
+    for (const packageName of bundles.slice(1)) {
+      writeFileSync(join(profileDir, 'node_modules', packageName, 'cordis.patch.yml'), '- insert:\n  - id: ambiguous-entry\n    name: missing-ambiguous-loader\n')
+    }
+    const aliasDir = join(profileDir, 'node_modules', 'alias-loader')
+    writeManifest(join(aliasDir, 'package.json'), { name: 'actual-loader', version: '1.0.0', main: './index.js' })
+    writeFileSync(join(aliasDir, 'index.js'), 'module.exports = {}\n')
+    writeProfileManifest(profileDir, {
+      dependencies: Object.fromEntries(bundles.map(packageName => [packageName, '1.0.0'])),
+      dsh: { profile: { bundles } },
+    })
+
+    expect(inspectUnresolvableProfileBundleEntries({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toEqual([])
+  })
+
   it('treats an uninstalled official add-on as orphaned instead of an in-box layer', () => {
     const { anchor } = stageHarness()
     const home = temporaryDirectory('dsh-health-home-')
@@ -645,6 +773,59 @@ describe('profile shared Host dependency repair', () => {
     ])
   })
 
+  it('quarantines the namespaced Diagnostics Lab fixture without a Profile-wide fake Host override', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, ['@deepseek-ai/dsh-base'])
+    const packageName = '@dsh-diagnostic-lab/host-shadow-incompatible'
+    const pluginDir = join(profileDir, 'node_modules', packageName)
+    writeManifest(join(pluginDir, 'package.json'), {
+      name: packageName,
+      version: '1.0.0',
+      dependencies: { '@deepseek-ai/dsh-tools': '<0.0.0' },
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+    stageDuplicate(pluginDir, '@deepseek-ai/dsh-tools', '0.0.0-diagnostic')
+    writeProfileManifest(profileDir, {
+      name: 'dsh-profile-web',
+      dependencies: { [packageName]: 'file:../../../diagnostic-fixtures/run/host-shadow-incompatible' },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', packageName] } },
+    })
+    const workspacePath = join(profileDir, 'pnpm-workspace.yaml')
+    const beforeWorkspace = readFileSync(workspacePath, 'utf8')
+
+    expect(inspectProfileDependencies({ binName: 'test', profile: 'web', installAnchor: anchor, home }))
+      .toEqual([expect.objectContaining({
+        rootPackage: packageName,
+        dependency: '@deepseek-ai/dsh-tools',
+        compatible: false,
+      })])
+
+    const result = repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      runPackageManager: () => {
+        if (readProfileManifest('test', profileDir).dependencies?.[packageName] === undefined) {
+          rmSync(pluginDir, { recursive: true, force: true })
+        }
+        return { exitCode: 0 }
+      },
+    })
+
+    expect(result).toMatchObject({
+      status: 'quarantined',
+      quarantined: [expect.objectContaining({ packageName, reason: 'incompatible-host-dependency' })],
+    })
+    expect(inspectProfileDependencies({ binName: 'test', profile: 'web', installAnchor: anchor, home })).toEqual([])
+    const workspace = readFileSync(workspacePath, 'utf8')
+    expect(workspace).not.toContain('diagnostic-fixtures')
+    expect(workspace).not.toContain('nodeLinker: isolated')
+    expect(workspace).not.toBe(beforeWorkspace)
+  })
+
   it('does not invoke pnpm for a healthy profile', () => {
     const { anchor } = stageHarness()
     const home = temporaryDirectory('dsh-health-home-')
@@ -825,6 +1006,7 @@ describe('profile shared Host dependency repair', () => {
   })
 
   it('uninstalls an inactive quarantined plugin before clearing its record', () => {
+    const { anchor } = stageHarness()
     const home = temporaryDirectory('dsh-health-home-')
     const { profileDir, pluginDir } = stageProfile(home, {})
     const manifest = readProfileManifest('test', profileDir)
@@ -834,13 +1016,226 @@ describe('profile shared Host dependency repair', () => {
       dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
     })
     const quarantined = stageQuarantineRecord(home)
+    const lockfile = stageLockfile(profileDir, ['fixture-plugin'])
+    const issue = {
+      diagnosticId: '00000000-0000-4000-8000-000000000002',
+      code: 'profile.module-resolution' as const,
+      source: 'profile' as const,
+      phase: 'import' as const,
+      severity: 'blocked' as const,
+      attribution: { rootPackage: 'fixture-plugin', moduleName: 'fixture-plugin' },
+      actions: ['restore', 'export'] as const,
+      evidence: ['fixture-plugin missed the module table'],
+    }
+    writeManifest(join(home, 'profile-health', 'web.json'), {
+      schema: 'dsh/profile-dependency-repair/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      status: 'quarantined',
+      conflicts: [],
+      quarantined: [{ ...quarantined, packageName: 'fixture-plugin' }],
+      issues: [issue],
+    })
+    writeManifest(join(home, 'profile-health', 'web.diagnostics.json'), {
+      schema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      generatedAt: '2026-08-30T00:00:00.000Z',
+      status: 'issues',
+      issues: [issue],
+    })
 
     expect(existsSync(pluginDir)).toBe(true)
     expect(readProfileManifest('test', profileDir).dependencies?.['fixture-plugin']).toBeUndefined()
     expect(uninstallQuarantinedProfilePlugin(quarantined.quarantineId, home)).toBe(true)
     expect(existsSync(pluginDir)).toBe(false)
+    expect(readFileSync(lockfile, 'utf8')).not.toContain('fixture-plugin')
     expect(listQuarantinedProfilePlugins(home)).toEqual([])
+    expect(readLastProfileRepairReport('web', home)).toBeUndefined()
+    expect(readProfileDiagnosticReport('web', home)).toBeUndefined()
+    expect(repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      runPackageManager: () => { throw new Error('healthy removal must not invoke pnpm') },
+    }).status).toBe('healthy')
     expect(uninstallQuarantinedProfilePlugin(quarantined.quarantineId, home)).toBe(false)
+  })
+
+  it('preserves unrelated profile incidents when uninstalling a quarantined plugin', () => {
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir } = stageProfile(home, {})
+    const manifest = readProfileManifest('test', profileDir)
+    writeProfileManifest(profileDir, {
+      ...manifest,
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
+    })
+    const quarantined = stageQuarantineRecord(home)
+    const removedIssue = {
+      diagnosticId: '00000000-0000-4000-8000-000000000002',
+      code: 'profile.module-resolution' as const,
+      source: 'profile' as const,
+      phase: 'import' as const,
+      severity: 'blocked' as const,
+      attribution: { rootPackage: 'fixture-plugin', moduleName: 'fixture-plugin' },
+      actions: ['restore', 'export'] as const,
+      evidence: ['fixture-plugin missed the module table'],
+    }
+    const retainedIssue = {
+      diagnosticId: '00000000-0000-4000-8000-000000000003',
+      code: 'profile.patch-invalid' as const,
+      source: 'profile' as const,
+      phase: 'parse' as const,
+      severity: 'warning' as const,
+      attribution: { rootPackage: 'other-plugin', moduleName: 'other-plugin' },
+      actions: ['open-config', 'export'] as const,
+      evidence: ['other-plugin has an unrelated configuration warning'],
+    }
+    writeManifest(join(home, 'profile-health', 'web.json'), {
+      schema: 'dsh/profile-dependency-repair/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      status: 'quarantined',
+      conflicts: [],
+      quarantined: [{ ...quarantined, packageName: 'fixture-plugin' }],
+      issues: [removedIssue, retainedIssue],
+    })
+    writeManifest(join(home, 'profile-health', 'web.diagnostics.json'), {
+      schema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      generatedAt: '2026-08-30T00:00:00.000Z',
+      status: 'issues',
+      issues: [removedIssue, retainedIssue],
+    })
+
+    expect(uninstallQuarantinedProfilePlugin(quarantined.quarantineId, home)).toBe(true)
+    expect(readLastProfileRepairReport('web', home)).toMatchObject({
+      status: 'repaired',
+      quarantined: [],
+      issues: [{ diagnosticId: retainedIssue.diagnosticId }],
+    })
+    expect(readProfileDiagnosticReport('web', home)).toMatchObject({
+      status: 'issues',
+      issues: [{ diagnosticId: retainedIssue.diagnosticId }],
+    })
+  })
+
+  it('detects and repairs state left by an older quarantine uninstaller', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir, pluginDir } = stageProfile(home, {})
+    const manifest = readProfileManifest('test', profileDir)
+    writeProfileManifest(profileDir, {
+      ...manifest,
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
+    })
+    rmSync(pluginDir, { recursive: true, force: true })
+    const lockfile = stageLockfile(profileDir, ['fixture-plugin'])
+    const record = {
+      quarantineId: '00000000-0000-4000-8000-000000000001',
+      profile: 'web',
+      packageName: 'fixture-plugin',
+      packageSpec: '^2.3.0',
+      installedVersion: '2.3.4',
+      bundleIndex: 1,
+      quarantinedAt: '2026-08-19T01:02:03.000Z',
+      reason: 'client-module-unavailable',
+      conflicts: [],
+    }
+    const issue = {
+      diagnosticId: '00000000-0000-4000-8000-000000000002',
+      code: 'profile.module-resolution',
+      source: 'profile',
+      phase: 'repair',
+      severity: 'blocked',
+      attribution: { rootPackage: 'fixture-plugin' },
+      actions: ['restore', 'export'],
+      evidence: [],
+    }
+    writeManifest(join(home, 'profile-health', 'web.json'), {
+      schema: 'dsh/profile-dependency-repair/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      status: 'quarantined',
+      conflicts: [],
+      quarantined: [record],
+      issues: [issue],
+    })
+    writeManifest(join(home, 'profile-health', 'web.diagnostics.json'), {
+      schema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      generatedAt: '2026-08-30T00:00:00.000Z',
+      status: 'issues',
+      issues: [issue],
+    })
+
+    expect(inspectQuarantineRemovalResidue({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+    })).toEqual([expect.objectContaining({
+      packageName: 'fixture-plugin',
+      staleComponents: ['repair-report', 'diagnostic-report', 'lockfile-importer'],
+    })])
+
+    const repaired = repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      runPackageManager: () => { throw new Error('metadata cleanup must not invoke pnpm') },
+    })
+    expect(repaired).toMatchObject({ status: 'repaired' })
+    expect(repaired.diagnostic).toContain('removed stale quarantine state: fixture-plugin')
+    expect(readFileSync(lockfile, 'utf8')).not.toContain('fixture-plugin')
+    expect(readProfileDiagnosticReport('web', home)).toBeUndefined()
+    expect(inspectQuarantineRemovalResidue({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+    })).toEqual([])
+    expect(repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      runPackageManager: () => { throw new Error('healthy follow-up must not invoke pnpm') },
+    }).status).toBe('healthy')
+  })
+
+  it('does not treat an ordinary durable quarantine as removal residue', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir, pluginDir } = stageProfile(home, {})
+    const manifest = readProfileManifest('test', profileDir)
+    writeProfileManifest(profileDir, {
+      ...manifest,
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
+    })
+    rmSync(pluginDir, { recursive: true, force: true })
+    const quarantined = stageQuarantineRecord(home)
+    writeManifest(join(home, 'profile-health', 'web.json'), {
+      schema: 'dsh/profile-dependency-repair/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      status: 'quarantined',
+      conflicts: [],
+      quarantined: [{ ...quarantined, packageName: 'fixture-plugin' }],
+      issues: [],
+    })
+
+    expect(inspectQuarantineRemovalResidue({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+    })).toEqual([])
+    expect(listQuarantinedProfilePlugins(home)).toHaveLength(1)
   })
 
   it('refuses to uninstall a quarantined plugin restored to the active profile', () => {

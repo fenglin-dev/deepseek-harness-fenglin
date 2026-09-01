@@ -18,6 +18,13 @@ function bench() {
         platform: 'darwin', packaged: true, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
         commandLineAvailable: true,
       })),
+      getDataHome: vi.fn(() => Promise.resolve({
+        activePath: '/desktop/dsh-home', activeKind: 'desktop' as const,
+        desktopPath: '/desktop/dsh-home', officialPath: '/home/user/.dsh',
+        officialAvailable: true, managedExternally: false,
+      })),
+      chooseDataHome: vi.fn(() => Promise.resolve({ status: 'cancelled' as const })),
+      switchDataHome: vi.fn(() => Promise.resolve({ restarting: true, activePath: '/home/user/.dsh' })),
       getPreferences: vi.fn(() => Promise.resolve(preferences)),
       updatePreferences: vi.fn((patch: Partial<DesktopPreferences>) => {
         preferences = { ...preferences, ...patch }
@@ -77,6 +84,10 @@ describe('DesktopShellController', () => {
     expect(b.controller.getSnapshot().commandLine?.phase).toBe('installed')
     await b.controller.removeCommandLine()
     expect(b.controller.getSnapshot().commandLine?.phase).toBe('uninstalled')
+    await b.controller.chooseDataHome('existing')
+    expect(b.controller.getSnapshot().dataHomeSelection?.status).toBe('cancelled')
+    await b.controller.switchDataHome({ kind: 'official' })
+    expect(b.controller.getSnapshot().restartPending).toBe(true)
     b.controller.dispose()
   })
 })

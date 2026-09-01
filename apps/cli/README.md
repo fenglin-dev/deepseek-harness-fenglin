@@ -46,6 +46,8 @@ Bundles named in `dsh.profile.bundles` resolve from the dsh installation first (
 
 Before a profile composes, the launcher checks identity-sensitive Host packages for plugin-installed shadow copies. Compatible declarations converge to the installation-owned copies through Harness-managed pnpm `link:` overrides; incompatible or still-conflicting root plugins are removed from the active profile and recorded under `$DSH_HOME/quarantine/profile-plugins.json`. If convergence or quarantine cannot leave a clean dependency tree, startup fails instead of loading a mixed runtime. The same check runs after `dsh plugin` changes, so Electron, `dsh web`, and other profile launches share the policy.
 
+On Windows, pnpm can briefly lose its atomic directory swap when antivirus software or indexing holds one of pnpm's generated `node_modules/*_tmp_<pid>_<sequence>` directories. `dsh plugin` retries only that exact `ERR_PNPM_EPERM` rename failure three times with bounded backoff. Other permission errors remain terminal, and a destination that stays locked after the retry budget still reports the original pnpm diagnostic so the user can stop the process that owns the files.
+
 `doctor` without an option is read-only and exits `0` when healthy or `2` when conflicts exist. `--repair` exits `10` after lossless convergence, `11` after quarantine, and `1` when the profile cannot be made safe. A quarantined plugin can be retried with `doctor --retry <quarantine-id>`; its original dependency specifier and bundle position are restored only if the ordinary health policy succeeds.
 
 Use `--dump-default-config` and `--dump-config` to inspect the composed tree without booting it.

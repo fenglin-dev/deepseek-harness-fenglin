@@ -66,6 +66,44 @@ describe('Harness supervisor startup failures', () => {
     await supervisor.stop()
   }, 10_000)
 
+  it('attempts diagnostic safe mode only once and retains the normal failure as primary evidence', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-safe-mode-failure-'))
+    roots.push(root)
+    const script = join(root, 'fail-safe-mode.mjs')
+    const counter = join(root, 'counter.txt')
+    const logPath = join(root, 'harness.log')
+    await writeFile(script, `
+      import { readFileSync, writeFileSync } from 'node:fs'
+      const path = process.argv[2]
+      let count = 0
+      try { count = Number(readFileSync(path, 'utf8')) } catch {}
+      writeFileSync(path, String(count + 1))
+      if (process.env.DSH_PROFILE_SAFE_MODE !== '1') {
+        console.error('dsh: profile safe mode eligible {"code":"profile.module-resolution"}')
+        process.exit(21)
+      }
+      process.exit(22)
+    `)
+    let resolveFailure: (failure: HarnessFailure) => void = () => {}
+    const failure = new Promise<HarnessFailure>((resolve) => { resolveFailure = resolve })
+    const supervisor = new HarnessSupervisor({
+      launch: { command: process.execPath, args: [script, counter] },
+      logPath,
+      environment: { ...process.env },
+      onReady: () => {},
+      onState: () => {},
+      onFailure: resolveFailure,
+    })
+
+    supervisor.start()
+    await expect(failure).resolves.toEqual({
+      message: 'Harness exited before becoming ready (code 21, signal null). diagnostic safe mode exited before becoming ready (code 22, signal null).',
+    })
+    expect(await readFile(counter, 'utf8')).toBe('2')
+    expect(await readFile(logPath, 'utf8')).toContain('one normal and one diagnostic attempt')
+    await supervisor.stop()
+  }, 10_000)
+
   it('allows an explicit retry after the failure limit', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-retry-'))
     roots.push(root)

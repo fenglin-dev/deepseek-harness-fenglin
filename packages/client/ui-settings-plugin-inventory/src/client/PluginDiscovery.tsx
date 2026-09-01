@@ -55,22 +55,22 @@ const MIN_TRIGGER_LOADING_MS = 450
 let registryInFlight: Promise<MarketRegistrySnapshot> | null = null
 let installedInFlight: Promise<MarketInstalledSnapshot> | null = null
 
-async function requestMarket<T>(name: 'registry' | 'installed'): Promise<T> {
+async function requestMarket<T>(name: 'registry' | 'installed', fallbackError: (status: number) => string): Promise<T> {
   const response = await fetch(endpoint(name), { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
   let body: unknown
   try { body = await response.json() } catch { body = {} }
   if (!response.ok) {
     const message = typeof (body as { error?: unknown }).error === 'string'
       ? (body as { error: string }).error
-      : `Plugin Market returned HTTP ${String(response.status)}`
+      : fallbackError(response.status)
     throw new MarketRequestError(response.status, message)
   }
   return body as T
 }
 
-function fetchRegistry(): Promise<MarketRegistrySnapshot> {
+function fetchRegistry(fallbackError: (status: number) => string): Promise<MarketRegistrySnapshot> {
   if (registryInFlight !== null) return registryInFlight
-  registryInFlight = requestMarket<{ registry?: MarketRegistrySnapshot }>('registry')
+  registryInFlight = requestMarket<{ registry?: MarketRegistrySnapshot }>('registry', fallbackError)
     .then((body) => {
       if (body.registry === undefined) throw new Error('Plugin Market registry response is missing its catalog')
       return body.registry
@@ -79,9 +79,9 @@ function fetchRegistry(): Promise<MarketRegistrySnapshot> {
   return registryInFlight
 }
 
-function fetchInstalled(): Promise<MarketInstalledSnapshot> {
+function fetchInstalled(fallbackError: (status: number) => string): Promise<MarketInstalledSnapshot> {
   if (installedInFlight !== null) return installedInFlight
-  installedInFlight = requestMarket<MarketInstalledSnapshot>('installed')
+  installedInFlight = requestMarket<MarketInstalledSnapshot>('installed', fallbackError)
     .finally(() => { installedInFlight = null })
   return installedInFlight
 }
@@ -112,6 +112,9 @@ export function PluginDiscovery({ t, list, startInstall, getInstall, openSetting
   const triggerLoadingStartedAt = useRef(0)
   const triggerLoadingTimer = useRef<number | null>(null)
   const lang = document.documentElement.lang.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+  const marketHttpError = useCallback((status: number): string => (
+    t('discovery.httpError').replace('{status}', String(status))
+  ), [t])
 
   useEffect(() => () => {
     mounted.current = false
@@ -156,7 +159,7 @@ export function PluginDiscovery({ t, list, startInstall, getInstall, openSetting
       showCatalog({ status: 'ready', catalog: cached.catalog, installed: null, stale: false, refreshing: false,
         refreshFailed: false, installedFailed: false })
       try {
-        const installed = await fetchInstalled()
+        const installed = await fetchInstalled(marketHttpError)
         showCatalog({ status: 'ready', catalog: cached.catalog, installed, stale: false, refreshing: false,
           refreshFailed: false, installedFailed: false })
       } catch (reason) {
@@ -174,7 +177,10 @@ export function PluginDiscovery({ t, list, startInstall, getInstall, openSetting
         refreshFailed: false, installedFailed: false })
     }
 
-    const [registryResult, installedResult] = await Promise.allSettled([fetchRegistry(), fetchInstalled()])
+    const [registryResult, installedResult] = await Promise.allSettled([
+      fetchRegistry(marketHttpError),
+      fetchInstalled(marketHttpError),
+    ])
     let catalog = fallback
     if (registryResult.status === 'fulfilled') {
       catalog = buildPluginDiscoveryCatalog(registryResult.value)
@@ -219,7 +225,7 @@ export function PluginDiscovery({ t, list, startInstall, getInstall, openSetting
       ...(registryReason === null ? {} : { message: errorMessage(registryReason) }),
     })
     finishTriggerLoading()
-  }, [beginTriggerLoading, finishTriggerLoading, list, showCatalog])
+  }, [beginTriggerLoading, finishTriggerLoading, list, marketHttpError, showCatalog])
 
   useEffect(() => {
     if (!open) return
@@ -245,7 +251,7 @@ export function PluginDiscovery({ t, list, startInstall, getInstall, openSetting
           if (!current) return
           setPluginInstalls(previous => ({ ...previous, [snapshot.packageSpec]: snapshot }))
           if (snapshot.phase === 'succeeded' || snapshot.phase === 'repaired' || snapshot.phase === 'quarantined') {
-            void fetchInstalled().then((installed) => {
+            void fetchInstalled(marketHttpError).then((installed) => {
               if (!current) return
               setState(previous => previous.status === 'ready' ? { ...previous, installed, installedFailed: false } : previous)
             }).catch(() => { /* the completed install remains visible even if market state lags */ })
@@ -255,7 +261,7 @@ export function PluginDiscovery({ t, list, startInstall, getInstall, openSetting
       )
     }, 750)
     return () => { current = false; window.clearTimeout(timer) }
-  }, [getInstall, runningPlugin, t])
+  }, [getInstall, marketHttpError, runningPlugin, t])
 
   const installMarket = (): void => {
     void startInstall({ profile: 'web', packageSpec: 'dshmarket' }).then(setMarketInstall).catch(() => {
@@ -381,7 +387,7 @@ export function PluginDiscovery({ t, list, startInstall, getInstall, openSetting
             </>
             : state.status === 'missing' || state.status === 'outdated' || state.status === 'error'
               ? <div className={css.notice}><strong>{t(`discovery.${state.status}.title`)}</strong>
-                <p>{t(`discovery.${state.status}.description`)} ({state.elapsedMs} ms)</p>
+                <p>{t(`discovery.${state.status}.description`)} ({t('discovery.elapsed').replace('{count}', String(state.elapsedMs))})</p>
                 {state.message === undefined ? null : <code>{state.message}</code>}
                 <div className={css.actions}>{state.status === 'missing'
                   ? <Button size="sm" variant="primary" disabled={marketInstall?.phase === 'running'} onClick={installMarket}>{t('discovery.installMarket')}</Button>

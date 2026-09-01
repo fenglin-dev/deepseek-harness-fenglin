@@ -376,6 +376,38 @@ function packageEntryFromPackage(
   return undefined
 }
 
+/**
+ * Resolve a bare Loader module from the same profile anchor used by the
+ * config-tree root, without importing or executing the target package.
+ * @param profileDir - Absolute active profile directory.
+ * @param specifier - Bare package or package-subpath specifier from a Loader entry.
+ * @returns The resolved entry URL, or `undefined` when the module cannot be resolved.
+ */
+export function resolveProfileLoaderModule(profileDir: string, specifier: string): string | undefined {
+  if (specifier.startsWith('.') || specifier.startsWith('/') || specifier.startsWith('cordis:')) return undefined
+  const segments = specifier.split('/')
+  const packageName = specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]
+  if (packageName === undefined || packageName === '' || (specifier.startsWith('@') && segments.length < 2)) {
+    return undefined
+  }
+  const packageDir = packageDirFromAnchor(join(profileDir, 'package.json'), packageName)
+  if (packageDir === undefined) return undefined
+  const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as {
+    exports?: ResolvePackageManifest['exports']
+    main?: unknown
+  }
+  const suffix = specifier.slice(packageName.length)
+  const subpath = suffix === '' ? '.' : `.${suffix}`
+  if (manifest.exports !== undefined) {
+    return packageEntryFromPackage(packageName, packageDir, manifest.exports, subpath)
+  }
+  try {
+    return pathToFileURL(createRequire(join(profileDir, 'package.json')).resolve(specifier)).href
+  } catch {
+    return undefined
+  }
+}
+
 /** Resolve every explicit ESM runtime export that an out-of-tree plugin can import. */
 function packageProxySource(
   packageName: string,

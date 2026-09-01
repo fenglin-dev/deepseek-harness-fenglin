@@ -8,7 +8,7 @@ Idiomas: [简体中文](README.md) · [English](README.en.md) · [日本語](REA
 
 > [!IMPORTANT]
 >
-> **[A v0.1.2-alpha.1 já está disponível — baixe e experimente](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1).** A versão integra o DeepSeek Harness 0.1.2-alpha.1 e adiciona o laboratório de diagnóstico, descoberta de plugins em tempo real, isolamento reforçado e navegação de Configurações reordenável.
+> **[A v0.1.2-alpha.1.1 já está disponível. Esta atualização corretiva da v0.1.2-alpha.1 está pronta para baixar e experimentar](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1).** Esta versão continua usando o DeepSeek Harness 0.1.2-alpha.1 como base upstream e reforça o gerenciamento do ambiente Desktop, a recuperação de plugins e a estabilidade multiplataforma.
 >
 > Esta é uma prévia Alpha. Faça backup das configurações importantes antes de atualizar e inclua logs ou relatórios de diagnóstico relevantes ao comunicar problemas.
 
@@ -18,14 +18,20 @@ Open DeepSeek Harness Desktop é uma distribuição independente e mantida pela 
 >
 > Este repositório não é um produto oficial da DeepSeek. Ele continua em prévia; formatos de dados, políticas de compatibilidade e instalação ainda podem evoluir.
 
-## Destaques desta versão
+## Principais recursos atuais
 
-- Importar a configuração oficial para um ambiente independente, compartilhar diretamente um diretório existente ou começar do zero.
-- Verificar fontes de plugins e restaurar com segurança a partir de um diretório-fonte ou arquivo .tgz.
-- Diagnosticar, reparar e isolar antes da inicialização conflitos do pnpm, instâncias Cordis duplicadas, resíduos do Loader e plugins fantasmas.
-- Copiar texto selecionado, perguntar em uma nova conversa ou adicionar ao rascunho atual.
-- Bandeja, reinício rápido, notificações, logs, atualização no aplicativo e registro do comando dsh.
-- Pacotes Windows x64, macOS arm64/x64 e Linux DEB/RPM.
+- Espaço de conversa com largura ajustável, navegação por turnos, uso exato de Token e fila de envio.
+- Importação para ambiente independente, compartilhamento direto de diretório ou início limpo.
+- Descoberta de plugins com catálogo real, categorias, estado local e instalação direta.
+- Diagnóstico antes da inicialização, exercícios, quarentena e recuperação para pnpm, Cordis e Loader.
+- Navegação das Configurações rolável, reordenável e persistente.
+- Distribuições nativas e integração desktop para Windows, macOS e Linux.
+
+## Espaço de conversa com IA
+
+Respostas concluídas podem recolher o processo e o System Prompt. A largura e o tamanho do texto são ajustáveis; tabelas Markdown acompanham o corpo, enquanto a navegação compacta por turnos, o uso exato de Token e o destaque contínuo de código ajudam a revisar conversas longas.
+
+O histórico usa cartões que distinguem respostas concluídas, canceladas e interrompidas. Perguntas não enviadas permanecem ao trocar de sessão, e a próxima mensagem pode entrar na fila enquanto a sessão continua. As imagens aparecem imediatamente enquanto compressão e upload seguem em segundo plano; imagens da trilha, arquivos locais enviados e referências de arquivo ou sessão continuam válidos depois de editar o texto próximo.
 
 ## Primeira execução e ambientes independentes
 
@@ -49,7 +55,25 @@ Cria um ambiente vazio e independente sem ler ou importar configurações, sess�
 
 <p align="center"><img src="./assets/readme/data-home-fresh-en.png" width="900" alt="Criar um ambiente DSH independente e limpo"><br><sub>Nenhuma configuração DSH existente é lida ou alterada</sub></p>
 
-Depois, o assistente orienta a configuração da API Key do modelo, bots IM como WeChat e Feishu e uma conexão opcional com Codex. Todas as etapas podem ser ignoradas e concluídas mais tarde nas Configurações.
+### Escolher um diretório de dados independente
+
+**Importar para um ambiente independente** e **Começar do zero** permitem escolher, antes de continuar, entre o local padrão gerenciado e uma pasta vazia personalizada. Essa pasta passa a ser a raiz independente do cliente; a origem não é alterada nem sincronizada. No Windows, sessões, Profiles de plugins e outros dados crescentes podem ficar em D: ou outro volume que não seja do sistema, reduzindo a pressão sobre C:.
+
+<p align="center"><img src="./assets/readme/data-home-import-custom-location-zh.png" width="900" alt="Escolher uma pasta vazia ao importar configurações"><br><sub>Importação independente: escolher o local padrão ou uma pasta vazia antes da cópia</sub></p>
+
+<p align="center"><img src="./assets/readme/data-home-fresh-custom-location-zh.png" width="900" alt="Escolher uma pasta vazia ao começar do zero"><br><sub>Começar do zero: colocar os novos dados independentes no local escolhido</sub></p>
+
+Depois da configuração inicial, o diretório de dados ainda pode ser alterado em **Configurações → Configurações gerais**. É possível voltar ao diretório independente do cliente, usar diretamente o `~/.dsh` oficial, selecionar outro diretório DSH existente ou criar uma nova configuração em uma pasta vazia. A troca apenas seleciona o diretório usado após reiniciar; ela não copia, move, combina nem exclui os dados originais. Uma pasta vazia inicia novamente o fluxo de primeira instalação depois da reinicialização.
+
+<p align="center"><img src="./assets/readme/data-home-switch-after-start-zh.png" width="900" alt="Trocar o diretório de dados nas Configurações gerais depois de entrar no cliente"><br><sub>Alternar com segurança para uma configuração existente ou criar uma nova configuração independente em uma pasta vazia</sub></p>
+
+Depois, o assistente orienta a configuração da API Key do modelo, o acesso pelo celular, bots IM como WeChat e Feishu e uma conexão opcional com Codex. Todas as etapas podem ser ignoradas e concluídas mais tarde nas Configurações.
+
+## Descoberta, instalação e atualização de plugins
+
+“Explorar plugins” consulta o catálogo real do Plugin Marketplace em vez de uma lista fixa. As visualizações popular e por categoria mostram Stars, downloads dos últimos 30 dias e o estado local. Um plugin pode seguir o fluxo protegido de instalação direta ou abrir no mercado completo para consulta e gerenciamento.
+
+O catálogo obtido com sucesso fica em cache por 24 horas; trocar de categoria não baixa tudo novamente, e a atualização manual continua disponível. O estado instalado é consultado separadamente a cada abertura. Falhas de rede mostram a causa real e, quando existe cache antigo, permitem continuar com um aviso. Plugins locais mantêm identidade verificável de pacote ou repositório, permitindo que o mercado encontre a origem online e ofereça **Restaurar**; a origem local não é atualizada diretamente e precisa ser restaurada como versão online para participar das verificações normais.
 
 ## Seleção e restauração de plugins importados
 
@@ -65,6 +89,16 @@ Plugins de terceiros compartilham o processo Node.js e o grafo de serviços Cord
 
 Por isso o diagnóstico roda na composição do Profile e na camada de inicialização, não em outro plugin comum. Antes do código de terceiros, ele lê manifest, pnpm-lock.yaml, configurações do Workspace, ordem dos Bundles, grafo realmente instalado e runtime compartilhado da instalação atual.
 
+### Da quarentena na inicialização à correção executável
+
+A proteção acompanha a inicialização e a interface principal: primeiro a camada de boot identifica e remove o plugin incompatível, depois o cliente informa claramente o que foi isolado, e o Diagnóstico apresenta a causa, a versão original e ações concretas de atualização ou desinstalação.
+
+<p align="center"><img src="./assets/readme/diagnostics-startup-quarantine-zh.png" width="900" alt="dsh-font incompatível sendo isolado na inicialização"><br><sub>Detectar e isolar um plugin incompatível durante a inicialização</sub></p>
+
+<p align="center"><img src="./assets/readme/diagnostics-quarantine-notice-zh.png" width="900" alt="Aviso de plugins isolados após a inicialização"><br><sub>Entrar com segurança na interface e mostrar exatamente o que foi isolado</sub></p>
+
+<p align="center"><img src="./assets/readme/diagnostics-repair-guidance-zh.png" width="900" alt="Diagnóstico mostra causa e ações de reparo"><br><sub>Mostrar causa, versão, origem anterior e opções de recuperação</sub></p>
+
 Context, Service e Symbol do Cordis dependem da identidade física do módulo, não apenas da versão. Duas cópias de @deepseek-ai/cordis ou dsh-tools na mesma versão, mas em real paths diferentes, continuam sendo instâncias JavaScript distintas. A inspeção percorre cada plugin raiz, dependências diretas e transitivas, intervalos declarados e caminhos resolvidos; peerDependencies válidos não são sinalizados.
 
 São verificados singletons do Host, consistência de Profile/lockfile, Bundles órfãos ou duplicados, plugins fantasmas, Store do pnpm, instalações incompletas, allowBuilds, permissões de prepare e deduplicação peer.
@@ -72,6 +106,20 @@ São verificados singletons do Host, consistência de Profile/lockfile, Bundles 
 A ordem é **inspeção somente leitura → convergência sem perda → instalar apenas o necessário → reverificar real paths → colocar em quarentena se necessário**. Um Profile saudável não executa pnpm. Overrides gerenciados link: são usados apenas com intervalo compatível e nunca reduzem minimumReleaseAge nem substituem allowBuilds: false. O sucesso do pnpm não basta: a inicialização só continua após caminhos físicos e Loader estarem consistentes.
 
 Se a convergência segura não puder ser comprovada, apenas o plugin raiz responsável é removido das dependências ativas e da ordem de Bundles. Especificação, versão, cadeia, motivo e data são preservados. A quarentena termina somente quando o pacote sai fisicamente do Profile, os Hosts compartilhados apontam para cópias canônicas e a reinspeção passa. Assim, o cliente explica quem falhou, por quê, qual proteção foi aplicada e o próximo passo.
+
+Diagnóstico mostra o plugin responsável, sua versão, o motivo da quarentena e um resumo da cadeia de dependências. O usuário pode religar e tentar a recuperação, aprovar o item de build identificado, procurar uma atualização compatível no mercado ou desinstalar por completo. O plugin só retorna ao runtime depois de passar novamente pela inspeção.
+
+### Centro de exercícios de diagnóstico
+
+As versões de desenvolvimento e instalada incluem amostras offline para reproduzir cópias Host paralelas, Bundles órfãos, módulos ausentes, Patch inválidos, Loader duplicados, falhas de ciclo de vida, permissões de build bloqueadas e reparos interrompidos. Os cenários escolhidos são executados em sequência e exibem o cenário e a etapa atuais, cenários restantes, resultado e duração. O alvo isolado não altera o Profile do usuário; o modo avançado no Profile ativo restaura e reinspeciona ao terminar. Se uma recuperação limpa não puder ser comprovada, os plugins não reiniciam; resumos JSON e texto anonimizados são salvos e o relatório JSON pode ser exportado.
+
+<p align="center"><img src="./assets/readme/diagnostics-lab-sandbox-zh.png" width="900" alt="Cenários isolados do centro de exercícios"><br><sub>Alvo isolado: exercitar falhas sem alterar o Profile do usuário</sub></p>
+
+<p align="center"><img src="./assets/readme/diagnostics-lab-live-profile-zh.png" width="900" alt="Modo avançado no Profile ativo"><br><sub>Profile ativo avançado: verificar quarentena, recuperação e reinspeção</sub></p>
+
+> [!CAUTION]
+>
+> Nesta versão, não há garantia de que o exercício no Profile real seja concluído com sucesso. Faça backup da configuração ou use um diretório de dados isolado antes de executá-lo, pois há risco significativo de falha do aplicativo. Não use esse modo em produção. Se um teste real for indispensável, ative apenas um cenário por vez.
 
 ## Seleção de texto e menu de contexto
 
@@ -100,8 +148,25 @@ Quando a sessão aguarda escolha, confirmação ou resposta, ou o editor está d
 - Verificação de Release, progresso de download, validação de SHA256SUMS e abertura do instalador nas Configurações gerais.
 - Registro e remoção seguros do comando dsh incluído no PATH do sistema.
 - Barra de título personalizada no Windows/Linux, comportamento nativo no macOS e escrita limitada na área de transferência.
-- Seis arquivos locais verificados: Plugin Marketplace, dsh-im, dsh-skill-picker, dsh-font, Better Sidebar e dsh-pocket. A desinstalação do usuário é respeitada.
 - Codex e Claude Code são instalados sob demanda em **Configurações → Ferramentas externas**, não incluídos nos instaladores.
+
+### Plugins predefinidos
+
+O instalador inclui cinco presets de inicialização como arquivos locais com integridade verificada: Plugin Marketplace, dsh-im, dsh-skill-picker, Better Sidebar e dsh-pocket. `dsh-font` é fornecido somente como amostra para os exercícios de diagnóstico. Quando o usuário desinstala um preset, o cliente não o reinstala automaticamente.
+
+<p align="center"><img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="Conectar um celular pelo QR code ou endereço LAN do Pocket"><br><sub>Acesso móvel: escanear na mesma rede e ativar acesso público somente quando necessário</sub></p>
+
+<p align="center"><img src="./assets/readme/preset-im-robot-zh.png" width="900" alt="Conectar WeChat e outros bots IM pelo dsh-im"><br><sub>Bots IM: WeChat, Feishu, DingTalk, WeCom, QQ, Slack, Telegram, Discord e WhatsApp</sub></p>
+
+A versão local incluída facilita a preparação offline, mas não acompanha diretamente as atualizações do mercado. Ao ficar online, abra **Mercado de plugins → Instalados** e use **Restaurar** em cada preset para substituí-lo pela versão online. A restauração não pode ser revertida automaticamente; mantenha a versão local se preferir um pacote offline fixo.
+
+<p align="center"><img src="./assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="Restaurar presets locais como versões online"><br><sub>Recomendado: restaurar quando estiver online para receber verificações normais de atualização</sub></p>
+
+### Navegação personalizável das Configurações
+
+A navegação esquerda das Configurações tem rolagem própria, mantendo acessíveis as seções adicionadas por plugins. As seções podem ser arrastadas e a ordem é salva localmente, sendo mesclada de forma estável quando plugins são instalados ou removidos. No Windows e Linux, a barra de título e o conteúdo Harness usam visualizações nativas separadas, portanto um plugin em tela cheia não pode cobrir os controles da janela.
+
+<p align="center"><img src="./assets/readme/settings-navigation-reorder-zh.png" width="900" alt="Reordenar Configurações pelas alças de três linhas"><br><sub>Arraste livremente as seções; as outras linhas abrem espaço suavemente e a ordem final é salva</sub></p>
 
 ## Temas e fundos
 

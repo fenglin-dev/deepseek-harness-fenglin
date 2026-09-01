@@ -48,6 +48,68 @@ function legacyFallbackHeader(seq = 0): SessionEvent {
   } as unknown as SessionEvent
 }
 
+/** A historical failed turn whose adapter emitted two empty tool identities. */
+function legacyEmptyToolCallLog(): SessionEvent[] {
+  return [
+    { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+    {
+      type: 'user/message', seq: 1, time: 2, surfaceOp: 'append',
+      data: {
+        id: 'legacy-empty-user', role: 'user',
+        content: [{ type: 'text', text: 'inspect files' }], source: { kind: 'user' },
+      },
+    },
+    { type: 'step/start', seq: 2, time: 3, data: { turn: 1, step: 1 } },
+    {
+      type: 'assistant/message', seq: 3, time: 4, surfaceOp: 'append',
+      data: {
+        turn: 1, step: 1,
+        message: {
+          id: 'legacy-empty-assistant', role: 'assistant',
+          content: [
+            { type: 'text', text: 'checking' },
+            { type: 'tool-call', id: '', name: '', arguments: '{"path":"/fixture-a"}' },
+            { type: 'tool-call', id: '', name: '', arguments: '{"path":"/fixture-b"}' },
+          ],
+          source: { kind: 'model', provider: 'mock', model: 'mock' },
+        },
+      },
+    },
+    {
+      type: 'tool/call', seq: 4, time: 5,
+      data: { turn: 1, step: 1, callId: '', name: '', arguments: '{"path":"/fixture-a"}' },
+    },
+    {
+      type: 'tool/result', seq: 5, time: 6, surfaceOp: 'append', sourceEventSeqs: [4],
+      data: {
+        turn: 1, step: 1,
+        message: {
+          id: 'legacy-empty-result-a', role: 'user', source: { kind: 'tool', callId: '' },
+          content: [{ type: 'tool-result', toolCallId: '', content: [], isError: true }],
+        },
+        error: { name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' },
+      },
+    },
+    {
+      type: 'tool/call', seq: 6, time: 7,
+      data: { turn: 1, step: 1, callId: '', name: '', arguments: '{"path":"/fixture-b"}' },
+    },
+    {
+      type: 'tool/result', seq: 7, time: 8, surfaceOp: 'append', sourceEventSeqs: [6],
+      data: {
+        turn: 1, step: 1,
+        message: {
+          id: 'legacy-empty-result-b', role: 'user', source: { kind: 'tool', callId: '' },
+          content: [{ type: 'tool-result', toolCallId: '', content: [], isError: true }],
+        },
+        error: { name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' },
+      },
+    },
+    { type: 'step/end', seq: 8, time: 9, data: { turn: 1, step: 1 } },
+    { type: 'turn/end', seq: 9, time: 10, data: { turn: 1, reason: { kind: 'completed' } } },
+  ] as unknown as SessionEvent[]
+}
+
 /** Optional plugin config: an EXTERNAL store shared across backend instances. */
 interface MemoryConfig { store?: MemoryStore }
 
@@ -2003,6 +2065,75 @@ describe('SessionPersistence service registration', () => {
     await ctx.plugin(MemoryPersistence, { store })
     await Promise.all([...store.keys()].map(id => ctx.sessionPersistence.load(SessionId(id))))
     await ctx.fiber.dispose()
+  })
+
+  it('loads fully paired historical empty UNKNOWN_TOOL calls with stable placeholder identities', async () => {
+    const id = SessionId('legacy-empty-tool-calls')
+    const stored = legacyEmptyToolCallLog()
+    const store: MemoryStore = new Map([[id, { meta: meta(id, '/legacy'), events: stored }]])
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const fiber = await ctx.plugin(MemoryPersistence, { store })
+
+    try {
+      for (const snapshot of [
+        await ctx.sessionPersistence.inspect(id),
+        await ctx.sessionPersistence.load(id),
+      ]) {
+        const calls = snapshot.events.filter(event => event.type === 'tool/call')
+        const results = snapshot.events.filter(event => event.type === 'tool/result')
+        expect(calls.map(event => event.type === 'tool/call' && ({
+          callId: event.data.callId,
+          name: event.data.name,
+        }))).toEqual([
+          { callId: `legacy-empty-tool-call:${id}:4`, name: 'legacy_invalid_tool' },
+          { callId: `legacy-empty-tool-call:${id}:6`, name: 'legacy_invalid_tool' },
+        ])
+        expect(results.map(event => event.type === 'tool/result'
+          ? {
+            source: event.data.message.source.callId,
+            block: event.data.message.content[0].toolCallId,
+          }
+          : undefined)).toEqual([
+          { source: `legacy-empty-tool-call:${id}:4`, block: `legacy-empty-tool-call:${id}:4` },
+          { source: `legacy-empty-tool-call:${id}:6`, block: `legacy-empty-tool-call:${id}:6` },
+        ])
+        const assistant = snapshot.events.find(event => event.type === 'assistant/message')
+        expect(assistant?.type === 'assistant/message'
+          ? assistant.data.message.content.filter(block => block.type === 'tool-call')
+          : []).toMatchObject([
+          { id: `legacy-empty-tool-call:${id}:4`, name: 'legacy_invalid_tool' },
+          { id: `legacy-empty-tool-call:${id}:6`, name: 'legacy_invalid_tool' },
+        ])
+        expect(() => Session.create(id, snapshot.events, snapshot.meta)).not.toThrow()
+      }
+
+      // Read repair is intentionally non-mutating; the raw durable artifact is preserved.
+      const rawAssistant = stored[3]
+      expect(rawAssistant?.type === 'assistant/message'
+        ? rawAssistant.data.message.content[1]
+        : undefined).toMatchObject({ type: 'tool-call', id: '', name: '' })
+    } finally {
+      await fiber.dispose()
+    }
+  })
+
+  it('does not disguise an empty successful or ambiguously paired tool result as legacy data', async () => {
+    const id = SessionId('ambiguous-empty-tool-call')
+    const stored = legacyEmptyToolCallLog()
+    const result = stored[5]
+    if (result?.type !== 'tool/result') throw new Error('fixture lacks first tool result')
+    result.data.error = { name: 'UnexpectedSuccess', code: 'OTHER' }
+    const store: MemoryStore = new Map([[id, { meta: meta(id, '/legacy'), events: stored }]])
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const fiber = await ctx.plugin(MemoryPersistence, { store })
+
+    try {
+      await expect(ctx.sessionPersistence.load(id)).rejects.toThrow('message must have tool source')
+    } finally {
+      await fiber.dispose()
+    }
   })
 
   it('rejects preparing an id that already has a live Session', async () => {

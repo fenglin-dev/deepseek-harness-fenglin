@@ -16,3 +16,20 @@
 .progress::-webkit-progress-bar { border-radius: 999px; background: var(--dsw-alias-bg-module-platform); }
 .progress::-webkit-progress-value { border-radius: 999px; background: var(--dsw-alias-brand-primary-new-colorprimary-new-color); }
 .modalActions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 20px; }
+.dataHomeChoices { display: grid; gap: 10px; padding-top: 4px; }
+.dataHomeChoice { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; padding: 13px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-base); cursor: pointer; transition: border-color .16s ease, background .16s ease, box-shadow .16s ease; }
+.dataHomeChoice:hover { border-color: var(--dsw-alias-label-tertiary); }
+.dataHomeChoice[data-selected='true'] { border-color: var(--dsw-alias-label-primary); background: color-mix(in srgb, var(--dsw-alias-bg-module-platform) 72%, transparent); box-shadow: 0 0 0 1px var(--dsw-alias-label-primary); }
+.dataHomeChoice[data-disabled='true'] { cursor: not-allowed; opacity: .52; }
+.dataHomeChoice input { margin: 3px 0 0; accent-color: var(--dsw-alias-label-primary); }
+.dataHomeChoice span { display: grid; gap: 3px; min-width: 0; }
+.dataHomeChoice strong { color: var(--dsw-alias-label-primary); font-size: 13px; line-height: 19px; }
+.dataHomeChoice small { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+.dataHomeChoice code { color: var(--dsw-alias-label-secondary); font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 11px; line-height: 17px; overflow-wrap: anywhere; }
+.dataHomePicker { display: flex; align-items: center; gap: 10px; min-width: 0; padding-left: 29px; }
+.dataHomePicker > span { min-width: 0; }
+.dataHomeWarning { margin: 4px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--dsw-alias-bg-module-platform); color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dataHomeChoice { transition: none; }
+}
