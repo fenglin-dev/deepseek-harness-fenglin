@@ -8,7 +8,9 @@
     "src"
   ],
   "references": [
-    {
+    
+    
+    { "path": "../ui-primitives" },{ "path": "../../../vendor/schemastery" },{
       "path": "../locale"
     },
     {

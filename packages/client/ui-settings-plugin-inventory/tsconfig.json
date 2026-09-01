@@ -8,7 +8,9 @@
     "src"
   ],
   "references": [
-    {
+    
+    
+    { "path": "../../preset/agent-presets" },{ "path": "../ui-agent-preset" },{
       "path": "../../../vendor/cordis"
     },
     {

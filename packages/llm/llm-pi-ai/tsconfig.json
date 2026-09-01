@@ -8,7 +8,8 @@
     "src"
   ],
   "references": [
-    {
+    
+    { "path": "../../util/brand" },{
       "path": "../../util/launch-environment"
     },
     {

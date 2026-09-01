@@ -11,7 +11,9 @@
     "src"
   ],
   "references": [
-    {
+    
+    
+    { "path": "../../../vendor/schemastery" },{ "path": "../../../vendor/cordis" },{
       "path": "../directory-picker"
     },
     {
