@@ -128,8 +128,8 @@
       "@deepseek-ai/dsh-experimental-inspector/invariant": ["./packages/experimental/inspector/src/invariant.ts"],
       "@deepseek-ai/dsh-util-crypto/invariant": ["./packages/util/crypto/src/invariant.ts"],
       // host/client package names prefix the group dir (dsh-client-<dir>), so
-      // the generated aliases below 鈥?which map a package only when its name is
-      // exactly dsh-<dir> 鈥?skip them; strip the group prefix with a dedicated
+      // the generated aliases below 閳?which map a package only when its name is
+      // exactly dsh-<dir> 閳?skip them; strip the group prefix with a dedicated
       // wildcard per group instead.
       "@deepseek-ai/dsh-host-*/invariant": ["./packages/host/*/src/invariant.ts"],
       "@deepseek-ai/dsh-client-*/invariant": ["./packages/client/*/src/invariant.ts"],
@@ -140,7 +140,7 @@
       // dir names are unique across groups, so first-on-disk-wins resolution is
       // unambiguous; adding a package under an existing group needs no edit
       // here. The aggregates' project references (tsconfig.host.json /
-      // tsconfig.client.json) stay explicit 鈥?TS project references have no
+      // tsconfig.client.json) stay explicit 閳?TS project references have no
       // wildcard form.
       "@deepseek-ai/dsh-host-directory-picker": ["./packages/host/directory-picker/src"],
       "@deepseek-ai/dsh-host-directory-picker/*": ["./packages/host/directory-picker/src/*"],
@@ -234,7 +234,19 @@
       "@deepseek-ai/dsh-experimental-inspector": ["./packages/experimental/inspector/src"],
       "@deepseek-ai/dsh-experimental-inspector/client": ["./packages/experimental/inspector/src/client/index.ts"],
       "@deepseek-ai/dsh-util-crypto": ["./packages/util/crypto/src"],
-      // BEGIN generated package aliases 鈥?pnpm run gen-tsconfig-paths
+        "@deepseek-ai/dsh-subagent/internal": ["./packages/subagent/subagent/src/internal.ts"],
+        "@deepseek-ai/dsh-session-turn-outline/types": ["./packages/session/session-turn-outline/src/types.ts"],
+        "@deepseek-ai/dsh-session-turn-outline/client": ["./packages/session/session-turn-outline/src/client.ts"],
+        "@deepseek-ai/dsh-agent-presets/display": ["./packages/preset/agent-presets/src/display.ts"],
+        "@deepseek-ai/dsh-client-ui-schedule": ["./packages/client/ui-schedule/src"],
+        "@deepseek-ai/dsh-client-ui-schedule/client": ["./packages/client/ui-schedule/src/client/index.ts"],
+        "@deepseek-ai/dsh-schedule/client": ["./packages/schedule/schedule/src/client.ts"],
+        "@deepseek-ai/dsh-experimental-code-runtime-python": ["./packages/experimental/code-runtime-python/src"],
+        "@deepseek-ai/dsh-util-values": ["./packages/util/values/src"],
+        "@deepseek-ai/dsh-util-time": ["./packages/util/time/src"],
+        "@deepseek-ai/dsh-deque": ["./packages/util/deque/src"],
+        "@deepseek-ai/dsh-session-turn-outline": ["./packages/session/session-turn-outline/src"],
+      // BEGIN generated package aliases 閳?pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp/invariant": ["./packages/acp/acp/src/invariant.ts"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],
