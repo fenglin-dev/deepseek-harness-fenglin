@@ -3,13 +3,20 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import AgentRegistry, { agentEvents, Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
+import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
 import GoalService, { GoalId } from '@deepseek-ai/dsh-goal'
 import type { GoalRef } from '@deepseek-ai/dsh-goal'
 import { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
-import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
+import {
+  SESSION_FORMAT_VERSION,
+  Session,
+  SessionId,
+  SessionLogOffset,
+} from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import * as toolGoal from '@deepseek-ai/dsh-tool-goal'
 
@@ -47,7 +54,7 @@ function stubAgent(rawId: string, supplied?: Session): StubAgent {
 
 /** Open one message-triggered turn with its accepted model-visible input. */
 function openTurn(stub: StubAgent, source: MessageSource, text = 'prompt'): number {
-  const turn = stub.session.events
+  const turn = stub.session.snapshotEvents()
     .filter(event => event.type === 'turn/start')
     .reduce((max, event) => Math.max(max, event.data.turn), 0) + 1
   const message = createUserMessage({
@@ -74,6 +81,8 @@ async function harness(config: toolGoal.Config = {}) {
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(SessionProjectionRegistry)
+  ctx.sessionProjections.register(turnBoundaryProjectionDefinition)
   await ctx.plugin(GoalService)
   const fiber = await ctx.plugin(toolGoal, config)
   const root = stubAgent(`goal-tool-root-${Math.random()}`)
@@ -164,7 +173,7 @@ describe('goal tool registration and presentation', () => {
   it('has the Loader-safe namespace export shape', () => {
     expect('default' in toolGoal).toBe(false)
     expect(toolGoal.name).toBe('tool-goal')
-    expect(toolGoal.inject).toEqual(['agents', 'goals', 'tools', 'systemPrompt'])
+    expect(toolGoal.inject).toEqual(['agents', 'goals', 'tools', 'systemPrompt', 'sessionProjections'])
     const loader = Object.create(Loader.prototype) as Loader
     expect(loader.unwrapExports(toolGoal)).toBe(toolGoal)
   })
@@ -258,13 +267,13 @@ describe('goal tool execution authority', () => {
     const created = ctx.goals.create(root.agent, { objective: 'resume the fork' })
     closeTurn(root, originalTurn)
     const forkId = SessionId('goal-tool-resumed-fork')
-    const forkSession = Session.create(forkId, root.session.events, {
+    const forkSession = Session.create(forkId, root.session.snapshotEvents(), {
       version: SESSION_FORMAT_VERSION,
       id: forkId,
       createdAt: Date.now(),
       parentSession: root.session.id,
-      seedLength: root.session.seq,
-    })
+      isSeeded: true,
+    }, SessionLogOffset(root.session.seq))
     const fork = stubAgent(forkId, forkSession)
     ctx.agents.register(fork.agent)
     expect(ctx.goals.get(fork.agent)).toMatchObject({ id: created.id, activation: 'disarmed' })

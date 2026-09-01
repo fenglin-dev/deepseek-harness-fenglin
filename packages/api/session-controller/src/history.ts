@@ -1,12 +1,23 @@
 /** Cold Session history pagination and live-event source. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session'
+import { Deque } from '@deepseek-ai/dsh-deque'
+import {
+  isAppendSurfaceEvent,
+  SessionLogOffset,
+  SessionSeq,
+} from '@deepseek-ai/dsh-session'
 import { isChunkRow, packChunkRuns, type ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
-import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type {
+  SessionEvent,
+  SessionHeader,
+  SessionId,
+  SessionLogOffset as SessionLogOffsetType,
+  SessionSeqCursor,
+} from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-subagent'
-import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   SessionAddress,
   SessionChunkRun,
@@ -18,6 +29,7 @@ import type {
   SessionPageRequest,
   SessionProjectionBaseline,
   SessionProjectionValues,
+  SessionWireHeader,
   SessionWireEvent,
 } from './types.ts'
 
@@ -50,26 +62,32 @@ export class SessionHistoryController {
    */
   async page(request: SessionPageRequest, signal: AbortSignal): Promise<SessionPage> {
     validatePageRequest(request)
+    const throughSeq: SessionSeqCursor = request.throughSeq === -1
+      ? -1
+      : SessionSeq(request.throughSeq)
+    const beforeSeq = request.beforeSeq === undefined
+      ? undefined
+      : SessionLogOffset(request.beforeSeq)
     using source = await this.sourceFor(request.address, signal, false)
     signal.throwIfAborted()
     const sourceLog = source.events
-    const sourceCursor = sourceLog.at(-1)?.seq ?? -1
-    if (request.throughSeq > sourceCursor) {
-      reject(
-        'bad-request',
-        `session page through seq ${String(request.throughSeq)} is past cursor ${String(sourceCursor)}`,
+    const sourceCursor: SessionSeqCursor = sourceLog.at(-1)?.seq ?? -1
+    if (throughSeq > sourceCursor) {
+      throw new RemoteError(
+        'gateway/bad-request',
+        `session page through seq ${String(throughSeq)} is past cursor ${String(sourceCursor)}`,
         {},
       )
     }
     /* v8 ignore next -- Session and persistence validation guarantee a dense zero-based event prefix. */
-    if (request.throughSeq >= 0 && sourceLog[request.throughSeq]?.seq !== request.throughSeq) {
-      reject('internal', `session log does not contain through seq ${String(request.throughSeq)}`, {})
+    if (throughSeq >= 0 && sourceLog[throughSeq]?.seq !== throughSeq) {
+      throw new RemoteError('gateway/internal', `session log does not contain through seq ${String(throughSeq)}`, {})
     }
     const page = paginate(
       sourceLog,
-      request.beforeSeq,
+      beforeSeq,
       request.maxMessages ?? DEFAULT_MAX_MESSAGES,
-      request.throughSeq,
+      throughSeq,
     )
     const records = pageRecords(page.events)
     return {
@@ -88,8 +106,8 @@ export class SessionHistoryController {
     validateFollowRequest(request)
     const { address } = request
     const target = addressId(address)
-    const buffered: SessionEvent[] = []
-    let snapshotCursor: number | undefined
+    const buffered = new Deque<SessionEvent>()
+    let snapshotCursor: SessionSeqCursor | undefined
     let wake: (() => void) | undefined
     const notify = (): void => {
       const resume = wake
@@ -104,7 +122,7 @@ export class SessionHistoryController {
     this.closeFollowers.add(close)
     const disposeEvent = this.ctx.on('session/event', (session, event) => {
       if (session.id !== target) return
-      buffered.push(event)
+      buffered.pushBack(event)
       notify()
     }, { global: true })
     const disposeCreated = this.ctx.on('session/created', (session) => {
@@ -112,10 +130,12 @@ export class SessionHistoryController {
       // Constructor seed events have no session/event notification. Normally
       // only the end-seed suffix is new; if persistence advanced after the
       // opening observation, replay everything beyond that snapshot cursor.
-      const suffix = session.events.slice(snapshotCursor === undefined
+      const suffix = session.snapshotEvents(snapshotCursor === undefined
         ? session.firstLiveSeq
-        : snapshotCursor + 1)
-      buffered.unshift(...suffix)
+        : SessionLogOffset(snapshotCursor + 1))
+      for (let index = suffix.length - 1; index >= 0; index -= 1) {
+        buffered.pushFront(suffix[index] as SessionEvent)
+      }
       notify()
     }, { global: true })
     const onAbort = (): void => { notify() }
@@ -129,7 +149,7 @@ export class SessionHistoryController {
       const page = paginate(events, undefined, request.maxMessages ?? DEFAULT_MAX_MESSAGES)
       yield {
         type: 'snapshot',
-        header: source.header,
+        header: wireHeader(source.header, source.inheritedEventCount),
         cursor,
         records: pageRecords(page.events),
         hasMore: page.hasMore,
@@ -146,18 +166,19 @@ export class SessionHistoryController {
           throw error
         }
       }
-      let nextSeq = cursor + 1
+      let nextOffset = SessionLogOffset(cursor + 1)
       while (!follower.closed && !signal.aborted) {
-        const item = buffered.shift()
+        const item = buffered.popFront()
         if (item === undefined) {
           await new Promise<void>((resolve) => { wake = resolve })
           continue
         }
-        if (item.seq < nextSeq) continue
-        if (item.seq !== nextSeq) {
-          reject('internal', `session event stream skipped seq ${String(nextSeq)}`, {})
+        const expectedSeq = SessionSeq(nextOffset)
+        if (item.seq < expectedSeq) continue
+        if (item.seq !== expectedSeq) {
+          throw new RemoteError('gateway/internal', `session event stream skipped seq ${String(expectedSeq)}`, {})
         }
-        nextSeq++
+        nextOffset = SessionLogOffset(nextOffset + 1)
         yield entryFor(item)
       }
     } finally {
@@ -184,7 +205,12 @@ export class SessionHistoryController {
         rejectNotFound(address)
       }
       try {
-        validateAddress(address, observation.header, observation.projections)
+        validateAddress(
+          address,
+          observation.header,
+          observation.inheritedEventCount,
+          observation.projections,
+        )
       } catch (error: unknown) {
         observation[Symbol.dispose]()
         throw error
@@ -210,23 +236,27 @@ function projectionBlock(
 }
 
 function validatePageRequest(request: SessionPageRequest): void {
-  if (!Number.isSafeInteger(request.throughSeq) || request.throughSeq < -1) {
-    reject('bad-request', 'throughSeq must be an integer greater than or equal to -1', {})
+  if (!Number.isSafeInteger(request.throughSeq)
+    || request.throughSeq < -1
+    || Object.is(request.throughSeq, -0)) {
+    throw new RemoteError('gateway/bad-request', 'throughSeq must be an integer greater than or equal to -1', {})
   }
   if (request.beforeSeq !== undefined
-    && (!Number.isSafeInteger(request.beforeSeq) || request.beforeSeq < 0)) {
-    reject('bad-request', 'beforeSeq must be a non-negative safe integer', {})
+    && (!Number.isSafeInteger(request.beforeSeq)
+      || request.beforeSeq < 0
+      || Object.is(request.beforeSeq, -0))) {
+    throw new RemoteError('gateway/bad-request', 'beforeSeq must be a non-negative safe integer', {})
   }
   if (request.maxMessages !== undefined
     && (!Number.isSafeInteger(request.maxMessages) || request.maxMessages <= 0)) {
-    reject('bad-request', 'maxMessages must be a positive safe integer', {})
+    throw new RemoteError('gateway/bad-request', 'maxMessages must be a positive safe integer', {})
   }
 }
 
 function validateFollowRequest(request: SessionFollowRequest): void {
   if (request.maxMessages !== undefined
     && (!Number.isSafeInteger(request.maxMessages) || request.maxMessages <= 0)) {
-    reject('bad-request', 'maxMessages must be a positive safe integer', {})
+    throw new RemoteError('gateway/bad-request', 'maxMessages must be a positive safe integer', {})
   }
 }
 
@@ -237,38 +267,39 @@ function addressId(address: SessionAddress): SessionId {
 function validateAddress(
   address: SessionAddress,
   header: SessionHeader,
+  inheritedEventCount: SessionLogOffsetType,
   projections: SessionObservation['projections'],
 ): void {
   if (address.kind === 'session') {
     if (header.origin === 'subagent') {
-      reject('agent-busy', 'subagent Sessions require their durable parent address', {
+      throw new RemoteError('session/agent-busy', 'subagent Sessions require their durable parent address', {
         reason: 'use subagent delivery for this child session',
       })
     }
     return
   }
   if (header.origin !== 'subagent' || header.parentSession !== address.parentSessionId) {
-    reject('subagent-unauthorized', 'subagent does not belong to the supplied parent', {
+    throw new RemoteError('subagent/unauthorized', 'subagent does not belong to the supplied parent', {
       childSessionId: address.childSessionId,
     })
   }
   const identity = projections?.values.subagent
   if (identity === null) {
-    reject('subagent-catalog-diagnostic', 'subagent descriptor is corrupt', {
+    throw new RemoteError('subagent/catalog-diagnostic', 'subagent descriptor is corrupt', {
       parentSessionId: address.parentSessionId,
       childSessionId: address.childSessionId,
       reason: 'corrupt',
     })
   }
-  if (identity === undefined || identity.seq < (header.seedLength ?? 0)) {
-    reject('subagent-catalog-diagnostic', 'subagent descriptor is unavailable', {
+  if (identity === undefined || identity.seq < inheritedEventCount) {
+    throw new RemoteError('subagent/catalog-diagnostic', 'subagent descriptor is unavailable', {
       parentSessionId: address.parentSessionId,
       childSessionId: address.childSessionId,
       reason: 'unsupported',
     })
   }
   if (identity.mode !== address.mode) {
-    reject('subagent-unauthorized', 'subagent mode does not match the supplied address', {
+    throw new RemoteError('subagent/unauthorized', 'subagent mode does not match the supplied address', {
       childSessionId: address.childSessionId,
     })
   }
@@ -276,42 +307,52 @@ function validateAddress(
 
 function rejectNotFound(address: SessionAddress): never {
   if (address.kind === 'session') {
-    reject('session-not-found', `session "${address.sessionId}" not found`, { sessionId: address.sessionId })
+    throw new RemoteError('session/not-found', `session "${address.sessionId}" not found`, { sessionId: address.sessionId })
   }
-  reject('subagent-not-found', 'subagent is unavailable', {
+  throw new RemoteError('subagent/not-found', 'subagent is unavailable', {
     parentSessionId: address.parentSessionId,
     childSessionId: address.childSessionId,
   })
 }
 
-function reject(code: string, message: string, details: object): never {
-  throw new TypertRemoteFailure({ code, message, details })
-}
-
 function paginate(
   events: readonly SessionEvent[],
-  beforeSeq: number | undefined,
+  beforeSeq: SessionLogOffsetType | undefined,
   maxMessages: number,
-  throughSeq = events.at(-1)?.seq ?? -1,
+  throughSeq: SessionSeqCursor = events.at(-1)?.seq ?? -1,
 ): { readonly events: SessionEvent[]; readonly hasMore: boolean } {
-  const end = Math.min(throughSeq + 1, beforeSeq ?? throughSeq + 1)
+  const end = SessionLogOffset(Math.min(throughSeq + 1, beforeSeq ?? throughSeq + 1))
   let count = 0
-  let cut = 0
+  let cut = SessionLogOffset(0)
   for (let index = end - 1; index >= 0; index--) {
     const event = events[index] as SessionEvent
     if (!MESSAGE_TYPES.has(event.type) || !isAppendSurfaceEvent(event)) continue
     count++
-    const sources = (event as { readonly sourceEventSeqs?: readonly number[] }).sourceEventSeqs
+    const sources = event.sourceEventSeqs
     let groupStart = event.seq
     if (sources !== undefined) {
-      for (const source of sources) groupStart = Math.min(groupStart, source)
+      for (const source of sources) {
+        if (source < groupStart) groupStart = source
+      }
     }
     if (count >= maxMessages) {
-      cut = groupStart
+      cut = SessionLogOffset(groupStart)
       break
     }
   }
   return { events: events.slice(cut, end), hasMore: cut > 0 }
+}
+
+/** Translate logical Session metadata to the unchanged v0 browser wire. */
+function wireHeader(
+  header: SessionHeader,
+  inheritedEventCount: SessionLogOffsetType,
+): SessionWireHeader {
+  const { isSeeded, ...wire } = header
+  return {
+    ...wire,
+    ...isSeeded ? { seedLength: inheritedEventCount } : {},
+  }
 }
 
 function entryFor(event: SessionEvent): SessionEventEntry {

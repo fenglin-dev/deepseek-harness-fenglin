@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Feature plugins use this package to store and edit their preferences without re-implementing transport or schema handling. Mount it once per composition; it injects `connection` and `remote` and owns the single `settings.describe` reader in the browser.
+Feature plugins use this package to store and edit their preferences without re-implementing transport or schema handling. Mount it once per composition; it injects the `remote` service with its `settings` namespace and owns the single `settings.describe` reader in the browser.
 
 ### Binding a namespace
 
@@ -51,7 +51,7 @@ The package realizes one ownership rule: the browser keeps one shared mirror of 
 
 ### The describe mirror
 
-The plugin injects `connection` and `remote` and owns the one `settings.describe` reader in the browser: a shared mirror refreshed on every forwarded `settings/document-updated` event and on `connection/reset` (the first connection included, closing the window where a commit lands between the eager read and the SSE subscription). Cross-namespace surfaces read it through `ctx.settingsScope.describe()`, a read/fold face (`getSnapshot`/`subscribe`/`ensure`, plus `acceptView` folding a write answer in).
+The plugin injects `remote` with its `settings` namespace, resolves Host persistence once from the fixed `remote.$host` facts, and owns the one `settings.describe` reader in the browser: a shared mirror refreshed on every forwarded `settings/document-updated` event and on `connection/reset` (the first connection included, closing the window where a commit lands between the eager read and the SSE subscription). Cross-namespace surfaces read it through `ctx.settingsScope.describe()`, a read/fold face (`getSnapshot`/`subscribe`/`ensure`, plus `acceptView` folding a write answer in).
 
 ### Scope derivation
 
@@ -105,3 +105,5 @@ These limits define where the settings transport cannot reach; they are current 
 None.
 
 </details>
+
+**Runtime invariant:** No companion is published. A presentation shell projecting the settings.section ledger into navigation — it emits no cordis events and owns no cross-plugin mutable relation; slot declaration/registration conflicts already fail loud in the slot core at load time.

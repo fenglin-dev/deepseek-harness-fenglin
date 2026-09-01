@@ -1,7 +1,7 @@
 /** Test adapter for the production conversation.details.tool registration. */
-import type { ConnectionGeneration } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionLiveEventEntry } from '@deepseek-ai/dsh-api-session-controller/client'
-import { isJsonValue, type JsonValue } from '@deepseek-ai/dsh-session'
+import { SessionSeq } from '@deepseek-ai/dsh-session/types'
+import { isJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
   ChatConversationViewNode, ChatSnapshot, ConversationNode, DetailsSlotProps,
   DetailsToolOwnerProps, RunningToolCall, ToolResultNode,
@@ -50,6 +50,8 @@ export function toolChatSnapshot(
     order: nodes.map(node => node.key),
     nodes: {
       get: key => byKey.get(key),
+      source: key => ({ getSnapshot: () => byKey.get(key), subscribe: () => () => {} }),
+      processSource: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }),
       values: () => nodes,
     },
     locations: {
@@ -75,7 +77,7 @@ export function toolSessionEvents(nodes: readonly ToolResultNode[]): readonly Se
     {
       type: 'event',
       event: {
-        seq: 1,
+        seq: SessionSeq(1),
         time: firstTime - 2,
         type: 'turn/start',
         data: { turn: 1 },
@@ -84,7 +86,7 @@ export function toolSessionEvents(nodes: readonly ToolResultNode[]): readonly Se
     {
       type: 'event',
       event: {
-        seq: 2,
+        seq: SessionSeq(2),
         time: firstTime - 1,
         type: 'step/start',
         data: { turn: 1, step: 1 },
@@ -97,7 +99,7 @@ export function toolSessionEvents(nodes: readonly ToolResultNode[]): readonly Se
     const callEntry: SessionLiveEventEntry = {
       type: 'event',
       event: {
-        seq: callSeq,
+        seq: SessionSeq(callSeq),
         time: node.callTime ?? node.time - 1,
         type: 'tool/call',
         data: {
@@ -113,7 +115,7 @@ export function toolSessionEvents(nodes: readonly ToolResultNode[]): readonly Se
     const resultEntry: SessionLiveEventEntry = {
       type: 'event',
       event: {
-        seq: callSeq + 1,
+        seq: SessionSeq(callSeq + 1),
         time: node.time,
         type: 'tool/result',
         data: jsonFixture({
@@ -144,12 +146,12 @@ export function toolSessionEvents(nodes: readonly ToolResultNode[]): readonly Se
 /**
  * Bind ui-tool's details renderer to the conversation slot callback shape.
  * @param t - conversation locale seat used by Tool cards.
- * @param generation - optional Connection generation carrying the Host home.
+ * @param home - optional Host account home for POSIX `~` summaries.
  * @returns a direct-test renderSlot implementation.
  */
 export function renderToolDetails(
   t: TranslateNS<'conversation'>,
-  generation?: ConnectionGeneration,
+  home?: string,
 ): DetailsSlotProps['renderSlot'] {
   return (_key, owner) => {
     // PropsRenderSlots keeps its key generic even for this one-key share;
@@ -158,7 +160,7 @@ export function renderToolDetails(
     return <ToolDetails
       block={details.block}
       cwd={details.cwd}
-      useConnectionGeneration={selector => selector(generation)}
+      useHostInfo={selector => selector({ home, isLoopback: true })}
       t={t}
     />
   }

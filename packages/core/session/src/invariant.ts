@@ -6,10 +6,10 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { assertNever } from '@deepseek-ai/dsh-llm'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionSeqCursor } from '@deepseek-ai/dsh-session'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { TOOL_NOT_STARTED } from './repair.ts'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-session'
@@ -21,7 +21,7 @@ export const inject = ['invariants']
 
 /** Per-session bookkeeping for relational log checks. */
 interface SessionTrace {
-  lastSeq: number
+  lastSeq: SessionSeqCursor
   openTurn: number | null
   openStep: number | null
   nextTurn: number
@@ -206,7 +206,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
   const seedSession = (session: Session): SessionTrace => {
     const trace = freshTrace()
     traces.set(session, trace)
-    for (const event of session.events) {
+    for (const event of session.snapshotEvents()) {
       applyTransition(trace, validateEvent(trace, event, fail))
     }
     return trace

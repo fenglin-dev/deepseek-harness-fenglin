@@ -12,6 +12,7 @@ import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
@@ -53,6 +54,7 @@ async function ptcModeHarness(cwd: string): Promise<Context> {
   const harness = new Context()
   await harness.plugin(LlmRuntime)
   await harness.plugin(SessionStore)
+  await harness.plugin(SessionProjectionRegistry)
   await harness.plugin(SystemPrompt, { persona: PERSONA })
   await harness.plugin(ToolRuntime, { mode: 'ptc' })
   await harness.plugin(AgentRegistry)
@@ -70,6 +72,7 @@ async function workspacePtcModeHarness(): Promise<Context> {
   const harness = new Context()
   await harness.plugin(LlmRuntime)
   await harness.plugin(SessionStore)
+  await harness.plugin(SessionProjectionRegistry)
   await harness.plugin(SystemPrompt, { persona: PERSONA })
   await harness.plugin(ToolRuntime, { mode: 'ptc' })
   await harness.plugin(AgentRegistry)
@@ -363,7 +366,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('PTC mode: real model writes a pr
         + 'and return only the joined string.',
       }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
-    const events: SessionEvent[] = [...agent.session.events]
+    const events: readonly SessionEvent[] = agent.session.snapshotEvents()
 
     // The wire contract: every request this session made offered EXACTLY ONE
     // tool — run_code (the logged header snapshots the assembled list).
@@ -415,11 +418,11 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('PTC mode: real model writes a pr
       }], source: { kind: 'user' } }))
     await waitForIdle(ctx, handle.agent)
 
-    const events: SessionEvent[] = [...handle.agent.session.events]
+    const events: readonly SessionEvent[] = handle.agent.session.snapshotEvents()
     const dispatch = events.find(event => event.type === 'tool/code-dispatch' && event.data.name === 'read')
     const outerResult = events.find(event => event.type === 'tool/result')
     const workspaceContext = await vi.waitFor(() => {
-      const splice = handle.agent.session.events.findLast(event => event.type === 'agent/inbox/spliced'
+      const splice = handle.agent.session.snapshotEvents().findLast(event => event.type === 'agent/inbox/spliced'
         && event.data.inserted.some(message => message.source.kind === 'agent-instructions'))
       const inserted = splice?.type === 'agent/inbox/spliced'
         ? splice.data.inserted.find(message => message.source.kind === 'agent-instructions')

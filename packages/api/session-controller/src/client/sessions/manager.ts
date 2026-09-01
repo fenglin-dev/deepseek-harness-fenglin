@@ -3,19 +3,18 @@
 // List data never enters zustand; React connects via subscribe/getListSnapshot.
 
 import type { SubagentAddress, SubagentCatalog } from '@deepseek-ai/dsh-subagent/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionSeq, type SessionId, type SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type {
   SessionControlBaseline,
   SessionControlFrame,
   SessionQueuedItem,
-  SessionError,
   SessionSummary,
   SessionJob as JobView,
 } from '../../types.ts'
 import { mergeOrderedBaseline } from '../ordered-baseline.ts'
-import type { ClientFailure, ClientResult } from '../contract/result.ts'
-import { transportResult } from '../contract/result.ts'
+import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
+import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionListEntry, TitledSessionSummary } from './lineage.ts'
 import { flattenLineage } from './lineage.ts'
 // Type-only merge edge: the title domain's client-namespace outlet declares
@@ -26,6 +25,10 @@ import { Notifier } from './notifier.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import { Session } from './session.ts'
 import type { SessionRemotes } from './remotes.ts'
+
+function sessionSeqCursor(value: number): SessionSeqCursor {
+  return value === -1 ? -1 : SessionSeq(value)
+}
 
 /**
  * List arrival lifecycle, orthogonal to the pull-activity `state` axis:
@@ -51,7 +54,7 @@ export interface SessionListSnapshot {
   state: 'idle' | 'loading' | 'error'
   /** Arrival lifecycle (see {@link SessionListPhase}); `state` stays the pull-activity axis. */
   phase: SessionListPhase
-  error: ClientFailure | null
+  error: RemoteFailure | null
   subagentsByParent: Readonly<Record<SessionId, SubagentCatalogSnapshot>>
   /** Background jobs per session; an absent key is an empty set. */
   jobsBySession: Readonly<Record<SessionId, readonly JobView[]>>
@@ -63,7 +66,7 @@ export type SubagentCatalogSnapshot = Omit<SubagentCatalog, 'parentAvailable'> &
   /** Absent until the first successful catalog read. */
   readonly parentAvailable?: boolean
   state: 'loading' | 'ready' | 'error'
-  error: ClientFailure | null
+  error: RemoteFailure | null
 }
 
 function catalogAvailability(parentAvailable: boolean | undefined): {
@@ -112,7 +115,7 @@ export class SessionManager {
   private listState: 'idle' | 'loading' | 'error' = 'idle'
   /** Arrival phase; the pending → ready edge fires on the first successful pull (see SessionListPhase). */
   private listPhase: SessionListPhase = 'pending'
-  private listError: ClientFailure | null = null
+  private listError: RemoteFailure | null = null
   private listInflight: Promise<void> | null = null
   /** Mutations arriving after a list request starts are replayed over its response. */
   private listMutations: SessionListMutation[] | null = null
@@ -366,7 +369,7 @@ export class SessionManager {
     this.notifier.markDirty()
     const operation = (async () => {
       try {
-        const result = toSessionResult(await this.remote.subagents.list(parentSessionId))
+        const result = await this.remote.subagents.list(parentSessionId)
         if (result.ok) {
           const parentAvailable = this.catalogInflight.get(parentSessionId)?.parentAvailableOverride
             ?? result.value.parentAvailable
@@ -395,7 +398,7 @@ export class SessionManager {
           })
         }
       } catch (error: unknown) {
-        const folded = transportResult<never>(error)
+        if (!isRemoteFailure(error)) throw error
         this.catalogs.set(parentSessionId, {
           entries: this.withCatalogMutations(
             previous?.entries ?? [], expandableRows, activityRows,
@@ -405,7 +408,7 @@ export class SessionManager {
               ?? previous?.parentAvailable,
           ),
           state: 'error',
-          error: folded.ok ? null : folded.error,
+          error,
         })
       } finally {
         this.catalogInflight.delete(parentSessionId)
@@ -457,7 +460,7 @@ export class SessionManager {
     this.notifier.markDirty()
     this.listInflight = (async () => {
       try {
-        const result = toSessionResult(await this.remote.session.list({}))
+        const result = await this.remote.session.list({})
         if (result.ok) {
           const baseline: SessionSummary[] = this.listPhase === 'pending'
             ? [...result.value.items]
@@ -499,17 +502,16 @@ export class SessionManager {
             if (block === undefined) continue
             const store = this.projectionStore(s.sessionId)
             const values = block.values as Record<string, unknown>
-            for (const key of Object.keys(values)) store.apply(key, values[key], block.asOfSeq)
+            for (const key of Object.keys(values)) store.apply(key, values[key], sessionSeqCursor(block.asOfSeq))
           }
         } else {
           this.listState = 'error'
           this.listError = result.error
         }
       } catch (error) {
+        if (!isRemoteFailure(error)) throw error
         this.listState = 'error'
-        const folded = transportResult<never>(error)
-        /* v8 ignore next -- the `? null` arm is unreachable: transportResult always returns ok:false. */
-        this.listError = folded.ok ? null : folded.error
+        this.listError = error
       } finally {
         this.listMutations = null
         this.listInflight = null
@@ -529,19 +531,15 @@ export class SessionManager {
   async search(
     query: string,
     signal: AbortSignal,
-  ): Promise<ClientResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>> {
-    try {
-      const result = toSessionResult(await this.remote.session.search({ query }, signal))
-      if (!result.ok) return result
-      return {
-        ok: true,
-        value: {
-          items: [...result.value.items],
-          hasMore: result.value.hasMore,
-        },
-      }
-    } catch (error: unknown) {
-      return transportResult(error)
+  ): Promise<RemoteResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>> {
+    const result = await this.remote.session.search({ query }, signal)
+    if (!result.ok) return result
+    return {
+      ok: true,
+      value: {
+        items: [...result.value.items],
+        hasMore: result.value.hasMore,
+      },
     }
   }
 
@@ -558,36 +556,32 @@ export class SessionManager {
       cwd?: string
       sessionId?: SessionId
     } = {},
-  ): Promise<ClientResult<{ sessionId: SessionId }>> {
-    try {
-      const shared = opts.sessionId === undefined ? {} : { sessionId: opts.sessionId }
-      const payload = opts.workspaceId !== undefined
-        ? { workspaceId: opts.workspaceId, ...shared }
-        : { ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }), ...shared }
-      const result = toSessionResult(await this.remote.session.create(payload))
-      if (result.ok) {
+  ): Promise<RemoteResult<{ sessionId: SessionId }>> {
+    const shared = opts.sessionId === undefined ? {} : { sessionId: opts.sessionId }
+    const payload = opts.workspaceId !== undefined
+      ? { workspaceId: opts.workspaceId, ...shared }
+      : { ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }), ...shared }
+    const result = await this.remote.session.create(payload)
+    if (result.ok) {
+      this.recordMutation({ kind: 'upsert', summary: {
+        sessionId: result.value.sessionId, updatedAt: Date.now(), running: false, blank: true,
+        ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+      } })
+    } else {
+      const publishedSessionId = workspaceAttachSessionId(result.error)
+      // Publication precedes attachment. The error's id is a real Session,
+      // so expose it immediately as Ungrouped while the caller keeps the
+      // prompt buffer and decides whether to retry attachment.
+      if (publishedSessionId !== undefined) {
         this.recordMutation({ kind: 'upsert', summary: {
-          sessionId: result.value.sessionId, updatedAt: Date.now(), running: false, blank: true,
-          ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+          sessionId: publishedSessionId,
+          updatedAt: Date.now(),
+          running: false,
+          blank: true,
         } })
-      } else {
-        const publishedSessionId = workspaceAttachSessionId(result.error)
-        // Publication precedes attachment. The error's id is a real Session,
-        // so expose it immediately as Ungrouped while the caller keeps the
-        // prompt buffer and decides whether to retry attachment.
-        if (publishedSessionId !== undefined) {
-          this.recordMutation({ kind: 'upsert', summary: {
-            sessionId: publishedSessionId,
-            updatedAt: Date.now(),
-            running: false,
-            blank: true,
-          } })
-        }
       }
-      return result
-    } catch (error) {
-      return transportResult(error)
     }
+    return result
   }
 
   /**
@@ -600,28 +594,24 @@ export class SessionManager {
    * @returns the fork result (the child session id).
    */
   async fork(
-    opts: { sessionId: SessionId; atSeq?: number },
-  ): Promise<ClientResult<{ sessionId: SessionId }>> {
-    try {
-      const source = this.summaries.find(s => s.sessionId === opts.sessionId)
-      const result = toSessionResult(await this.remote.session.fork({
-        sessionId: opts.sessionId,
-        ...opts.atSeq === undefined ? {} : { atSeq: opts.atSeq },
-      }))
-      const childId = result.ok
-        ? result.value.sessionId
-        : workspaceAttachSessionId(result.error)
-      if (childId !== undefined) {
-        this.recordMutation({ kind: 'upsert', summary: {
-          sessionId: childId, updatedAt: Date.now(), running: false, blank: false,
-          parentSessionId: opts.sessionId,
-          ...(source?.cwd !== undefined ? { cwd: source.cwd } : {}),
-        } })
-      }
-      return result
-    } catch (error) {
-      return transportResult(error)
+    opts: { sessionId: SessionId; atSeq?: SessionSeq },
+  ): Promise<RemoteResult<{ sessionId: SessionId }>> {
+    const source = this.summaries.find(s => s.sessionId === opts.sessionId)
+    const result = await this.remote.session.fork({
+      sessionId: opts.sessionId,
+      ...opts.atSeq === undefined ? {} : { atSeq: opts.atSeq },
+    })
+    const childId = result.ok
+      ? result.value.sessionId
+      : workspaceAttachSessionId(result.error)
+    if (childId !== undefined) {
+      this.recordMutation({ kind: 'upsert', summary: {
+        sessionId: childId, updatedAt: Date.now(), running: false, blank: false,
+        parentSessionId: opts.sessionId,
+        ...(source?.cwd !== undefined ? { cwd: source.cwd } : {}),
+      } })
     }
+    return result
   }
 
   /**
@@ -675,7 +665,7 @@ export class SessionManager {
       return
     }
     if (frame.type === 'projection') {
-      this.projectionStore(frame.sessionId).apply(frame.key, frame.value, frame.seq)
+      this.projectionStore(frame.sessionId).apply(frame.key, frame.value, SessionSeq(frame.seq))
       this.notifier.markDirty()
       return
     }
@@ -702,8 +692,9 @@ export class SessionManager {
 
     for (const [sessionId, block] of Object.entries(baseline.projections)) {
       const store = this.projectionStore(sessionId as SessionId)
-      store.truncate(block.asOfSeq)
-      store.seed(block)
+      const asOfSeq = sessionSeqCursor(block.asOfSeq)
+      store.truncate(asOfSeq)
+      store.seed({ ...block, asOfSeq })
     }
     for (const [sessionId, session] of this.sessions) {
       session.replaceControl(this.queues.get(sessionId) ?? [])
@@ -722,7 +713,7 @@ export class SessionManager {
     if (projections !== undefined) {
       const store = this.projectionStore(summary.sessionId)
       for (const [key, value] of Object.entries(projections.values)) {
-        store.apply(key, value, projections.asOfSeq)
+        store.apply(key, value, sessionSeqCursor(projections.asOfSeq))
       }
     }
     if (summary.origin === 'subagent' && summary.parentSessionId !== undefined) {
@@ -1010,13 +1001,6 @@ function applyMutation(summaries: readonly SessionSummary[], mutation: SessionLi
 }
 
 /** Temporary source-plane bridge while the Host contract and client project build independently. */
-function workspaceAttachSessionId(error: ClientFailure): SessionId | undefined {
-  return error.code === 'workspace-attach-failed' ? error.details.sessionId : undefined
-}
-
-/** Narrow a generated Session Remote failure to its service-owned error vocabulary. */
-function toSessionResult<T>(
-  result: import('@deepseek-ai/dsh-typert-protocol').RemoteResult<T>,
-): ClientResult<T> {
-  return result.ok ? result : { ok: false, error: result.error as SessionError }
+function workspaceAttachSessionId(error: RemoteFailure): SessionId | undefined {
+  return error.code === 'session/workspace-attach-failed' ? error.details.sessionId : undefined
 }

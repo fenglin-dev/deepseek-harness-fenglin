@@ -23,116 +23,53 @@
 
 import { stat } from 'node:fs/promises'
 import { Context } from '@deepseek-ai/cordis'
+import { evaluate } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
-import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
 // Type-only: resolves the `agent/created` lifecycle event this service watches.
 import type {} from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { AgentPresetDocument, AgentPresetErrorDetailsMap, AgentPresetRoster } from './types.ts'
+import type { AgentPresetDocument, AgentPresetRoster } from './types.ts'
 import type {} from '@deepseek-ai/dsh-session-projection'
 // Type-only: resolves the registry notification emitted after scope reparenting.
 import type {} from '@deepseek-ai/dsh-tools'
-import { settingsNamespace, type SettingsScope, type default as SettingsService } from '@deepseek-ai/dsh-settings'
+import type SettingsService from '@deepseek-ai/dsh-settings'
+import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { discoverPresets, SHIPPED_PRESET_ROOT, USER_PRESET_DIR } from './discovery.ts'
+import { copyComposition, deleteComposition, presetExists, readComposition } from './authoring.ts'
+import { livePresetMounts, mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
 import {
-  copyComposition, deleteComposition, readComposition,
-  InvalidPresetIdError, PresetExistsError, PresetNotWritableError,
-} from './authoring.ts'
-import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
-import {
-  PresetLockedError, PresetMountError, UnknownPresetError,
-  type AgentPreset, type Config, type PresetRoot,
-} from './preset.ts'
+  fileComposition, mountedCompositionRows,
+  type AgentPresetComposition,
+} from './composition-inventory.ts'
+import type { AgentPreset, Config, PresetRoot } from './preset.ts'
 import { agentPresetProjectionDefinition } from './session.ts'
-import {
-  acceptsExternalTools,
-  externalToolEnabled,
-  type ExternalToolSettings,
-  type ExternalToolId,
-} from './external-tools.ts'
 export type * from './types.ts'
+export type {
+  AgentPresetComposition, AgentPresetCompositionRow, CompositionRowEnablement,
+} from './composition-inventory.ts'
 
 /** Settings namespace carrying the user's chosen default preset. */
 export const SETTINGS_NAMESPACE = 'agent-presets'
 
-/** Construct one typed preset failure for the Remote carrier. */
-function remotePresetFailure<Code extends keyof AgentPresetErrorDetailsMap>(
-  code: Code,
-  message: string,
-  details: AgentPresetErrorDetailsMap[Code],
-): TypertRemoteFailure {
-  return new TypertRemoteFailure({ code, message, details })
-}
-
-/** Map one preset rejection to its stable Remote code and details. */
-function presetFailure(error: unknown, agentPreset: string): TypertRemoteFailure | undefined {
-  if (error instanceof UnknownPresetError) {
-    return remotePresetFailure(
-      'agent-preset-not-found',
-      error.message,
-      { agentPreset: error.presetId, available: [...error.available] },
-    )
-  }
-  if (error instanceof PresetMountError) {
-    return remotePresetFailure(
-      'agent-preset-invalid',
-      error.message,
-      { agentPreset: error.presetId, reason: error.reason },
-    )
-  }
-  if (error instanceof InvalidPresetIdError || error instanceof PresetExistsError) {
-    return remotePresetFailure(
-      'agent-preset-invalid',
-      error.message,
-      { agentPreset: error.presetId, reason: error.message },
-    )
-  }
-  if (error instanceof PresetNotWritableError) {
-    return remotePresetFailure(
-      'agent-preset-read-only',
-      error.message,
-      { agentPreset, reason: error.message },
-    )
-  }
-  if (error instanceof PresetLockedError) {
-    return remotePresetFailure(
-      'agent-preset-locked',
-      `session "${error.sessionId}" has already started; its agent preset is fixed`,
-      { sessionId: error.sessionId, agentPreset: error.presetId },
-    )
-  }
-  return undefined
-}
-
 /** Refuse an empty preset id before invoking a domain operation. */
 function validatePresetId(value: string, field: 'agentPreset' | 'from'): void {
   if (value.length === 0) {
-    throw remotePresetFailure('bad-request', `${field} must be a non-empty string`, {})
+    throw new RemoteError('gateway/bad-request', `${field} must be a non-empty string`, {})
   }
-}
-
-/** Throw the stable preset failure or the caller's operation-specific fallback. */
-function rejectPreset(error: unknown, agentPreset: string, fallbackMessage: string): never {
-  throw presetFailure(error, agentPreset) ?? remotePresetFailure('internal', fallbackMessage, {})
 }
 
 /** The user-writable slice of this plugin's config. */
 export interface AgentPresetSettings {
   /** Preset mounted when a session names none. */
   default?: string
-  /** Host-connected products projected into complete Agent Presets at turn boundaries. */
-  externalTools?: ExternalToolSettings
 }
 
 /** Runtime schema for the user-writable slice. */
 export const AgentPresetSettingsSchema: z<AgentPresetSettings> = z.object({
   default: z.string(),
-  externalTools: z.object({
-    codex: z.boolean(),
-    claudeCode: z.boolean(),
-  }),
 })
 
 export { COMPOSITION_FILE, discoverPresets, scanRoot, SHIPPED_PRESET_ROOT } from './discovery.ts'
@@ -143,28 +80,9 @@ export {
   inactiveRows, leakedServices, livePresetMounts, mountPreset, serviceForAgent, standingMountFor,
   type JoinedPresetMount, type PresetMount,
 } from './mount.ts'
-export {
-  copyComposition, deleteComposition, InvalidPresetIdError, PresetExistsError,
-  PresetNotWritableError, readComposition, writableRoot,
-} from './authoring.ts'
+export { copyComposition, deleteComposition, readComposition, writableRoot } from './authoring.ts'
 export { agentPresetProjectionDefinition } from './session.ts'
-export { PresetLockedError, PresetMountError, UnknownPresetError } from './preset.ts'
 export type { AgentPreset, Config, PresetRoot, PresetTrust } from './preset.ts'
-export { acceptsExternalTools } from './external-tools.ts'
-export type { ExternalToolId, ExternalToolSettings } from './external-tools.ts'
-
-/** Effective Host connection state for complete Agent Presets. */
-export interface ExternalToolsPresetState {
-  readonly scope: 'complete-presets'
-  readonly codex: boolean
-  readonly claudeCode: boolean
-}
-
-/** Host-owned factory that projects one connected product into an Agent scope. */
-export type ExternalToolProjector = (
-  agent: Agent,
-  tool: ExternalToolId,
-) => () => Promise<void> | void
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -180,7 +98,7 @@ declare module '@deepseek-ai/cordis' {
  * and a preset deleted underneath a picker disappears from the next read.
  */
 export class AgentPresets extends TypertRemoteService {
-  static inject = ['loader']
+  static inject = ['loader', 'sessionProjections']
 
   /** Runtime schema for the preset roster. */
   static Config = z.object({
@@ -242,12 +160,6 @@ export class AgentPresets extends TypertRemoteService {
    */
   private readonly selfCtx: Context
 
-  /** Per-Agent external-tool plugin fibers, changed only at idle/turn boundaries. */
-  private readonly externalToolMounts = new WeakMap<Agent, Map<ExternalToolId, () => Promise<void> | void>>()
-
-  /** Optional product-specific projector supplied by the desktop Host. */
-  private externalToolProjector: ExternalToolProjector | undefined
-
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'agentPresets')
     this.selfCtx = ctx
@@ -268,14 +180,14 @@ export class AgentPresets extends TypertRemoteService {
       ...config.roots,
       ...config.includeUserRoot ? [{ path: dshHomePath(USER_PRESET_DIR), trust: 'user' } satisfies PresetRoot] : [],
     ]
-    // Deliberately not `installSettingsSection`: that helper exists to re-judge
+    // Deliberately not `settings.installSection`: that method exists to re-judge
     // what a consumer DERIVED from the source — memoized resolutions,
     // registration-level facts — across attach, detach, and change. Nothing
     // here is derived. `defaultId` reads through on every call, so both of its
     // hooks would be no-ops and the source thunk would restate this field.
     ctx.inject(['settings'], (settingsCtx) => {
       this.settings = settingsCtx.settings.register(
-        settingsNamespace(SETTINGS_NAMESPACE),
+        SETTINGS_NAMESPACE,
         AgentPresetSettingsSchema,
         { base: { default: config.default } },
       )
@@ -286,9 +198,7 @@ export class AgentPresets extends TypertRemoteService {
       }, 'agentPresets.settings()')
     })
 
-    ctx.inject(['sessionProjections'], (projectionCtx) => {
-      projectionCtx.sessionProjections.register(agentPresetProjectionDefinition)
-    })
+    ctx.sessionProjections.register(agentPresetProjectionDefinition)
 
     // Advisory, not fatal: a synchronous `agent/created` listener that throws
     // VETOES publication, and this service must not, because composing an agent
@@ -304,44 +214,12 @@ export class AgentPresets extends TypertRemoteService {
     // before publication.
     ctx.on('agent/created', ({ agent }) => {
       if (this.resolvedRoots.length === 0) return
-      if (this.composedPreset(agent.ctx) !== undefined) {
-        this.reconcileExternalTools(agent)
-        return
-      }
+      if (this.composedPreset(agent.ctx) !== undefined) return
       ctx.logger.warn(
         `agent "${agent.id}" was published without joining an agent preset; `
         + 'its tools, prompt sections, and skill catalog resolve against the empty global layer '
         + '(join through AgentPresets.mount() or composeFrom() in the agent factory setup)',
       )
-    })
-
-    // `running` is emitted synchronously before the loop assembles its first
-    // request, so a resumed historical Session receives the latest Host
-    // connections without changing an already-running turn. `idle` is the
-    // safe removal boundary after tool calls and background-job creation have
-    // finished for the current driver interval.
-    ctx.on('agent/status', ({ agent }) => {
-      this.reconcileExternalTools(agent)
-    })
-
-    ctx.on('agent/disposed', ({ agent }) => {
-      this.externalToolMounts.delete(agent)
-    })
-
-    // Commit the exact dynamic capability projection at the model-request
-    // boundary. Retries of the same step reuse its record; a later empty
-    // projection is retained after any connected step so disconnects are
-    // reconstructable rather than inferred from mutable Host settings.
-    ctx.on('agent/request', ({ agent, turn, step }, next) => {
-      const previous = agent.session.events.findLast(event => event.type === 'external-tools/resolved')
-      if (previous?.data.turn !== turn || previous.data.step !== step) {
-        const mounted = this.externalToolMounts.get(agent)
-        const tools = (['codex', 'claude-code'] as const).filter(tool => mounted?.has(tool) === true)
-        if (tools.length > 0 || previous !== undefined) {
-          agent.session.append('external-tools/resolved', { turn, step, tools: [...tools] })
-        }
-      }
-      return next()
     })
 
     // The durable record is the commit point. Its public notification carries
@@ -361,70 +239,6 @@ export class AgentPresets extends TypertRemoteService {
    */
   get defaultId(): string {
     return this.settings?.get().default ?? this.config.default
-  }
-
-  /** Current connection settings, with absent user values resolved to off. */
-  private externalToolsSnapshot(): ExternalToolsPresetState {
-    const configured = this.settings?.get().externalTools
-    return {
-      scope: 'complete-presets',
-      codex: externalToolEnabled(configured, 'codex'),
-      claudeCode: externalToolEnabled(configured, 'claude-code'),
-    }
-  }
-
-  /**
-   * Bring one live Agent's local tool fibers to the current Host connection
-   * state. Callers invoke this only during publication, idle, or the
-   * synchronous idle-to-running transition before prompt assembly.
-   * @param agent - live Agent whose own scope receives the tool plugins.
-   */
-  private reconcileExternalTools(agent: Agent): void {
-    const presetId = this.composedPreset(agent.ctx)
-    const state = this.externalToolsSnapshot()
-    const accepted = acceptsExternalTools(presetId)
-    const projector = this.externalToolProjector
-    let mounts = this.externalToolMounts.get(agent)
-    for (const tool of ['codex', 'claude-code'] as const) {
-      const enabled = accepted && projector !== undefined
-        && (tool === 'codex' ? state.codex : state.claudeCode)
-      const mounted = mounts?.get(tool)
-      if (enabled && mounted === undefined) {
-        mounts ??= new Map()
-        mounts.set(tool, projector(agent, tool))
-        this.externalToolMounts.set(agent, mounts)
-      } else if (!enabled && mounted !== undefined) {
-        mounts?.delete(tool)
-        void Promise.resolve(mounted()).catch((error: unknown) => {
-          this.selfCtx.logger.warn(`agent-presets: failed to remove ${tool} from agent "${agent.id}": ${String(error)}`)
-        })
-      }
-    }
-    if (mounts?.size === 0) this.externalToolMounts.delete(agent)
-  }
-
-  /**
-   * Register the one Host implementation that turns product ids into scoped
-   * tool plugins. Product packages stay outside this generic preset package's
-   * dependency graph.
-   * @param projector - product-specific Agent-scope mount factory.
-   * @returns disposer that removes every projected tool at safe idle boundaries.
-   */
-  registerExternalToolProjector(projector: ExternalToolProjector): () => void {
-    if (this.externalToolProjector !== undefined) {
-      throw new Error('agent-presets: an external-tool projector is already registered')
-    }
-    this.externalToolProjector = projector
-    for (const agent of this.selfCtx.get('agents')?.list() ?? []) {
-      if (agent.status === 'idle') this.reconcileExternalTools(agent)
-    }
-    return () => {
-      if (this.externalToolProjector !== projector) return
-      this.externalToolProjector = undefined
-      for (const agent of this.selfCtx.get('agents')?.list() ?? []) {
-        if (agent.status === 'idle') this.reconcileExternalTools(agent)
-      }
-    }
   }
 
   /**
@@ -460,6 +274,63 @@ export class AgentPresets extends TypertRemoteService {
   }
 
   /**
+   * Every preset's composition as flattened plugin rows, for plugin-listing
+   * surfaces beside the roster's own picker.
+   *
+   * A preset with a live standing mount answers from its newest generation's
+   * Loader entries — the composition new sessions join — even when the file
+   * behind it has since been edited into an unreadable state: the mount is
+   * what sessions actually run, so the broken verdict only applies to a
+   * preset nothing composed. One never composed since boot answers from its
+   * file, with `!!js` disabled gates evaluated against the Loader context so
+   * both answers reflect the same host. Reading never mounts: an unmounted
+   * preset is parsed, not composed, so listing a preset's plugins cannot
+   * activate them early. A composition that stopped reading between
+   * discovery's health verdict and this read is reported broken with the
+   * raced reason rather than dropped.
+   * @returns one composition per roster preset, in roster order.
+   */
+  async compositionInventory(): Promise<AgentPresetComposition[]> {
+    const defaultId = this.defaultId
+    // The Loader's own expression scope: what a mount decision would consult.
+    // An identifier this scope cannot resolve throws under `with`, and the
+    // row stays `'conditional'`; only a gate whose identifiers resolve BOTH
+    // here and under a mounted row's entry chain, with different values,
+    // could report a wrong verdict — the shipped gates read `process` alone.
+    const evaluateExpression = (expression: string): unknown => evaluate(this.ctx.loader.ctx, expression)
+    // Mount records span every Cordis runtime in the process; only this
+    // runtime's mounts describe this roster's presets.
+    const rootFiber = this.ctx.root.fiber
+    const found: AgentPresetComposition[] = []
+    for (const preset of await this.list()) {
+      const identity = {
+        id: preset.id,
+        trust: preset.trust,
+        ...preset.name === undefined ? {} : { name: preset.name },
+        isDefault: preset.id === defaultId,
+      }
+      // Before the broken verdict: a mounted preset whose file was since
+      // deleted or corrupted still runs its standing composition. Newest
+      // generation last: mount records keep insertion order, and a
+      // superseded generation's record precedes its replacement's.
+      const mount = livePresetMounts(rootFiber).findLast(candidate => candidate.presetId === preset.id)
+      if (mount !== undefined) {
+        found.push({ ...identity, rows: mountedCompositionRows(mount.tree) })
+        continue
+      }
+      if (preset.broken !== undefined) {
+        found.push({ ...identity, broken: preset.broken, rows: [] })
+        continue
+      }
+      const read = await fileComposition(preset.path, evaluateExpression)
+      found.push('broken' in read
+        ? { ...identity, broken: read.broken, rows: [] }
+        : { ...identity, rows: read.rows })
+    }
+    return found
+  }
+
+  /**
    * Resolve one preset by id.
    *
    * A broken preset resolves — deleting one, reading one, and reporting one
@@ -473,23 +344,15 @@ export class AgentPresets extends TypertRemoteService {
     const wanted = id ?? this.defaultId
     const presets = await this.list()
     const found = presets.find(preset => preset.id === wanted)
-    if (found !== undefined) return found
-
-    // Desktop builds before dynamic Host connections created sessions under a
-    // managed `external-tools` preset. That preset is no longer shipped, but
-    // its sessions remain valid standard-mode history. Resolve the missing
-    // legacy identity to the standard composition instead of making those
-    // conversations permanently unopenable. An explicitly installed preset
-    // with that id still wins through the direct lookup above.
-    if (wanted === 'external-tools') {
-      const standard = presets.find(preset => preset.id === 'standard')
-      if (standard !== undefined) return standard
+    if (found === undefined) {
+      const available = presets.map(preset => preset.id)
+      throw new RemoteError(
+        'agent-preset/not-found',
+        `agent-presets: preset "${wanted}" not found (available: ${available.join(', ') || 'none'})`,
+        { agentPreset: wanted, available },
+      )
     }
-    if (wanted === 'code') {
-      const ptc = presets.find(preset => preset.id === 'ptc')
-      if (ptc !== undefined) return ptc
-    }
-    throw new UnknownPresetError(wanted, presets.map(preset => preset.id))
+    return found
   }
 
   /**
@@ -505,7 +368,11 @@ export class AgentPresets extends TypertRemoteService {
   private async resolveMountable(id?: string): Promise<AgentPreset> {
     const preset = await this.resolve(id)
     if (preset.broken !== undefined) {
-      throw new PresetMountError(preset.id, preset.broken)
+      throw new RemoteError(
+        'agent-preset/invalid',
+        `agent-presets: preset "${preset.id}" failed to mount: ${preset.broken}`,
+        { agentPreset: preset.id, reason: preset.broken },
+      )
     }
     return preset
   }
@@ -639,23 +506,19 @@ export class AgentPresets extends TypertRemoteService {
    * One preset's composition text with the roster row it belongs to.
    * @param agentPreset - the preset id.
    * @returns the composition beside its trust and published metadata.
-   * @throws {TypertRemoteFailure} `bad-request` for an empty id, or
-   * `agent-preset-not-found` when no configured root supplies it.
+   * @throws {RemoteError} `gateway/bad-request` for an empty id, or
+   * `agent-preset/not-found` when no configured root supplies it.
    */
   @Remote('read')
   async readDocument(agentPreset: string): Promise<AgentPresetDocument> {
     validatePresetId(agentPreset, 'agentPreset')
-    try {
-      const preset = await this.resolve(agentPreset)
-      return {
-        agentPreset: preset.id,
-        trust: preset.trust,
-        content: await this.read(preset.id),
-        ...preset.name === undefined ? {} : { name: preset.name },
-        ...preset.description === undefined ? {} : { description: preset.description },
-      }
-    } catch (error: unknown) {
-      rejectPreset(error, agentPreset, `agent preset "${agentPreset}": ${String(error)}`)
+    const preset = await this.resolve(agentPreset)
+    return {
+      agentPreset: preset.id,
+      trust: preset.trust,
+      content: await this.read(preset.id),
+      ...preset.name === undefined ? {} : { name: preset.name },
+      ...preset.description === undefined ? {} : { description: preset.description },
     }
   }
 
@@ -680,7 +543,7 @@ export class AgentPresets extends TypertRemoteService {
     // since a user directory named like a shipped preset is shadowed by it.
     // The disk check inside copyComposition only sees the writable root.
     if ((await this.list()).some(preset => preset.id === id)) {
-      throw new PresetExistsError(id)
+      throw presetExists(id)
     }
     await copyComposition(this.resolvedRoots, source, id, name)
     // A settled mount under this id can only be stale (its preset was deleted
@@ -690,57 +553,19 @@ export class AgentPresets extends TypertRemoteService {
   }
 
   /**
-   * Read effective Host connections projected into complete presets.
-   * @returns current Codex and Claude Code connection state.
-   */
-  externalToolsState(): Promise<ExternalToolsPresetState> {
-    return Promise.resolve(this.externalToolsSnapshot())
-  }
-
-  /**
-   * Connect or disconnect one official product for complete Agent Presets.
-   * Idle Agents change immediately; running Agents retain their current
-   * composition until the driver returns to idle.
-   * @param tool - supported official product provider.
-   * @param enabled - whether later turns receive its delegation tool.
-   * @returns Updated effective connection state.
-   */
-  async setExternalTool(tool: ExternalToolId, enabled: boolean): Promise<ExternalToolsPresetState> {
-    if (this.settingsService === undefined) {
-      throw new Error('agent-presets: settings service is unavailable for external-tool connections')
-    }
-    const path = tool === 'codex'
-      ? ['externalTools', 'codex'] as const
-      : ['externalTools', 'claudeCode'] as const
-    await this.settingsService.mutate(
-      settingsNamespace(SETTINGS_NAMESPACE),
-      [{ op: 'set', path, value: enabled }],
-    )
-    const agents = this.selfCtx.get('agents')
-    for (const agent of agents?.list() ?? []) {
-      if (agent.status === 'idle') this.reconcileExternalTools(agent)
-    }
-    return this.externalToolsSnapshot()
-  }
-
-  /**
    * Copy one preset through the Remote API.
    * @param from - the source preset id.
    * @param id - the new preset id.
    * @param name - the copy's optional display name.
    * @returns once the copy is stored.
-   * @throws {TypertRemoteFailure} with the corresponding stable preset code
-   * and details when the copy is refused.
+   * @throws {RemoteError} with the corresponding stable preset code and
+   * details when the copy is refused.
    */
   @Remote('copy')
   async remoteExportCopy(from: string, id: string, name?: string): Promise<void> {
     validatePresetId(from, 'from')
     validatePresetId(id, 'agentPreset')
-    try {
-      await this.copy(from, id, name)
-    } catch (error: unknown) {
-      rejectPreset(error, id, `agent preset "${id}": ${String(error)}`)
-    }
+    await this.copy(from, id, name)
   }
 
   /**
@@ -762,7 +587,7 @@ export class AgentPresets extends TypertRemoteService {
     // exposes the deployment's own default underneath, which is the layering.
     if (this.settings?.get().default !== id) return
     await this.settingsService?.mutate(
-      settingsNamespace(SETTINGS_NAMESPACE),
+      SETTINGS_NAMESPACE,
       [{ op: 'unset', path: ['default'] }],
     )
   }
@@ -771,17 +596,13 @@ export class AgentPresets extends TypertRemoteService {
    * Delete one preset through the Remote API.
    * @param id - the preset id.
    * @returns once the preset is deleted.
-   * @throws {TypertRemoteFailure} with the corresponding stable preset code
-   * and details when deletion is refused.
+   * @throws {RemoteError} with the corresponding stable preset code and
+   * details when deletion is refused.
    */
   @Remote('deletePreset')
   async remoteExportDelete(id: string): Promise<void> {
     validatePresetId(id, 'agentPreset')
-    try {
-      await this.remove(id)
-    } catch (error: unknown) {
-      rejectPreset(error, id, `agent preset "${id}": ${String(error)}`)
-    }
+    await this.remove(id)
   }
 
   /**
@@ -867,8 +688,8 @@ export class AgentPresets extends TypertRemoteService {
    * @param agent - the session's live agent, resolved from the wire identity.
    * @param agentPreset - the preset to compose the agent from instead.
    * @returns the preset id that was recorded.
-   * @throws {TypertRemoteFailure} with `bad-request`, `agent-preset-locked`,
-   * `agent-preset-not-found`, or `agent-preset-invalid` when refused.
+   * @throws {RemoteError} with `gateway/bad-request`, `agent-preset/locked`,
+   * `agent-preset/not-found`, or `agent-preset/invalid` when refused.
    */
   @Remote('select')
   async select(agent: Agent, agentPreset: string): Promise<string> {
@@ -879,8 +700,6 @@ export class AgentPresets extends TypertRemoteService {
     this.switches.set(agent.id, guard)
     try {
       return await turn
-    } catch (error: unknown) {
-      return rejectPreset(error, agentPreset, `failed to select agent preset "${agentPreset}": ${String(error)}`)
     } finally {
       if (this.switches.get(agent.id) === guard) this.switches.delete(agent.id)
     }
@@ -892,8 +711,14 @@ export class AgentPresets extends TypertRemoteService {
     // conversation may have started, since this call was queued. A turn is one
     // model-loop execution; standalone plugin events never open one, so a
     // session that has only run commands is still blank.
-    if (agent.session.events.some(event => event.type === 'turn/start')) {
-      throw new PresetLockedError(agent.id, agentPreset)
+    const boundary = this.selfCtx.sessionProjections.stateOf(agent.session, 'turnBoundary')
+    if (boundary !== undefined
+      && (boundary.openTurnStartSeq !== null || boundary.lastTurn > 0)) {
+      throw new RemoteError(
+        'agent-preset/locked',
+        `session "${agent.id}" has already started; its agent preset is fixed`,
+        { sessionId: agent.id, agentPreset },
+      )
     }
     const preset = await this.recompose(agent.ctx, agentPreset)
     // Recorded only after the swap committed: the log states what the agent
@@ -950,7 +775,12 @@ export class AgentPresets extends TypertRemoteService {
         // refreshes instead of trusting a composition older than its stamp.
         const stamp = await compositionStamp(preset.path)
         if (stamp === undefined) {
-          throw new PresetMountError(preset.id, `composition file is unreadable: ${preset.path}`)
+          const reason = `composition file is unreadable: ${preset.path}`
+          throw new RemoteError(
+            'agent-preset/invalid',
+            `agent-presets: preset "${preset.id}" failed to mount: ${reason}`,
+            { agentPreset: preset.id, reason },
+          )
         }
         await mountPreset(scope.ctx, preset)
         return { key, scope, stamp }

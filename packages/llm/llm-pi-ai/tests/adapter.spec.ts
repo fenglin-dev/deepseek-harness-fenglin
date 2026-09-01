@@ -135,14 +135,14 @@ describe('PiAiAdapter provider routing', () => {
       thinkingBudgets: { high: 2048 },
     })
     await assemble(ctx, {
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-v4-pro',
       messages: [],
       temperature: 0.2,
       maxTokens: 77,
       sessionId: 'session-for-pi' as never,
     })
     expect(server.requests[0]).toMatchObject({
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-v4-pro',
       temperature: 0.2,
       max_tokens: 77,
       thinking: { type: 'enabled' },
@@ -834,6 +834,15 @@ describe('provider profile lifecycle', () => {
       .toBe(DEFAULT_MAX_REQUEST_IMAGE_BYTES)
     expect(resolveProfiles({ openai: { maxRequestImageBytes: 1024 } }).get('openai')?.maxRequestImageBytes)
       .toBe(1024)
+  })
+
+  it.each([
+    ['bad header name', 'value'],
+    ['x-company', 'line\nbreak'],
+    ['x-company', '部署'],
+  ])('rejects provider header %j when Fetch cannot represent the entry', (name, value) => {
+    expect(() => resolveProfiles({ openai: { headers: { [name]: value } } }))
+      .toThrow(`provider "openai" header "${name}" is not valid for Fetch`)
   })
 
   it.each(['maxRetries', 'maxRetryDelayMs'] as const)(

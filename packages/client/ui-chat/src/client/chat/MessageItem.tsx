@@ -173,7 +173,6 @@ function UserStyleBubble({
       className={css.userRow}
       data-pending-steering={pending || undefined}
       data-submission-echo={echo || undefined}
-      data-time-hover-root
     >
       <div className={css.userStack}>
         {renderMessageImages({ images, align: 'end' })}
@@ -222,10 +221,10 @@ export function PendingSteeringBubble({ content, renderMessageImages, t }: {
 }
 
 /**
- * Render one local submission echo with the exact visual language of the
- * durable user node that replaces it: draft text plus object-URL previews,
- * visible from the submit click until the durable `user/message` (or its
- * queue occurrence) renders.
+ * Render one local transcript or steering submission echo with the same
+ * visual language and surface marker as the Host occurrence that replaces
+ * it: draft text plus object-URL previews, visible from the submit click
+ * until the durable `user/message` or steering occurrence renders.
  * @param props - the session snapshot's pending submission and render seats.
  * @returns the echoed user bubble.
  */
@@ -254,6 +253,7 @@ export function PendingSubmissionBubble({ submission, renderMessageImages, t }: 
       content={content}
       previewImages={previewImages}
       renderMessageImages={renderMessageImages}
+      pending={submission.placement === 'steering'}
       echo
       t={t}
       actions={text => (

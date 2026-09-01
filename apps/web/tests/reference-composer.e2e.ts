@@ -12,6 +12,7 @@ import {
   SESSION_FORMAT_VERSION,
   Session,
   SessionId,
+  SessionSeq,
 } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-reference/types'
 import type {} from '@deepseek-ai/dsh-session-title'
@@ -58,7 +59,7 @@ function sourceSessionFixture(): string {
       createdAt: 0,
       cwd: '{{cwd}}',
     }),
-    ...session.events.map(event => JSON.stringify(event)),
+    ...session.snapshotEvents().map(event => JSON.stringify(event)),
     '',
   ].join('\n')
 }
@@ -80,7 +81,7 @@ function targetSessionFixture(): string {
       references: [{
         sessionId: SOURCE_SESSION_ID,
         label: 'Research notes',
-        capturedThroughSeq: 4,
+        capturedThroughSeq: SessionSeq(4),
         compacted: false,
         originalMessages: 2,
         retainedMessages: 2,
@@ -105,7 +106,7 @@ function targetSessionFixture(): string {
       createdAt: 0,
       cwd: '{{cwd}}',
     }),
-    ...session.events.map(event => JSON.stringify(event)),
+    ...session.snapshotEvents().map(event => JSON.stringify(event)),
     '',
   ].join('\n')
 }
@@ -130,6 +131,11 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await writeFile(join(scaffold.workspaceCwd, 'workspace', 'reference.txt'), 'reference fixture\n')
     await mkdir(join(scaffold.workspaceCwd, 'workspace', 'folderx'), { recursive: true })
     await writeFile(join(scaffold.workspaceCwd, 'workspace', 'folderx', 'child.txt'), 'child fixture\n')
+    // Two levels down: the breadcrumb needs a step above the current one to
+    // return to, and a bare '@' lists only the top level, so the deeper tree
+    // stays out of the menu golden.
+    await mkdir(join(scaffold.workspaceCwd, 'workspace', 'folderx', 'nested'), { recursive: true })
+    await writeFile(join(scaffold.workspaceCwd, 'workspace', 'folderx', 'nested', 'leaf.txt'), 'leaf fixture\n')
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
@@ -166,6 +172,12 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     expect(snapshot).not.toContain('text: Subagents')
 
     await input.fill('@reference')
+    // The open menu keeps the previous query's rows while the new one loads
+    // (stale-while-revalidate), and rows are keyed by index, so a click
+    // resolved against a stale row lands on whatever settles into that slot.
+    // `folderx/` matches only the bare '@' query: its disappearance marks the
+    // settled result set.
+    await expect.poll(() => menu.getByRole('option', { name: /folderx/ }).count(), { timeout: 15_000 }).toBe(0)
     await menu.getByRole('option', { name: /reference\.txt/ }).click()
     // The pick lands an atomic chip: a real DOM capsule carrying the domain
     // icon and the label (the canonical reference text lives on the node and
@@ -274,13 +286,20 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await expect.poll(() => input.textContent()).toBe('@folderx/')
     await menu.getByRole('option', { name: /child\.txt/ }).waitFor()
 
-    // The row chevron drills the same way by pointer.
+    // The row chevron drills the same way by pointer, header included: a
+    // pointer descent reaches the same listing a Tab descent does.
     await writeComposerDraft(page, input, '@folderx')
     const row = menu.getByRole('option', { name: /^folderx\// })
     await row.waitFor()
     await row.getByRole('button', { name: 'Browse folder' }).click()
     await expect.poll(() => input.textContent()).toBe('@folderx/')
     await menu.getByRole('option', { name: /child\.txt/ }).waitFor()
+    await expect.poll(() => page.getByRole('navigation', { name: 'Folder navigation' })
+      .getByRole('button').allTextContents()).toEqual(['Workspace', 'folderx'])
+    // The listing knows it was drilled into, so its rows drop the location the
+    // header already carries.
+    await expect.poll(() => menu.getByRole('option', { name: /child\.txt/ }).textContent())
+      .toBe('child.txt')
     await page.keyboard.press('Escape')
 
     expect(tripwire.pageErrors).toEqual([])
@@ -311,6 +330,20 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await expect.poll(() => crumbs.getByRole('button', { name: 'folderx' }).isDisabled()).toBe(true)
     await expect.poll(() => menu.getByRole('option', { name: /child\.txt/ }).textContent())
       .toBe('child.txt')
+
+    // A crumb above the current step re-lists that directory and keeps the
+    // header, which now names the step it returned to.
+    await writeComposerDraft(page, input, '@folderx/nested')
+    const nested = menu.getByRole('option', { name: /^nested\// })
+    await nested.waitFor()
+    await nested.getByRole('button', { name: 'Browse folder' }).click()
+    await expect.poll(() => input.textContent()).toBe('@folderx/nested/')
+    await expect.poll(() => crumbs.getByRole('button').allTextContents())
+      .toEqual(['Workspace', 'folderx', 'nested'])
+    await crumbs.getByRole('button', { name: 'folderx' }).click()
+    await expect.poll(() => input.textContent()).toBe('@folderx/')
+    await expect.poll(() => crumbs.getByRole('button').allTextContents())
+      .toEqual(['Workspace', 'folderx'])
 
     // Clicking the root crumb rewrites the token back to a bare trigger.
     await crumbs.getByRole('button', { name: 'Workspace' }).click()

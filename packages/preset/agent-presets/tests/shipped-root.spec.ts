@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include, { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as yaml from 'js-yaml'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import AgentPresets, { SHIPPED_PRESET_ROOT, type Config } from '@deepseek-ai/dsh-agent-presets'
@@ -41,6 +42,7 @@ async function roster(config: Partial<Config> = {}): Promise<Context> {
   ctx.baseUrl = pathToFileURL(FIXTURES).href + '/'
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentPresets, {
     default: 'standard',
     roots: [],
@@ -49,6 +51,34 @@ async function roster(config: Partial<Config> = {}): Promise<Context> {
     ...config,
   })
   return ctx
+}
+
+interface ShippedEntry {
+  id?: unknown
+  disabled?: unknown
+  config?: unknown
+}
+
+/** Find one entry through the shipped composition's nested groups. */
+function findEntry(entries: unknown[], id: string): ShippedEntry | undefined {
+  for (const entry of entries) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const candidate = entry as ShippedEntry
+    if (candidate.id === id) return candidate
+    if (Array.isArray(candidate.config)) {
+      const nested = findEntry(candidate.config, id)
+      if (nested !== undefined) return nested
+    }
+  }
+  return undefined
+}
+
+/** Read and validate one shipped preset's Cordis entry list. */
+async function shippedEntries(id: string): Promise<unknown[]> {
+  const source = await readFile(join(SHIPPED_PRESET_ROOT, id, 'agent.cordis.yml'), 'utf8')
+  const entries: unknown = yaml.load(source, { schema: entryListSchema })
+  if (!Array.isArray(entries)) throw new TypeError(`${id} preset must contain a Cordis entry list`)
+  return entries.map((entry: unknown) => entry)
 }
 
 describe('the shipped preset root', () => {
@@ -97,9 +127,7 @@ describe('the shipped preset root', () => {
 
   it('enables web_fetch in each tool-bearing Web app preset', async () => {
     for (const id of ['cordis', 'ptc', 'standard']) {
-      const source = await readFile(join(SHIPPED_PRESET_ROOT, id, 'agent.cordis.yml'), 'utf8')
-      const entries: unknown = yaml.load(source, { schema: entryListSchema })
-      if (!Array.isArray(entries)) throw new TypeError(`${id} preset must contain a Cordis entry list`)
+      const entries = await shippedEntries(id)
       const toolWeb: unknown = entries.find((entry: unknown) =>
         typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === 'tool-web')
       if (typeof toolWeb !== 'object' || toolWeb === null || !('config' in toolWeb)
@@ -107,6 +135,17 @@ describe('the shipped preset root', () => {
         throw new TypeError(`${id} preset must configure tool-web.fetch`)
       }
       expect(toolWeb.config.fetch, id).toBe(true)
+    }
+  })
+
+  it('omits the general workflow tool only from PTC while retaining Ralph infrastructure', async () => {
+    const ptc = await shippedEntries('ptc')
+    expect(findEntry(ptc, 'tool-workflow')?.disabled).toBe(true)
+    expect(findEntry(ptc, 'workflow-worker-thread')?.disabled).not.toBe(true)
+    expect(findEntry(ptc, 'tool-ralph')?.disabled).not.toBe(true)
+
+    for (const id of ['standard', 'cordis']) {
+      expect(findEntry(await shippedEntries(id), 'tool-workflow')?.disabled, id).not.toBe(true)
     }
   })
 })

@@ -1,11 +1,10 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { apply } from '../src/index.ts'
 
 /** Mirrors the module-local namespace id in src/index.ts. */
 const ONBOARDING_SETTINGS_NAMESPACE = 'ui-onboarding'
-const NAVIGATION_SETTINGS_NAMESPACE = 'ui-settings-navigation'
 
 class MemorySettings extends SettingsProvider {
   readonly writable = true
@@ -16,21 +15,17 @@ class MemorySettings extends SettingsProvider {
 }
 
 describe('ui-settings-general host', () => {
-  it('registers and disposes the durable shell namespaces with its fiber', async () => {
+  it('registers and disposes the durable onboarding namespace with its fiber', async () => {
     const ctx = new Context()
     await ctx.plugin(MemorySettings).await()
     const fiber = ctx.plugin({ apply })
     await fiber.await()
-    expect(ctx.settings.describe().map(row => row.ns)).toEqual(expect.arrayContaining([
-      settingsNamespace(ONBOARDING_SETTINGS_NAMESPACE),
-      settingsNamespace(NAVIGATION_SETTINGS_NAMESPACE),
-    ]))
+    expect(ctx.settings.describe().map(row => row.ns)).toContain(
+      ONBOARDING_SETTINGS_NAMESPACE,
+    )
     await fiber.dispose()
     expect(ctx.settings.describe().map(row => row.ns)).not.toContain(
-      settingsNamespace(ONBOARDING_SETTINGS_NAMESPACE),
-    )
-    expect(ctx.settings.describe().map(row => row.ns)).not.toContain(
-      settingsNamespace(NAVIGATION_SETTINGS_NAMESPACE),
+      ONBOARDING_SETTINGS_NAMESPACE,
     )
   })
 })

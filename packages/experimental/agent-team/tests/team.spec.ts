@@ -8,13 +8,16 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId, type Session } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SubagentService from '@deepseek-ai/dsh-subagent'
+import { queueSubagentPrompt, type HostPromptQueue } from '@deepseek-ai/dsh-subagent/internal'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
-import TeamService, { foldTeam, TeamError, TeamId, TeamMessageId, TeamTaskId } from '../src/index.ts'
+import TeamService, { TeamError, TeamId, TeamMessageId, TeamTaskId } from '../src/index.ts'
 import { TeamRuntimeLifecycle } from '../src/lifecycle.ts'
+import { teamProjectionDefinition } from '../src/projection.ts'
 import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/index.ts'
 import { TestSessionQuery } from './test-session-query.ts'
 
@@ -26,17 +29,20 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-/** Detached durable Team read: the service exposes views, so assertions fold the Lead log. */
+/** Detached durable Team read through the same projection definition as the service. */
 function durable(agent: Agent): {
   members: TeamMemberSnapshot[]
   tasks: TeamTaskSnapshot[]
   pendingMessages: TeamMessageSnapshot[]
 } {
-  const state = foldTeam(agent.id, agent.session.events)
+  let projected = teamProjectionDefinition.init(agent.session.header)
+  for (const event of agent.session.snapshotEvents()) projected = teamProjectionDefinition.apply(projected, event)
+  if (projected.failure !== undefined) throw new Error(projected.failure)
+  const state = projected
   return {
-    members: [...state.members.values()],
-    tasks: [...state.tasks.values()],
-    pendingMessages: [...state.messages.values()].filter(message => !state.delivered.has(message.id)),
+    members: state.members,
+    tasks: state.tasks,
+    pendingMessages: state.messages.filter(message => !state.delivered.includes(message.id)),
   }
 }
 
@@ -46,6 +52,7 @@ async function setup(
 ) {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
+  await ctx.plugin(SessionProjectionRegistry)
   const storageRoot = mkdtempSync(join(tmpdir(), 'dsh-team-'))
   roots.push(storageRoot)
   await ctx.plugin(JsonlSessionPersistence, { root: storageRoot })
@@ -120,6 +127,21 @@ async function waitRunning(ctx: Context, id: SessionId): Promise<Agent> {
 }
 
 describe('Team identity and provisioning', () => {
+  it('rejects missing and failed authoritative Team projections', async () => {
+    const first = await setup([])
+    const journal = teamInternals(first.ctx).journal
+    const stateOf = first.ctx.sessionProjections.stateOf.bind(first.ctx.sessionProjections)
+    const stateOfSpy = vi.spyOn(first.ctx.sessionProjections, 'stateOf').mockImplementation((session, key) => (
+      key === 'agentTeam' ? undefined : stateOf(session, key)
+    ))
+    expect(() => journal.state(first.lead)).toThrow('Agent Teams projection is not registered')
+    stateOfSpy.mockImplementation((session, key) => key === 'agentTeam'
+      ? { ...teamProjectionDefinition.init(session.header), failure: 'failed Team projection' }
+      : stateOf(session, key))
+    expect(() => journal.state(first.lead)).toThrow('failed Team projection')
+    stateOfSpy.mockRestore()
+  })
+
   it('rejects deployment limits that are not positive safe integers', async () => {
     const fields = [
       'maxMembers',
@@ -138,6 +160,7 @@ describe('Team identity and provisioning', () => {
   it('supports direct-constructor defaults and recovers roots that already exist', async () => {
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(SessionProjectionRegistry)
     const storageRoot = mkdtempSync(join(tmpdir(), 'dsh-team-direct-'))
     roots.push(storageRoot)
     await ctx.plugin(JsonlSessionPersistence, { root: storageRoot })
@@ -187,8 +210,12 @@ describe('Team identity and provisioning', () => {
     const fresh = await spawn(ctx, lead, 'fresh-worker')
     await waitNoAgent(ctx, fresh.member.id)
 
-    expect((await ctx.sessionPersistence.inspect(forked.member.id)).meta.seedLength).toBeGreaterThan(0)
-    expect((await ctx.sessionPersistence.inspect(fresh.member.id)).meta.seedLength ?? 0).toBe(0)
+    const forkedInspection = await ctx.sessionPersistence.inspect(forked.member.id)
+    const freshInspection = await ctx.sessionPersistence.inspect(fresh.member.id)
+    expect(forkedInspection.meta.isSeeded).toBe(true)
+    expect(forkedInspection.inheritedEventCount).toBeGreaterThan(0)
+    expect(freshInspection.meta.isSeeded).toBe(false)
+    expect(freshInspection.inheritedEventCount).toBe(0)
     expect(ctx.agentTeams.listMembers(lead).map(row => [row.name, row.context, row.status])).toEqual([
       ['lead', undefined, 'idle'],
       ['fork-worker', 'fork', 'inactive'],
@@ -434,8 +461,9 @@ describe('Team identity and provisioning', () => {
     await ctx.agentTeams.createTask(lead, { subject: 'parent task', description: 'belongs to parent' })
     const handle = await ctx.agents.create({
       sessionId: SessionId('ordinary-fork'),
-      seed: lead.session.events,
-      meta: { parentSession: lead.id, seedLength: lead.session.seq },
+      seed: lead.session.snapshotEvents(),
+      inheritedEventCount: lead.session.seq,
+      meta: { parentSession: lead.id, isSeeded: true },
       agentOptions: { provider: 'mock', model: 'mock' },
     })
 
@@ -957,13 +985,13 @@ describe('Team mailbox and waiting', () => {
       'team/message/delivered',
     ])
 
-    const receiptCount = lead.session.events.filter(event => event.type === 'agent/inbox/spliced'
+    const receiptCount = lead.session.snapshotEvents().filter(event => event.type === 'agent/inbox/spliced'
       && event.data.inserted.some(message => message.source.kind === 'team-message'
         && messageIds.has(message.source.messageId))).length
     await teamFiber.dispose()
     await ctx.plugin(TeamService, { maxPendingMessagesPerMember: 1 })
     await vi.waitFor(() => { expect(durable(lead).pendingMessages).toEqual([]) })
-    expect(lead.session.events.filter(event => event.type === 'agent/inbox/spliced'
+    expect(lead.session.snapshotEvents().filter(event => event.type === 'agent/inbox/spliced'
       && event.data.inserted.some(message => message.source.kind === 'team-message'
         && messageIds.has(message.source.messageId)))).toHaveLength(receiptCount)
 
@@ -1104,16 +1132,17 @@ describe('Team mailbox and waiting', () => {
     const entered = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
     const admitted: string[] = []
-    vi.spyOn(ctx.subagents, 'followup').mockImplementation(async (_parent, _childId, blocks) => {
-      const last = blocks.at(-1)
-      const text = last?.type === 'text' ? last.text : ''
-      admitted.push(text)
-      if (text === 'first waking') {
-        entered.resolve(undefined)
-        await release.promise
-      }
-      return createUserMessage({ content: blocks, source: { kind: 'user' } }).id
-    })
+    vi.spyOn(ctx.subagents as unknown as HostPromptQueue, queueSubagentPrompt)
+      .mockImplementation(async (_parent, _childId, blocks) => {
+        const last = blocks.at(-1)
+        const text = last?.type === 'text' ? last.text : ''
+        admitted.push(text)
+        if (text === 'first waking') {
+          entered.resolve(undefined)
+          await release.promise
+        }
+        return createUserMessage({ content: blocks, source: { kind: 'user' } }).id
+      })
 
     const first = ctx.agentTeams.sendMessage(lead, {
       target: 'ordered-target', content: content('first waking'), delivery: 'wakeup', signal: SIGNAL,
@@ -1226,7 +1255,8 @@ describe('Team mailbox and waiting', () => {
     expect(uncertain.status).toBe('queued')
     inspect.mockRestore()
 
-    vi.spyOn(ctx.subagents, 'followup').mockRejectedValueOnce(new Error('delivery unavailable'))
+    vi.spyOn(ctx.subagents as unknown as HostPromptQueue, queueSubagentPrompt)
+      .mockRejectedValueOnce(new Error('delivery unavailable'))
     const failed = await ctx.agentTeams.sendMessage(lead, {
       target: 'inactive-target', content: content('delivery failure'), delivery: 'wakeup', signal: SIGNAL,
     })
@@ -1331,6 +1361,7 @@ describe('Team mailbox and waiting', () => {
   it('waits for one change, supports cancellation, times out, and releases waiters on HMR disposal', async () => {
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(SessionProjectionRegistry)
     const storageRoot = mkdtempSync(join(tmpdir(), 'dsh-team-wait-'))
     roots.push(storageRoot)
     await ctx.plugin(JsonlSessionPersistence, { root: storageRoot })
@@ -1532,18 +1563,19 @@ describe('Team mailbox and waiting', () => {
     const entered = Promise.withResolvers<undefined>()
     const aborted = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
-    vi.spyOn(ctx.subagents, 'followup').mockImplementation(async (_parent, _childId, _content, options) => {
-      entered.resolve(undefined)
-      return await new Promise<never>((_resolve, reject) => {
-        options.signal.addEventListener('abort', () => {
-          aborted.resolve(undefined)
-          void release.promise.then(() => {
-            const reason: unknown = options.signal.reason
-            reject(reason instanceof Error ? reason : new Error(String(reason)))
-          })
-        }, { once: true })
+    vi.spyOn(ctx.subagents as unknown as HostPromptQueue, queueSubagentPrompt)
+      .mockImplementation(async (_parent, _childId, _content, _source, signal) => {
+        entered.resolve(undefined)
+        return await new Promise<never>((_resolve, reject) => {
+          signal.addEventListener('abort', () => {
+            aborted.resolve(undefined)
+            void release.promise.then(() => {
+              const reason: unknown = signal.reason
+              reject(reason instanceof Error ? reason : new Error(String(reason)))
+            })
+          }, { once: true })
+        })
       })
-    })
 
     const sending = ctx.agentTeams.sendMessage(lead, {
       target: 'mailbox-worker',

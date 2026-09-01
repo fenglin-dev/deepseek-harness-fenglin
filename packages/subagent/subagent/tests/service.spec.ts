@@ -19,6 +19,7 @@ import SubagentRuntime, {
   type SubagentStartRequest,
 } from '@deepseek-ai/dsh-subagent'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 
 function fakeParent(id = 'parent-1'): Agent {
   return { id: SessionId(id) } as unknown as Agent
@@ -64,6 +65,9 @@ class StubProvider implements SubagentProvider {
 
 async function service(): Promise<{ ctx: Context; subagents: SubagentRuntime }> {
   const ctx = new Context()
+  // The registry is a required injection of SubagentRuntime (its projection
+  // units register in the constructor).
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SubagentRuntime)
   return { ctx, subagents: ctx.subagents }
 }
@@ -153,11 +157,11 @@ describe('SubagentRuntime', () => {
       request: baseRequest(),
       signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'CONTINUATION_UNAVAILABLE' })
-    await expect(subagents.followup(
+    await expect(subagents.sendMessage(
       fakeParent(),
       SessionId('child'),
       [{ type: 'text', text: 'hello' }],
-      { source: { kind: 'user' }, signal: new AbortController().signal },
+      { signal: new AbortController().signal },
     )).rejects.toMatchObject({ code: 'CONTINUATION_UNAVAILABLE' })
   })
 

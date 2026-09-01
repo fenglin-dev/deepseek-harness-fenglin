@@ -5,7 +5,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-import { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 import * as SessionInvariant from '@deepseek-ai/dsh-session/invariant'
 import * as AgentInvariant from '@deepseek-ai/dsh-agent/invariant'
 import * as AgentLoopInvariant from '@deepseek-ai/dsh-agent-loop/invariant'
@@ -13,6 +13,7 @@ import SubagentRuntime, {
   type ResolvedSubagentStartRequest,
   type SubagentStartRequest,
 } from '@deepseek-ai/dsh-subagent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Config as ToolConfig, ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import { defineContentToolFixture, RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
@@ -68,6 +69,7 @@ async function setup(script: Script, options: SetupOptions = {}) {
   }
   await mountInvariants(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SubagentRuntime)
   const disposeProvider = ctx.subagents.registerProvider({
     name: 'spawn',
@@ -189,7 +191,7 @@ describe('in-process structured output', () => {
     expect(result.structured).toEqual({ answer: 5 })
     expect(sideEffectRan).toBe(false)
     const child = ctx.agents.get(run.id)
-    const sideEffectResult = child?.session.events.find(event =>
+    const sideEffectResult = child?.session.snapshotEvents().find(event =>
       event.type === 'tool/result' && event.data.message.source.callId === 'c2')
     expect(sideEffectResult?.type === 'tool/result' && sideEffectResult.data.message.content[0].isError).toBe(true)
     await run.dispose()
@@ -233,7 +235,7 @@ describe('in-process structured output', () => {
     expect(result.stopReason).toBe('completed')
     // The child's log carries the isError tool/result for the invalid call.
     const child = ctx.agents.get(run.id)!
-    const results = child.session.events.filter(e => e.type === 'tool/result')
+    const results = child.session.snapshotEvents().filter(e => e.type === 'tool/result')
     expect(results.length).toBe(2)
     expect(results[0]!.data.message.content[0].isError).toBe(true)
     await run.dispose()
@@ -251,7 +253,7 @@ describe('in-process structured output', () => {
     // Exactly one model request and one caller-supplied user message: no nudge turn exists.
     expect(adapter.requests.length).toBe(1)
     const child = ctx.agents.get(run.id)!
-    expect(child.session.events.filter(e => e.type === 'user/message' && e.data.source.kind !== 'plugin').length).toBe(1)
+    expect(child.session.snapshotEvents().filter(e => e.type === 'user/message' && e.data.source.kind !== 'plugin').length).toBe(1)
     await run.dispose()
   })
 
@@ -316,7 +318,7 @@ describe('in-process structured output', () => {
     expect(result.stopReason).toBe('error')
     // ...the logged tool result is the blocked isError with the feedback...
     const child = ctx.agents.get(run.id)!
-    const results = child.session.events.filter(e => e.type === 'tool/result')
+    const results = child.session.snapshotEvents().filter(e => e.type === 'tool/result')
     expect(results[0]!.data.message.content[0].isError).toBe(true)
     expect(JSON.stringify(results[0]!.data.message.content)).toContain('capture rejected by hook')
     // ...and the turn CONTINUED past the blocked call (no captured veto):
@@ -361,7 +363,7 @@ describe('in-process structured output', () => {
     expect(result.structured).toBeUndefined()
     expect(result.stopReason).toBe('error')
     const child = ctx.agents.get(run.id)
-    const captureResult = child?.session.events.find(event =>
+    const captureResult = child?.session.snapshotEvents().find(event =>
       event.type === 'tool/result' && event.data.message.source.callId === 'c1')
     expect(captureResult?.type === 'tool/result' && captureResult.data.message.content[0].isError).toBe(true)
     await run.dispose()
@@ -432,7 +434,7 @@ describe('in-process structured output', () => {
     expect(result.stopReason).toBe('error')
     expect(adapter.requests).toHaveLength(2)
     const child = ctx.agents.get(run.id)!
-    const outer = child.session.events.find(event =>
+    const outer = child.session.snapshotEvents().find(event =>
       event.type === 'tool/result' && event.data.message.source.callId === ToolCallId('c1'))
     expect(outer?.type === 'tool/result' && outer.data.message.content[0].isError).toBe(true)
     await run.dispose()
@@ -562,7 +564,7 @@ describe('in-process structured output', () => {
       }))
       ctx.systemPrompt.section({
         name: 'after-band',
-        order: FIRST_PARTY_SECTION_ORDER.STRUCTURED_OUTPUT + 10,
+        order: ctx.systemPrompt.getSectionOrder('STRUCTURED_OUTPUT') + 10,
         text: 'AFTER-BAND',
       })
       const run = await ctx.subagents.start('spawn', structuredRequest(parent))
