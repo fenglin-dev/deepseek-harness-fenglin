@@ -1,9 +1,21 @@
 {
   "extends": "../../../tsconfig.base.json",
-  "compilerOptions": {`n    "noEmit": true,
+  "compilerOptions": {
     "rootDir": "src",
     "outDir": "lib/types"
   },
-  "include": [],
-  "references": []
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/loader" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../../preset/agent-presets" },
+    { "path": "../../util/brand" },
+    { "path": "../../typert/protocol" },
+    { "path": "../../app/app-boot" },
+    { "path": "../../subprocess/subprocess" },
+    { "path": "../../subagent/tool-subagent" }
+  ]
 }
