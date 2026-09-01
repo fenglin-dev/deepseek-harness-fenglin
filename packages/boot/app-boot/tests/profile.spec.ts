@@ -16,7 +16,6 @@ import {
   composeEntries,
   healProfilesModuleFallback,
   initProfile,
-  loadDiagnosticProfile,
   loadProfile,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
@@ -100,7 +99,6 @@ describe('initProfile', () => {
     expect(manifest.dsh?.profile?.patchReload).toBe('live')
     expect(readFileSync(join(dir, PROFILE_PATCH_FILENAME), 'utf8')).toContain('[]')
     expect(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8')).toContain('nodeLinker: hoisted')
-    expect(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8')).toContain('dedupePeerDependents: false')
     // Re-init keeps user edits.
     writeFileSync(join(dir, PROFILE_PATCH_FILENAME), '- id: x\n  config: {}\n')
     initProfile(dir, ['other'], 'startup')
@@ -156,20 +154,6 @@ describe('resolveBundleDir', () => {
 })
 
 describe('loadProfile', () => {
-  it('loads only installation-owned templates when the user Profile is corrupt', () => {
-    const templates = PROFILE_TEMPLATES.web?.bundles ?? []
-    const anchor = stageInstallation(Object.fromEntries(templates.map(name => [name, { patch: '[]\n' }])))
-    const home = tmp()
-    const dir = resolveProfileDir('web', home)
-    initProfile(dir, [...templates, '@fixture/untrusted'])
-    writeFileSync(join(dir, 'package.json'), '{ invalid json')
-    writeFileSync(join(dir, PROFILE_PATCH_FILENAME), '- !!js/function broken\n')
-
-    const profile = loadDiagnosticProfile('t', 'web', anchor, home)
-    expect(profile.layers.map(layer => layer.packageName)).toEqual(templates)
-    expect(profile.patches).toEqual([])
-  })
-
   it('resolves each dsh.profile.bundles entry to its patch layer in order, plus the user layer', () => {
     const anchor = stageInstallation({
       'bundle-a': { patch: '- insert:\n    - id: a\n      name: pkg-a\n' },

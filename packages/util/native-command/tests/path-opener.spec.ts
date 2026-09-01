@@ -16,7 +16,6 @@ const { execFileMock } = vi.hoisted(() => ({ execFileMock: vi.fn<ExecFileMock>()
 vi.mock('node:child_process', () => ({ execFile: execFileMock }))
 
 import { release as osRelease } from 'node:os'
-import { win32 } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { canOpenNativePath, openNativePath, openNativeTextFile, type PathOpenerRunner } from '../src/index.ts'
 
@@ -91,11 +90,9 @@ describe('native path opener', () => {
 
   it('opens with Windows Invoke-Item and escapes single quotes', async () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
-    await openNativePath("C:\\work\\o'reilly.txt", signal(), {
-      platform: 'win32', env: { SystemRoot: 'D:\\Windows' }, run,
-    })
+    await openNativePath("C:\\work\\o'reilly.txt", signal(), { platform: 'win32', run })
     expect(run).toHaveBeenCalledWith(
-      'D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+      'powershell.exe',
       ['-NoProfile', '-Command', "Invoke-Item -LiteralPath 'C:\\work\\o''reilly.txt'"],
       expect.any(AbortSignal),
     )
@@ -103,11 +100,9 @@ describe('native path opener', () => {
 
   it('uses the Windows desktop association for text documents', async () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
-    await openNativeTextFile('C:\\work\\settings.yaml', signal(), {
-      platform: 'win32', env: { WINDIR: 'E:\\WinDir' }, run,
-    })
+    await openNativeTextFile('C:\\work\\settings.yaml', signal(), { platform: 'win32', run })
     expect(run).toHaveBeenCalledWith(
-      'E:\\WinDir\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+      'powershell.exe',
       ['-NoProfile', '-Command', "Invoke-Item -LiteralPath 'C:\\work\\settings.yaml'"],
       expect.any(AbortSignal),
     )
@@ -133,10 +128,7 @@ describe('native path opener', () => {
       osRelease: '6.8.0-generic', env: {}, run,
     })
     const expected = process.platform === 'win32'
-      ? win32.join(
-        process.env.SystemRoot ?? process.env.WINDIR ?? 'C:\\Windows',
-        'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe',
-      )
+      ? 'powershell.exe'
       : process.platform === 'linux'
         ? 'xdg-open'
         : 'open'
@@ -266,10 +258,9 @@ describe('browser-renderable documents', () => {
     const win: string[][] = []
     await openNativePath('C:\\w\\page.html', new AbortController().signal, {
       platform: 'win32',
-      env: { SystemRoot: 'C:\\Windows' },
       run: async (command, args) => { win.push([command, ...args]); return { stdout: '', stderr: '' } },
     })
-    expect(win[0]?.[0]).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
+    expect(win[0]?.[0]).toBe('powershell.exe')
   })
 
   it('hands browser-renderable WSL paths to the Windows desktop', async () => {

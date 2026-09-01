@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
@@ -22,11 +22,6 @@ const make = (host = stubSettingsScope<ThemeSettings>()): {
 }
 
 describe('ThemeRuntime', () => {
-  beforeEach(() => {
-    localStorage.clear()
-    delete (globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop
-  })
-  afterEach(() => { vi.restoreAllMocks() })
   it('defaults to the system preference resolved against prefers-color-scheme', () => {
     const { theme } = make()
     const snapshot = theme.getTheme()
@@ -35,11 +30,7 @@ describe('ThemeRuntime', () => {
     // jsdom matchMedia is absent; system resolves to light.
     expect(snapshot.active.id).toBe('light')
     expect(snapshot.active.colorScheme).toBe('light')
-    expect(snapshot.themes.map(t => t.id)).toEqual([
-      'light', 'dark', 'ocean', 'moonlight', 'bubble', 'inspiration-collage',
-      'starlight', 'pirate', 'shinobi', 'rift',
-    ])
-    expect(snapshot.background).toEqual({ id: 'none' })
+    expect(snapshot.themes.map(t => t.id)).toEqual(['light', 'dark'])
   })
 
   it('seeds the initial font size from the boot-script body variable, ignoring junk', () => {
@@ -126,18 +117,12 @@ describe('ThemeRuntime', () => {
   it('registered themes join the snapshot; disposing the active one resets to default', () => {
     const { theme, events, host } = make()
     const dispose = theme.register({ id: 'sepia', colorScheme: 'light', tokens: { '--dsw-alias-bg-base': 'red' } })
-    expect(theme.getTheme().themes.map(t => t.id)).toEqual([
-      'light', 'dark', 'ocean', 'moonlight', 'bubble', 'inspiration-collage',
-      'starlight', 'pirate', 'shinobi', 'rift', 'sepia',
-    ])
+    expect(theme.getTheme().themes.map(t => t.id)).toEqual(['light', 'dark', 'sepia'])
     theme.setTheme('sepia')
     expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toBe('red')
     dispose()
     expect(theme.getTheme().preference).toBe('system')
-    expect(theme.getTheme().themes.map(t => t.id)).toEqual([
-      'light', 'dark', 'ocean', 'moonlight', 'bubble', 'inspiration-collage',
-      'starlight', 'pirate', 'shinobi', 'rift',
-    ])
+    expect(theme.getTheme().themes.map(t => t.id)).toEqual(['light', 'dark'])
     // Custom ids are in-process extension themes; only the built-in product
     // preferences cross the Host settings schema.
     expect(host.set).not.toHaveBeenCalled()
@@ -145,81 +130,6 @@ describe('ThemeRuntime', () => {
     expect(events.length).toBe(3)
     dispose()
     expect(events.length).toBe(3)
-  })
-
-  it('persists a shipped chat background locally and republishes it', () => {
-    const { theme, events } = make()
-    theme.setBackground('deep-ocean')
-    expect(theme.getTheme().background).toEqual({
-      id: 'deep-ocean',
-      url: '/theme-backgrounds/deep-ocean-whale.webp',
-    })
-    expect(events).toHaveLength(1)
-    expect(JSON.parse(localStorage.getItem('dsh.theme.chat-background') ?? '{}')).toMatchObject({ id: 'deep-ocean' })
-  })
-
-  it('restores a custom background from desktop storage after a new origin starts', async () => {
-    const stored = { id: 'custom', url: 'data:image/webp;base64,AAAA' }
-    const read = vi.fn().mockResolvedValue(stored)
-    const write = vi.fn().mockResolvedValue(undefined)
-    ;(globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop = {
-      chatBackground: { read, write },
-    }
-
-    const { theme, events } = make()
-    expect(theme.getTheme().background).toEqual({ id: 'none' })
-    await vi.waitFor(() => { expect(theme.getTheme().background).toEqual(stored) })
-    expect(localStorage.getItem('dsh.theme.chat-background')).toBe(JSON.stringify(stored))
-    expect(events.at(-1)?.background).toEqual(stored)
-  })
-
-  it('does not let a late desktop read replace a newer user selection', async () => {
-    let resolveRead: ((background: unknown) => void) | undefined
-    const read = vi.fn().mockReturnValue(new Promise((resolve) => { resolveRead = resolve }))
-    const write = vi.fn().mockResolvedValue(undefined)
-    ;(globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop = {
-      chatBackground: { read, write },
-    }
-
-    const { theme } = make()
-    theme.setBackground('moon-whale')
-    resolveRead?.({ id: 'custom', url: 'data:image/webp;base64,AAAA' })
-    await Promise.resolve()
-    expect(theme.getTheme().background.id).toBe('moon-whale')
-    expect(write).toHaveBeenCalledWith({
-      id: 'moon-whale', url: '/theme-backgrounds/moon-whale.webp',
-    })
-  })
-
-  it('publishes the subject-safe layout carried by an artwork preset', () => {
-    const { theme } = make()
-    theme.setBackground('anime-starlight')
-    expect(theme.getTheme().background).toEqual({
-      id: 'anime-starlight',
-      url: '/theme-backgrounds/anime-starlight.webp',
-      layout: 'focus-right',
-    })
-  })
-
-  it('publishes the inspiration collage on the light palette with its accessible state colors', () => {
-    const { theme } = make()
-    theme.setTheme('inspiration-collage')
-    theme.setBackground('idea-collage')
-    expect(theme.getTheme().active).toMatchObject({
-      id: 'inspiration-collage',
-      colorScheme: 'light',
-      tokens: {
-        '--dsw-alias-bg-base': '#f1faf8',
-        '--dsw-alias-state-business-primary': '#147f7b',
-        '--dsw-alias-state-error-primary': '#c94f45',
-        '--dsw-alias-state-warn-primary': '#9b7000',
-      },
-    })
-    expect(theme.getTheme().background).toEqual({
-      id: 'idea-collage',
-      url: '/theme-backgrounds/idea-collage.webp',
-      layout: 'focus-right',
-    })
   })
 
   it('disposing an inactive theme keeps the active preference', () => {

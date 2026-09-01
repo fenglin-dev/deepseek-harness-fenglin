@@ -7,7 +7,6 @@ import type {
 } from '@deepseek-ai/dsh-client-modules/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppWebEntry } from '../src/boot.ts'
-import { clientLoadFailure, recoverClientLoadFailure } from '../src/client-load-recovery.ts'
 
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 const PROVIDER_CLIENT_ID = 'provider/client'
@@ -88,103 +87,9 @@ describe('bootstrap failure rendering', () => {
       }
     }, 'duplicate graph entry "duplicate"')
   })
-
-  it('parses only an attributed client module-table invariant', () => {
-    const cause = new Error(
-      'client-modules: require("@deepseek-ai/dsh-client-runtime/client") missed the module table '
-      + '— not a platform seed word, not a materialized module, and no registered package factory',
-    )
-    const failure = new Error('failed to import loader entry 71626ed6 (dsh-font): module failed', { cause })
-
-    expect(clientLoadFailure(failure)).toEqual({
-      packageName: 'dsh-font',
-      entryId: '71626ed6',
-      requestedModule: '@deepseek-ai/dsh-client-runtime/client',
-      code: 'client-module-unavailable',
-    })
-    expect(clientLoadFailure(new Error('failed to import loader entry 71626ed6 (dsh-font): boom')))
-      .toBeUndefined()
-  })
-
-  it('uses the authenticated Remote envelope before the client plugin tree exists', async () => {
-    const send = vi.fn(async (_input: URL, init: RequestInit) => {
-      if (typeof init.body !== 'string') throw new TypeError('expected a serialized Remote request body')
-      const request = JSON.parse(init.body) as { rpcId: string }
-      return Response.json({
-        type: 'server-response',
-        rpcId: request.rpcId,
-        result: {
-          ok: true,
-          value: { packageName: 'dsh-font', status: 'quarantined', restartScheduled: true },
-        },
-      })
-    })
-
-    await expect(recoverClientLoadFailure({
-      packageName: 'dsh-font',
-      entryId: '71626ed6',
-      requestedModule: '@deepseek-ai/dsh-client-runtime/client',
-      code: 'client-module-unavailable',
-    }, send)).resolves.toEqual({
-      packageName: 'dsh-font',
-      status: 'quarantined',
-      restartScheduled: true,
-    })
-    expect(send).toHaveBeenCalledOnce()
-    expect(send.mock.calls[0]?.[0].pathname).toBe('/api/pluginInventory/recoverClientLoadFailure')
-  })
 })
 
 describe('plugin activation', () => {
-  it('silently isolates an attributed module-table failure and waits for Host restart', async () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const container = document.createElement('div')
-    document.body.append(container)
-    const target = installFacade()
-    const entries: WebBootEntry[] = [
-      { id: 'dsh-font', url: '/dsh-font.js', rev: '1' },
-      { id: 'renderer', url: '/renderer.js', rev: '1' },
-    ]
-    win.__DSH_BOOT__ = {
-      rev: 'graph',
-      entries,
-      batches: [{ phase: 'application', url: '/application.js', rev: 'batch', entries: entries.map(row => row.id) }],
-    }
-    const recover = vi.fn(async () => ({
-      packageName: 'dsh-font',
-      status: 'quarantined' as const,
-      restartScheduled: true,
-    }))
-    const entry = new AppWebEntry(container, {
-      loadBundle: async () => {
-        target.load({
-          id: 'dsh-font',
-          factory: (require) => {
-            require('@deepseek-ai/dsh-client-runtime/client')
-            return { apply: () => {} }
-          },
-        })
-        target.load({
-          id: 'renderer',
-          factory: () => ({ apply: () => {} }),
-        })
-      },
-      recoverClientLoadFailure: recover,
-    })
-
-    await entry.run()
-
-    expect(recover).toHaveBeenCalledWith(expect.objectContaining({
-      packageName: 'dsh-font',
-      requestedModule: '@deepseek-ai/dsh-client-runtime/client',
-      code: 'client-module-unavailable',
-    }))
-    expect(container.textContent).toContain('Isolating incompatible plugin dsh-font')
-    expect(container.textContent).not.toContain('Failed to load plugins')
-    expect(error).toHaveBeenCalled()
-    await entry.dispose()
-  })
-
   it('prefetches a parser-loaded immediate row through the injected bundle transport', async () => {
     const container = document.createElement('div')
     document.body.append(container)

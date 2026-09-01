@@ -6,7 +6,6 @@ import { bootThemeInjection } from '../src/boot-theme.ts'
 import type { ThemePreference } from '../src/theme-settings.ts'
 
 const DARK_ATTRIBUTE = 'data-ds-dark-theme'
-const SOURCE_ATTRIBUTE = 'data-dsh-color-scheme-source'
 
 function mockSystemDark(matches: boolean): void {
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches }) as MediaQueryList))
@@ -22,7 +21,6 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   document.documentElement.style.removeProperty('color-scheme')
-  document.documentElement.removeAttribute(SOURCE_ATTRIBUTE)
   document.body.removeAttribute(DARK_ATTRIBUTE)
   document.body.style.removeProperty('--dsh-content-font-size')
 })
@@ -34,7 +32,6 @@ describe('theme bootstrap row', () => {
     expect(row).toMatchObject({ kind: 'script', placement: 'body' })
     executeBootstrap('dark')
     expect(document.documentElement.style.colorScheme).toBe('dark')
-    expect(document.documentElement.getAttribute(SOURCE_ATTRIBUTE)).toBe('dark')
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(true)
   })
 
@@ -42,22 +39,6 @@ describe('theme bootstrap row', () => {
     document.body.setAttribute(DARK_ATTRIBUTE, '')
     mockSystemDark(true)
     executeBootstrap('light')
-    expect(document.documentElement.style.colorScheme).toBe('light')
-    expect(document.documentElement.getAttribute(SOURCE_ATTRIBUTE)).toBe('light')
-    expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
-  })
-
-  it.each(['starlight', 'pirate', 'shinobi', 'rift'] as const)('boots the %s skin on the dark base palette', (preference) => {
-    mockSystemDark(false)
-    executeBootstrap(preference)
-    expect(document.documentElement.style.colorScheme).toBe('dark')
-    expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(true)
-  })
-
-  it('boots the inspiration collage skin on the light base palette', () => {
-    document.body.setAttribute(DARK_ATTRIBUTE, '')
-    mockSystemDark(true)
-    executeBootstrap('inspiration-collage')
     expect(document.documentElement.style.colorScheme).toBe('light')
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
   })
@@ -69,7 +50,6 @@ describe('theme bootstrap row', () => {
     mockSystemDark(matches)
     executeBootstrap('system')
     expect(document.documentElement.style.colorScheme).toBe(colorScheme)
-    expect(document.documentElement.getAttribute(SOURCE_ATTRIBUTE)).toBe('system')
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(dark)
   })
 

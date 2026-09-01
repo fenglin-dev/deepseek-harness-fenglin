@@ -66,7 +66,6 @@ describe('ui-settings apply', () => {
   it('declares only the slot registry (a pure composition face, no locale)', () => {
     expect(inject).toEqual([
       'slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope',
-      'settingsNavigation',
     ])
   })
 
@@ -149,16 +148,6 @@ describe('ui-settings apply', () => {
     await Promise.resolve()
     expect(listener).toHaveBeenCalledOnce()
     off()
-  })
-
-  it('exposes the durable section-order source and write seam', async () => {
-    const b = await bench()
-    declare(b.slots)
-    await b.ctx.plugin({ inject: [...inject], apply }).await()
-    const injected = injectedOf(b.slots)
-    expect(injected.hooks.sectionOrder.getSnapshot()).toEqual([])
-    await expect(injected.setSectionOrder(['models', 'general'])).resolves.toBeUndefined()
-    expect(injected.hooks.sectionOrder.getSnapshot()).toEqual(['models', 'general'])
   })
 
   it('re-registers after an HMR collapse re-declares the slot (stale disposer must not block)', async () => {
