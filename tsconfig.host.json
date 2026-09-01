@@ -106,7 +106,9 @@
   // and the package test glob above needs no per-file entry.
   "exclude": [
     "packages/examples/agent-spine-demo/tests/**/*",
-    "packages/host/plugin-inventory/**/*",`n    "packages/session/session-persistence-sqlite/**/*",
+    "packages/host/plugin-inventory/**/*",
+    "packages/session/session-persistence-sqlite/**/*",
+    "packages/subagent/tool-subagent-report/**/*",
     "packages/experimental/agent-team/tests/fold.spec.ts",
     "packages/client/*/src/**",
     "packages/*/*/tests/**/*.client.ts",
