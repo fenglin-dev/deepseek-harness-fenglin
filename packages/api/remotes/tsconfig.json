@@ -2,7 +2,8 @@
   "files": [],
   "references": [
     
-    { "path": "../../runtime-diagnostics/invariants" },{
+    
+    { "path": "../../util/values" },{ "path": "../../runtime-diagnostics/invariants" },{
       "path": "./tsconfig.host.json"
     },
     {

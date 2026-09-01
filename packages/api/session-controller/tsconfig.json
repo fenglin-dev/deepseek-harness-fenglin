@@ -3,7 +3,8 @@
   "references": [
     
     
-    { "path": "../../session/session-projection" },{ "path": "../../runtime-diagnostics/invariants" },{ "path": "./tsconfig.host.json" },
+    
+    { "path": "../../util/values" },{ "path": "../../session/session-projection" },{ "path": "../../runtime-diagnostics/invariants" },{ "path": "./tsconfig.host.json" },
     { "path": "./tsconfig.client.json" }
   ]
 }

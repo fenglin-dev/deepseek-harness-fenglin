@@ -9,7 +9,8 @@
   ],
   "references": [
     
-    { "path": "../../util/brand" },{
+    
+    { "path": "../../util/values" },{ "path": "../../util/brand" },{
       "path": "../../util/launch-environment"
     },
     {

@@ -9,7 +9,8 @@
   ],
   "references": [
     
-    { "path": "../../core/agent" },{
+    
+    { "path": "../../util/values" },{ "path": "../../core/agent" },{
       "path": "../../../vendor/cosmokit"
     },
     {

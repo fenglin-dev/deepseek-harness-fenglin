@@ -6,7 +6,8 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../../../vendor/cosmokit" },
+    
+    { "path": "../../util/values" },{ "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../llm/llm" },

@@ -10,7 +10,8 @@
   "references": [
     
     
-    { "path": "../../util/time" },{ "path": "../../attachment/attachment" },{
+    
+    { "path": "../../util/values" },{ "path": "../../util/time" },{ "path": "../../attachment/attachment" },{
       "path": "../../../vendor/cosmokit"
     },
     {
