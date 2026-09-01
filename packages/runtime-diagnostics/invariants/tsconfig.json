@@ -8,8 +8,7 @@
     "src"
   ],
   "references": [
-    
-    { "path": "../../runtime-diagnostics/invariants" },{
+    {
       "path": "../../../vendor/cosmokit"
     },
     {
