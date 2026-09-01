@@ -104,7 +104,7 @@
   // belongs to the Client aggregate, `*.host.spec.ts` to this one. The two
   // suffixes are mutually exclusive, so each aggregate excludes the other's
   // and the package test glob above needs no per-file entry.
-  "exclude": [
+  "exclude": [`n    "packages/examples/agent-spine-demo/tests/**/*",`n    "packages/host/plugin-inventory/**/*",
     "packages/client/*/src/**",
     "packages/*/*/tests/**/*.client.ts",
     "packages/*/*/tests/**/*.client.tsx",
@@ -224,7 +224,7 @@
     { "path": "./packages/shell/tool-pwsh-persistent" },
     { "path": "./packages/terminal/tool-terminal" },
     { "path": "./packages/code-runtime/code-runtime" },
-    { "path": "./packages/code-runtime/code-runtime-python" },
+    { "path": "./packages/experimental/code-runtime-python" },
     { "path": "./packages/code-runtime/code-runtime-worker-thread" },
     { "path": "./packages/llm/llm-deepseek" },
     { "path": "./packages/llm/llm-pi-ai" },
