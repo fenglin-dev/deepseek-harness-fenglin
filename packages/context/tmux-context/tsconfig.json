@@ -6,7 +6,8 @@
   },
   "include": ["src"],
   "references": [
-    {
+    
+    { "path": "../../session/session-projection" },{
       "path": "../../../vendor/cosmokit"
     },
     {

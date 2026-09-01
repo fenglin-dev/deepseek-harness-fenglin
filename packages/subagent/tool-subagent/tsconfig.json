@@ -9,7 +9,8 @@
   ],
   "references": [
     
-    { "path": "../../util/values" },{
+    
+    { "path": "../../session/session-projection" },{ "path": "../../util/values" },{
       "path": "../../../vendor/cosmokit"
     },
     {

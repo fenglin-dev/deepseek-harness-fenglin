@@ -2,7 +2,8 @@
   "files": [],
   "references": [
     
-    { "path": "../../runtime-diagnostics/invariants" },{ "path": "./tsconfig.host.json" },
+    
+    { "path": "../../session/session-projection" },{ "path": "../../runtime-diagnostics/invariants" },{ "path": "./tsconfig.host.json" },
     { "path": "./tsconfig.client.json" }
   ]
 }

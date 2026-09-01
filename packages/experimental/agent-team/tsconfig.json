@@ -6,7 +6,8 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../../../vendor/cosmokit" },
+    
+    { "path": "../../session/session-projection" },{ "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../util/brand" },
