@@ -1,12 +1,10 @@
 {
   "extends": "../../../tsconfig.base.json",
-  "compilerOptions": {
+  "compilerOptions": {`n    "noEmit": true,
     "rootDir": "src",
     "outDir": "lib/types"
   },
-  "include": [
-    "src"
-  ],
+  "include": [],
   "references": [
     {
       "path": "../../boot/app-boot"
