@@ -7,7 +7,7 @@
   },
   "files": [
     "src/archive.ts",
-    "src/index.ts"
+    "src/index.ts",`n    "src/invariant.ts"
   ],
   "references": [
     { "path": "../../../vendor/cordis" },
