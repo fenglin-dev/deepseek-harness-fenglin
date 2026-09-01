@@ -31,10 +31,6 @@
     },
     {
       "path": "../session-projection"
-    },
-    {
-      "path": "../../core/agent"
-
     }
   ]
 }

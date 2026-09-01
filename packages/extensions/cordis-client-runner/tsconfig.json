@@ -18,6 +18,9 @@
       "path": "../../api/remotes/tsconfig.client.json"
     },
     {
+      "path": "../../client/connection/tsconfig.client.json"
+    },
+    {
       "path": "../../client/modules"
     },
     {
@@ -28,6 +31,9 @@
     },
     {
       "path": "../../client/ui-theme"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

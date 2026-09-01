@@ -18,6 +18,9 @@
       "path": "../../feedback/message-feedback"
     },
     {
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
       "path": "../../core/session"
     },
     {

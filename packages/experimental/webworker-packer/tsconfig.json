@@ -19,6 +19,9 @@
     },
     {
       "path": "../../util/home-paths"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

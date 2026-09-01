@@ -17,6 +17,9 @@
     },
     {
       "path": "../spill"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

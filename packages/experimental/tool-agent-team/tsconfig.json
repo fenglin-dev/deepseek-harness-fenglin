@@ -14,6 +14,7 @@
     { "path": "../../core/session" },
     { "path": "../../core/system-prompt" },
     { "path": "../../core/tools" },
-    { "path": "../agent-team" }
+    { "path": "../agent-team" },
+    { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

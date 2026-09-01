@@ -45,6 +45,9 @@
       "path": "../../sandbox/sandbox"
     },
     {
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
       "path": "../../sandbox/sandbox-policy"
     }
   ]

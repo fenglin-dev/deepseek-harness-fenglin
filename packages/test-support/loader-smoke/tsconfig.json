@@ -9,9 +9,6 @@
   ],
   "references": [
     {
-      "path": "../../../vendor/cordis"
-    },
-    {
       "path": "../../core/agent"
     },
     {
@@ -19,6 +16,9 @@
     },
     {
       "path": "../../core/session"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

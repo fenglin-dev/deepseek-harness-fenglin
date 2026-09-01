@@ -24,6 +24,9 @@
       "path": "../../context/session-reference"
     },
     {
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
       "path": "../../typert/protocol"
     },
     {

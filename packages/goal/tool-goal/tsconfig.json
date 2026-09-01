@@ -36,7 +36,7 @@
       "path": "../goal"
     },
     {
-      "path": "../../session/session-projection"
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

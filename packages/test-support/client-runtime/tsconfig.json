@@ -24,9 +24,6 @@
       "path": "../../core/session"
     },
     {
-      "path": "../../typert/protocol"
-    },
-    {
       "path": "../../client/connection/tsconfig.client.json"
     },
     {
@@ -52,6 +49,9 @@
     },
     {
       "path": "../../subagent/subagent"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

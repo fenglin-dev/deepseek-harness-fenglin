@@ -24,6 +24,9 @@
       "path": "../../../vendor/hmr"
     },
     {
+      "path": "../../runtime-diagnostics/invariants"
+    },
+    {
       "path": "../../core/system-prompt"
     },
     {

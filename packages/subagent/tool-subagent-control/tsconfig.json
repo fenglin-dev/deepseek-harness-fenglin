@@ -25,6 +25,9 @@
     },
     {
       "path": "../subagent"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }
