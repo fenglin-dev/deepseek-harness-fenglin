@@ -15,7 +15,6 @@ on:
         default: all
         options:
           - all
-          - macos
           - windows-x64
           - linux-x64
       publish:
@@ -68,7 +67,7 @@ jobs:
 
   macos:
     name: macOS ${{ matrix.arch }}
-    if: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'macos' }}
+    if: false  # 个人维护版暂不构建 macOS
     needs: bundled-plugins
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'

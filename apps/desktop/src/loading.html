@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:">
     <title>DeepSeek Harness</title>
     <style>
       :root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f4f2ed; color: #24221f; }
       main { width: min(420px, calc(100vw - 48px)); text-align: center; }
-      .mark { width: 52px; height: 52px; margin: 0 auto 24px; border-radius: 16px; background: #24221f; color: #fff; display: grid; place-items: center; font: 700 22px/1 ui-monospace, monospace; box-shadow: 0 12px 32px rgb(36 34 31 / 16%); }
+      .mark { width: 64px; height: 64px; margin: 0 auto 24px; border-radius: 16px; object-fit: cover; box-shadow: 0 12px 32px rgb(36 34 31 / 16%); }
       h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
       p { margin: 12px 0 28px; color: #706c65; font-size: 14px; line-height: 1.6; }
       .progress-meta { align-items: center; display: flex; gap: 16px; justify-content: space-between; margin: 0 0 9px; text-align: left; }
@@ -35,12 +35,12 @@
       button.primary { background: #24221f; border-color: #24221f; color: #fff; }
       button:disabled { cursor: wait; opacity: .6; }
       @media (prefers-reduced-motion: reduce) { .bar { transition: none; } }
-      @media (prefers-color-scheme: dark) { body { background: #1b1b1a; color: #f3f1ec; } .mark { background: #f3f1ec; color: #1b1b1a; } p, .progress-percent { color: #aaa69f; } .progress-task { color: #d2cfc9; } .track { background: #343330; } .log-path { background: rgb(255 255 255 / 8%); } .snapshot-recovery { border-color: #45423d; } .snapshot-recovery select, button { background: #292826; border-color: #4a4843; } button.primary { background: #f3f1ec; border-color: #f3f1ec; color: #1b1b1a; } }
+      @media (prefers-color-scheme: dark) { body { background: #1b1b1a; color: #f3f1ec; } p, .progress-percent { color: #aaa69f; } .progress-task { color: #d2cfc9; } .track { background: #343330; } .log-path { background: rgb(255 255 255 / 8%); } .snapshot-recovery { border-color: #45423d; } .snapshot-recovery select, button { background: #292826; border-color: #4a4843; } button.primary { background: #f3f1ec; border-color: #f3f1ec; color: #1b1b1a; } }
     </style>
   </head>
   <body>
     <main>
-      <div class="mark" aria-hidden="true">DS</div>
+      <img class="mark" src="icon.png" alt="DeepSeek Harness">
       <h1 id="title">Starting DeepSeek Harness</h1>
       <p id="description">Checking plugin compatibility and preparing your local agent workspace. Your sessions and credentials stay on this machine.</p>
       <div id="progress-surface" class="progress-surface">
