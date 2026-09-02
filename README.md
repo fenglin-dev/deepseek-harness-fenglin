@@ -2,33 +2,40 @@
   <img src="./apps/desktop/src/icon.png" width="112" alt="Open DeepSeek Harness Desktop 图标">
 </p>
 
-# Open DeepSeek Harness Desktop
+# DeepSeek Harness Fenglin Edition
 
 <p align="center">
-  <strong>开箱即用、依赖安全的 DeepSeek Harness 社区桌面版</strong>
+  <strong>个人维护的 DeepSeek Harness 桌面版 · 基于上游 0.1.2-alpha.5 · 鲸鱼少女主题</strong>
 </p>
 
-语言：简体中文（默认） · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Português](README.pt-BR.md)
+语言：简体中文（默认） · [English](README.en.md)
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-alpha.1.1 已发布：作为 v0.1.2-alpha.1 的修复升级版，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1)。** 本版继续以官方 DeepSeek Harness 0.1.2-alpha.1 为核心基线，集中增强桌面环境管理、插件恢复和跨平台稳定性。
+> **[v2.0.0 Alpha 已发布：基于上游 0.1.2-alpha.5 的个人维护版，欢迎下载体验](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases)。** 本版同步上游最新修复，包括插件诊断安全模式、自定义应用与托盘图标、插件快照去重折叠等，并保留鲸鱼少女主题图标。
 >
-> 这是 Alpha 预发布版本。升级前建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈给我们。
+> 这是个人维护的 Alpha 版本。升级前建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈到[本仓库 Issues](https://github.com/fenglin-dev/deepseek-harness-fenglin/issues)。
 
 <p align="center">
-  <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="下载量"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/github/license/flaqai/open-deepseek-harness-desktop?style=flat" alt="MIT 许可证"></a>
-  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/upstream-DeepSeek%20Harness-4d6bfe?style=flat" alt="DeepSeek Harness 上游"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases"><img src="https://img.shields.io/github/downloads/fenglin-dev/deepseek-harness-fenglin/total.svg?style=flat" alt="下载量"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/fenglin-dev/deepseek-harness-fenglin?style=flat" alt="MIT 许可证"></a>
+  <a href="https://github.com/flaqai/open-deepseek-harness-desktop"><img src="https://img.shields.io/badge/upstream-FLAQ%20AI%20Desktop-4d6bfe?style=flat" alt="上游项目"></a>
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/runtime-DeepSeek%20Harness-blue?style=flat" alt="DeepSeek Harness 运行时"></a>
 </p>
 
-Open DeepSeek Harness Desktop 是由社区独立维护的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 桌面发行版。它把上游插件化智能体运行时、Web 工作区和桌面系统能力组合为可以直接安装的应用，可用于配置模型、运行编码会话、查看执行轨迹、管理插件与 Skill，并连接外部编码工具或 IM 机器人。
+这是[Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop)的个人维护分支，基于[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)桌面发行版。它保留上游全部功能，包括插件化智能体运行时、Web 工作区、桌面系统能力、插件诊断安全模式等，并添加鲸鱼少女主题图标等个人定制。
 
 安装包内置 Node.js、pnpm 与 Harness 运行时，无需用户先准备开发环境。本项目不会把 Electron 变成第二套智能体运行时：配置、凭据、会话、插件和 Skill 仍由本机 Harness 服务管理，Electron 只提供受限的桌面宿主能力。
 
 > [!NOTE]
 >
-> 本仓库并非 DeepSeek 官方产品，而是基于 DeepSeek Harness 的社区开源项目。项目仍处于预览阶段，本地数据结构、插件兼容策略和安装方式可能继续演进。
+> 本仓库是个人维护的 fork，并非 DeepSeek 官方产品，也不代表 FLAQ AI 团队。本版本基于[Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop)进行个人改进与修复。项目仍处于 Alpha 阶段，本地数据结构、插件兼容策略和安装方式可能继续演进。
+
+## 关于本分支
+
+- **鲸鱼少女主题图标**：全套应用视觉元素替换为鲸鱼少女主题图标
+- **同步上游最新**：基于上游 0.1.2-alpha.5，包含所有最新修复与新特性
+- **个人维护**：由 fenglin-dev 个人维护，欢迎提交 Issue 和 PR
 
 ## 当前功能亮点
 

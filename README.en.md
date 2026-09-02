@@ -2,33 +2,40 @@
   <img src="./apps/desktop/src/icon.png" width="112" alt="Open DeepSeek Harness Desktop icon">
 </p>
 
-# Open DeepSeek Harness Desktop
+# DeepSeek Harness Fenglin Edition
 
 <p align="center">
-  <strong>A ready-to-use, dependency-safe desktop edition of DeepSeek Harness</strong>
+  <strong>Personally maintained desktop edition of DeepSeek Harness · Based on upstream 0.1.2-alpha.5 · Whale-girl theme</strong>
 </p>
 
-Languages: [简体中文](README.md) · English · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Português](README.pt-BR.md)
+Languages: [简体中文](README.md) · English
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-alpha.1.1 is available now. It is a maintenance upgrade to v0.1.2-alpha.1—download it and give it a try](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1).** This release continues to use DeepSeek Harness 0.1.2-alpha.1 as its upstream baseline while strengthening desktop environment management, plugin recovery, and cross-platform reliability.
+> **[v2.0.0 Alpha is available now — a personally maintained edition based on upstream 0.1.2-alpha.5, download it and give it a try](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases).** This release syncs all upstream fixes, including plugin diagnostics safe mode, custom application and tray icons, plugin snapshot deduplication and collapsing, while retaining the whale-girl themed icon set.
 >
-> This is an Alpha pre-release. Back up important configuration before upgrading, and include relevant logs or diagnostic reports when reporting problems.
+> This is a personally maintained Alpha release. Back up important configuration before upgrading, and include relevant logs or diagnostic reports when reporting problems to [this repository's Issues](https://github.com/fenglin-dev/deepseek-harness-fenglin/issues).
 
 <p align="center">
-  <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="Downloads"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/github/license/flaqai/open-deepseek-harness-desktop?style=flat" alt="MIT License"></a>
-  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/upstream-DeepSeek%20Harness-4d6bfe?style=flat" alt="DeepSeek Harness upstream"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases"><img src="https://img.shields.io/github/downloads/fenglin-dev/deepseek-harness-fenglin/total.svg?style=flat" alt="Downloads"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/fenglin-dev/deepseek-harness-fenglin?style=flat" alt="MIT License"></a>
+  <a href="https://github.com/flaqai/open-deepseek-harness-desktop"><img src="https://img.shields.io/badge/upstream-FLAQ%20AI%20Desktop-4d6bfe?style=flat" alt="Upstream project"></a>
+  <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/runtime-DeepSeek%20Harness-blue?style=flat" alt="DeepSeek Harness runtime"></a>
 </p>
 
-Open DeepSeek Harness Desktop is an independent, community-maintained desktop distribution of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It combines the upstream plugin-based agent runtime, Web workspace, and native desktop integration into an installable app for configuring models, running coding sessions, inspecting execution, managing plugins and Skills, and connecting external coding tools or IM bots.
+This is a personally maintained fork of [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop), based on the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) desktop distribution. It retains all upstream features, including the plugin-based agent runtime, Web workspace, native desktop integration, and plugin diagnostics safe mode, while adding personal customizations such as whale-girl themed icons.
 
 Installers include Node.js, pnpm, and the Harness runtime, so users do not need to prepare a development environment. Electron does not become a second agent runtime: configuration, credentials, sessions, plugins, and Skills remain owned by the local Harness service, while Electron exposes only capability-scoped desktop integration.
 
 > [!NOTE]
 >
-> This repository is not an official DeepSeek product. It is an open-source community project built on DeepSeek Harness and remains in preview; local data formats, plugin compatibility policies, and installation details may continue to evolve.
+> This repository is a personally maintained fork, not an official DeepSeek product, and does not represent the FLAQ AI team. This version is based on [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop) with personal improvements and bug fixes. The project remains in Alpha; local data formats, plugin compatibility policies, and installation details may continue to evolve.
+
+## About this fork
+
+- **Whale-girl themed icons**: full application visual elements replaced with whale-girl themed icons
+- **Synced with upstream latest**: based on upstream 0.1.2-alpha.5, includes all latest fixes and features
+- **Personally maintained**: maintained by fenglin-dev, Issues and PRs are welcome
 
 ## Current feature highlights
 
