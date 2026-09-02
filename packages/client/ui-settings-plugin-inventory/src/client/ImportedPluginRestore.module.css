@@ -6,12 +6,12 @@
   flex-direction: column;
   gap: 16px;
   width: 100%;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0;
   border-radius: 14px;
   padding: 18px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
-  box-shadow: var(--dsw-shadow-lv2);
+  box-shadow: var(--dsw-elevation-panel);
 }
 
 .heading,
@@ -57,6 +57,7 @@
   height: 28px;
   place-items: center;
   border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-interactive-bg-hover);
   font-size: 12px;
 }
@@ -90,7 +91,7 @@
 .sourceCheck button,
 .localActions button,
 .developmentButtons button {
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 7px;
   padding: 5px 9px;
   background: var(--dsw-alias-bg-layer-1);
@@ -179,7 +180,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 9px;
   padding: 10px 12px;
   background: var(--dsw-alias-bg-layer-2);

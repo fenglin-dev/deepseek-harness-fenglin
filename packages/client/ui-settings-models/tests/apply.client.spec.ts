@@ -11,8 +11,7 @@ import {
   WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE, WELCOME_NOTICE_VERSION,
 } from '../src/onboarding-copy.ts'
 import { ModelsSection } from '../src/client/ModelsSection.tsx'
-import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog.tsx'
-import { WelcomeNotice } from '../src/client/WelcomeNotice.tsx'
+import { SetupWizard } from '../src/client/SetupWizard.tsx'
 import { apply as hostApply } from '../src/index.ts'
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
@@ -103,8 +102,12 @@ describe('ui-settings-models apply', () => {
     const deepSeekInjected = (
       deepSeek.inject as unknown as () => import('../src/client/DeepSeekOnboardingDialog.tsx').DeepSeekOnboardingInjected
     )()
-    expect(deepSeekInjected.hooks.models).toBe(injected.controller.store)
-    expect(typeof deepSeekInjected.operations.storeCredential).toBe('function')
+    expect(setupInjected.hooks.models).toBe(injected.controller.store)
+    expect(setupInjected.modelsController).toBe(injected.controller)
+    expect(setupInjected.hooks.welcome).toBe(setupInjected.welcomeController.store)
+    expect(setupInjected.hooks.locale).toBe(before.locale)
+    setupInjected.setLocale('en')
+    expect(before.locale.getLocale().active).toBe('en')
 
     const after = await bench()
     await after.ctx.plugin({ inject: [...inject], apply }).await()

@@ -591,9 +591,14 @@ export function apply(ctx: Context, config: Config): void {
       runtimeCtx.systemPrompt.section({
         name: `tool:${toolName}`,
         order: runtimeCtx.systemPrompt.getSectionOrder('TOOL_SUBAGENT'),
-        text: context => mounted === undefined || runtimeCtx.tools.get(toolName, context.scope) === undefined
-          ? ''
-          : `Use ${toolName} in the background by default. Start independent delegations together in one assistant message and continue useful work while they run. Set \`run_in_background: false\` only when your next action depends on that subagent's result. When a background run settles, the runtime sends you a notice containing its outcome and any final assistant message.`,
+        text: (context) => {
+          if (mounted === undefined || runtimeCtx.tools.get(toolName, context.scope) === undefined) return ''
+          const instructions = [config.usageHint]
+          if (backgroundEnabled && continuable) {
+            instructions.push(`Use ${toolName} in the background by default. Start independent delegations together in one assistant message and continue useful work while they run. Set \`run_in_background: false\` only when your next action depends on that subagent's result. When a background run settles, the runtime sends you a notice containing its outcome and any final assistant message.`)
+          }
+          return instructions.filter((instruction): instruction is string => instruction !== undefined).join(' ')
+        },
       })
     }
   }

@@ -2,7 +2,7 @@
 
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir, userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -41,6 +41,11 @@ import {
 import { DesktopReleaseChecker, isAllowedReleaseUrl, type DesktopReleaseStatus } from './release-checker.ts'
 import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus } from './release-downloader.ts'
 import { SourceUpdater } from './source-updater.ts'
+import { DesktopIconManager, type DesktopIconImages } from './desktop-icons.ts'
+import { updateIconShortcuts } from './icon-shortcuts.ts'
+import type { IconSurfaceResult, IconTarget } from './icon-protocol.ts'
+import { ExternalToolCompatibilityManager } from './external-tool-compatibility.ts'
+import { EXTERNAL_TOOL_IDS, type DesktopExternalToolId } from './external-tool-compatibility-manifest.ts'
 import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycle.ts'
 import { isDesktopRenderer, withDesktopWindowMetadata } from './window-frame.ts'
 import {
@@ -105,6 +110,12 @@ import {
   type StagedImportedPlugin,
 } from './imported-plugin-local-source.ts'
 import { resolveSystemProxyEnvironment } from './system-proxy.ts'
+import {
+  PluginSnapshotManager,
+  type PluginSnapshotRestoreSnapshot,
+  type PluginSnapshotSummary,
+} from './plugin-snapshot-manager.ts'
+import { backupAndResetDesktopSettings } from './settings-recovery.ts'
 
 const APP_NAME = 'DeepSeek Harness'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
@@ -117,6 +128,7 @@ const TITLEBAR_PRELOAD = fileURLToPath(new URL('./titlebar-preload.cjs', import.
 const DATA_HOME_PAGE = fileURLToPath(new URL('./data-home.html', import.meta.url))
 const DATA_HOME_PRELOAD = fileURLToPath(new URL('./data-home-preload.cjs', import.meta.url))
 const DATA_HOME_SELECTION_LIFETIME_MS = 5 * 60_000
+const DESKTOP_PNPM_VERSION = '11.7.0'
 const DEFAULT_SOURCE_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const DESKTOP_DATA_HOME = resolveDesktopDataHomeLayout(
   app.getPath('appData'),
@@ -131,6 +143,7 @@ app.setPath('sessionData', DESKTOP_DATA_HOME.sessionData)
 app.setAppLogsPath(DESKTOP_DATA_HOME.logs)
 
 let mainWindow: BrowserWindow | undefined
+let iconManager: DesktopIconManager | undefined
 let mainSurface: DesktopWindowSurface | undefined
 let supervisor: HarnessSupervisor | undefined
 let harnessOrigin: string | undefined
@@ -143,11 +156,13 @@ let hiddenLaunch = false
 let harnessLogPath = ''
 let releaseChecker: DesktopReleaseChecker | undefined
 let releaseDownloader: DesktopReleaseDownloader | undefined
+let externalToolCompatibility: ExternalToolCompatibilityManager | undefined
 let bundledPluginInstaller: BundledPluginInstaller | undefined
 let importedPluginRestoreManager: ImportedPluginRestoreManager | undefined
 let desktopCliManager: DesktopCliManager | undefined
 let chatBackgroundStore: DesktopChatBackgroundStore | undefined
 let diagnosticLabManager: DiagnosticLabManager | undefined
+let pluginSnapshotManager: PluginSnapshotManager | undefined
 let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
 let desktopThemeSource: DesktopThemeSource = 'system'
 const reportedDesktopReadiness = new Set<'client' | 'event-dispatch'>()
@@ -318,7 +333,7 @@ async function showDataHomeChooser(
     minWidth: 920,
     minHeight: 620,
     backgroundColor: desktopThemeBackground('system', nativeTheme.shouldUseDarkColors),
-    icon: WINDOW_ICON,
+    icon: iconManager?.images().application ?? WINDOW_ICON,
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -629,11 +644,8 @@ function refreshTrayMenu(): void {
 }
 
 function createTray(): void {
-  const image = nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : WINDOW_ICON)
-  if (process.platform === 'darwin') {
-    image.setTemplateImage(true)
-  }
-  tray = new Tray(image)
+  const images = iconManager?.images()
+  tray = new Tray(images === undefined ? nativeImage.createFromPath(WINDOW_ICON) : desktopTrayImage(images))
   tray.setToolTip(APP_NAME)
   refreshTrayMenu()
   // A macOS tray with a context menu opens that menu on a primary click. Do
@@ -646,16 +658,64 @@ function createTray(): void {
   tray.on('right-click', refreshTrayMenu)
 }
 
-/** Replace Electron's generic Dock icon while running the unpackaged macOS host. */
-function applyDevelopmentDockIcon(): void {
-  if (process.platform !== 'darwin' || app.isPackaged) return
-  const image = nativeImage.createFromPath(DEVELOPMENT_DOCK_ICON)
-  if (image.isEmpty()) {
-    throw new Error(`desktop: development Dock icon is unavailable at ${DEVELOPMENT_DOCK_ICON}`)
+/** Apply the saved Dock preference before either setup or the main window appears. */
+function applyStartupDockIcon(): void {
+  if (process.platform !== 'darwin') return
+  try { app.dock?.setIcon(iconManager?.images().application ?? nativeImage.createFromPath(DEVELOPMENT_DOCK_ICON)) }
+  catch { console.warn('desktop: Dock icon could not be applied') }
+}
+
+function desktopTrayImage(images: DesktopIconImages): Electron.NativeImage {
+  if (images.trayTemplate) {
+    images.tray.setTemplateImage(true)
+    return images.tray
   }
-  const dock = app.dock
-  if (dock === undefined) throw new Error('desktop: macOS Dock integration is unavailable')
-  dock.setIcon(image)
+  const image = nativeImage.createEmpty()
+  const size = process.platform === 'darwin' ? 22 : 16
+  for (const scaleFactor of [1, 2]) image.addRepresentation({
+    scaleFactor, buffer: images.tray.resize({ width: size * scaleFactor, height: size * scaleFactor, quality: 'best' }).toPNG(),
+  })
+  image.setTemplateImage(false)
+  return image
+}
+
+function applyDesktopIcons(images: DesktopIconImages, shortcuts: boolean, createShortcut: boolean): IconSurfaceResult[] {
+  const results: IconSurfaceResult[] = []
+  try {
+    if (process.platform === 'darwin') {
+      if (app.dock === undefined) throw new Error('Dock unavailable')
+      app.dock.setIcon(images.application)
+    } else {
+      for (const window of BrowserWindow.getAllWindows()) window.setIcon(images.application)
+      if (app.isPackaged) {
+        for (const window of BrowserWindow.getAllWindows()) window.setAppDetails({
+          appId: 'ai.flaq.deepseek-harness', appIconPath: images.applicationIco ?? process.execPath,
+          appIconIndex: 0, relaunchCommand: `"${process.execPath}"`, relaunchDisplayName: APP_NAME,
+        })
+      }
+    }
+    results.push({ surface: 'application', status: 'applied' })
+  } catch { results.push({ surface: 'application', status: 'unavailable' }) }
+  try {
+    if (tray === undefined) throw new Error('Tray unavailable')
+    tray.setImage(desktopTrayImage(images))
+    results.push({ surface: 'tray', status: 'applied' })
+  } catch { results.push({ surface: 'tray', status: 'unavailable' }) }
+  if (process.platform === 'win32') {
+    results.push({ surface: 'taskbar', status: 'repin' })
+    if (app.isPackaged && shortcuts) {
+      try {
+        results.push(...updateIconShortcuts({
+          desktop: app.getPath('desktop'),
+          startMenu: join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+          executable: process.execPath, managedDirectory: join(app.getPath('userData'), 'icons'),
+          appId: 'ai.flaq.deepseek-harness', read: path => shell.readShortcutLink(path),
+          write: (path, operation, options) => shell.writeShortcutLink(path, operation, options),
+        }, images.applicationIco ?? process.execPath, createShortcut))
+      } catch { results.push({ surface: 'desktop', status: 'unavailable' }, { surface: 'start-menu', status: 'unavailable' }) }
+    }
+  }
+  return results
 }
 
 async function runHarnessInvocation(
@@ -678,6 +738,14 @@ async function runHarnessInvocation(
       else reject(new Error(`desktop: Harness invocation failed (${String(code)}, ${String(signal)}): ${diagnostic.slice(-4000)}`))
     })
   })
+}
+
+const PLUGIN_SNAPSHOT_JSON_MARKER = 'dsh:plugin-snapshot-json '
+
+function parsePluginSnapshotJson(output: string): unknown {
+  const line = output.split(/\r?\n/u).find(candidate => candidate.startsWith(PLUGIN_SNAPSHOT_JSON_MARKER))
+  if (line === undefined) throw new Error(`desktop: plugin snapshot command returned no structured result: ${output.slice(-2000)}`)
+  return JSON.parse(line.slice(PLUGIN_SNAPSHOT_JSON_MARKER.length)) as unknown
 }
 
 function parseDiagnosticLabDoctorOutput(output: string): DiagnosticLabDoctorResult {
@@ -915,7 +983,7 @@ function createWindow(): BrowserWindow {
       minWidth: 960,
       minHeight: 640,
       backgroundColor: desktopThemeBackground(desktopThemeSource, nativeTheme.shouldUseDarkColors),
-      icon: WINDOW_ICON,
+      icon: iconManager?.images().application ?? WINDOW_ICON,
       show: false,
     },
     rendererPreferences,
@@ -963,6 +1031,12 @@ function createWindow(): BrowserWindow {
   })
   mainWindow = window
   mainSurface = surface
+  const rendererId = surface.renderer.id
+  surface.renderer.on('destroyed', () => { iconManager?.discardOwner(rendererId) })
+  surface.renderer.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) iconManager?.discardOwner(rendererId)
+  })
+  if (iconManager !== undefined && tray !== undefined) iconManager.refresh(app.isPackaged)
   if (harnessOrigin === undefined) showLoading('starting')
   else void surface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))
   return window
@@ -971,7 +1045,16 @@ function createWindow(): BrowserWindow {
 async function startApplication(): Promise<void> {
   if (process.platform === 'win32') app.setAppUserModelId('ai.flaq.deepseek-harness')
   await app.whenReady()
-  applyDevelopmentDockIcon()
+  if (process.platform === 'darwin' || process.platform === 'win32') {
+    iconManager = new DesktopIconManager({
+      directory: join(app.getPath('userData'), 'icons'), platform: process.platform, packaged: app.isPackaged,
+      defaultApplication: nativeImage.createFromPath(process.platform === 'darwin' && !app.isPackaged ? DEVELOPMENT_DOCK_ICON : WINDOW_ICON),
+      defaultTray: nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : WINDOW_ICON),
+      apply: applyDesktopIcons,
+      notify: status => mainSurface?.send('dsh:desktop:icons:status', status),
+    })
+  }
+  applyStartupDockIcon()
   const dshHome = await prepareDesktopDshHome(DESKTOP_DATA_HOME)
   applyDesktopThemeSource(await readDesktopThemeSource(
     dshHome,
@@ -980,6 +1063,8 @@ async function startApplication(): Promise<void> {
   let harnessEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: dshHome,
+    DSH_DESKTOP_APPLICATION_VERSION: app.getVersion(),
+    DSH_DESKTOP_PNPM_VERSION: DESKTOP_PNPM_VERSION,
     DSH_PROFILE_SAFE_MODE_ON_FAILURE: '1',
   }
   try {
@@ -1021,6 +1106,10 @@ async function startApplication(): Promise<void> {
     downloadDirectory: join(app.getPath('userData'), 'updates'),
     getRelease: () => releaseChecker?.status ?? { phase: 'unsupported' },
     openPath: path => shell.openPath(path),
+  })
+  externalToolCompatibility = new ExternalToolCompatibilityManager({
+    cacheDirectory: join(app.getPath('userData'), 'external-tool-compatibility'),
+    desktopVersion: app.getVersion(),
   })
   releaseChecker?.subscribe((status) => {
     releaseDownloader?.resetForRelease(status)
@@ -1167,6 +1256,38 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return preferences
   })
+  const requireIcons = (sender: WebContents): DesktopIconManager => {
+    assertMainRenderer(sender)
+    if (iconManager === undefined) throw new Error('icon.unsupported')
+    return iconManager
+  }
+  ipcMain.handle('dsh:desktop:icons:get', event => requireIcons(event.sender).status())
+  ipcMain.handle('dsh:desktop:icons:choose', async (event) => {
+    const manager = requireIcons(event.sender)
+    const owner = event.sender.id
+    const options = { properties: ['openFile'] as const, filters: [{ name: 'PNG / JPEG', extensions: ['png', 'jpg', 'jpeg'] }] }
+    const picked = mainWindow === undefined
+      ? await dialog.showOpenDialog({ ...options, properties: ['openFile'] })
+      : await dialog.showOpenDialog(mainWindow, { ...options, properties: ['openFile'] })
+    if (event.sender.isDestroyed()) return null
+    assertMainRenderer(event.sender)
+    const path = picked.filePaths[0]
+    return picked.canceled || path === undefined ? null : manager.select(owner, path)
+  })
+  ipcMain.handle('dsh:desktop:icons:discard', (event, id: unknown) => {
+    requireIcons(event.sender).discard(event.sender.id, id)
+  })
+  ipcMain.handle('dsh:desktop:icons:apply', (event, id: unknown, target: unknown, crop: unknown) => {
+    return requireIcons(event.sender).apply(event.sender.id, id, target, crop)
+  })
+  ipcMain.handle('dsh:desktop:icons:follow', (event, follow: unknown) => requireIcons(event.sender).followTray(follow))
+  ipcMain.handle('dsh:desktop:icons:reset', (event, target: IconTarget) => requireIcons(event.sender).reset(target))
+  ipcMain.handle('dsh:desktop:icons:repair', event => requireIcons(event.sender).refresh(true))
+  ipcMain.handle('dsh:desktop:icons:create-shortcut', (event) => {
+    const manager = requireIcons(event.sender)
+    if (!app.isPackaged || process.platform !== 'win32') throw new Error('icon.unsupported')
+    return manager.refresh(true, true)
+  })
   ipcMain.handle('dsh:desktop:preferences:update', (event, patch: unknown) => {
     assertMainRenderer(event.sender)
     return updatePreferences(patch)
@@ -1183,6 +1304,24 @@ async function startApplication(): Promise<void> {
   ipcMain.handle('dsh:desktop:log:open', (event) => {
     assertMainRenderer(event.sender)
     return openHarnessLog()
+  })
+  ipcMain.handle('dsh:desktop:settings:open', async (event): Promise<{ error: string }> => {
+    assertMainRenderer(event.sender)
+    const settingsPath = join(dshHome, 'settings.yaml')
+    try {
+      await lstat(settingsPath)
+      shell.showItemInFolder(settingsPath)
+      return { error: '' }
+    } catch {
+      const error = await shell.openPath(dshHome)
+      return { error }
+    }
+  })
+  ipcMain.handle('dsh:desktop:settings:reset', async (event): Promise<{ backupName?: string; restarting: true }> => {
+    assertMainRenderer(event.sender)
+    const { backupName } = await backupAndResetDesktopSettings(dshHome)
+    setTimeout(() => { requestDesktopRestart() }, 250)
+    return { ...(backupName === undefined ? {} : { backupName }), restarting: true }
   })
   ipcMain.handle('dsh:desktop:cli:get', async (event): Promise<DesktopCliStatus> => {
     assertMainRenderer(event.sender)
@@ -1225,6 +1364,12 @@ async function startApplication(): Promise<void> {
     if (rendererOrigin !== harnessOrigin || reportedDesktopReadiness.has(phase)) return
     reportedDesktopReadiness.add(phase)
     void appendDesktopStartupLog(phase === 'client' ? 'client ready' : 'event-dispatch is ready')
+    pluginSnapshotManager?.reportReadiness(phase)
+    if (reportedDesktopReadiness.size === 2) {
+      void pluginSnapshotManager?.markBootable().catch((error: unknown) => {
+        console.warn('desktop: could not retain the latest bootable plugin snapshot', error)
+      })
+    }
   })
   ipcMain.handle('dsh:desktop:releases:get', (event): DesktopReleaseStatus => {
     assertMainRenderer(event.sender)
@@ -1298,6 +1443,16 @@ async function startApplication(): Promise<void> {
       throw new TypeError('desktop: invalid bundled plugin request')
     }
     return bundledPluginInstaller?.startManual(profile, packageSpec) ?? { handled: false }
+  })
+  ipcMain.handle('dsh:desktop:external-tools:resolve', async (event, toolId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (typeof toolId !== 'string' || !EXTERNAL_TOOL_IDS.includes(toolId as DesktopExternalToolId)) {
+      throw new TypeError('desktop: invalid external tool id')
+    }
+    if (externalToolCompatibility === undefined) {
+      throw new Error('desktop: external-tool compatibility resolver is unavailable')
+    }
+    return externalToolCompatibility.resolve(toolId as DesktopExternalToolId)
   })
   ipcMain.handle('dsh:desktop:bundled-plugins:start-deferred', async (
     event,
@@ -1453,6 +1608,41 @@ async function startApplication(): Promise<void> {
     }
     return diagnosticLabManager.exportReport(runId)
   })
+  ipcMain.handle('dsh:desktop:plugin-snapshots:list', (event): Promise<readonly PluginSnapshotSummary[]> => {
+    assertMainRenderer(event.sender)
+    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
+    return pluginSnapshotManager.list()
+  })
+  ipcMain.handle('dsh:desktop:plugin-snapshots:create', (event, label: unknown) => {
+    assertMainRenderer(event.sender)
+    if (label !== undefined && typeof label !== 'string') throw new TypeError('desktop: invalid plugin snapshot label')
+    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
+    return pluginSnapshotManager.create(label)
+  })
+  ipcMain.handle('dsh:desktop:plugin-snapshots:remove', (event, snapshotId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (typeof snapshotId !== 'string') throw new TypeError('desktop: invalid plugin snapshot id')
+    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
+    return pluginSnapshotManager.remove(snapshotId)
+  })
+  ipcMain.handle('dsh:desktop:plugin-snapshots:restore', (
+    event,
+    snapshotId: unknown,
+    networkAllowed: unknown,
+  ): PluginSnapshotRestoreSnapshot => {
+    assertMainRenderer(event.sender)
+    if (typeof snapshotId !== 'string' || typeof networkAllowed !== 'boolean') {
+      throw new TypeError('desktop: invalid plugin snapshot restore request')
+    }
+    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
+    return pluginSnapshotManager.startRestore(snapshotId, networkAllowed)
+  })
+  ipcMain.handle('dsh:desktop:plugin-snapshots:restore:get', (event, operationId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (typeof operationId !== 'string') throw new TypeError('desktop: invalid plugin snapshot restore operation')
+    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
+    return pluginSnapshotManager.current(operationId)
+  })
   ipcMain.on('dsh:window:minimize', (event) => {
     const surface = mainSurface
     if (surface !== undefined && isDesktopRenderer(event.sender, surface.titlebarRenderer)) surface.window.minimize()
@@ -1557,6 +1747,12 @@ async function startApplication(): Promise<void> {
   } catch (error) {
     console.warn('desktop: could not refresh the registered dsh command', error)
   }
+  const runSnapshotCommand = async <T>(args: readonly string[]): Promise<T> => {
+    const output = await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
+      'plugin', '--profile', 'web', 'snapshot', ...args,
+    ], launchOptions))
+    return parsePluginSnapshotJson(output) as T
+  }
   publishStartupProgress({ stage: 'checking-profile', progress: 28 })
   let initialProfileRepairDiagnostic: string
   try {
@@ -1617,15 +1813,43 @@ async function startApplication(): Promise<void> {
       console.error(error)
     },
   })
-  await bundledPluginInstaller.seedStartup((progress) => {
-    publishStartupProgress(mapBundledPluginProgress(
-      progress.entry.packageName,
-      progress.index,
-      progress.total,
-      progress.stage,
-      progress.progress,
-    ))
-  })
+  let seedSnapshot: { snapshotId: string; deduplicated?: true } | undefined
+  harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = randomUUID()
+  harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID = String(process.pid)
+  try {
+    seedSnapshot = await runSnapshotCommand<{ snapshotId: string; deduplicated?: true }>(['begin-startup-seed'])
+    harnessEnvironment.DSH_PLUGIN_SNAPSHOT_BATCH = '1'
+  } catch (error) {
+    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
+    console.warn('desktop: could not begin the bundled-plugin snapshot batch; installation will continue', error)
+  }
+  try {
+    await bundledPluginInstaller.seedStartup((progress) => {
+      publishStartupProgress(mapBundledPluginProgress(
+        progress.entry.packageName,
+        progress.index,
+        progress.total,
+        progress.stage,
+        progress.progress,
+      ))
+    })
+  } finally {
+    if (seedSnapshot !== undefined) {
+      try {
+        await runSnapshotCommand([
+          'finalize',
+          seedSnapshot.snapshotId,
+          ...(seedSnapshot.deduplicated === true ? ['--preserve-if-unchanged'] : []),
+        ])
+      } catch (error) {
+        console.warn('desktop: could not finalize the bundled-plugin snapshot batch', error)
+      }
+    }
+    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_BATCH
+    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
+  }
   await appendDesktopStartupLog('Bundled startup plugin seeding completed.')
   const installedProfileDependencies: Record<string, string> = {}
   try {
@@ -1694,9 +1918,77 @@ async function startApplication(): Promise<void> {
       }
     },
     onFailure: (failure) => {
-      showLoading('failed', { ...failure, logPath: harnessLogPath })
-      showNotification('failed', notificationCopy.failed)
+      if (pluginSnapshotManager === undefined) {
+        showLoading('failed', { ...failure, logPath: harnessLogPath })
+        showNotification('failed', notificationCopy.failed)
+        return
+      }
+      void pluginSnapshotManager.handleHarnessFailure(failure.message).then((handled) => {
+        if (handled) return
+        showLoading('failed', { ...failure, logPath: harnessLogPath })
+        showNotification('failed', notificationCopy.failed)
+      }, (error: unknown) => {
+        console.error('desktop: plugin snapshot rollback after startup failure failed', error)
+        showLoading('failed', { ...failure, logPath: harnessLogPath })
+        showNotification('failed', notificationCopy.failed)
+      })
     },
+  })
+  let restoreLeaseToken: string | undefined
+  pluginSnapshotManager = new PluginSnapshotManager({
+    listSnapshots: () => runSnapshotCommand<readonly PluginSnapshotSummary[]>(['list']),
+    createSnapshot: (kind, label) => runSnapshotCommand<{ snapshotId: string; kind: typeof kind }>(
+      kind === 'manual'
+        ? ['create', ...(label === undefined ? [] : [label])]
+        : [kind === 'bootable' ? 'mark-bootable' : 'create-safety'],
+    ),
+    removeSnapshot: async (snapshotId) => { await runSnapshotCommand(['remove', snapshotId]) },
+    restoreFiles: async (snapshotId) => { await runSnapshotCommand(['restore-files', snapshotId]) },
+    settleSafety: async (snapshotId) => { await runSnapshotCommand(['settle-safety', snapshotId]) },
+    beginMutationLease: async () => {
+      if (restoreLeaseToken !== undefined) throw new Error('desktop: plugin snapshot restore lease is already active')
+      const token = randomUUID()
+      restoreLeaseToken = token
+      harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = token
+      harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID = String(process.pid)
+      try {
+        await runSnapshotCommand(['begin-restore-lease'])
+      } catch (error) {
+        restoreLeaseToken = undefined
+        delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+        delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
+        throw error
+      }
+    },
+    endMutationLease: async () => {
+      if (restoreLeaseToken === undefined) return
+      try {
+        await runSnapshotCommand(['end-restore-lease'])
+      } finally {
+        restoreLeaseToken = undefined
+        delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+        delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
+      }
+    },
+    suspendHarness: async () => { await supervisor?.stop() },
+    resumeHarness: () => { supervisor?.resume() },
+    installProfile: async (offline) => {
+      await runPackageManagerInvocation(
+        ['install', ...(offline ? ['--offline'] : []), '--frozen-lockfile'],
+        join(dshHome, 'profiles', 'web'),
+        harnessEnvironment,
+        launchOptions,
+        120_000,
+      )
+    },
+    doctorHealthy: async () => {
+      const output = await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
+        'plugin', '--profile', 'web', 'doctor',
+      ], launchOptions), [0, 2])
+      return parseDiagnosticLabDoctorOutput(output).status === 'healthy'
+    },
+    onStatus: (snapshot) => { mainSurface?.send('dsh:desktop:plugin-snapshots:status', snapshot) },
+    journalPath: join(dshHome, 'plugin-snapshots', 'v1', 'restore-journal.json'),
   })
   diagnosticLabManager = new DiagnosticLabManager({
     root: join(app.getPath('userData'), 'diagnostic-lab'),
@@ -1742,6 +2034,11 @@ async function startApplication(): Promise<void> {
     await diagnosticLabManager.recoverPending()
   } catch (error) {
     console.error('desktop: diagnostic lab startup recovery failed; continuing with supervised Harness startup', error)
+  }
+  try {
+    await pluginSnapshotManager.recoverPending()
+  } catch (error) {
+    console.error('desktop: plugin snapshot startup recovery failed; retaining the failure for manual recovery', error)
   }
   supervisor.start()
 

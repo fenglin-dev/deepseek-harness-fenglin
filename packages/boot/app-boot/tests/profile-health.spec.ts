@@ -16,6 +16,7 @@ import {
   initProfile,
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
+  inspectProfileBundleEntryOwnership,
   inspectUnresolvableProfileBundleEntries,
   listQuarantinedProfilePlugins,
   inspectQuarantineRemovalResidue,
@@ -220,6 +221,88 @@ describe('profile shared Host dependency inspection', () => {
 })
 
 describe('profile composition inspection', () => {
+  it('does not isolate comment text or a dynamic optional import during static preflight', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, [])
+    const packageName = 'fixture-optional-ui'
+    const pluginDir = join(profileDir, 'node_modules', packageName)
+    writeManifest(join(pluginDir, 'package.json'), {
+      name: packageName,
+      version: '1.0.0',
+      exports: './index.js',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+    writeFileSync(join(pluginDir, 'index.js'), '// import "fixture-comment-only"\nexport async function optional() { return import("fixture-optional") }\n')
+    writeFileSync(join(pluginDir, 'cordis.patch.yml'), `- insert:\n  - id: optional-ui\n    name: ${packageName}\n`)
+    writeProfileManifest(profileDir, {
+      dependencies: { [packageName]: '1.0.0' },
+      dsh: { profile: { bundles: [packageName] } },
+    })
+
+    expect(inspectUnresolvableProfileBundleEntries({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toEqual([])
+  })
+
+  it('attributes a Loader static dependency failure to the enabled aggregate bundle', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, [])
+    const packageName = '@fixture/web-ui-all'
+    const pluginDir = join(profileDir, 'node_modules', packageName)
+    writeManifest(join(pluginDir, 'package.json'), {
+      name: packageName,
+      version: '1.0.0',
+      exports: './index.js',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+    writeFileSync(join(pluginDir, 'index.js'), 'import "@fixture/definitely-missing-host"\nexport function apply() {}\n')
+    writeFileSync(join(pluginDir, 'cordis.patch.yml'), `- insert:\n  - id: aggregate-ui\n    name: '${packageName}'\n`)
+    writeProfileManifest(profileDir, {
+      name: 'dsh-profile-web',
+      dependencies: { [packageName]: '1.0.0' },
+      dsh: { profile: { bundles: [packageName] } },
+    })
+    expect(inspectProfileBundleEntryOwnership(
+      { binName: 'test', profile: 'web', installAnchor: anchor, home },
+      'aggregate-ui',
+      packageName,
+    )).toMatchObject({ rootPackage: packageName })
+
+    expect(inspectUnresolvableProfileBundleEntries({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toEqual([expect.objectContaining({
+      rootPackage: packageName,
+      entryId: 'aggregate-ui',
+      moduleName: packageName,
+      missingModule: '@fixture/definitely-missing-host',
+      importerPackage: packageName,
+      failureKind: 'loader-dependency',
+    })])
+
+    const result = repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      runPackageManager: () => ({ exitCode: 0 }),
+    })
+    expect(result).toMatchObject({
+      status: 'quarantined',
+      quarantined: [{ packageName, reason: 'loader-dependency-unavailable' }],
+      issues: [{
+        code: 'loader.dependency-unavailable',
+        attribution: {
+          rootPackage: packageName,
+          missingModule: '@fixture/definitely-missing-host',
+        },
+      }],
+    })
+  })
+
   it('attributes a scoped bundle whose patch loads a missing unscoped module and quarantines it', () => {
     const { anchor } = stageHarness()
     const home = temporaryDirectory('dsh-health-home-')

@@ -19,6 +19,8 @@ const SCENARIO_TITLES: Record<DiagnosticLabScenarioId, PluginInventoryLocaleKey>
   'quarantine-removal-residue': 'lab.scenario.quarantineRemoval.title',
   'client-module-unavailable': 'lab.scenario.clientModule.title',
   'loader-package-name-mismatch': 'lab.scenario.loaderPackageNameMismatch.title',
+  'loader-dependency-unavailable': 'lab.scenario.loaderDependency.title',
+  'settings-invalid': 'lab.scenario.settingsInvalid.title',
   'module-resolution-missing': 'lab.scenario.module.title',
   'patch-invalid': 'lab.scenario.patch.title',
   'loader-duplicate': 'lab.scenario.duplicate.title',

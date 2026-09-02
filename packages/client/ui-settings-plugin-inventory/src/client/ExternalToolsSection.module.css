@@ -13,7 +13,7 @@
   justify-content: space-between;
   gap: 24px;
   padding: 4px 0 20px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .eyebrow {
@@ -45,6 +45,7 @@
 .status {
   flex: none;
   border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
@@ -72,7 +73,7 @@
   min-height: 210px;
   flex-direction: column;
   padding: 16px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 16px;
   background: var(--dsw-alias-bg-layer-2);
   box-sizing: border-box;

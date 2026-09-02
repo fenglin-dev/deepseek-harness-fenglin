@@ -1,6 +1,7 @@
 /** Narrow update bridge for the trusted Harness renderer. */
 
 import { contextBridge, ipcRenderer } from 'electron'
+import type { DesktopIconsBridge, DesktopIconStatus, IconSelection } from './icon-protocol.ts'
 import type { OpenLogResult } from './log-reveal.ts'
 import type { DesktopPreferences, DesktopPreferencesPatch } from './preferences.ts'
 import type { DesktopReleaseStatus } from './release-checker.ts'
@@ -26,6 +27,14 @@ import type {
   DiagnosticLabScenario,
   DiagnosticLabStartRequest,
 } from './diagnostic-lab.ts'
+import type {
+  PluginSnapshotRestoreSnapshot,
+  PluginSnapshotSummary,
+} from './plugin-snapshot-manager.ts'
+import type {
+  DesktopExternalToolId,
+  ExternalToolInstallResolution,
+} from './external-tool-compatibility-manifest.ts'
 import {
   parseDesktopStartupProgress,
   type DesktopStartupProgress,
@@ -64,6 +73,8 @@ export interface DesktopShellBridge {
   updatePreferences(patch: DesktopPreferencesPatch): Promise<DesktopPreferences>
   onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
   openLog(): Promise<OpenLogResult>
+  openSettingsDocument(): Promise<{ error: string }>
+  backupAndResetSettings(): Promise<{ backupName?: string; restarting: true }>
   restart(): Promise<{ restarting: true }>
   getCommandLine(): Promise<DesktopCliStatus>
   installCommandLine(force: boolean): Promise<DesktopCliStatus>
@@ -91,6 +102,11 @@ export interface DesktopBundledPluginsBridge {
   getInstall(installId: string): Promise<BundledPluginInstallSnapshot>
 }
 
+/** Closed external-tool ids resolved to signed, exact coordinates by main. */
+export interface DesktopExternalToolsBridge {
+  resolve(toolId: DesktopExternalToolId): Promise<ExternalToolInstallResolution>
+}
+
 /** Opaque-id restore operations; package specs never cross from renderer to main. */
 export interface DesktopImportedPluginsBridge {
   readonly development?: true
@@ -113,6 +129,16 @@ export interface DesktopDiagnosticLabBridge {
   restoreAll(runId: string): Promise<DiagnosticLabRunSnapshot>
   exportReport(runId: string): Promise<string>
   onStatus(callback: (snapshot: DiagnosticLabRunSnapshot) => void): () => void
+}
+
+/** Opaque Profile plugin snapshot operations owned by Electron. */
+export interface DesktopPluginSnapshotsBridge {
+  list(): Promise<readonly PluginSnapshotSummary[]>
+  create(label?: string): Promise<{ readonly snapshotId: string }>
+  remove(snapshotId: string): Promise<readonly PluginSnapshotSummary[]>
+  startRestore(snapshotId: string, networkAllowed: boolean): Promise<PluginSnapshotRestoreSnapshot>
+  getRestore(operationId: string): Promise<PluginSnapshotRestoreSnapshot>
+  onStatus(callback: (snapshot: PluginSnapshotRestoreSnapshot) => void): () => void
 }
 
 /** Device-local background persistence owned by the desktop data directory. */
@@ -138,6 +164,10 @@ const shellBridge: DesktopShellBridge = {
     return () => { ipcRenderer.removeListener('dsh:desktop:preferences', listener) }
   },
   openLog: () => ipcRenderer.invoke('dsh:desktop:log:open') as Promise<OpenLogResult>,
+  openSettingsDocument: () => ipcRenderer.invoke('dsh:desktop:settings:open') as Promise<{ error: string }>,
+  backupAndResetSettings: () => ipcRenderer.invoke(
+    'dsh:desktop:settings:reset',
+  ) as Promise<{ backupName?: string; restarting: true }>,
   restart: () => ipcRenderer.invoke('dsh:desktop:restart') as Promise<{ restarting: true }>,
   getCommandLine: () => ipcRenderer.invoke('dsh:desktop:cli:get') as Promise<DesktopCliStatus>,
   installCommandLine: force => ipcRenderer.invoke('dsh:desktop:cli:install', force) as Promise<DesktopCliStatus>,
@@ -179,6 +209,12 @@ const bundledPluginsBridge: DesktopBundledPluginsBridge = {
   getInstall: installId => ipcRenderer.invoke('dsh:desktop:bundled-plugins:get', installId) as Promise<BundledPluginInstallSnapshot>,
 }
 
+const externalToolsBridge: DesktopExternalToolsBridge = {
+  resolve: toolId => ipcRenderer.invoke(
+    'dsh:desktop:external-tools:resolve', toolId,
+  ) as Promise<ExternalToolInstallResolution>,
+}
+
 const importedPluginsBridge: DesktopImportedPluginsBridge = {
   get: () => ipcRenderer.invoke('dsh:desktop:imported-plugins:get') as Promise<ImportedPluginRestoreSnapshot | undefined>,
   checkSources: () => ipcRenderer.invoke(
@@ -216,6 +252,25 @@ const diagnosticLabBridge: DesktopDiagnosticLabBridge = {
   },
 }
 
+const pluginSnapshotsBridge: DesktopPluginSnapshotsBridge = {
+  list: () => ipcRenderer.invoke('dsh:desktop:plugin-snapshots:list') as Promise<readonly PluginSnapshotSummary[]>,
+  create: label => ipcRenderer.invoke('dsh:desktop:plugin-snapshots:create', label) as Promise<{ readonly snapshotId: string }>,
+  remove: snapshotId => ipcRenderer.invoke(
+    'dsh:desktop:plugin-snapshots:remove', snapshotId,
+  ) as Promise<readonly PluginSnapshotSummary[]>,
+  startRestore: (snapshotId, networkAllowed) => ipcRenderer.invoke(
+    'dsh:desktop:plugin-snapshots:restore', snapshotId, networkAllowed,
+  ) as Promise<PluginSnapshotRestoreSnapshot>,
+  getRestore: operationId => ipcRenderer.invoke(
+    'dsh:desktop:plugin-snapshots:restore:get', operationId,
+  ) as Promise<PluginSnapshotRestoreSnapshot>,
+  onStatus(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, snapshot: PluginSnapshotRestoreSnapshot): void => { callback(snapshot) }
+    ipcRenderer.on('dsh:desktop:plugin-snapshots:status', listener)
+    return () => { ipcRenderer.removeListener('dsh:desktop:plugin-snapshots:status', listener) }
+  },
+}
+
 const chatBackgroundBridge: DesktopChatBackgroundBridge = {
   read: () => ipcRenderer.invoke('dsh:desktop:chat-background:read') as Promise<DesktopChatBackground | undefined>,
   write: background => ipcRenderer.invoke(
@@ -224,14 +279,32 @@ const chatBackgroundBridge: DesktopChatBackgroundBridge = {
 }
 
 const sourceMode = process.argv.includes('--dsh-source')
+const iconsBridge: DesktopIconsBridge = {
+  getStatus: () => ipcRenderer.invoke('dsh:desktop:icons:get') as Promise<DesktopIconStatus>,
+  choose: () => ipcRenderer.invoke('dsh:desktop:icons:choose') as Promise<IconSelection | null>,
+  discard: id => ipcRenderer.invoke('dsh:desktop:icons:discard', id) as Promise<void>,
+  apply: (id, target, crop) => ipcRenderer.invoke('dsh:desktop:icons:apply', id, target, crop) as Promise<DesktopIconStatus>,
+  followTray: follow => ipcRenderer.invoke('dsh:desktop:icons:follow', follow) as Promise<DesktopIconStatus>,
+  reset: target => ipcRenderer.invoke('dsh:desktop:icons:reset', target) as Promise<DesktopIconStatus>,
+  repairShortcuts: () => ipcRenderer.invoke('dsh:desktop:icons:repair') as Promise<DesktopIconStatus>,
+  createShortcut: () => ipcRenderer.invoke('dsh:desktop:icons:create-shortcut') as Promise<DesktopIconStatus>,
+  onStatus(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, status: DesktopIconStatus): void => { callback(status) }
+    ipcRenderer.on('dsh:desktop:icons:status', listener)
+    return () => { ipcRenderer.removeListener('dsh:desktop:icons:status', listener) }
+  },
+}
 contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
   shell: Object.freeze(shellBridge),
+  icons: Object.freeze(iconsBridge),
   releases: Object.freeze(releasesBridge),
   bundledPlugins: Object.freeze(bundledPluginsBridge),
+  externalTools: Object.freeze(externalToolsBridge),
   importedPlugins: Object.freeze(sourceMode
     ? { ...importedPluginsBridge, development: true as const }
     : importedPluginsBridge),
   diagnosticLab: Object.freeze(diagnosticLabBridge),
+  pluginSnapshots: Object.freeze(pluginSnapshotsBridge),
   chatBackground: Object.freeze(chatBackgroundBridge),
   ...(sourceMode ? {
     updater: Object.freeze(bridge),
@@ -278,6 +351,15 @@ function installLoadingPage(): void {
       unreadableDataHome: '无法读取所选目录，请检查目录权限后重试。',
       unchangedDataHome: '当前已在使用这个配置目录，请选择其他目录。',
       switchDataHomeFailed: '配置目录切换失败，请重试或查看日志。',
+      snapshotTitle: '从插件快照恢复',
+      snapshotDescription: '只回退插件依赖、版本、顺序和构建许可，不会回退会话、凭据或插件配置。',
+      snapshotNetwork: '本地缓存不完整时允许联网下载',
+      snapshotRestore: '恢复并重新启动',
+      snapshotConfirm: '将停止 Harness 并恢复所选插件快照。会话、凭据和插件配置不会改变。是否继续？',
+      snapshotFailed: '插件快照恢复失败',
+      snapshotRunning: '正在校验、恢复并重新启动…',
+      snapshotNeedsNetwork: '本地缓存不完整，原状态已恢复。勾选允许联网后可再次恢复。',
+      snapshotRolledBack: '所选快照未能安全启动，已自动恢复到操作前状态。',
       slow: '启动时间较长，你可以打开 Harness 日志查看当前进度。',
       stages: {
         'preparing-desktop': '正在准备桌面环境',
@@ -304,6 +386,15 @@ function installLoadingPage(): void {
       unreadableDataHome: 'The selected directory cannot be read. Check its permissions and try again.',
       unchangedDataHome: 'This configuration directory is already active. Choose a different directory.',
       switchDataHomeFailed: 'Could not switch the configuration directory. Retry or inspect the log.',
+      snapshotTitle: 'Restore a plugin snapshot',
+      snapshotDescription: 'Roll back plugin dependencies, versions, order, and build permissions only. Sessions, credentials, and plugin configuration are unchanged.',
+      snapshotNetwork: 'Allow network downloads if the local cache is incomplete',
+      snapshotRestore: 'Restore and restart',
+      snapshotConfirm: 'Harness will stop and restore the selected plugin snapshot. Sessions, credentials, and plugin configuration will not change. Continue?',
+      snapshotFailed: 'Plugin snapshot restore failed',
+      snapshotRunning: 'Verifying, restoring, and restarting…',
+      snapshotNeedsNetwork: 'The local cache is incomplete and the prior state was restored. Allow network access to retry.',
+      snapshotRolledBack: 'The selected snapshot did not start safely, so the pre-restore state was restored.',
       slow: 'Startup is taking longer than expected. Open the Harness log to inspect its progress.',
       stages: {
         'preparing-desktop': 'Preparing desktop environment',
@@ -330,6 +421,14 @@ function installLoadingPage(): void {
   const retry = document.querySelector<HTMLButtonElement>('#retry')
   const switchDataHome = document.querySelector<HTMLButtonElement>('#switch-data-home')
   const openLogs = document.querySelector<HTMLButtonElement>('#open-logs')
+  const snapshotRecovery = document.querySelector<HTMLElement>('#snapshot-recovery')
+  const snapshotTitle = document.querySelector<HTMLElement>('#snapshot-title')
+  const snapshotDescription = document.querySelector<HTMLElement>('#snapshot-description')
+  const snapshotSelect = document.querySelector<HTMLSelectElement>('#snapshot-select')
+  const snapshotNetwork = document.querySelector<HTMLInputElement>('#snapshot-network')
+  const snapshotNetworkLabel = document.querySelector<HTMLLabelElement>('.snapshot-network')
+  const snapshotRestore = document.querySelector<HTMLButtonElement>('#snapshot-restore')
+  const snapshotStatus = document.querySelector<HTMLElement>('#snapshot-status')
   const directoryError = document.querySelector<HTMLElement>('#directory-error')
   const slow = document.querySelector<HTMLElement>('#slow')
   const slowMessage = document.querySelector<HTMLElement>('#slow-message')
@@ -338,7 +437,10 @@ function installLoadingPage(): void {
     title === null || description === null || progress === null || progressSurface === null
     || progressBar === null || progressTask === null || progressPercent === null || failure === null
     || message === null || logPath === null || retry === null || switchDataHome === null
-    || openLogs === null || directoryError === null
+    || openLogs === null || directoryError === null || snapshotRecovery === null
+    || snapshotTitle === null || snapshotDescription === null || snapshotSelect === null
+    || snapshotNetwork === null || snapshotNetworkLabel === null || snapshotRestore === null
+    || snapshotStatus === null
     || slow === null || slowMessage === null || openSlowLog === null
   ) return
   title.textContent = copy.startupTitle
@@ -393,6 +495,71 @@ function installLoadingPage(): void {
   switchDataHome.textContent = copy.switchDataHome
   progressSurface.hidden = true
   failure.hidden = false
+  snapshotTitle.textContent = copy.snapshotTitle
+  snapshotDescription.textContent = copy.snapshotDescription
+  const snapshotNetworkCopy = snapshotNetworkLabel.lastChild
+  if (snapshotNetworkCopy !== null) snapshotNetworkCopy.textContent = ` ${copy.snapshotNetwork}`
+  snapshotRestore.textContent = copy.snapshotRestore
+  let restoreOperationId: string | undefined
+  ipcRenderer.on('dsh:desktop:plugin-snapshots:status', (_event, value: unknown) => {
+    if (value === null || typeof value !== 'object') return
+    const status = value as Partial<PluginSnapshotRestoreSnapshot>
+    if (typeof status.operationId !== 'string' || typeof status.phase !== 'string'
+      || (restoreOperationId !== undefined && status.operationId !== restoreOperationId)) return
+    restoreOperationId = status.operationId
+    if (status.phase === 'needs-network') {
+      snapshotStatus.textContent = status.message ?? copy.snapshotNeedsNetwork
+      snapshotNetwork.checked = true
+      snapshotRestore.disabled = false
+      return
+    }
+    if (status.phase === 'rolled-back') {
+      snapshotStatus.textContent = status.message ?? copy.snapshotRolledBack
+      snapshotRestore.disabled = false
+      return
+    }
+    if (status.phase === 'failed') {
+      snapshotStatus.textContent = `${copy.snapshotFailed}${status.message === undefined ? '' : `: ${status.message}`}`
+      snapshotRestore.disabled = false
+      return
+    }
+    snapshotStatus.textContent = copy.snapshotRunning
+  })
+  void ipcRenderer.invoke('dsh:desktop:plugin-snapshots:list').then((value: unknown) => {
+    if (!Array.isArray(value)) return
+    const snapshots = (value as PluginSnapshotSummary[]).filter(snapshot => snapshot.kind !== 'safety')
+    if (snapshots.length === 0) return
+    snapshotSelect.replaceChildren(...snapshots.map((snapshot) => {
+      const option = document.createElement('option')
+      option.value = snapshot.snapshotId
+      const name = snapshot.label ?? (snapshot.kind === 'bootable'
+        ? (chinese ? '最近成功启动' : 'Last successful startup')
+        : (chinese ? '自动快照' : 'Automatic snapshot'))
+      option.textContent = `${name} · ${new Date(snapshot.createdAt).toLocaleString()}`
+      return option
+    }))
+    snapshotRecovery.hidden = false
+  }, () => {
+    // The other recovery actions remain available when snapshot discovery fails.
+  })
+  snapshotRestore.addEventListener('click', () => {
+    const snapshotId = snapshotSelect.value
+    if (snapshotId === '' || !window.confirm(copy.snapshotConfirm)) return
+    snapshotRestore.disabled = true
+    snapshotStatus.textContent = copy.snapshotRunning
+    snapshotStatus.hidden = false
+    void ipcRenderer.invoke(
+      'dsh:desktop:plugin-snapshots:restore', snapshotId, snapshotNetwork.checked,
+    ).then((value: unknown) => {
+      if (value !== null && typeof value === 'object') {
+        const operationId = (value as { operationId?: unknown }).operationId
+        if (typeof operationId === 'string') restoreOperationId = operationId
+      }
+    }).catch((error: unknown) => {
+      snapshotStatus.textContent = `${copy.snapshotFailed}: ${error instanceof Error ? error.message : String(error)}`
+      snapshotRestore.disabled = false
+    })
+  })
   retry.addEventListener('click', () => {
     retry.disabled = true
     void ipcRenderer.invoke('dsh:harness:retry').finally(() => { retry.disabled = false })

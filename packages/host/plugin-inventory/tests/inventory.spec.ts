@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context, type Plugin } from '@deepseek-ai/cordis'
+import { Context, FiberState, type Plugin } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
@@ -300,7 +300,7 @@ describe('PluginInventoryGateway', () => {
   it('exports a redacted current diagnostic bundle with runtime and Loader facts', async () => {
     const { ctx, inventory } = await harness()
     await ctx.loader.create({ name: 'cordis:pending' })
-    const exported = JSON.parse(inventory.exportDiagnostics()) as PluginDiagnosticExport
+    const exported = JSON.parse(await inventory.exportDiagnostics()) as PluginDiagnosticExport
     expect(exported).toMatchObject({
       schema: 'dsh/profile-diagnostic-export/v1',
       diagnosticSchema: 'dsh/profile-diagnostic/v2',

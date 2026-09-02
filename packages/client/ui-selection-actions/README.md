@@ -33,6 +33,8 @@ A primary-button selection opens a compact toolbar, while right-clicking an elig
 
 Only ranges wholly contained by `data-selection-actions-scope` are accepted. Inputs, editors, controls, dialogs, menus, settings portals, and the sidebar remain outside the feature. Actions disappear when the target composer or session cannot safely accept a draft.
 
+No invariant companion is published because the browser selection scope and immutable snapshot checks are enforced directly by the feature.
+
 <a id="model-experience"></a>
 ## Model Experience
 

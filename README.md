@@ -144,6 +144,28 @@ Cordis 的 Context、Service 注册和部分工具运行时依赖对象与 `Symb
 
 简单来说：以前 pnpm 和 Cordis 报错像是在读密码；现在客户端会尽量把它翻译成“谁出了问题、为什么出问题、系统采取了什么保护、能不能自动修，以及下一步该怎么做”。
 
+### 诊断演练中心
+
+开发版与安装版都提供诊断演练中心。它使用客户端携带的离线故障样本，复现 Host 共享依赖影子副本、孤立 Bundle、scoped 根包与 unscoped Loader 名不匹配、聚合插件内部依赖缺失、损坏的 `settings.yaml`、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断，并展示“注入、检测、修复、复检、清理”的完整时间线。
+
+<p align="center">
+  <img src="./assets/readme/diagnostics-lab-sandbox-zh.png" width="900" alt="诊断演练中心的隔离沙盒场景选择">
+  <br>
+  <sub>隔离沙盒：离线选择并演练多类故障，不修改用户 Profile</sub>
+</p>
+
+<p align="center">
+  <img src="./assets/readme/diagnostics-lab-live-profile-zh.png" width="900" alt="诊断演练中心的真实 Profile 高级演练">
+  <br>
+  <sub>真实 Profile 高级演练：验证实际隔离、恢复与复检链路</sub>
+</p>
+
+用户可以选择一个或多个场景，运行器会依次执行并持续展示当前场景、执行阶段、剩余场景、通过状态和耗时；全局进度卡在 Harness 渲染器重载期间仍会保留任务状态。默认隔离演练不修改用户 Profile；高级真实 Profile 演练会暂停 Harness、记录受管文件哈希和恢复日志，并在完成后恢复与复检。无法确认现场恢复干净时，客户端不会继续加载 Profile 插件。每次演练都会持久化经过用户名、路径和凭据脱敏的 JSON 与文本摘要，并可从界面导出 JSON 报告。
+
+> [!CAUTION]
+>
+> 真实演练此版本也没有把握一定能过，请提前备份配置文件或者使用隔离配置目录，有较高崩溃风险！不适合生产使用此模式测试。如确有真实测试需要，请一次仅开启1项进行。
+
 ## 文本划选与右键菜单
 
 在对话消息、工具输出、详情和文件预览等只读正文中划选文本后，选区附近会显示横向快捷工具条；右键点击已经选中的文本，则会显示带图标和文字的竖向圆角菜单。
@@ -195,7 +217,7 @@ Electron 不只是包住 Web 页面的外壳。桌面宿主负责运行时准备
 
 ### Codex 与 Claude Code 按需安装
 
-Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免携带用户不需要的平台依赖。用户在“设置 → 外部工具”点击安装后，客户端才会联网下载与当前 Harness 版本匹配的官方包；Node 与 pnpm 由安装包提供，无需系统另行安装。
+Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免携带用户不需要的平台依赖。用户在“设置 → 外部工具”点击安装后，客户端才会联网下载经过审核的官方包；Node 与 pnpm 由安装包提供，无需系统另行安装。打包/发布门禁会先验证精确 Provider、原生运行时、平台包和 SHA-512 坐标确实存在；已发布客户端还会读取由 GitHub OIDC/Sigstore 签名的兼容清单。签名身份、摘要、有效期或网络校验失败时只使用安装包内置的已知可用精确版本，不会猜测同版本包，也不会退回 `latest`。
 
 连接成功后，完整模式的已有会话和新会话会在下一轮安全边界获得对应工具，正在运行的回合不会被中途改写，精简模式继续保持最小工具集。断开连接只撤下工具，不删除 Harness 会话或外部产品自身的数据。
 
@@ -207,7 +229,29 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 ### 六个本地预设插件
 
-安装包携带五个经过完整性校验的插件归档：插件市场、`dsh-im`、`dsh-skill-picker`、Better Sidebar 和 `dsh-pocket`。安装时使用包内本地归档，不会临时联网下载这些插件本体；普通传递依赖仍由 Profile 的 pnpm 解析规则管理。
+安装包携带五个启动预设的完整性校验归档：插件市场、`dsh-im`、`dsh-skill-picker`、Better Sidebar 和 `dsh-pocket`；`dsh-font`、最小离线 `@dsh-diagnostic-lab/scoped-loader-mismatch` 与 `@dsh-diagnostic-lab/loader-dependency-unavailable` 仅作为诊断演练样本提供。首次准备可以使用包内归档，不需要临时联网下载这些插件本体；插件仍保留包信息与来源身份，以便后续发现兼容的联网更新。普通传递依赖继续由 Profile 的 pnpm 解析规则管理。
+
+<p align="center">
+  <img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="通过 dsh-pocket 的二维码和局域网地址连接手机">
+  <br>
+  <sub>手机访问：在同一网络中扫码打开，也可以按需启用公网访问</sub>
+</p>
+
+<p align="center">
+  <img src="./assets/readme/preset-im-robot-zh.png" width="900" alt="通过 dsh-im 连接微信等九种 IM 机器人">
+  <br>
+  <sub>IM 机器人：连接微信、飞书、钉钉、企业微信、QQ、Slack、Telegram、Discord 和 WhatsApp</sub>
+</p>
+
+> [!TIP]
+>
+> 首次启动使用的是安装包内的本地插件归档，适合离线准备，但本地来源不会直接跟随插件市场更新。联网后建议进入“插件市场 → 已安装”，逐个点击“恢复”：客户端会卸载本地版本并从线上来源重新安装，之后即可正常检查并及时获取更新。恢复操作不能自动回滚；若更看重固定版本或离线可用性，也可以继续保留本地版本。
+
+<p align="center">
+  <img src="./assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="在插件市场中点击恢复，把预装的本地插件转换为线上插件">
+  <br>
+  <sub>推荐联网后点击“恢复”，将本地预装版本转换为可正常检查更新的线上版本</sub>
+</p>
 
 这些插件仍是可卸载的普通 Harness 依赖。用户卸载后，客户端通过持久标记尊重该选择，不会在每次重启时擅自装回；需要时可以从插件市场或恢复流程重新安装。
 

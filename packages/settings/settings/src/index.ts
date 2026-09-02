@@ -42,6 +42,19 @@ function parseSettingsNamespace(value: string): SettingsNamespace {
   return value as SettingsNamespace
 }
 
+/**
+ * Validate and brand a settings namespace supplied outside the registration
+ * API. Kept as a compatibility seam for desktop-owned settings writers while
+ * registrations use the alpha.4 literal validation directly.
+ * @param value - lowercase kebab-case namespace.
+ * @returns the validated branded namespace.
+ */
+export function settingsNamespace<const Value extends string>(
+  value: SettingsNamespaceInput<Value>,
+): SettingsNamespace {
+  return parseSettingsNamespace(value)
+}
+
 /** When a namespace's changes take effect for its owner. */
 export type SettingsApplies = 'live' | 'restart'
 

@@ -26,6 +26,7 @@ const loaderUrl = options['loader-url']
 const failures = []
 const manifests = globSync('packages/*/*/package.json', { cwd: packagesRoot }).sort()
 let companionCount = 0
+let runtimeEntrypointCount = 0
 const { default: Loader } = await import(loaderUrl)
 const loader = Object.create(Loader.prototype)
 
@@ -36,6 +37,12 @@ for (const manifestPath of manifests) {
   if (typeof packageName !== 'string' || packageName.length === 0) {
     failures.push(`${manifestPath}: missing package name`)
     continue
+  }
+  for (const [label, target] of runtimeEntrypoints(manifest)) {
+    runtimeEntrypointCount += 1
+    if (!existsSync(resolve(packageDir, target))) {
+      failures.push(`${packageName}: ${label} points to missing built file ${target}`)
+    }
   }
   const invariantExport = manifest.exports?.['./invariant']
   if (invariantExport === undefined) continue
@@ -83,7 +90,38 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-console.log(`verify-built-package-invariants: ${companionCount} compiled companion(s) passed plain-Node Loader checks.`)
+console.log(
+  `verify-built-package-invariants: ${companionCount} compiled companion(s) passed plain-Node Loader checks; ${runtimeEntrypointCount} declared runtime entrypoint(s) are materialized.`,
+)
+
+function runtimeEntrypoints(manifest) {
+  const entries = []
+  if (typeof manifest.main === 'string') entries.push(['main', manifest.main])
+  if (typeof manifest.bin === 'string') entries.push(['bin', manifest.bin])
+  if (manifest.bin !== null && typeof manifest.bin === 'object') {
+    for (const [name, target] of Object.entries(manifest.bin)) {
+      if (typeof target === 'string') entries.push([`bin.${name}`, target])
+    }
+  }
+  collectRuntimeExports(manifest.exports, 'exports', entries)
+  return entries.filter(([, target], index, subject) => (
+    target.startsWith('./lib/')
+    && /\.[cm]?js$/u.test(target)
+    && subject.findIndex(([, candidate]) => candidate === target) === index
+  ))
+}
+
+function collectRuntimeExports(value, label, entries) {
+  if (typeof value === 'string') {
+    entries.push([label, value])
+    return
+  }
+  if (value === null || typeof value !== 'object') return
+  for (const [key, nested] of Object.entries(value)) {
+    if (key === 'types') continue
+    collectRuntimeExports(nested, `${label}.${key}`, entries)
+  }
+}
 
 function copyDeclaredLibFiles(packageDir, stagedPackageDir, files) {
   for (const pattern of files) {

@@ -400,8 +400,19 @@ export class PluginInventoryGateway extends TypertRemoteService {
         && candidate.attribution?.entryId === issue.attribution?.entryId)) continue
       issues.push(issue)
     }
+    const presets = this.ctx.get('agentPresets')
+    const agentPresets: AgentPresetPluginGroup[] | undefined = presets === undefined
+      ? undefined
+      : (await presets.compositionInventory()).map(composition => ({
+        ...composition,
+        rows: composition.rows.map(({ fiberState, ...row }) => ({
+          ...row,
+          fiberPhase: fiberState === undefined ? null : FIBER_PHASE[fiberState],
+        })),
+      }))
     return {
       entries,
+      ...(agentPresets === undefined ? {} : { agentPresets }),
       dependencyHealth: {
         lastRepair: lastRepair === undefined || lastRepair.status === 'healthy' || lastRepair.status === 'repaired'
           ? null
@@ -629,10 +640,10 @@ export class PluginInventoryGateway extends TypertRemoteService {
   /**
    * Export the current redacted incident, runtime facts, quarantine state, and Loader summary.
    * @returns Portable JSON that intentionally excludes local paths, credentials, and raw configuration bodies.
-   */
+  */
   @Remote('exportDiagnostics')
-  exportDiagnostics(): string {
-    const snapshot = this.list()
+  async exportDiagnostics(): Promise<string> {
+    const snapshot = await this.list()
     const report: PluginDiagnosticExport = {
       schema: 'dsh/profile-diagnostic-export/v1',
       diagnosticSchema: 'dsh/profile-diagnostic/v2',

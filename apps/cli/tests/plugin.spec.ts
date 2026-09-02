@@ -1,10 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { allowProfilePackageBuild } from '@deepseek-ai/dsh-app-boot'
+import { allowProfilePackageBuild, createProfilePluginSnapshot } from '@deepseek-ai/dsh-app-boot'
 import { resolvePnpmCommand, runPlugin } from '../src/plugin.ts'
 import {
   DESKTOP_BUNDLED_PLUGINS_DIR_ENV,
@@ -439,6 +439,61 @@ describe('profile plugin package manager', () => {
     }
   })
 
+  it('quarantines an aggregate Loader with a missing published dependency immediately after add', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-loader-dependency-'))
+    const pnpmEntry = join(home, 'pnpm-loader-dependency.mjs')
+    const packageName = '@dsh-diagnostic-lab/loader-dependency-unavailable'
+    writeFileSync(pnpmEntry, `
+      import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+      import { dirname, join } from 'node:path'
+      const profileDir = process.cwd()
+      const manifestPath = join(profileDir, 'package.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      const packageName = ${JSON.stringify(packageName)}
+      const packageDir = join(profileDir, 'node_modules', packageName)
+      if (process.argv.includes('add')) {
+        manifest.dependencies = { ...manifest.dependencies, [packageName]: '1.0.0' }
+        mkdirSync(packageDir, { recursive: true })
+        writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+          name: packageName,
+          version: '1.0.0',
+          type: 'module',
+          exports: './index.js',
+          dsh: { bundle: { patch: './cordis.patch.yml' } },
+        }))
+        writeFileSync(join(packageDir, 'index.js'), 'import "@deepseek-ai/dsh-diagnostic-missing-host"\\nexport function apply() {}\\n')
+        writeFileSync(join(packageDir, 'cordis.patch.yml'), '- insert:\\n  - id: diagnostic-loader-dependency-unavailable\\n    name: "' + packageName + '"\\n')
+      } else if (manifest.dependencies?.[packageName] === undefined) {
+        rmSync(packageDir, { recursive: true, force: true })
+      }
+      mkdirSync(dirname(manifestPath), { recursive: true })
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\\n')
+    `)
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('DSH_PNPM_BIN', pnpmEntry)
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', ['add', `${packageName}@1.0.0`])).toBe(0)
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining('loader-dependency-unavailable'))
+      const quarantineState = JSON.parse(readFileSync(join(home, 'quarantine', 'profile-plugins.json'), 'utf8')) as unknown
+      const report = JSON.parse(readFileSync(join(home, 'profile-health', 'web.json'), 'utf8')) as unknown
+      expect(quarantineState).toMatchObject({
+        plugins: [{ packageName, reason: 'loader-dependency-unavailable' }],
+      })
+      expect(report).toMatchObject({
+        issues: [{
+          code: 'loader.dependency-unavailable',
+          attribution: {
+            rootPackage: packageName,
+            missingModule: '@deepseek-ai/dsh-diagnostic-missing-host',
+          },
+        }],
+      })
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('rejects a registry add when pnpm exits zero without materializing the requested plugin', () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-empty-success-'))
     const pnpmEntry = join(home, 'pnpm-empty-success.mjs')
@@ -451,6 +506,112 @@ describe('profile plugin package manager', () => {
       expect(stderr).toHaveBeenCalledWith(expect.stringContaining(
         'plugin install verification failed: dependency "@fixture/dsh-plugin" was not written',
       ))
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('creates a renderer-safe manual snapshot with desktop runtime metadata', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-snapshot-cli-'))
+    const profileDir = join(home, 'profiles', 'web')
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web',
+      private: true,
+      dependencies: { alpha: '1.0.0' },
+      dsh: { profile: { bundles: ['alpha'] } },
+    }))
+    writeFileSync(join(profileDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+    writeFileSync(join(profileDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('DSH_DESKTOP_APPLICATION_VERSION', '0.1.2-alpha.4')
+    vi.stubEnv('DSH_DESKTOP_PNPM_VERSION', '11.7.0')
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', ['snapshot', 'create', 'Known good'])).toBe(0)
+      const snapshotId = readdirSync(join(home, 'plugin-snapshots', 'v1'))
+        .find(entry => /^[0-9a-f-]{36}$/u.test(entry))
+      expect(snapshotId).toBeDefined()
+      if (snapshotId === undefined) throw new Error('manual snapshot directory was not created')
+      const record = JSON.parse(readFileSync(
+        join(home, 'plugin-snapshots', 'v1', snapshotId, 'snapshot.json'),
+        'utf8',
+      )) as unknown
+      expect(record).toMatchObject({
+        label: 'Known good',
+        applicationVersion: '0.1.2-alpha.4',
+        pnpmVersion: '11.7.0',
+        packages: [{ name: 'alpha', source: 'registry', version: '1.0.0' }],
+      })
+      expect(stdout).toHaveBeenCalledWith(expect.stringContaining('dsh:plugin-snapshot-json'))
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('finalizes a desktop startup snapshot before releasing its mutation lease', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-startup-lease-'))
+    const profileDir = join(home, 'profiles', 'web')
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web',
+      private: true,
+      dependencies: { alpha: '1.0.0' },
+      dsh: { profile: { bundles: ['alpha'] } },
+    }))
+    writeFileSync(join(profileDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+    writeFileSync(join(profileDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN', '12345678-1234-4123-8123-123456789abc')
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID', String(process.pid))
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', ['snapshot', 'begin-startup-seed'])).toBe(0)
+      const snapshotId = readdirSync(join(home, 'plugin-snapshots', 'v1'))
+        .find(entry => /^[0-9a-f-]{36}$/u.test(entry))
+      expect(snapshotId).toBeDefined()
+      if (snapshotId === undefined) throw new Error('startup snapshot directory was not created')
+      expect(runPlugin('web', ['snapshot', 'finalize', snapshotId])).toBe(0)
+      expect(existsSync(join(
+        home,
+        'plugin-snapshots',
+        'v1',
+        '.profile-plugin-mutation.web.lock',
+      ))).toBe(false)
+      expect(stdout).toHaveBeenCalledWith(expect.stringContaining(`\"snapshotId\":\"${snapshotId}\"`))
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('preserves a reused startup snapshot when the seed batch makes no change', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-startup-deduplicated-'))
+    const profileDir = join(home, 'profiles', 'web')
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web',
+      private: true,
+      dependencies: { alpha: '1.0.0' },
+      dsh: { profile: { bundles: ['alpha'] } },
+    }))
+    writeFileSync(join(profileDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+    writeFileSync(join(profileDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN', '22345678-1234-4123-8123-123456789abc')
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID', String(process.pid))
+    const retained = createProfilePluginSnapshot({
+      home, profile: 'web', kind: 'automatic', trigger: 'plugin-update',
+    })
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', ['snapshot', 'begin-startup-seed'])).toBe(0)
+      expect(stdout).toHaveBeenCalledWith(expect.stringContaining('"deduplicated":true'))
+      expect(runPlugin('web', [
+        'snapshot', 'finalize', retained.snapshotId, '--preserve-if-unchanged',
+      ])).toBe(0)
+      expect(existsSync(join(
+        home, 'plugin-snapshots', 'v1', retained.snapshotId, 'snapshot.json',
+      ))).toBe(true)
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

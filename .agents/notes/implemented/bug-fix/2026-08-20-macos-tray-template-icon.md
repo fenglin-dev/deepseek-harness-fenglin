@@ -10,7 +10,7 @@ The desktop host resized the full 1024-pixel application icon and marked it as a
 
 ## Decision
 
-macOS uses a dedicated black-and-alpha `tray-iconTemplate.png` derived from the application's rider-and-whale silhouette. The gradient tile is omitted, while the rider is reduced to a separated head and compact seated gesture that remains legible at menu-bar size. The artwork fills nearly all of its image bounds so the status-item allocation matches the visible mark. The source SVG keeps the optically centered small-size geometry maintainable, while 16-pixel and 32-pixel `@2x` PNGs follow Electron's template-image naming and density conventions. Windows and Linux continue to use the full-color application icon.
+The macOS default uses a dedicated black-and-alpha `tray-iconTemplate.png` derived from the application's rider-and-whale silhouette. The gradient tile is omitted, while the rider is reduced to a separated head and compact seated gesture that remains legible at menu-bar size. The artwork fills nearly all of its image bounds so the status-item allocation matches the visible mark. The source SVG keeps the optically centered small-size geometry maintainable, while 16-pixel and 32-pixel `@2x` PNGs follow Electron's template-image naming and density conventions. Windows and Linux default to the full-color application icon.
 
 ## Alternatives considered
 
@@ -24,4 +24,4 @@ The desktop asset build copies both template PNG densities without renaming them
 
 ## Consequences
 
-The menu-bar icon follows light and dark system appearances and remains recognizable at native status-bar size. The application window, notifications, installers, and Dock continue using the existing full-color icon.
+The default menu-bar icon follows light and dark system appearances and remains recognizable at native status-bar size. [Custom desktop icons](../feature/2026-09-02-custom-desktop-icons.md) can override the running Dock, window, and tray; custom tray images retain color instead of becoming templates. Notifications and installers retain the built-in full-color icon.

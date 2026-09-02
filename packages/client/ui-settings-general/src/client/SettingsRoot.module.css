@@ -367,7 +367,7 @@
   flex-direction: column;
   gap: 0;
   padding: 38px 28px;
-  border-right: 1px solid var(--dsw-alias-border-l2);
+  border-right: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .onboardingRailTitle {
@@ -395,7 +395,7 @@
   top: 63px;
   bottom: -29px;
   left: 16px;
-  width: 1px;
+  width: 0.5px;
   background: var(--dsw-alias-border-l2);
   content: '';
 }
@@ -413,8 +413,9 @@
   justify-content: center;
   width: 34px;
   height: 34px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 50%;
+  corner-shape: round;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
   font-size: 14px;
@@ -451,7 +452,7 @@
   justify-content: space-between;
   gap: 16px;
   padding: 18px 44px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .onboardingBack,
@@ -465,7 +466,7 @@
 }
 
 .onboardingBack {
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-2);
 }

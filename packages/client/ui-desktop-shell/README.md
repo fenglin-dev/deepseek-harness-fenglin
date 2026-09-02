@@ -26,12 +26,18 @@ This package contributes Electron-only General Settings rows for close behavior,
 
 Mount the package in the desktop client bundle. It activates only when the narrow `window.deepSeekHarnessDesktop` preload bridge is present and reflects capabilities reported by the Electron main process.
 
+On Windows and macOS, Application icons provides local image selection, a keyboard-accessible square crop, zoom, previews, and independent tray preferences. Cancel does not save. The card shows per-destination results and missing-image warnings; Windows adds explicit shortcut creation and update retry controls. See the [desktop icon guide](../../../apps/desktop/README.md#custom-application-icons) for platform limits and storage ownership.
+
 -----
 
 <a id="understand-the-security-boundary"></a>
 ## Understand the security boundary
 
 The preload bridge owns every privileged operation. This package receives normalized state and requests allowlisted actions; it cannot read arbitrary files, run arbitrary commands, choose arbitrary external URLs, or replace the application runtime.
+
+The crop UI submits only a renderer-bound selection ID, a fixed destination, and bounded square coordinates. Electron validates and crops the image before atomic persistence; browser preview pixels are not authoritative. Closing the editor releases the draft. Icon changes do not invoke Harness or rewrite plugin configuration.
+
+No invariant companion is published because lifecycle effects and the preload capability boundary already own this package's runtime checks.
 
 <a id="model-experience"></a>
 ## Model Experience

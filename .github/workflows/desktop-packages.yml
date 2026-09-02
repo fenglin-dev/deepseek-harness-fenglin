@@ -44,6 +44,10 @@ jobs:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      - name: Verify external tool provider coordinates
+        run: pnpm run verify:desktop:external-tools
+
       - name: Resolve latest stable plugin archives
         run: pnpm run refresh:desktop:bundled-plugins
       - uses: actions/upload-artifact@v5

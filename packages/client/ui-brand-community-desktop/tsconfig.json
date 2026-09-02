@@ -3,7 +3,6 @@
   "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
   "include": ["src"],
   "references": [
-    { "path": "../../runtime-diagnostics/invariants" },
     { "path": "../ui-renderer" },
     { "path": "../ui-conversation" },
     { "path": "../ui-primitives" },

@@ -63,10 +63,7 @@ export interface AgentPresetPluginGroup {
 /** Point-in-time inventory returned by the plugin inventory Remote. */
 export interface PluginInventorySnapshot {
   readonly entries: readonly PluginInventoryEntry[]
-  /**
-   * Per-preset compositions, present only when an agent-preset roster is
-   * composed in this deployment.
-   */
+  /** Per-preset compositions when an agent-preset roster is available. */
   readonly agentPresets?: readonly AgentPresetPluginGroup[]
   readonly dependencyHealth: PluginDependencyHealthSnapshot
 }
@@ -98,7 +95,7 @@ export interface PluginQuarantineRecord {
   readonly packageSpec: string
   readonly installedVersion?: string
   readonly quarantinedAt: string
-  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable'
+  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable' | 'loader-dependency-unavailable'
   readonly buildApprovalKey?: string
   readonly conflicts: readonly PluginDependencyConflict[]
 }

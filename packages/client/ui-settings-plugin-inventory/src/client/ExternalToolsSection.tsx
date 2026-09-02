@@ -6,19 +6,19 @@ import type {
   ExternalToolId,
   ExternalToolsSnapshot,
   PluginInstallId,
-  PluginInstallRequest,
   PluginInstallSnapshot,
 } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 import { Button, IconRefreshOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginInventoryLocaleKey } from './locales.ts'
 import css from './ExternalToolsSection.module.css'
+import type { InstallableExternalToolId } from './external-tool-compatibility-bridge.ts'
 
 interface ToolDefinition {
   readonly id: 'codex' | 'claude-code' | 'hermes' | 'trae'
   readonly name: string
   readonly mark: string
-  readonly packageSpec?: string
+  readonly installable?: true
   readonly moduleName?: string
   readonly descriptionKey: PluginInventoryLocaleKey
 }
@@ -28,7 +28,7 @@ const TOOLS: readonly ToolDefinition[] = [
     id: 'codex',
     name: 'Codex',
     mark: 'CX',
-    packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.2-alpha.1',
+    installable: true,
     moduleName: '@deepseek-ai/dsh-subagent-codex',
     descriptionKey: 'external.codex.description',
   },
@@ -36,7 +36,7 @@ const TOOLS: readonly ToolDefinition[] = [
     id: 'claude-code',
     name: 'Claude Code',
     mark: 'CC',
-    packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.2-alpha.1',
+    installable: true,
     moduleName: '@deepseek-ai/dsh-subagent-claude-code',
     descriptionKey: 'external.claude.description',
   },
@@ -59,7 +59,7 @@ export interface ExternalToolsSectionInjected {
   list: () => Promise<PluginInventorySnapshot>
   externalTools: () => Promise<ExternalToolsSnapshot>
   setExternalTool: (tool: ExternalToolId, enabled: boolean) => Promise<ExternalToolsSnapshot>
-  startInstall: (request: PluginInstallRequest) => Promise<PluginInstallSnapshot>
+  installExternalTool: (toolId: InstallableExternalToolId) => Promise<PluginInstallSnapshot>
   getInstall: (installId: PluginInstallId) => Promise<PluginInstallSnapshot>
 }
 
@@ -84,7 +84,7 @@ function isEnabled(snapshot: ExternalToolsSnapshot, id: ExternalToolId): boolean
 
 /** Render the dedicated connection center in Settings navigation. */
 export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNode {
-  const { list, externalTools, setExternalTool, startInstall, getInstall, t } = props
+  const { list, externalTools, setExternalTool, installExternalTool, getInstall, t } = props
   const [request, setRequest] = useState(0)
   const [state, setState] = useState<PageState>({ phase: 'loading' })
   const [installs, setInstalls] = useState<Readonly<Record<string, PluginInstallSnapshot>>>({})
@@ -112,7 +112,11 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
     const timer = window.setTimeout(() => {
       void getInstall(running.installId).then(
         (snapshot) => {
-          if (current) setInstalls(previous => ({ ...previous, [snapshot.packageSpec]: snapshot }))
+          if (current) setInstalls(previous => Object.fromEntries(
+            Object.entries(previous).map(([toolId, install]) => (
+              install.installId === snapshot.installId ? [toolId, snapshot] : [toolId, install]
+            )),
+          ))
         },
         () => { if (current) setError(t('external.install.pollFailed')) },
       )
@@ -124,12 +128,11 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
   }, [getInstall, running, t])
 
   const install = async (tool: ToolDefinition): Promise<void> => {
-    const packageSpec = tool.packageSpec
-    if (packageSpec === undefined) return
+    if (tool.installable !== true) return
     setError(null)
     try {
-      const snapshot = await startInstall({ profile: 'web', packageSpec })
-      setInstalls(previous => ({ ...previous, [packageSpec]: snapshot }))
+      const snapshot = await installExternalTool(tool.id as InstallableExternalToolId)
+      setInstalls(previous => ({ ...previous, [tool.id]: snapshot }))
     } catch {
       setError(t('external.install.failed'))
     }
@@ -177,10 +180,10 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
 
       <ul className={css.grid}>
         {TOOLS.map((tool) => {
-          const supported = tool.packageSpec !== undefined && tool.moduleName !== undefined
+          const supported = tool.installable === true && tool.moduleName !== undefined
           const active = supported && state.inventory.entries.some(entry =>
             entry.moduleName === tool.moduleName && entry.enabled && entry.fiberPhase === 'active')
-          const installState = tool.packageSpec === undefined ? undefined : installs[tool.packageSpec]
+          const installState = installs[tool.id]
           const enabled = supported && isEnabled(state.managed, tool.id as ExternalToolId)
           const restarting = installState?.phase === 'succeeded'
             || installState?.phase === 'repaired'

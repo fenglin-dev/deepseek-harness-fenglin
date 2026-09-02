@@ -3,6 +3,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PluginInventorySettingsTab } from '../src/client/PluginInventorySettingsTab.tsx'
 import type {
+  PluginInstallId,
+  PluginInstallSnapshot,
+} from '@deepseek-ai/dsh-host-plugin-inventory/types'
+import type {
   PluginInventorySettingsTabInjected,
   PluginInventorySettingsTabProps,
 } from '../src/client/PluginInventorySettingsTab.tsx'
@@ -11,6 +15,12 @@ import { en, type PluginInventoryLocaleKey } from '../src/client/locales.ts'
 afterEach(cleanup)
 
 type Snapshot = Awaited<ReturnType<PluginInventorySettingsTabInjected['list']>>
+const HEALTHY_DEPENDENCIES = {
+  lastRepair: null,
+  quarantined: [],
+  issues: [],
+  safeMode: null,
+} as const
 const t = ((key: PluginInventoryLocaleKey, params?: Record<string, string>): string =>
   Object.entries(params ?? {}).reduce(
     (text, [name, value]) => text.replaceAll(`{${name}}`, value),
@@ -25,6 +35,8 @@ function props(
     t,
     list,
     presetName,
+    startUninstall: async () => { throw new Error('unexpected uninstall') },
+    getInstall: async () => { throw new Error('unexpected install poll') },
   } as PluginInventorySettingsTabProps
 }
 
@@ -301,6 +313,7 @@ describe('PluginInventorySettingsTab', () => {
   it('renders a preset-only snapshot without the global section', async () => {
     await renderReady({
       entries: [],
+      dependencyHealth: HEALTHY_DEPENDENCIES,
       agentPresets: [{
         id: 'solo',
         trust: 'user',
@@ -314,10 +327,40 @@ describe('PluginInventorySettingsTab', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(1)
   })
 
+  it('confirms and invokes the core dshmarket uninstall operation', async () => {
+    const succeeded: PluginInstallSnapshot = {
+      installId: 'remove-1' as PluginInstallId,
+      profile: 'web',
+      packageSpec: 'dshmarket',
+      command: 'dsh plugin --profile web remove dshmarket',
+      phase: 'succeeded',
+      exitCode: 0,
+    }
+    const startUninstall = vi.fn(async () => succeeded)
+    render(<PluginInventorySettingsTab
+      {...props(async () => ({
+        entries: [{ entryId: 'dsh-market', moduleName: 'dshmarket', enabled: true, fiberPhase: 'active' }],
+        dependencyHealth: HEALTHY_DEPENDENCIES,
+      } as unknown as Snapshot))}
+      startUninstall={startUninstall}
+    />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'dshmarket, Enabled' }))
+    fireEvent.click(screen.getByRole('button', { name: en['uninstall.action'] }))
+    const confirm = screen.getByRole('button', { name: en['uninstall.confirm.action'] })
+    expect(confirm.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('checkbox', { name: en['uninstall.confirm.acknowledge'] }))
+    fireEvent.click(confirm)
+    await waitFor(() => {
+      expect(startUninstall).toHaveBeenCalledWith({ profile: 'web', packageName: 'dshmarket' })
+    })
+    expect(await screen.findByText(en['uninstall.succeeded'])).toBeTruthy()
+  })
+
   it('shows a generic failure and retries into the empty state', async () => {
     const list = vi.fn<PluginInventorySettingsTabInjected['list']>()
       .mockRejectedValueOnce(new Error('private transport detail'))
-      .mockResolvedValueOnce({ entries: [] })
+      .mockResolvedValueOnce({ entries: [], dependencyHealth: HEALTHY_DEPENDENCIES })
     render(<PluginInventorySettingsTab {...props(list)} />)
 
     expect((await screen.findByRole('alert')).textContent).toBe(en.error)

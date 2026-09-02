@@ -20,6 +20,21 @@ export interface DesktopLaunchEnvironment {
   PATH?: string
 }
 
+/** Desktop-owned values a bounded CLI child must receive in addition to DSH_HOME. */
+const HARNESS_INVOCATION_ENVIRONMENT = [
+  'DSH_DESKTOP_APPLICATION_VERSION',
+  'DSH_DESKTOP_PNPM_VERSION',
+  'DSH_DESKTOP_BUNDLED_PLUGINS_DIR',
+  'DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN',
+  'DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID',
+  'DSH_PLUGIN_SNAPSHOT_BATCH',
+  'DSH_PROFILE_SAFE_MODE_ON_FAILURE',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'NO_PROXY',
+] as const
+
 function environmentEntries(
   environment: DesktopLaunchEnvironment,
   name: string,
@@ -172,6 +187,11 @@ export function resolveHarnessInvocation(
   const launchEnvironment: NodeJS.ProcessEnv = {}
   if (environment.DSH_HOME !== undefined && environment.DSH_HOME.trim() !== '') {
     launchEnvironment.DSH_HOME = environment.DSH_HOME
+  }
+  for (const name of HARNESS_INVOCATION_ENVIRONMENT) {
+    for (const [key, value] of environmentEntries(environment, name, process.platform)) {
+      launchEnvironment[key] = value
+    }
   }
   if (options.packageManagerBin !== undefined) launchEnvironment.DSH_PNPM_BIN = options.packageManagerBin
   if (options.runtimeBinPath !== undefined) {

@@ -33,6 +33,8 @@ kind: "package-reference"
 
 只接受完整位于 `data-selection-actions-scope` 内的选区。输入框、编辑器、控件、对话框、菜单、设置 Portal 和侧边栏都不参与；当目标输入框或会话无法安全接收草稿时，相关操作会隐藏。
 
+本包不发布 invariant companion，因为浏览器选区范围和不可变快照检查由功能本身直接执行。
+
 <a id="model-experience"></a>
 ## 模型体验
 

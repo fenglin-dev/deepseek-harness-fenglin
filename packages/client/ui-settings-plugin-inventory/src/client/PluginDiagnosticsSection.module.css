@@ -60,7 +60,7 @@
   grid-template-columns: 1fr;
   align-items: center;
   gap: 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   padding: 14px 16px;
   background: var(--dsw-alias-bg-layer-3);
@@ -79,6 +79,7 @@
   height: 9px;
   flex: none;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--dsw-alias-label-tertiary);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--dsw-alias-label-tertiary) 12%, transparent);
 }
@@ -109,7 +110,7 @@
 
 .summary dl div {
   min-width: 0;
-  border-left: 1px solid var(--dsw-alias-border-l2);
+  border-left: 0.5px solid var(--dsw-alias-border-l2);
   padding: 0 12px;
 }
 
@@ -137,7 +138,7 @@
   display: flex;
   flex-direction: column;
   gap: 7px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
   padding-top: 11px;
   font-size: 12px;
   line-height: 18px;
@@ -184,7 +185,7 @@
   display: flex;
   align-items: flex-start;
   gap: 9px;
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 28%, var(--dsw-alias-border-l2));
+  border: 0.5px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 28%, var(--dsw-alias-border-l2));
   border-radius: 10px;
   padding: 12px 14px;
   background: var(--dsw-alias-bg-layer-3);
@@ -213,7 +214,7 @@
 }
 
 .evidence {
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
   padding-top: 6px;
 }
 
@@ -299,7 +300,7 @@
 }
 
 .fixtureCancel {
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   background: transparent;
   color: var(--dsw-alias-label-primary);
 }
@@ -347,7 +348,7 @@
 .notice,
 .finding,
 .explainers details {
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-3);
 }
@@ -422,7 +423,7 @@
   flex-direction: column;
   gap: 5px;
   padding: 10px 11px;
-  border: 1px solid color-mix(in srgb, var(--dsw-alias-accent-primary, var(--dsw-alias-border-l2)) 24%, var(--dsw-alias-border-l2));
+  border: 0.5px solid color-mix(in srgb, var(--dsw-alias-accent-primary, var(--dsw-alias-border-l2)) 24%, var(--dsw-alias-border-l2));
   border-radius: 9px;
   background: color-mix(in srgb, var(--dsw-alias-accent-primary, transparent) 5%, var(--dsw-alias-bg-layer-2));
 }

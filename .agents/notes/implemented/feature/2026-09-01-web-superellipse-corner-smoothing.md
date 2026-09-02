@@ -16,6 +16,8 @@ Full-round shapes opt back out at their declaration: every `border-radius` of `5
 
 Token-based implementations pair the shape change with a 1.25× radius scale; this client has no radius tokens (px literals per component), so radii are unchanged and only the corner curvature moves.
 
+Community settings pills, onboarding steps, diagnostic status dots and progress indicators also declare the full-round opt-out locally. The package-wide scan covers these controls without excluding desktop-only components.
+
 ## Alternatives considered
 
 **A radius token system first, then per-token application.** Faithful, but converting ~130 px-literal radii across every client package into tokens is a large refactor serving no other current need; the universal selector reaches the same surfaces with one rule.

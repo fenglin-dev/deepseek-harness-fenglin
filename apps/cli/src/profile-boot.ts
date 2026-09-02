@@ -32,6 +32,7 @@ import {
   createProfileDiagnosticReport,
   readProfileDiagnosticReport,
   readProfileManifest,
+  inspectProfileBundleEntryOwnership,
   inspectUnresolvableProfileBundleEntries,
   quarantineProfilePluginAfterLoadFailure,
   repairProfileDependencies,
@@ -43,6 +44,7 @@ import {
   type Profile,
   type ProfileDiagnostic,
   type UnresolvableProfileBundleEntry,
+  prepareDiagnosticSettingsDocument,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -283,7 +285,9 @@ async function composeProfile(
   const profile = safeMode ? prepareDiagnosticProfile(name) : prepareProfile(name)
   await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile })
   const homePatches = safeMode ? [] : loadOptionalPatches(NAME, homePatchPath()) ?? []
-  const overlays = safeMode ? [] : patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
+  const overlays: PatchOptions[] = safeMode
+    ? [{ id: 'settings', config: { path: prepareDiagnosticSettingsDocument(), watch: false } }]
+    : patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
   const staleLoaderQuarantine = safeMode
     ? []
@@ -347,6 +351,7 @@ const CLIENT_MODULE_UNAVAILABLE = new RegExp(
   + String.raw`(?:missed the module table|not a materialized module|no registered package factory)`,
   'isu',
 )
+const MISSING_IMPORTED_MODULE = /(?:require\(|Cannot find (?:package|module)\s+)["']([^"']+)["']/giu
 
 function startupErrorChain(error: unknown): string {
   const messages: string[] = []
@@ -380,6 +385,14 @@ export function loaderClientModuleFailure(
   const match = [...diagnostic.matchAll(LOADER_IMPORT_FAILURE)].at(-1)
   if (match?.[1] === undefined || match[2] === undefined) return undefined
   return { entryId: match[1], moduleName: match[2] }
+}
+
+function loaderMissingDependency(error: unknown, loaderModule: string): string | undefined {
+  const diagnostic = startupErrorChain(error)
+  const candidates = [...diagnostic.matchAll(MISSING_IMPORTED_MODULE)]
+    .map(match => match[1])
+    .filter((value): value is string => value !== undefined && value !== loaderModule)
+  return candidates.at(-1)
 }
 
 function deduplicateStartupIssues(issues: readonly ProfileDiagnostic[]): ProfileDiagnostic[] {
@@ -520,6 +533,7 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
           enteredAt,
           skippedBundles: configuredExternalBundles(options.profile),
           skippedUserLayers: true,
+          skippedUserSettings: true,
         },
       },
     ))
@@ -583,11 +597,29 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     const loaderFailure = options.safeMode === true ? undefined : loaderClientModuleFailure(error)
     let ownedFailure: UnresolvableProfileBundleEntry | undefined
     try {
-      ownedFailure = loaderFailure === undefined ? undefined : inspectUnresolvableProfileBundleEntries({
+      const healthOptions = {
         binName: NAME,
         profile: options.profile,
         installAnchor: INSTALL_ANCHOR,
-      }).find(failure => failure.entryId === loaderFailure.entryId && failure.moduleName === loaderFailure.moduleName)
+      }
+      ownedFailure = loaderFailure === undefined ? undefined : inspectUnresolvableProfileBundleEntries(healthOptions)
+        .find(failure => failure.entryId === loaderFailure.entryId && failure.moduleName === loaderFailure.moduleName)
+      if (ownedFailure === undefined && loaderFailure !== undefined) {
+        const owner = inspectProfileBundleEntryOwnership(
+          healthOptions,
+          loaderFailure.entryId,
+          loaderFailure.moduleName,
+        )
+        const missingModule = loaderMissingDependency(error, loaderFailure.moduleName)
+        if (owner !== undefined && missingModule !== undefined) {
+          ownedFailure = {
+            ...owner,
+            failureKind: 'loader-dependency',
+            missingModule,
+            importerPackage: loaderFailure.moduleName,
+          }
+        }
+      }
     } catch {
       ownedFailure = undefined
     }
@@ -596,10 +628,16 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         ? loaderFailure.moduleName
         : undefined
     )
+    const issueValue = ownedFailure?.failureKind === 'loader-dependency'
+      ? new Error(
+        `loader dependency unavailable: Loader module ${ownedFailure.moduleName} imports unavailable dependency ${ownedFailure.missingModule ?? '<unknown>'}`,
+        { cause: error instanceof Error ? error : undefined },
+      )
+      : error
     const issue = classifyProfileDiagnostic({
       source: options.safeMode === true ? 'runtime' : 'profile',
       phase: startupFailurePhase(error),
-      value: error,
+      value: issueValue,
       home: resolveDshHome(),
       ...(loaderFailure === undefined
         ? {}
@@ -607,6 +645,9 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
           attribution: {
             entryId: loaderFailure.entryId,
             moduleName: loaderFailure.moduleName,
+            ...(ownedFailure?.missingModule === undefined ? {} : { missingModule: ownedFailure.missingModule }),
+            ...(ownedFailure?.importerPackage === undefined ? {} : { importerPackage: ownedFailure.importerPackage }),
+            ...(ownedFailure === undefined ? {} : { configKind: 'profile-patch' as const }),
             ...(externalBundle === undefined ? {} : { rootPackage: externalBundle }),
           },
         }),
@@ -619,7 +660,11 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         profile: options.profile,
         installAnchor: INSTALL_ANCHOR,
         runPackageManager: args => runProfilePackageManager(profileDir, args),
-      }, externalBundle, issue, ownedFailure === undefined ? 'client-module-unavailable' : 'loader-module-unresolvable')
+      }, externalBundle, issue, ownedFailure === undefined
+        ? 'client-module-unavailable'
+        : ownedFailure.failureKind === 'loader-dependency'
+          ? 'loader-dependency-unavailable'
+          : 'loader-module-unresolvable')
       quarantined = outcome.status === 'quarantined'
       if (quarantined) {
         process.stderr.write(`${NAME}: quarantined startup-incompatible plugin ${JSON.stringify({

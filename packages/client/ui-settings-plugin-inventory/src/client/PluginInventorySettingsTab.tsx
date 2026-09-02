@@ -4,6 +4,7 @@ import {
   IconChevronDownOutline14,
   IconSearchOutline16,
   Menu,
+  RiskConfirmation,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginInventoryLocaleKey } from './locales.ts'
@@ -22,6 +23,10 @@ export interface PluginInventorySettingsTabInjected {
    * agent-preset dictionaries, user-authored ones keep their own metadata.
    */
   presetName: (preset: AgentPresetGroup) => string
+  /** Start an exact profile-plugin removal. */
+  startUninstall: (request: PluginUninstallRequest) => Promise<PluginInstallSnapshot>
+  /** Poll the package-manager operation. */
+  getInstall: (installId: PluginInstallSnapshot['installId']) => Promise<PluginInstallSnapshot>
 }
 type PluginFiberPhase = PluginInventoryEntry['fiberPhase']
 
@@ -167,7 +172,13 @@ function StateTag({ kind, label }: { readonly kind: string; readonly label: stri
 }
 
 /** Render the read-only plugin inventory: agent presets first, then the global plane. */
-export function PluginInventorySettingsTab({ list, presetName, t }: PluginInventorySettingsTabProps): ReactNode {
+export function PluginInventorySettingsTab({
+  list,
+  presetName,
+  startUninstall,
+  getInstall,
+  t,
+}: PluginInventorySettingsTabProps): ReactNode {
   const sectionId = useId()
   const [request, setRequest] = useState(0)
   const [query, setQuery] = useState('')
@@ -238,6 +249,18 @@ export function PluginInventorySettingsTab({ list, presetName, t }: PluginInvent
   }
   const toggleRow = (key: string): void => {
     setExpanded(current => current === key ? null : key)
+  }
+
+  const confirmUninstall = (): void => {
+    setUninstallError(false)
+    void startUninstall({ profile: 'web', packageName: 'dshmarket' }).then(
+      (snapshot) => {
+        setUninstall(snapshot)
+        setConfirmationOpen(false)
+        setAcknowledged(false)
+      },
+      () => { setUninstallError(true) },
+    )
   }
 
   /** Trailing status and detail facts for one row of the selected preset. */
@@ -314,31 +337,49 @@ export function PluginInventorySettingsTab({ list, presetName, t }: PluginInvent
           </>
         )}
       >
-        <CardFacts
-          moduleName={entry.moduleName}
-          moduleLabel={t('moduleLabel')}
-          entryId={entry.entryId}
-          facts={providers !== undefined
-            ? [
-              [t('configuration'), t('presetProvidedDetail')],
-              [t('enabledIn'), (
-                <span className={css.enabledIn}>
-                  <span>{providers.map(preset => presetName(preset)).join(' · ')}</span>
-                  <button
-                    type="button"
-                    className={css.jumpLink}
-                    onClick={() => { setChosenPreset(providers[0].id) }}
-                  >
-                    {t('viewInPreset')}
-                  </button>
-                </span>
-              )],
-            ]
-            : [
-              [t('configuration'), t(entry.enabled ? 'enabledTag' : 'disabledTag')],
-              ...entry.enabled ? [[t('runtime'), phaseLabel(entry.fiberPhase, t)] as const] : [],
-            ]}
-        />
+        <>
+          <CardFacts
+            moduleName={entry.moduleName}
+            moduleLabel={t('moduleLabel')}
+            entryId={entry.entryId}
+            facts={providers !== undefined
+              ? [
+                [t('configuration'), t('presetProvidedDetail')],
+                [t('enabledIn'), (
+                  <span className={css.enabledIn}>
+                    <span>{providers.map(preset => presetName(preset)).join(' · ')}</span>
+                    <button
+                      type="button"
+                      className={css.jumpLink}
+                      onClick={() => { setChosenPreset(providers[0].id) }}
+                    >
+                      {t('viewInPreset')}
+                    </button>
+                  </span>
+                )],
+              ]
+              : [
+                [t('configuration'), t(entry.enabled ? 'enabledTag' : 'disabledTag')],
+                ...entry.enabled ? [[t('runtime'), phaseLabel(entry.fiberPhase, t)] as const] : [],
+              ]}
+          />
+          {entry.moduleName === 'dshmarket' ? (
+            <div className={css.pluginActions}>
+              <Button
+                variant="outline"
+                disabled={uninstall?.phase === 'running' || uninstall?.phase === 'succeeded'}
+                onClick={() => {
+                  setAcknowledged(false)
+                  setConfirmationOpen(true)
+                }}
+              >
+                {uninstall?.phase === 'running' ? t('uninstall.running') : t('uninstall.action')}
+              </Button>
+              {uninstall?.phase === 'succeeded' ? <p role="status">{t('uninstall.succeeded')}</p> : null}
+              {uninstall?.phase === 'failed' || uninstallError ? <p role="alert">{t('uninstall.failed')}</p> : null}
+            </div>
+          ) : null}
+        </>
       </PluginCard>
     )
   }

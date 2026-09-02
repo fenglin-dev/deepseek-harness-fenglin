@@ -23,7 +23,10 @@ async function bench(): Promise<{
   suspendHarness: Mock<() => Promise<void>>
   resumeHarness: Mock<() => void>
   installProfile: Mock<(home: string, force: boolean) => Promise<void>>
-  installDiagnosticPlugin: Mock<(home: string, packageName: 'dsh-font' | '@dsh-diagnostic-lab/scoped-loader-mismatch') => Promise<void>>
+  installDiagnosticPlugin: Mock<(home: string, packageName:
+    | 'dsh-font'
+    | '@dsh-diagnostic-lab/scoped-loader-mismatch'
+    | '@dsh-diagnostic-lab/loader-dependency-unavailable') => Promise<void>>
   runDoctor: Mock<() => Promise<{ status: string; issueCodes: string[]; output: string }>>
 }> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-diagnostic-lab-'))
@@ -37,22 +40,28 @@ async function bench(): Promise<{
   const installProfile = vi.fn<(home: string, force: boolean) => Promise<void>>(async () => {})
   const installDiagnosticPlugin = vi.fn(async (
     targetHome: string,
-    packageName: 'dsh-font' | '@dsh-diagnostic-lab/scoped-loader-mismatch',
+    packageName:
+      | 'dsh-font'
+      | '@dsh-diagnostic-lab/scoped-loader-mismatch'
+      | '@dsh-diagnostic-lab/loader-dependency-unavailable',
   ) => {
-    if (packageName !== '@dsh-diagnostic-lab/scoped-loader-mismatch') return
+    if (packageName === 'dsh-font') return
     await mkdir(join(targetHome, 'profiles', 'web'), { recursive: true })
     await mkdir(join(targetHome, 'quarantine'), { recursive: true })
     await mkdir(join(targetHome, 'profile-health'), { recursive: true })
     await writeFile(join(targetHome, 'profiles', 'web', 'package.json'), JSON.stringify({
       name: 'dsh-profile-web', private: true, dependencies: {}, dsh: { profile: { bundles: [] } },
     }))
-    const record = { packageName, reason: 'loader-module-unresolvable' }
+    const dependencyFailure = packageName === '@dsh-diagnostic-lab/loader-dependency-unavailable'
+    const reason = dependencyFailure ? 'loader-dependency-unavailable' : 'loader-module-unresolvable'
+    const issueCode = dependencyFailure ? 'loader.dependency-unavailable' : 'profile.module-resolution'
+    const record = { packageName, reason }
     await writeFile(join(targetHome, 'quarantine', 'profile-plugins.json'), JSON.stringify({
       schema: 1, plugins: [record],
     }))
     await writeFile(join(targetHome, 'profile-health', 'web.json'), JSON.stringify({
       status: 'quarantined', quarantined: [record],
-      issues: [{ code: 'profile.module-resolution', attribution: { rootPackage: packageName } }],
+      issues: [{ code: issueCode, attribution: { rootPackage: packageName } }],
     }))
   })
   const runDoctor = vi.fn(async () => ({ status: 'healthy', issueCodes: [], output: '{}' }))
@@ -96,7 +105,13 @@ describe('DiagnosticLabManager', () => {
     expect(final.results).toHaveLength(scenarioIds.length)
     expect(final.results.every(result => result.phase === 'passed' && result.retained)).toBe(true)
     expect(final.completedSteps).toBe(final.totalSteps)
-    expect(b.runDoctor).toHaveBeenCalledTimes((scenarioIds.length - 1) * 4 + 1)
+    const directLoaderScenarios = scenarioIds.filter(id => (
+      id === 'loader-package-name-mismatch' || id === 'loader-dependency-unavailable'
+    )).length
+    const settingsScenarios = scenarioIds.filter(id => id === 'settings-invalid').length
+    expect(b.runDoctor).toHaveBeenCalledTimes(
+      (scenarioIds.length - directLoaderScenarios - settingsScenarios) * 4 + directLoaderScenarios,
+    )
     expect(b.suspendHarness).not.toHaveBeenCalled()
     expect(b.resumeHarness).not.toHaveBeenCalled()
     expect(existsSync(join(b.root, 'lab', 'runs', initial.runId, 'runtime'))).toBe(true)
@@ -262,12 +277,94 @@ describe('DiagnosticLabManager', () => {
     expect(b.installProfile).toHaveBeenLastCalledWith(b.home, true)
   })
 
+  it('isolates a resolvable Loader whose published entry has a missing internal dependency', async () => {
+    const b = await bench()
+    const packageName = '@dsh-diagnostic-lab/loader-dependency-unavailable'
+    const initial = b.manager.start({
+      scenarioIds: ['loader-dependency-unavailable'],
+      target: 'active-profile',
+    })
+    const active = await waitForTerminal(b.manager, initial.runId)
+
+    expect(active).toMatchObject({ phase: 'active', recovery: 'retained' })
+    expect(active.results).toEqual([expect.objectContaining({
+      scenarioId: 'loader-dependency-unavailable',
+      actualCode: 'loader.dependency-unavailable',
+      disposition: 'quarantined',
+    })])
+    expect(b.installDiagnosticPlugin).toHaveBeenCalledWith(b.home, packageName)
+    expect(await readFile(join(b.home, 'profile-health', 'web.json'), 'utf8'))
+      .toContain('loader.dependency-unavailable')
+
+    await expect(b.manager.restoreAll(initial.runId)).resolves.toMatchObject({ phase: 'restored' })
+    expect(existsSync(join(b.home, 'quarantine', 'profile-plugins.json'))).toBe(false)
+    expect(existsSync(join(b.home, 'profile-health', 'web.json'))).toBe(false)
+  })
+
+  it('retains invalid settings in real safe mode and restores the exact original document', async () => {
+    const b = await bench()
+    const settingsPath = join(b.home, 'settings.yaml')
+    const original = 'locale: zh\r\nui-theme:\r\n  preference: ocean\r\n'
+    await writeFile(settingsPath, original)
+    let recoveryScheduled = false
+    const resumeHarness = vi.fn(() => {
+      if (recoveryScheduled) return
+      recoveryScheduled = true
+      void (async () => {
+        await new Promise((resolve) => { setTimeout(resolve, 15) })
+        await mkdir(join(b.home, 'profile-health'), { recursive: true })
+        await writeFile(join(b.home, 'profile-health', 'safe-mode-settings.yaml'), '{}\n')
+        await writeFile(join(b.home, 'profile-health', 'web.diagnostics.json'), JSON.stringify({
+          schema: 'dsh/profile-diagnostic/v2',
+          profile: 'web',
+          status: 'issues',
+          issues: [{ code: 'config.settings-invalid' }],
+          safeMode: { skippedUserSettings: true },
+        }))
+      })()
+    })
+    const manager = new DiagnosticLabManager({
+      root: join(b.root, 'settings-invalid-lab'),
+      activeDshHome: b.home,
+      logDirectory: join(b.root, 'settings-invalid-logs'),
+      suspendHarness: b.suspendHarness,
+      resumeHarness,
+      installProfile: b.installProfile,
+      installDiagnosticPlugin: b.installDiagnosticPlugin,
+      runDoctor: b.runDoctor,
+      productionDoctorFixtures: false,
+      clientRecoveryTimeoutMs: 1_000,
+      onSnapshot: () => {},
+    })
+
+    const initial = manager.start({ scenarioIds: ['settings-invalid'], target: 'active-profile' })
+    const active = await waitForTerminal(manager, initial.runId)
+
+    expect(active).toMatchObject({ phase: 'active', recovery: 'retained' })
+    expect(active.results).toEqual([expect.objectContaining({
+      scenarioId: 'settings-invalid',
+      actualCode: 'config.settings-invalid',
+      disposition: 'retained',
+    })])
+    expect(await readFile(settingsPath, 'utf8'))
+      .toBe('diagnostic-lab-duplicate: one\ndiagnostic-lab-duplicate: two\n')
+    expect(resumeHarness).toHaveBeenCalledOnce()
+
+    await expect(manager.restoreAll(initial.runId)).resolves.toMatchObject({ phase: 'restored' })
+    expect(await readFile(settingsPath, 'utf8')).toBe(original)
+    expect(existsSync(join(b.home, 'profile-health', 'safe-mode-settings.yaml'))).toBe(false)
+    expect(existsSync(join(b.home, 'profile-health', 'web.diagnostics.json'))).toBe(false)
+  })
+
   it('installs packaged dsh-font only for the active exercise and observes real client quarantine', async () => {
     const b = await bench()
     const manifestPath = join(b.home, 'profiles', 'web', 'package.json')
     const installDiagnosticPlugin = vi.fn(async (
       home: string,
-      packageName: 'dsh-font' | '@dsh-diagnostic-lab/scoped-loader-mismatch',
+      packageName:
+        | 'dsh-font'
+        | '@dsh-diagnostic-lab/scoped-loader-mismatch'
+        | '@dsh-diagnostic-lab/loader-dependency-unavailable',
     ) => {
       expect(home).toBe(b.home)
       expect(packageName).toBe('dsh-font')

@@ -1,5 +1,5 @@
 ---
-description: "Cordis Loader inventory plus guarded Profile diagnostics and recovery Remotes for web GUI host clients."
+description: "Cordis Loader and agent-preset inventory plus guarded Profile diagnostics and recovery Remotes for web GUI host clients."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Clients and settings pages can show what is currently composed in the host: calling `pluginInventory/list` returns the current non-group Loader entries in Loader order — entry id, module specifier, effective enablement, and root Fiber phase (`pending`, `loading`, `active`, `failed`, or `unloading`, or `null` when an entry has no live root Fiber). The Loader roster is point-in-time and uncached; the same restricted Remote service also projects durable Profile diagnostics and exposes fixed doctor, quarantine, recovery, uninstall, and export operations without accepting arbitrary commands or paths. Client packages consume the Remote through the explicit [`api-remotes`](../../api/remotes/README.md) assembly rather than importing the Host implementation.
+Clients and settings pages can show what is currently composed in the host: calling `pluginInventory/list` returns the current non-group Loader entries in Loader order — entry id, module specifier, effective enablement, and root Fiber phase (`pending`, `loading`, `active`, `failed`, or `unloading`, or `null` when an entry has no live root Fiber). When an agent-preset roster is composed, the snapshot also carries one group per preset — id, trust, display name, default marking, health, and flattened composition rows — because model-facing plugins run inside those compositions. The inventory is point-in-time and uncached. The same restricted Remote service separately projects durable Profile diagnostics and exposes fixed doctor, quarantine, recovery, uninstall, and export operations without accepting arbitrary commands or paths. Client packages consume the Remote through the explicit [`api-remotes`](../../api/remotes/README.md) assembly rather than importing the Host implementation.
 
 ## Table of Contents
 
@@ -93,7 +93,8 @@ None; this package neither assembles nor sends a provider request.
 These limits define what a point-in-time inventory cannot tell a client. They are current package constraints, not a task backlog.
 
 - **Point-in-time state only** — the result contains no durable failure history or subscription; a missing root Fiber is reported as `null`, regardless of why no live root exists.
-- **No Loader provenance or arbitrary mutation** — the roster does not identify which bundle or override introduced an entry. Guarded Profile operations accept closed request types; they are not general Loader editing or command execution.
+- **No inventory provenance or arbitrary mutation** — the roster does not identify which bundle, profile, or override introduced an entry and cannot edit enablement in either plane. Guarded Profile operations accept closed request types; they are not general Loader editing or command execution.
+- **Presets appear only with a roster** — a deployment without `dsh-agent-presets` serves Loader entries alone; the `agentPresets` field is absent rather than empty.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -35,9 +35,11 @@
 | `profile.orphaned-bundle` | 软件包不再是可管理依赖，但仍存在于 `dsh.profile.bundles` | 移除失效 bundle 引用，不重新安装用户已经卸载的插件。 |
 | `profile.quarantine-removal-residue` | 停用插件、活动 manifest 条目和持久隔离记录都已消失，但修复报告、诊断报告、lockfile importer 或不完整软件包目录仍引用它 | 只移除陈旧派生状态，不重装或再次隔离已消失的插件，并保留其他无关 incident。 |
 | `profile.module-resolution` | `failed to import loader entry`、`ERR_MODULE_NOT_FOUND`、`missed the module table`、模块未实体化或缺少 package factory | 遍历完整 cause 链并归属最深层 Loader entry。若最终 entry 与唯一一个直接启用的外部 Bundle 原始声明完全一致，但裸模块无法解析，则安装后立即以 `loader-module-unresolvable` 隔离该根包；用户改写或来源有歧义时只进入诊断安全模式，不自动移除。 |
+| `loader.dependency-unavailable` | 可解析的 Loader 模块静态导入或在运行时请求另一个不可用软件包 | 把故障归属到唯一声明该 Loader 行的直接启用 Bundle，并以 `loader-dependency-unavailable` 隔离其根包。缺失 `@deepseek-ai/dsh-*` 包表示 DSH 代际不匹配；自动修复绝不把内部 Host 包安装进 Profile。 |
 | `loader.duplicate-entry` 与 `loader.duplicate-registration` | Loader id、配置路径、persona、route、prompt section、service 或进程全局单例重复 | 身份能证明是旧行时移除；否则标明冲突双方并隔离外部根，或要求手动修复配置。 |
 | `loader.lifecycle-failed` | `failed to apply loader entry`、import、mount、apply、activate 或 fiber 失败 | 沿 `cause` 走到最内层，归属 entry 与模块；只有重试或收敛无法修复外部根时才隔离。 |
 | `config.credentials-invalid` | `.credentials.yaml` 解析或字段类型错误，包括非字符串 `version` | 报告字段路径和期望类型，保持用户凭据文档不变；阻断启动时进入诊断安全模式。 |
+| `config.settings-invalid` | `settings.yaml` 或 JSON 解析失败，包括带行列位置的 `DUPLICATE_KEY` | 原文保持不动，安全模式改用安装方维护的空设置文件。界面提供打开文件或明确的“备份并重置”；后者先逐字节保留原文件，再重启 Harness。 |
 | `runtime.launch-invalid` | 内置 pnpm 或 Node 缺失、`DSH_PNPM_BIN` 无效、运行时路径错误，或 Harness 在 ready 前退出 | 校验结构化可执行文件与参数数组。包含空格或非 ASCII 字符的路径绝不经过拼接的 shell 命令。 |
 
 ## pnpm 规则预防
@@ -74,6 +76,8 @@
 桌面启动会设置允许受保护恢复的显式策略。客户端模块表导入失败会先归属到 Loader entry 与精确的直接外部 bundle。由于该故障发生在 Host ready 之后、客户端插件树建立之前，无框架浏览器内核会调用一个经过认证、参数封闭的恢复 Remote，并让加载页保持可见。Host 再次验证归属、活动 manifest 条目、软件包移除和最终依赖图后，CLI 保留可重试隔离记录，监督器在不加载该 bundle 的情况下重启普通 Profile。用户随后无感进入主界面，并能在诊断页看到被隔离插件及根因。彻底卸载这个已停用插件时，系统还会清理其陈旧 lockfile importer 和软件包残留，在不丢弃其他 incident 的前提下收敛对应修复与诊断记录，并最后删除隔离记录。旧版或中断的卸载若已经删除插件和隔离记录、却留下这些派生引用，系统会以 `profile.quarantine-removal-residue` 报告；启动修复与诊断操作只清理陈旧元数据，不会再次隔离已经消失的插件。其他确定性的 Profile、Loader、Cordis、凭据或运行时配置 incident 会写入脱敏 v2 incident，并输出一个稳定的可恢复标记。监督器随后立即重启一次，使用安装包自带的诊断 Profile；该 Profile 只加载随产品发布的模板 bundle，跳过外部 bundle 与用户 patch 层。
 
 安全模式记录进入时间、跳过的 bundle 名称，以及是否跳过用户层。其裸模块解析以安装方维护的 `$DSH_HOME/profiles/node_modules` fallback 为锚点，不再使用活动 Profile 或 CLI 包。主界面的“诊断”页面保持可用，展示根因、证据、风险和受保护操作。修复成功后重新启动正常 Profile。启动最多执行一次普通尝试和一次安全模式尝试；若安装自带的诊断 Profile 也失败，监督器会立即停止，保留原始 Profile incident 作为主证据，并把安全模式失败追加为次级证据。
+
+诊断演练中心为这两条规则提供固定场景。`@dsh-diagnostic-lab/loader-dependency-unavailable` 会在隔离 home 与当前 Profile 中验证安装后的根插件归属和隔离。损坏设置场景写入重复键，等待真实活动 Profile 报告 `config.settings-invalid` 与 `skippedUserSettings: true`，确认原始字节保持不变，并通过**全部恢复**逐字节还原演练前设置。测试包始终属于 `diagnostic` 资源，普通启动绝不会预装。
 
 ## 导出
 

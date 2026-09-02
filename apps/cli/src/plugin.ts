@@ -15,29 +15,41 @@ import { join, resolve } from 'node:path'
 import {
   allowProfilePackageBuild,
   allowProfileRegistryPackageBuild,
+  acquireProfilePluginMutationLock,
+  assertProfilePluginMutationLease,
+  beginProfilePluginMutationLease,
   classifyProfileDiagnostic,
+  createProfilePluginSnapshot,
   createProfileDiagnosticReport,
   DEFAULT_PROFILE_BUNDLES,
+  endProfilePluginMutationLease,
+  finalizeProfilePluginSnapshot,
   initProfile,
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
   inspectUnresolvableProfileBundleEntries,
+  listProfilePluginSnapshots,
   inspectQuarantineRemovalResidue,
   orphanedBundleDiagnostic,
   PROFILE_TEMPLATES,
   profileDependencyConflictDiagnostic,
   quarantineRemovalResidueDiagnostic,
   quarantineProfilePluginAfterLoadFailure,
+  removeProfilePluginSnapshot,
   readProfileManifest,
   readProfileDiagnosticReport,
   repairProfileDependencies,
   retryQuarantinedProfilePlugin,
+  restoreProfilePluginSnapshotFiles,
   resolveBundleDir,
   resolveProfileDir,
   writeProfileManifest,
   writeProfileDiagnosticReport,
+  settleProfilePluginSafetySnapshot,
+  withAutomaticProfilePluginSnapshot,
   type ProfileManifest,
   type ProfileDiagnostic,
+  type ProfilePluginSnapshotTrigger,
   type ProfileRepairReport,
 } from '@deepseek-ai/dsh-app-boot'
 import { INSTALL_ANCHOR } from './install-anchor.ts'
@@ -49,6 +61,34 @@ export { resolvePnpmCommand } from './profile-package-manager.ts'
 const NAME = 'dsh'
 const REGISTRY_ADD_SPEC = /^(?<name>(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*))(?:@[a-z0-9][a-z0-9._+~-]*)?$/iu
 const REGISTRY_PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/iu
+const SNAPSHOT_JSON_MARKER = 'dsh:plugin-snapshot-json '
+
+function writeSnapshotJson(value: unknown): void {
+  process.stdout.write(`${SNAPSHOT_JSON_MARKER}${JSON.stringify(value)}\n`)
+}
+
+function snapshotRuntimeMetadata(): { readonly applicationVersion?: string; readonly pnpmVersion?: string } {
+  const applicationVersion = process.env.DSH_DESKTOP_APPLICATION_VERSION?.trim()
+  const pnpmVersion = process.env.DSH_DESKTOP_PNPM_VERSION?.trim()
+  return {
+    ...(applicationVersion === undefined || applicationVersion === '' ? {} : { applicationVersion }),
+    ...(pnpmVersion === undefined || pnpmVersion === '' ? {} : { pnpmVersion }),
+  }
+}
+
+function withSnapshotMutation<T>(profile: string, operation: () => T): T {
+  const leaseToken = process.env.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+  if (leaseToken !== undefined) {
+    assertProfilePluginMutationLease({ profile, token: leaseToken })
+    return operation()
+  }
+  const release = acquireProfilePluginMutationLock({ profile, waitMs: 30_000 })
+  try {
+    return operation()
+  } finally {
+    release()
+  }
+}
 
 /** Initialize one named profile with the official template shape. */
 function initializeProfile(dir: string, profile: string): void {
@@ -194,8 +234,140 @@ function verifyRegistryPackageInstall(profileDir: string, packageName: string): 
  * @param args - pnpm arguments with relative path specs anchored to the invoking directory.
  * @returns the pnpm exit code.
  */
-export function runPlugin(profile: string, args: readonly string[]): number {
+function runPluginWithoutSnapshot(profile: string, args: readonly string[]): number {
   const dir = resolveProfileDir(profile)
+  if (args[0] === 'snapshot') {
+    const command = args[1]
+    try {
+      if (command === 'list' && args.length === 2) {
+        writeSnapshotJson(listProfilePluginSnapshots({ profile }))
+        return 0
+      }
+      if (command === 'create' && args.length >= 2 && args.length <= 3) {
+        const record = withSnapshotMutation(profile, () => createProfilePluginSnapshot({
+          profile,
+          kind: 'manual',
+          trigger: 'manual',
+          ...snapshotRuntimeMetadata(),
+          ...(args[2] === undefined ? {} : { label: args[2] }),
+        }))
+        writeSnapshotJson(record)
+        return 0
+      }
+      if (command === 'mark-bootable' && args.length === 2) {
+        const record = withSnapshotMutation(profile, () => createProfilePluginSnapshot({
+          profile,
+          kind: 'bootable',
+          trigger: 'successful-startup',
+          ...snapshotRuntimeMetadata(),
+        }))
+        writeSnapshotJson(record)
+        return 0
+      }
+      if (command === 'create-safety' && args.length === 2) {
+        const record = withSnapshotMutation(profile, () => createProfilePluginSnapshot({
+          profile,
+          kind: 'safety',
+          trigger: 'restore-safety',
+          ...snapshotRuntimeMetadata(),
+        }))
+        writeSnapshotJson(record)
+        return 0
+      }
+      if (command === 'begin-startup-seed' && args.length === 2) {
+        const release = acquireProfilePluginMutationLock({ profile, waitMs: 30_000 })
+        let leased = false
+        const token = process.env.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+        const ownerPid = Number(process.env.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID)
+        try {
+          const record = createProfilePluginSnapshot({
+            profile,
+            kind: 'automatic',
+            trigger: 'startup-seed',
+            ...snapshotRuntimeMetadata(),
+          })
+          if (token === undefined) throw new Error('dsh: startup seed snapshot lease token is unavailable')
+          beginProfilePluginMutationLease({ profile, token, ownerPid })
+          leased = true
+          writeSnapshotJson(record)
+          return 0
+        } finally {
+          if (!leased) release()
+        }
+      }
+      if (command === 'begin-restore-lease' && args.length === 2) {
+        const release = acquireProfilePluginMutationLock({ profile, waitMs: 30_000 })
+        let leased = false
+        const token = process.env.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+        const ownerPid = Number(process.env.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID)
+        try {
+          if (token === undefined) throw new Error('dsh: restore lease token is unavailable')
+          beginProfilePluginMutationLease({ profile, token, ownerPid })
+          leased = true
+          writeSnapshotJson({ leased: true })
+          return 0
+        } finally {
+          if (!leased) release()
+        }
+      }
+      if (command === 'end-restore-lease' && args.length === 2) {
+        const token = process.env.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+        if (token === undefined) throw new Error('dsh: restore lease token is unavailable')
+        endProfilePluginMutationLease({ profile, token })
+        writeSnapshotJson({ leased: false })
+        return 0
+      }
+      if (command === 'finalize' && (args.length === 3 || args.length === 4) && args[2] !== undefined) {
+        const snapshotId = args[2]
+        const preserveIfUnchanged = args[3] === '--preserve-if-unchanged'
+        if (args.length === 4 && !preserveIfUnchanged) {
+          throw new Error(`dsh: unsupported plugin snapshot finalize option ${JSON.stringify(args[3])}`)
+        }
+        const token = process.env.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+        if (token === undefined) throw new Error('dsh: startup seed snapshot lease token is unavailable')
+        let record: ReturnType<typeof finalizeProfilePluginSnapshot>
+        try {
+          record = withSnapshotMutation(profile, () => finalizeProfilePluginSnapshot({
+            profile, snapshotId, preserveIfUnchanged,
+          }))
+        } finally {
+          endProfilePluginMutationLease({ profile, token })
+        }
+        writeSnapshotJson({ retained: record !== undefined, snapshotId })
+        return 0
+      }
+      if (command === 'restore-files' && args.length === 3 && args[2] !== undefined) {
+        const snapshotId = args[2]
+        const result = withSnapshotMutation(profile, () => restoreProfilePluginSnapshotFiles({
+          profile, snapshotId,
+        }))
+        writeSnapshotJson(result)
+        return 0
+      }
+      if (command === 'remove' && args.length === 3 && args[2] !== undefined) {
+        const snapshotId = args[2]
+        withSnapshotMutation(profile, () => removeProfilePluginSnapshot({ profile, snapshotId }))
+        writeSnapshotJson({ removed: true, snapshotId })
+        return 0
+      }
+      if (command === 'settle-safety' && args.length === 3 && args[2] !== undefined) {
+        const snapshotId = args[2]
+        withSnapshotMutation(profile, () => settleProfilePluginSafetySnapshot({ profile, snapshotId }))
+        writeSnapshotJson({ settled: true, snapshotId })
+        return 0
+      }
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+      return 1
+    }
+    process.stderr.write(
+      `${NAME}: usage: dsh plugin --profile ${profile} snapshot `
+      + '<list | create [label] | mark-bootable | create-safety | begin-startup-seed '
+      + '| begin-restore-lease | end-restore-lease | finalize <id> [--preserve-if-unchanged] '
+      + '| restore-files <id> | remove <id> | settle-safety <id>>\n',
+    )
+    return 1
+  }
   if (args[0] === 'approve-build-key') {
     if (args.length !== 2 || args[1] === undefined) {
       process.stderr.write(`${NAME}: usage: dsh plugin --profile ${profile} approve-build-key <exact-package-key>\n`)
@@ -432,4 +604,40 @@ export function runPlugin(profile: string, args: readonly string[]): number {
     process.stderr.write(`${NAME}: pnpm failed in profile directory ${dir}\n`)
   }
   return exitCode
+}
+
+function pluginMutationTrigger(args: readonly string[]): ProfilePluginSnapshotTrigger {
+  if (args[0] === 'approve-build' || args[0] === 'approve-build-key') return 'build-approval'
+  if (args[0] === 'doctor') {
+    return args[1] === '--retry' ? 'quarantine-retry' : 'diagnostic-repair'
+  }
+  if (args[0] === 'add') return 'plugin-add'
+  if (args[0] === 'remove' || args[0] === 'uninstall' || args[0] === 'rm') return 'plugin-remove'
+  if (args[0] === 'update' || args[0] === 'up') return 'plugin-update'
+  if (args[0] === 'install' || args[0] === 'i') return 'plugin-install'
+  return 'other-plugin-mutation'
+}
+
+function pluginInvocationMutates(args: readonly string[]): boolean {
+  if (args.length === 0) return false
+  if (args[0] === 'snapshot') return false
+  if (args[0] === 'doctor') return args.length > 1
+  return !['list', 'ls', 'why', 'outdated'].includes(args[0] ?? '')
+}
+
+/**
+ * Run one Profile package operation with a crash-safe pre-change rollback point.
+ * @param profile - Profile selected by the CLI parser.
+ * @param args - pnpm or Doctor arguments.
+ * @returns Process exit code.
+ */
+export function runPlugin(profile: string, args: readonly string[]): number {
+  if (!pluginInvocationMutates(args) || process.env.DSH_PLUGIN_SNAPSHOT_BATCH === '1') {
+    return runPluginWithoutSnapshot(profile, args)
+  }
+  return withAutomaticProfilePluginSnapshot({
+    profile,
+    trigger: pluginMutationTrigger(args),
+    ...snapshotRuntimeMetadata(),
+  }, () => runPluginWithoutSnapshot(profile, args))
 }

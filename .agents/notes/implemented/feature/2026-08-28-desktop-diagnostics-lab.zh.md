@@ -12,15 +12,17 @@ Status: implemented
 
 ## 决策
 
-桌面宿主通过窄范围 Electron Bridge 提供版本化诊断演练中心。目录包含十二个固定场景标识和固定样本字节：兼容与不兼容 Host 影子副本、孤立 Bundle、旧版隔离卸载残留、scoped 根包与 unscoped Loader 包名不匹配、安装包内 `dsh-font` 客户端不兼容、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断。渲染层只能选择这些标识，以及隔离沙箱或需明确确认的当前 Profile。
+桌面宿主通过窄范围 Electron Bridge 提供版本化诊断演练中心。目录包含十四个固定场景标识和固定样本字节：兼容与不兼容 Host 影子副本、孤立 Bundle、旧版隔离卸载残留、scoped 根包与 unscoped Loader 包名不匹配、入口可解析但内部依赖缺失的 Loader、损坏的设置文档、安装包内 `dsh-font` 客户端不兼容、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断。渲染层只能选择这些标识，以及隔离沙箱或需明确确认的当前 Profile。
 
 每个选中场景只注入一次。成功运行进入持久的 `active` 阶段，不再自动清理。本次运行的文件、包管理器状态、修复处置和隔离记录会一直保留，直到用户点击**全部恢复**。报告保留预期与实际产品错误码、修复处置、耗时和经过限长脱敏的诊断。
 
 默认沙箱会在 Electron `userData` 下使用本次运行专属的 home。它会经过正式 Doctor 边界并保留运行时，但不会影响当前 Profile 顶部统计。这是刻意的边界：沙箱证据显示在演练卡片与报告里，不能伪装成用户真实 Profile 的问题。
 
-当前 Profile 模式只开放六种经过真实产品链路验证的场景：兼容 Host 影子副本、不兼容 Host 依赖、孤立 Bundle、旧版隔离卸载残留、scoped Loader 包名不匹配，以及安装包内 `dsh-font 1.1.0` 的客户端不兼容。写入前 Harness 会暂停，桌面宿主会备份白名单内的 Profile 清单、Workspace 策略、锁文件、Patch、隔离记录和健康报告。Host 影子样本只安装在自己的 `@dsh-diagnostic-lab/*` 命名空间根目录下，绝不替换 Profile 全局 Host override，也不修改 `nodeLinker`。前四种样本仍通过正式 `dsh plugin --profile web doctor --repair` 链路完成真实的依赖统一、隔离或状态收敛。隔离卸载演练会重建旧卸载器留下的精确不一致形态：插件、活动 manifest 条目与持久隔离已经消失，但受限的修复报告、诊断报告和 lockfile 引用仍然存在。正式 Doctor 必须报告 `profile.quarantine-removal-residue`，只清理这些派生状态，并保留其他无关 incident。`dsh-font` 被固定为完整性校验的 `diagnostic` 资源，普通启动与手动预装流程都不会安装；只有演练中心会通过 `dsh plugin add` 临时装入，再恢复真实浏览器，等待客户端 Loader 恢复链路写入 `profile.module-resolution`、撤下 Bundle 并隔离插件。因此常规诊断看到的就是保护真实用户启动的同一种记录。
+当前 Profile 模式只开放八种经过真实产品链路验证的场景：兼容 Host 影子副本、不兼容 Host 依赖、孤立 Bundle、旧版隔离卸载残留、scoped Loader 包名不匹配、Loader 内部依赖缺失、损坏的 `settings.yaml`，以及安装包内 `dsh-font 1.1.0` 的客户端不兼容。写入前 Harness 会暂停，桌面宿主会备份白名单内的 Profile 清单、Workspace 策略、锁文件、Patch、用户设置、安全模式设置、隔离记录和健康报告。Host 影子样本只安装在自己的 `@dsh-diagnostic-lab/*` 命名空间根目录下，绝不替换 Profile 全局 Host override，也不修改 `nodeLinker`。前四种样本仍通过正式 `dsh plugin --profile web doctor --repair` 链路完成真实的依赖统一、隔离或状态收敛。隔离卸载演练会重建旧卸载器留下的精确不一致形态：插件、活动 manifest 条目与持久隔离已经消失，但受限的修复报告、诊断报告和 lockfile 引用仍然存在。正式 Doctor 必须报告 `profile.quarantine-removal-residue`，只清理这些派生状态，并保留其他无关 incident。`dsh-font` 被固定为完整性校验的 `diagnostic` 资源，普通启动与手动预装流程都不会安装；只有演练中心会通过 `dsh plugin add` 临时装入，再恢复真实浏览器，等待客户端 Loader 恢复链路写入 `profile.module-resolution`、撤下 Bundle 并隔离插件。因此常规诊断看到的就是保护真实用户启动的同一种记录。
 
-第六个当前 Profile 场景会通过普通插件 CLI 安装经过完整性固定的 `@dsh-diagnostic-lab/scoped-loader-mismatch@1.0.0` 资源。其根包使用 scoped 名称，而 Bundle Patch 故意指向不存在的 unscoped Loader 模块。安装后 Profile 预检必须把最终 entry 唯一归属到这个直接根包，立即以 `loader-module-unresolvable` 隔离，并保留真实的诊断计数与解决操作。沙箱模式会在本次运行专属 DSH home 中执行同一包，因此其隔离不会改变活动 Profile。该场景排在 `dsh-font` 之前，后者继续作为最后一个浏览器恢复演练。
+Scoped 名称场景会通过普通插件 CLI 安装经过完整性固定的 `@dsh-diagnostic-lab/scoped-loader-mismatch@1.0.0` 资源。其根包使用 scoped 名称，而 Bundle Patch 故意指向不存在的 unscoped Loader 模块。安装后 Profile 预检必须把最终 entry 唯一归属到这个直接根包，立即以 `loader-module-unresolvable` 隔离，并保留真实的诊断计数与解决操作。沙箱模式会在本次运行专属 DSH home 中执行同一包，因此其隔离不会改变活动 Profile。
+
+内部依赖缺失场景同样安装经过完整性固定的 `@dsh-diagnostic-lab/loader-dependency-unavailable@1.0.0`，但它的 Loader entry 本身可以解析，随后静态导入一个不存在的内部 Host 模块。相同的预检必须报告 `loader.dependency-unavailable`，把责任归到聚合根插件，并以 `loader-dependency-unavailable` 隔离。损坏设置场景会向所选 home 写入重复键并保留精确字节；当前 Profile 模式会恢复真实 Harness，直到安全模式报告记录 `config.settings-invalid` 和 `skippedUserSettings: true`，再验证安装方维护的空设置文件没有替换损坏的用户文档。需要浏览器恢复的场景排在最后：先运行 `dsh-font`，再运行损坏设置，避免保留的设置错误遮蔽客户端模块演练。“全部恢复”会还原逐字节一致的原设置，并删除演练前不存在的安全模式设置文件。
 
 恢复日志区分四种状态。`injecting` 与 `restoring` 表示未完成事务，进程中断后必须在加载 Profile 插件前自动回滚；`active` 表示用户主动保留的演练，应用重启后应重新连接到界面；`clean` 表示全部恢复已经完成。这样既不会让崩溃恢复误删演示现场，也不会放行只写了一半的修改。
 

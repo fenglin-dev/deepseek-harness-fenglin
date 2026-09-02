@@ -17,21 +17,35 @@ function fixture(options: {
   invariantSource?: string
   invariantExport?: string
   runtimeChunk?: string
+  runtimeEntrypoint?: string
+  materializeRuntimeEntrypoint?: boolean
 } = {}): { root: string; loaderUrl: string } {
   const root = mkdtempSync(join(tmpdir(), 'dsh-built-package-invariants-'))
   roots.push(root)
   const packageDir = join(root, 'packages/core/probe')
   mkdirSync(join(packageDir, 'lib'), { recursive: true })
   const companion = options.companion ?? true
+  const runtimeEntrypoint = options.runtimeEntrypoint
   writeFileSync(join(packageDir, 'package.json'), `${JSON.stringify({
     name: '@deepseek-ai/dsh-probe',
     type: 'module',
-    files: companion ? ['lib/invariant.js'] : [],
-    exports: companion ? {
-      './invariant': {
-        default: options.invariantExport ?? './lib/invariant.js',
+    ...(runtimeEntrypoint === undefined ? {} : {
+      main: runtimeEntrypoint,
+      exports: {
+        '.': { types: './lib/types/index.d.ts', default: runtimeEntrypoint },
       },
-    } : {},
+    }),
+    files: companion ? ['lib/invariant.js'] : [],
+    exports: {
+      ...(runtimeEntrypoint === undefined ? {} : {
+        '.': { types: './lib/types/index.d.ts', default: runtimeEntrypoint },
+      }),
+      ...(companion ? {
+        './invariant': {
+          default: options.invariantExport ?? './lib/invariant.js',
+        },
+      } : {}),
+    },
   }, null, 2)}\n`)
   if (companion) {
     writeFileSync(
@@ -41,6 +55,9 @@ function fixture(options: {
   }
   if (options.runtimeChunk !== undefined) {
     writeFileSync(join(packageDir, 'lib/chunk.js'), options.runtimeChunk)
+  }
+  if (runtimeEntrypoint !== undefined && options.materializeRuntimeEntrypoint !== false) {
+    writeFileSync(join(packageDir, runtimeEntrypoint), 'export const ready = true\n')
   }
   const loaderPath = join(root, 'loader.mjs')
   writeFileSync(loaderPath, 'export default class Loader { unwrapExports(value) { return value } }\n')
@@ -95,5 +112,26 @@ describe('built package invariant verifier', () => {
     const result = verify(root, loaderUrl)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('chunk.js')
+  })
+
+  it('rejects a declared runtime entrypoint that the build did not materialize', () => {
+    const { root, loaderUrl } = fixture({
+      companion: false,
+      runtimeEntrypoint: './lib/index.js',
+      materializeRuntimeEntrypoint: false,
+    })
+    const result = verify(root, loaderUrl)
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('main points to missing built file ./lib/index.js')
+  })
+
+  it('accepts a materialized runtime entrypoint and counts each target once', () => {
+    const { root, loaderUrl } = fixture({
+      companion: false,
+      runtimeEntrypoint: './lib/index.js',
+    })
+    const result = verify(root, loaderUrl)
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('1 declared runtime entrypoint(s) are materialized')
   })
 })

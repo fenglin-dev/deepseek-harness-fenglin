@@ -70,7 +70,6 @@ describe('desktop window frame policy', () => {
       '../../../packages/client/ui-settings-general/src/client/SettingsRoot.module.css',
       '../../../packages/client/ui-settings-models/src/client/OnboardingModal.module.css',
       '../../../packages/client/ui-settings-models/src/client/SetupWizard.module.css',
-      '../../../packages/client/ui-primitives/src/ConnectionBanner.module.css',
     ]
 
     for (const file of files) {

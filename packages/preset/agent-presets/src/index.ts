@@ -34,8 +34,8 @@ import type { AgentPresetDocument, AgentPresetRoster } from './types.ts'
 import type {} from '@deepseek-ai/dsh-session-projection'
 // Type-only: resolves the registry notification emitted after scope reparenting.
 import type {} from '@deepseek-ai/dsh-tools'
+import { settingsNamespace, type SettingsScope } from '@deepseek-ai/dsh-settings'
 import type SettingsService from '@deepseek-ai/dsh-settings'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { discoverPresets, SHIPPED_PRESET_ROOT, USER_PRESET_DIR } from './discovery.ts'
 import { copyComposition, deleteComposition, presetExists, readComposition } from './authoring.ts'
@@ -222,6 +222,36 @@ export class AgentPresets extends TypertRemoteService {
       )
     })
 
+    // `running` is emitted synchronously before the loop assembles its first
+    // request, so a resumed historical Session receives the latest Host
+    // connections without changing an already-running turn. `idle` is the
+    // safe removal boundary after tool calls and background-job creation have
+    // finished for the current driver interval.
+    ctx.on('agent/status', ({ agent }) => {
+      this.reconcileExternalTools(agent)
+    })
+
+    ctx.on('agent/disposed', ({ agent }) => {
+      this.externalToolMounts.delete(agent)
+    })
+
+    // Commit the exact dynamic capability projection at the model-request
+    // boundary. Retries of the same step reuse its record; a later empty
+    // projection is retained after any connected step so disconnects are
+    // reconstructable rather than inferred from mutable Host settings.
+    ctx.on('agent/request', ({ agent, turn, step }, next) => {
+      const previous = agent.session.snapshotEvents()
+        .findLast(event => event.type === 'external-tools/resolved')
+      if (previous?.data.turn !== turn || previous.data.step !== step) {
+        const mounted = this.externalToolMounts.get(agent)
+        const tools = (['codex', 'claude-code'] as const).filter(tool => mounted?.has(tool) === true)
+        if (tools.length > 0 || previous !== undefined) {
+          agent.session.append('external-tools/resolved', { turn, step, tools: [...tools] })
+        }
+      }
+      return next()
+    })
+
     // The durable record is the commit point. Its public notification carries
     // only the stable identity needed by clients, never the live Session.
     ctx.on('session/event', (session, event) => {
@@ -344,15 +374,28 @@ export class AgentPresets extends TypertRemoteService {
     const wanted = id ?? this.defaultId
     const presets = await this.list()
     const found = presets.find(preset => preset.id === wanted)
-    if (found === undefined) {
-      const available = presets.map(preset => preset.id)
-      throw new RemoteError(
-        'agent-preset/not-found',
-        `agent-presets: preset "${wanted}" not found (available: ${available.join(', ') || 'none'})`,
-        { agentPreset: wanted, available },
-      )
+    if (found !== undefined) return found
+
+    // Desktop builds before dynamic Host connections created sessions under a
+    // managed `external-tools` preset. That preset is no longer shipped, but
+    // its sessions remain valid standard-mode history. Resolve the missing
+    // legacy identity to the standard composition instead of making those
+    // conversations permanently unopenable. An explicitly installed preset
+    // with that id still wins through the direct lookup above.
+    if (wanted === 'external-tools') {
+      const standard = presets.find(preset => preset.id === 'standard')
+      if (standard !== undefined) return standard
     }
-    return found
+    if (wanted === 'code') {
+      const ptc = presets.find(preset => preset.id === 'ptc')
+      if (ptc !== undefined) return ptc
+    }
+    const available = presets.map(preset => preset.id)
+    throw new RemoteError(
+      'agent-preset/not-found',
+      `agent-presets: preset "${wanted}" not found (available: ${available.join(', ') || 'none'})`,
+      { agentPreset: wanted, available },
+    )
   }
 
   /**

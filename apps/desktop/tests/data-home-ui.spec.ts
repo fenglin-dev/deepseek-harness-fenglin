@@ -108,7 +108,7 @@ describe('desktop data-home chooser', () => {
     const html = await readFile(`${desktopRoot}/src/data-home.html`, 'utf8')
     const main = await readFile(`${desktopRoot}/src/main.ts`, 'utf8')
     const ready = main.indexOf('await app.whenReady()')
-    const dockIcon = main.indexOf('applyDevelopmentDockIcon()', ready)
+    const dockIcon = main.indexOf('applyStartupDockIcon()', ready)
     const chooser = main.indexOf('await prepareDesktopDshHome(DESKTOP_DATA_HOME)', ready)
 
     expect(html).toContain('<img src="icon.png" alt="">')

@@ -103,4 +103,29 @@ describe('application entrypoints', () => {
       'package.json scripts.demo:new-app: demo launcher has no explicit dsh or in-process classification',
     ])
   })
+
+  it('rejects a community Desktop preload that is no longer owned by its build', () => {
+    const root = fixture()
+    write(root, 'apps/desktop/package.json', '{"main":"lib/main.js"}\n')
+    write(root, 'apps/desktop/src/main.ts', '')
+    write(root, 'apps/desktop/src/preload.ts', '')
+    write(root, 'apps/desktop/src/data-home-preload.ts', '')
+    write(root, 'apps/desktop/src/titlebar-preload.ts', '')
+    write(root, 'apps/desktop/tsdown.preload.config.ts', 'lib/preload.js lib/titlebar-preload.js')
+    for (const path of [
+      'copy-assets.mjs',
+      'dev-watch.mjs',
+      'prepare-unix-runtime.mjs',
+      'prepare-windows-runtime.mjs',
+      'refresh-bundled-plugins.ts',
+      'verify-external-tool-compatibility.ts',
+      'smoke-windows-package.ps1',
+      'windows-command-shell.mjs',
+    ]) write(root, `apps/desktop/scripts/${path}`, '')
+
+    const failures = applicationEntrypointViolations(root)
+    expect(failures).toContain(
+      'apps/desktop/src/data-home-preload.ts: not reachable from apps/desktop/tsdown.preload.config.ts',
+    )
+  })
 })
