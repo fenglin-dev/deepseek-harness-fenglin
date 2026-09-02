@@ -49,6 +49,8 @@ A profile is how one dsh installation ships different app surfaces: `web`, `head
 
 The Profile preflight reconciles dependency identity and quarantine state before composition. If an older or interrupted uninstall removed an inactive plugin and its durable quarantine but left lockfile, repair-report, or diagnostic references, inspection reports `profile.quarantine-removal-residue`; repair removes only those stale references and any incomplete package directory, so the absent plugin is not quarantined again.
 
+For each uniquely owned external Loader row, preflight resolves the declared module without executing it and checks the entry file's static bare imports. An unavailable Loader module is quarantined as `loader-module-unresolvable`; an available Loader module with an unavailable imported dependency is quarantined as `loader-dependency-unavailable`, with the outer Bundle, Loader entry, importer, and missing package retained in the diagnostic. User-targeted or ambiguous rows are never automatically removed. Diagnostic safe mode also redirects the settings provider to an app-maintained empty document, so invalid user settings remain untouched and cannot prevent the Diagnostics UI from loading.
+
 Your machine-local preferences also live in the Harness home:
 
 - **`.env`** — your ordinary environment layers: the invoking directory's file outranks the Harness-home file, and both sit below the inherited environment. Variables that decide how the process starts (`PATH`, proxies, `DSH_*`, `XDG_*` and similar) are rejected from files: export them instead. For a non-product bin that just wants one directory's `.env`, a missing file is fine and an unloadable one prints one labelled warning line.

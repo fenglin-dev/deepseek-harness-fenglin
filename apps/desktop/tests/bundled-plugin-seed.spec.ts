@@ -69,6 +69,7 @@ describe('bundled plugin seed', () => {
       ['dsh-pocket', 'startup'],
       ['dsh-font', 'diagnostic'],
       ['@dsh-diagnostic-lab/scoped-loader-mismatch', 'diagnostic'],
+      ['@dsh-diagnostic-lab/loader-dependency-unavailable', 'diagnostic'],
     ])
     for (const entry of manifest.plugins.filter(candidate => (
       candidate.installPolicy !== 'diagnostic' && !candidate.registrySpec?.startsWith('github:')
@@ -79,6 +80,8 @@ describe('bundled plugin seed', () => {
     expect(diagnosticEntry).toMatchObject({ version: '1.1.0', installPolicy: 'diagnostic' })
     expect(diagnosticEntry?.registrySpec).toBeUndefined()
     expect(manifest.plugins.find(entry => entry.packageName === '@dsh-diagnostic-lab/scoped-loader-mismatch'))
+      .toMatchObject({ version: '1.0.0', installPolicy: 'diagnostic' })
+    expect(manifest.plugins.find(entry => entry.packageName === '@dsh-diagnostic-lab/loader-dependency-unavailable'))
       .toMatchObject({ version: '1.0.0', installPolicy: 'diagnostic' })
     expect(new Set(manifest.plugins.map(entry => entry.seedId)).size).toBe(manifest.plugins.length)
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-better-sidebar')?.approvedBuilds)
@@ -180,6 +183,29 @@ describe('bundled plugin seed', () => {
     await expect(seedBundledPlugin({ ...options, install })).resolves.toBe('installed')
     expect(install).toHaveBeenCalledWith(join(state, options.entry.archive), options.entry)
     await expect(readFile(join(state, 'dshmarket.seeded.json'), 'utf8')).resolves.toContain('"version": "1.12.1"')
+  })
+
+  it('preserves a snapshot-restored bundled version until an explicit install', async () => {
+    const options = await fixture()
+    const profile = join(options.dshHome, 'profiles', 'web')
+    const state = join(options.dshHome, 'bundled-plugins')
+    await mkdir(profile, { recursive: true })
+    await mkdir(state, { recursive: true })
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      dependencies: { dshmarket: `file:${join(state, 'dshmarket-1.0.0.tgz')}` },
+    }))
+    await writeFile(join(state, 'dshmarket.seeded.json'), JSON.stringify({
+      schema: 2, packageName: 'dshmarket', version: '1.0.0',
+    }))
+    await writeFile(join(state, 'snapshot-version-hold.json'), JSON.stringify({
+      schema: 1, versions: [{ seedId: 'dshmarket', version: '1.0.0' }],
+    }))
+    const install = vi.fn(async () => {})
+
+    await expect(seedBundledPlugin({ ...options, install })).resolves.toBe('already-seeded')
+    expect(install).not.toHaveBeenCalled()
+    await expect(seedBundledPlugin({ ...options, force: true, install })).resolves.toBe('installed')
+    expect(install).toHaveBeenCalledOnce()
   })
 
   it('does not replace a user-owned registry dependency when the bundled marker is older', async () => {

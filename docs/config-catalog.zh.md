@@ -878,6 +878,26 @@ export interface Config {
 
 来源：[`packages/host/frontend-static/src/index.ts:30`](../packages/host/frontend-static/src/index.ts)
 
+<a id="deepseek-aidsh-host-plugin-inventory"></a>
+
+## `@deepseek-ai/dsh-host-plugin-inventory`
+
+需要：`loader` · `subprocess`
+
+```ts config-catalog
+/** Profile plugin-installer resource policy. */
+export interface Config {
+  /** Maximum retained bytes for each installer output stream. */
+  installOutputMaxBytes?: number
+  /** Process-tree termination grace used during Host teardown. */
+  installTerminationGraceMs?: number
+  /** Profile whose dependency health is projected to clients. */
+  profile?: string
+}
+```
+
+来源：[`packages/host/plugin-inventory/src/index.ts:88`](../packages/host/plugin-inventory/src/index.ts)
+
 <a id="deepseek-aidsh-host-webserver"></a>
 
 ## `@deepseek-ai/dsh-host-webserver`
@@ -3365,6 +3385,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-reference`（[`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-renderer`（[`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-schedule`（[`packages/client/ui-schedule/src/index.ts`](../packages/client/ui-schedule/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-selection-actions`（[`packages/client/ui-selection-actions/src/index.ts`](../packages/client/ui-selection-actions/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-session`（[`packages/client/ui-session/src/index.ts`](../packages/client/ui-session/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings`（[`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-general`（[`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts)）

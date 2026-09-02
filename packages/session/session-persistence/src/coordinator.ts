@@ -595,7 +595,7 @@ function eventMessageId(event: SessionEvent): PersistedMessageId | undefined {
 function snapshotStoredEvents(events: readonly SessionEvent[], id: SessionId): SessionEvent[] {
   assertSupportedEvents(events, id)
   const messageIds = new Map<SessionSeqType, PersistedMessageId>()
-  return events.map((event) => {
+  return migrateLegacyEmptyToolCalls(events, id).map((event) => {
     const migratedStart = migrateLegacyTurnStartEvent(event, id)
     const migratedTurn = migrateLegacyTurnEndEvent(migratedStart, id)
     const migratedSteering = migrateLegacySteeringEvent(migratedTurn, id)
@@ -610,7 +610,8 @@ function snapshotStoredEvents(events: readonly SessionEvent[], id: SessionId): S
 function adoptStoredEvents(events: SessionEvent[], id: SessionId): SessionEvent[] {
   assertSupportedEvents(events, id)
   const messageIds = new Map<SessionSeqType, PersistedMessageId>()
-  for (const [index, event] of events.entries()) {
+  const storedEvents = migrateLegacyEmptyToolCalls(events, id)
+  for (const [index, event] of storedEvents.entries()) {
     const migratedStart = migrateLegacyTurnStartEvent(event, id)
     const migratedTurn = migrateLegacyTurnEndEvent(migratedStart, id)
     const migratedSteering = migrateLegacySteeringEvent(migratedTurn, id)

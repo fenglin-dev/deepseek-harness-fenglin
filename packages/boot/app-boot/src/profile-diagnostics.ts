@@ -34,6 +34,7 @@ export type ProfileDiagnosticAction =
   | 'isolate'
   | 'restore'
   | 'open-config'
+  | 'reset-config'
   | 'export'
 
 /** Stable product category independent of pnpm and Cordis message wording. */
@@ -56,6 +57,8 @@ export type ProfileDiagnosticCode =
   | 'profile.orphaned-bundle'
   | 'profile.bundle-invalid'
   | 'profile.module-resolution'
+  | 'profile.session-persistence-migration'
+  | 'loader.dependency-unavailable'
   | 'profile.patch-invalid'
   | 'profile.quarantine-removal-residue'
   | 'loader.duplicate-entry'
@@ -64,6 +67,7 @@ export type ProfileDiagnosticCode =
   | 'loader.lifecycle-failed'
   | 'loader.rollback-failed'
   | 'config.credentials-invalid'
+  | 'config.settings-invalid'
   | 'runtime.launch-invalid'
   | 'profile.unknown'
 
@@ -73,7 +77,9 @@ export interface ProfileDiagnosticAttribution {
   readonly dependencyChain?: readonly string[]
   readonly entryId?: string
   readonly moduleName?: string
-  readonly configKind?: 'profile-manifest' | 'workspace' | 'lockfile' | 'profile-patch' | 'home-patch' | 'credentials'
+  readonly missingModule?: string
+  readonly importerPackage?: string
+  readonly configKind?: 'profile-manifest' | 'workspace' | 'lockfile' | 'profile-patch' | 'home-patch' | 'credentials' | 'settings'
 }
 
 /** One current Profile problem with bounded, redacted evidence. */
@@ -101,6 +107,7 @@ export interface ProfileDiagnosticReport {
     readonly enteredAt: string
     readonly skippedBundles: readonly string[]
     readonly skippedUserLayers: boolean
+    readonly skippedUserSettings?: boolean
   }
 }
 
@@ -220,8 +227,22 @@ const RULES: readonly DiagnosticRule[] = [
     pattern: /credentials(?:\.yaml|-local)?.*(?:must be|invalid|parse)|value for ["']version["']/iu,
   },
   {
+    code: 'config.settings-invalid', source: 'config', severity: 'blocked',
+    actions: ['open-config', 'reset-config', 'export'],
+    pattern: /settings-file:\s*(?:invalid document|.*must be a map)|settings\.ya?ml.*(?:DUPLICATE_KEY|YAMLParseError|JSON)/iu,
+  },
+  {
     code: 'profile.bundle-invalid', source: 'profile', severity: 'blocked', actions: ['isolate', 'open-config', 'export'],
     pattern: /profile bundle.*(?:declares no dsh\.bundle|dsh\.bundle.*invalid)|bundle patch/iu,
+  },
+  {
+    code: 'profile.session-persistence-migration', source: 'profile', severity: 'blocked',
+    actions: ['open-config', 'export'],
+    pattern: /@deepseek-ai\/dsh-session-persistence-sqlite/iu,
+  },
+  {
+    code: 'loader.dependency-unavailable', source: 'loader', severity: 'blocked', actions: ['isolate', 'export'],
+    pattern: /loader dependency unavailable|loader module .* imports unavailable dependency/iu,
   },
   {
     code: 'profile.module-resolution', source: 'profile', severity: 'blocked', actions: ['repair', 'isolate', 'export'],
@@ -482,15 +503,17 @@ export function quarantineRemovalResidueDiagnostic(
  */
 export function quarantinedPluginDiagnostic(
   packageName: string,
-  reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable',
+  reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable' | 'loader-dependency-unavailable',
 ): ProfileDiagnostic {
   const code = reason === 'orphaned-bundle'
     ? 'profile.orphaned-bundle'
     : reason === 'build-script-blocked'
       ? 'pnpm.build-script-blocked'
-      : reason === 'client-module-unavailable' || reason === 'loader-module-unresolvable'
-        ? 'profile.module-resolution'
-        : 'profile.host-dependency-conflict'
+      : reason === 'loader-dependency-unavailable'
+        ? 'loader.dependency-unavailable'
+        : reason === 'client-module-unavailable' || reason === 'loader-module-unresolvable'
+          ? 'profile.module-resolution'
+          : 'profile.host-dependency-conflict'
   return {
     diagnosticId: randomUUID(),
     code,

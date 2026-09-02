@@ -10,6 +10,8 @@ import { en } from '../src/client/locales.ts'
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 
 type Row = { id: string; order: number; label: string }
@@ -41,12 +43,16 @@ function mount({
     { id: 'welcome', order: -100 },
     { id: 'credential', order: 0 },
   ],
+  sectionOrder = [],
+  navigation,
 }: {
   wide?: boolean
-  connectionState?: ConnectionSnapshot
   onboardingActive?: boolean
   rows?: Row[]
   steps?: Step[]
+  sectionOrder?: readonly string[]
+  navigation?: SettingsNavigationRequest
+  connectionState?: ConnectionSnapshot
 } = {}) {
   // Mutable row source standing in for the bound useSections hook; bump()
   // plays a ledger change through the same observable contract.
@@ -110,7 +116,7 @@ function mount({
       for (const fn of [...connectionListeners]) fn()
     })
   }
-  return { view, renderSlot, bump, listeners, reconnect, setConnectionState }
+  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, setSectionOrder }
 }
 
 function openPanel() {
@@ -275,6 +281,151 @@ describe('SettingsPanel navigation', () => {
     expect(screen.queryByTestId('section-general')).toBeNull()
   })
 
+  it('follows the pointer, animates a full-row gap, then persists exactly once after settling', () => {
+    vi.useFakeTimers()
+    const { setSectionOrder } = mount({ sectionOrder: ['models', 'general', 'agent-presets'] })
+    openPanel()
+    const { list, items, flushFrame } = installPointerGeometry()
+    expect([...list.querySelectorAll('[role="listitem"]')].map(item => item.textContent)).toEqual([
+      expect.stringContaining('Models'),
+      expect.stringContaining('General'),
+      expect.stringContaining('Agent presets'),
+    ])
+
+    const modelsHandle = screen.getByRole('button', { name: `${en['nav.reorder']}: Models` })
+    fireEvent.pointerDown(modelsHandle, {
+      button: 0, isPrimary: true, pointerId: 7, clientX: 150, clientY: 120,
+    })
+    fireEvent.pointerMove(modelsHandle, { pointerId: 7, clientX: 150, clientY: 220 })
+    flushFrame()
+
+    expect(list.dataset.sorting).toBe('true')
+    expect(items[0]?.dataset.placeholder).toBe('true')
+    expect(items[1]?.style.transform).toBe('translateY(-44px)')
+    expect(items[2]?.style.transform).toBe('translateY(-44px)')
+    const ghost = document.querySelector<HTMLElement>('[data-phase="dragging"]')
+    expect(ghost?.style.transform).toBe('translateY(100px)')
+    expect(setSectionOrder).not.toHaveBeenCalled()
+
+    fireEvent.pointerUp(modelsHandle, { pointerId: 7, clientX: 150, clientY: 220 })
+    expect(setSectionOrder).not.toHaveBeenCalled()
+    act(() => { vi.advanceTimersByTime(180) })
+
+    expect(setSectionOrder).toHaveBeenCalledOnce()
+    expect(setSectionOrder).toHaveBeenCalledWith(['general', 'agent-presets', 'models'])
+    expect(screen.getByRole('button', { name: 'Models' }).getAttribute('aria-current')).toBeNull()
+    expect(screen.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe('true')
+  })
+
+  it('moves the last contributed section into the first slot', () => {
+    vi.useFakeTimers()
+    const { setSectionOrder } = mount()
+    openPanel()
+    const { items, flushFrame } = installPointerGeometry()
+    const handle = screen.getByRole('button', { name: `${en['nav.reorder']}: Agent presets` })
+    fireEvent.pointerDown(handle, {
+      button: 0, isPrimary: true, pointerId: 10, clientX: 150, clientY: 208,
+    })
+    fireEvent.pointerMove(handle, { pointerId: 10, clientX: 150, clientY: 105 })
+    flushFrame()
+    expect(items[0]?.style.transform).toBe('translateY(44px)')
+    expect(items[1]?.style.transform).toBe('translateY(44px)')
+    fireEvent.pointerUp(handle, { pointerId: 10, clientX: 150, clientY: 105 })
+    act(() => { vi.advanceTimersByTime(180) })
+    expect(setSectionOrder).toHaveBeenCalledWith(['agent-presets', 'general', 'models'])
+  })
+
+  it('auto-scrolls a long navigation rail near its bottom edge', () => {
+    vi.useFakeTimers()
+    mount()
+    openPanel()
+    const { list, flushFrame } = installPointerGeometry()
+    const handle = screen.getByRole('button', { name: `${en['nav.reorder']}: Models` })
+    fireEvent.pointerDown(handle, {
+      button: 0, isPrimary: true, pointerId: 11, clientX: 150, clientY: 164,
+    })
+    fireEvent.pointerMove(handle, { pointerId: 11, clientX: 150, clientY: 229 })
+    flushFrame()
+    expect(list.scrollTop).toBeGreaterThan(0)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    act(() => { vi.advanceTimersByTime(180) })
+  })
+
+  it('does not start sorting from the row or before the handle passes the four-pixel threshold', () => {
+    const { setSectionOrder } = mount()
+    openPanel()
+    const { list, flushFrame } = installPointerGeometry()
+    const models = screen.getByRole('button', { name: 'Models' })
+    fireEvent.pointerDown(models, { pointerId: 3, clientX: 80, clientY: 164 })
+    fireEvent.pointerMove(models, { pointerId: 3, clientX: 80, clientY: 220 })
+    expect(list.dataset.sorting).toBeUndefined()
+
+    const handle = screen.getByRole('button', { name: `${en['nav.reorder']}: Models` })
+    fireEvent.pointerDown(handle, {
+      button: 0, isPrimary: true, pointerId: 4, clientX: 150, clientY: 164,
+    })
+    fireEvent.pointerMove(handle, { pointerId: 4, clientX: 152, clientY: 166 })
+    flushFrame()
+    fireEvent.pointerUp(handle, { pointerId: 4, clientX: 152, clientY: 166 })
+    expect(list.dataset.sorting).toBeUndefined()
+    expect(setSectionOrder).not.toHaveBeenCalled()
+  })
+
+  it.each(['outside', 'cancel', 'escape'] as const)(
+    'restores the original order without persisting on %s cancellation',
+    (method) => {
+      vi.useFakeTimers()
+      const { setSectionOrder } = mount()
+      openPanel()
+      const { list, items, flushFrame } = installPointerGeometry()
+      const handle = screen.getByRole('button', { name: `${en['nav.reorder']}: Models` })
+      fireEvent.pointerDown(handle, {
+        button: 0, isPrimary: true, pointerId: 8, clientX: 150, clientY: 164,
+      })
+      fireEvent.pointerMove(handle, { pointerId: 8, clientX: 150, clientY: 215 })
+      flushFrame()
+      expect(list.dataset.sorting).toBe('true')
+
+      if (method === 'outside') {
+        fireEvent.pointerUp(handle, { pointerId: 8, clientX: 240, clientY: 215 })
+      } else if (method === 'cancel') {
+        fireEvent.pointerCancel(handle, { pointerId: 8 })
+      } else {
+        fireEvent.keyDown(document, { key: 'Escape' })
+      }
+      expect(items.every(item => item.style.transform === 'translateY(0px)')).toBe(true)
+      act(() => { vi.advanceTimersByTime(180) })
+      expect(setSectionOrder).not.toHaveBeenCalled()
+      expect(list.dataset.sorting).toBeUndefined()
+      expect(screen.getByRole('dialog')).toBeTruthy()
+    },
+  )
+
+  it('skips the settle delay when reduced motion is requested', () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })))
+    const { setSectionOrder } = mount()
+    openPanel()
+    const { flushFrame } = installPointerGeometry()
+    const handle = screen.getByRole('button', { name: `${en['nav.reorder']}: Models` })
+    fireEvent.pointerDown(handle, {
+      button: 0, isPrimary: true, pointerId: 9, clientX: 150, clientY: 164,
+    })
+    fireEvent.pointerMove(handle, { pointerId: 9, clientX: 150, clientY: 215 })
+    flushFrame()
+    fireEvent.pointerUp(handle, { pointerId: 9, clientX: 150, clientY: 215 })
+    expect(setSectionOrder).not.toHaveBeenCalled()
+    act(() => { vi.advanceTimersByTime(0) })
+    expect(setSectionOrder).toHaveBeenCalledOnce()
+  })
+
+  it('supports keyboard reordering from the same drag handle', () => {
+    const { setSectionOrder } = mount()
+    openPanel()
+    fireEvent.keyDown(screen.getByRole('button', { name: `${en['nav.reorder']}: Models` }), { key: 'ArrowUp' })
+    expect(setSectionOrder).toHaveBeenCalledWith(['models', 'general', 'agent-presets'])
+  })
+
   it('mounts onboarding steps in order and transfers ownership only on completion', () => {
     const { renderSlot } = mount()
     const first = renderSlot.mock.calls.find(call => call[0] === 'settings.onboarding')
@@ -292,8 +443,19 @@ describe('SettingsPanel navigation', () => {
     act(() => {
       (second?.[1] as { openSection: (id: string) => void }).openSection('models')
     })
-    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: en['onboarding.start'] })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: en['onboarding.start'] }).parentElement?.parentElement)
+      .toBe(document.body)
     expect(screen.getByTestId('section-models')).toBeTruthy()
+    expect(renderSlot).toHaveBeenCalledWith(
+      'settings.section',
+      expect.objectContaining({ preferredSubsectionId: 'provider' }),
+      { only: 'models' },
+    )
+    expect(screen.queryByRole('button', { name: 'General' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en['onboarding.done'] }))
+    expect(finishSection).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog', { name: en['onboarding.start'] })).toBeNull()
 
     cleanup()
     const inactive = mount({ onboardingActive: false }).renderSlot.mock.calls

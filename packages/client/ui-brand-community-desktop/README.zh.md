@@ -33,6 +33,8 @@ kind: "package-reference"
 
 客户端入口通过侧边栏和会话 Hero 插槽注册骑鲸图标及社区产品名称。注册同时受 Profile 和生命周期约束，HMR 或释放时会撤下整组占位，不会留下混合品牌状态。
 
+本包不发布 invariant companion，因为它只贡献无状态的品牌插槽渲染器。
+
 <a id="model-experience"></a>
 ## 模型体验
 

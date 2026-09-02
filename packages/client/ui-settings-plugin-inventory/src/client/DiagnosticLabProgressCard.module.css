@@ -7,7 +7,7 @@
   width: min(460px, calc(100vw - 48px));
   box-sizing: border-box;
   padding: 20px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 16px;
   background: var(--dsw-alias-bg-base);
   box-shadow: 0 12px 36px rgb(17 24 39 / 16%);
@@ -41,15 +41,16 @@
   width: 18px;
   height: 18px;
   place-items: center;
-  border: 2px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 50%;
+  corner-shape: round;
 }
 .steps li[data-state='active'], .steps li[data-state='done'] { color: var(--accent); }
 .steps li[data-state='active'] > span { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 3px var(--dsw-alias-bg-base); }
 .steps li[data-state='done'] > span { border-color: var(--accent); background: var(--accent); color: var(--dsw-alias-label-primary-foreground); }
 .steps small { font-size: 10px; white-space: nowrap; }
 
-.progress { width: 100%; height: 7px; border: 0; border-radius: 999px; accent-color: var(--accent); }
+.progress { width: 100%; height: 7px; border: 0; border-radius: 999px; corner-shape: round; accent-color: var(--accent); }
 .current { margin: 10px 0 0; color: var(--dsw-alias-label-secondary); font-size: 13px; overflow-wrap: anywhere; }
 .stats { flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 .stats span[data-failed='true'] { color: var(--dsw-alias-label-error); }

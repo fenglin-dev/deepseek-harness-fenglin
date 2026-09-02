@@ -37,6 +37,8 @@ export type DiagnosticLabScenarioId =
   | 'quarantine-removal-residue'
   | 'client-module-unavailable'
   | 'loader-package-name-mismatch'
+  | 'loader-dependency-unavailable'
+  | 'settings-invalid'
   | 'module-resolution-missing'
   | 'patch-invalid'
   | 'loader-duplicate'

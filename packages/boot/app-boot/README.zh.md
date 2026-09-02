@@ -49,6 +49,8 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 Profile 预检会在组合前收敛依赖身份与隔离状态。如果旧版或中断的卸载已经删除停用插件及其持久隔离记录，却留下 lockfile、修复报告或诊断引用，检查会报告 `profile.quarantine-removal-residue`；修复只移除这些陈旧引用和不完整的软件包目录，不会再次隔离已经消失的插件。
 
+对于每个能唯一归属的外部 Loader 行，预检会在不执行模块的情况下解析声明模块，并检查入口文件中的静态裸导入。Loader 模块缺失时以 `loader-module-unresolvable` 隔离；Loader 模块可用但其导入依赖缺失时以 `loader-dependency-unavailable` 隔离，并在诊断中保留外层 Bundle、Loader entry、导入方与缺失包。用户改写或来源有歧义的行绝不自动移除。诊断安全模式还会把 settings provider 指向应用维护的空文档，因此无效用户设置保持不动，也无法继续阻止诊断 UI 加载。
+
 你的机器本地偏好同样位于 harness home 中：
 
 - **`.env`**——你的普通环境层：调用目录的文件优先于 harness home 的文件，两者都低于继承环境。决定进程如何启动的变量（`PATH`、代理、`DSH_*`、`XDG_*` 等）会被文件拒绝：请改为导出。对于只想加载某个目录 `.env` 的非产品 bin，文件缺失不影响启动，文件无法加载时输出一行带标签的警告。

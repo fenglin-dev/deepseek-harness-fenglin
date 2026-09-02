@@ -1,0 +1,4 @@
+- insert:
+  - id: diagnostic-loader-dependency-unavailable
+    name: '@dsh-diagnostic-lab/loader-dependency-unavailable'
+    config: {}

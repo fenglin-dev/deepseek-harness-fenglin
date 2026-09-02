@@ -26,12 +26,18 @@ kind: "package-reference"
 
 将本包挂载到桌面客户端 Bundle。它只在窄权限的 `window.deepSeekHarnessDesktop` 预加载桥存在时激活，并严格反映 Electron 主进程报告的能力。
 
+Windows 与 macOS 的“应用图标”提供本地图片选择、支持键盘操作的方形裁剪、缩放、预览及独立托盘偏好。取消不会保存。卡片按目标位置显示结果及图片缺失提示；Windows 还提供明确的快捷方式创建与更新重试控件。平台限制与存储归属见[桌面图标说明](../../../apps/desktop/README.zh.md#custom-application-icons)。
+
 -----
 
 <a id="understand-the-security-boundary"></a>
 ## 安全边界
 
 所有高权限操作都由预加载桥持有。本包只接收规范化状态并请求白名单操作；它不能读取任意文件、运行任意命令、选择任意外部 URL 或替换应用运行时。
+
+裁剪界面只提交绑定渲染窗口的选择 ID、固定用途及有界的方形坐标。Electron 会在原子持久化前校验并裁剪图片，浏览器预览像素不具有最终决定权。关闭编辑器会释放临时图片。图标变更不会调用 Harness 或改写插件配置。
+
+本包不发布 invariant companion，因为生命周期 effect 和预加载能力边界已经承担本包的运行时检查。
 
 <a id="model-experience"></a>
 ## 模型体验

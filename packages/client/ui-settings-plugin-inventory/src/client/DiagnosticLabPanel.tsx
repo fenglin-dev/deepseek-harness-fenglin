@@ -37,6 +37,8 @@ const SCENARIO_KEYS: Record<DiagnosticLabScenarioId, {
   'quarantine-removal-residue': { title: 'lab.scenario.quarantineRemoval.title', body: 'lab.scenario.quarantineRemoval.body' },
   'client-module-unavailable': { title: 'lab.scenario.clientModule.title', body: 'lab.scenario.clientModule.body' },
   'loader-package-name-mismatch': { title: 'lab.scenario.loaderPackageNameMismatch.title', body: 'lab.scenario.loaderPackageNameMismatch.body' },
+  'loader-dependency-unavailable': { title: 'lab.scenario.loaderDependency.title', body: 'lab.scenario.loaderDependency.body' },
+  'settings-invalid': { title: 'lab.scenario.settingsInvalid.title', body: 'lab.scenario.settingsInvalid.body' },
   'module-resolution-missing': { title: 'lab.scenario.module.title', body: 'lab.scenario.module.body' },
   'patch-invalid': { title: 'lab.scenario.patch.title', body: 'lab.scenario.patch.body' },
   'loader-duplicate': { title: 'lab.scenario.duplicate.title', body: 'lab.scenario.duplicate.body' },
@@ -83,7 +85,7 @@ export function DiagnosticLabPanel({
     void Promise.all([listScenarios(), current()]).then(([value, active]) => {
       if (!alive) return
       setScenarios(value)
-      setSelected(new Set(value.filter(item => item.targets.includes('isolated')).map(item => item.id)))
+      setSelected(new Set<DiagnosticLabScenarioId>())
       if (active !== undefined) setRun(active)
     }, (reason: unknown) => { if (alive) setError(reason instanceof Error ? reason.message : String(reason)) })
     return () => { alive = false }
@@ -115,7 +117,7 @@ export function DiagnosticLabPanel({
 
   const changeTarget = (next: DiagnosticLabTarget): void => {
     setTarget(next)
-    setSelected(new Set(scenarios.filter(item => item.targets.includes(next)).map(item => item.id)))
+    setSelected(new Set<DiagnosticLabScenarioId>())
   }
   const toggleScenario = (id: DiagnosticLabScenarioId): void => {
     setSelected((current) => {

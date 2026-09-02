@@ -1,0 +1,57 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  padding: 16px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+}
+
+.panel h3,
+.panel p { margin: 0; }
+.panel h3 { font-size: 15px; line-height: 22px; }
+.panel header p,
+.empty { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+.eyebrow { color: var(--dsw-alias-state-business-primary); font-size: 11px; line-height: 16px; }
+
+.create { display: flex; gap: 8px; }
+.create input {
+  min-width: 0;
+  flex: 1;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: inherit;
+  font: inherit;
+}
+
+.list { display: grid; gap: 8px; }
+.list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+.copy { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.copy span { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; }
+.difference { display: grid; gap: 3px; margin: 4px 0 0; padding: 0; list-style: none; }
+.difference li { display: flex; min-width: 0; gap: 6px; font-size: 11px; line-height: 16px; }
+.difference b { flex: none; font-weight: 500; color: var(--dsw-alias-label-secondary); }
+.difference span { overflow-wrap: anywhere; }
+.actions { display: flex; flex: none; gap: 7px; }
+.listToggle { display: flex; justify-content: center; padding-top: 2px; }
+.status { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.error { color: var(--dsw-alias-state-error-primary); font-size: 12px; }
+
+@media (max-width: 620px) {
+  .list article { align-items: stretch; flex-direction: column; }
+  .actions { justify-content: flex-end; }
+}

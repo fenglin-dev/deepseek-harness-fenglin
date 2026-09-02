@@ -44,6 +44,6 @@ export function apply(ctx: Context): void {
   }, 'ui-desktop-shell: bridge state')
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item', id: 'desktop-shell', order: 75, locale: NS,
-    inject: () => ({ controller }),
+    inject: () => ({ controller, icons: bridge.icons }),
   }, DesktopPreferencesRow))
 }

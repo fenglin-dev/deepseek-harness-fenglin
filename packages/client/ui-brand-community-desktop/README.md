@@ -33,6 +33,8 @@ Compose this package into the community desktop Web bundle and build with `DSH_C
 
 The client entry registers the riding-whale mark and community product name through the sidebar and conversation Hero slots. Registration is profile-gated and lifecycle-bound, so HMR or disposal withdraws the complete occupant set without leaving a mixed brand.
 
+No invariant companion is published because this package contributes only stateless brand slot renderers.
+
 <a id="model-experience"></a>
 ## Model Experience
 

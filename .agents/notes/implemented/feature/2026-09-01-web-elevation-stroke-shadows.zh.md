@@ -22,6 +22,8 @@ Web 客户端的高层级表面——菜单、浮层、对话框、面板、悬�
 
 平面部件保留真 border 但取发丝线宽度：所有中性 token 的 `1px solid` border——按钮（共享 outline 变体、添加/重试/inspect 按钮）、输入框、行内卡片、代码块与设置行分割线——改为 `0.5px solid`，整框描边加深为 `--dsw-alias-border-l4`（按钮浅一档取 `--dsw-alias-border-l3`），行分割线保持 `--dsw-alias-border-l2`；状态逻辑（focus/hover 换 `border-color`）不变。以填充盒绘制的分隔线取同一粗细：高或宽为 1px、背景用 border token 的线（菜单分隔、对话标题栏接缝、markdown `hr`、工具 IO 分隔、轨迹竖轨、目录浏览器分隔）改为 0.5px；上下文注入分隔线原先读取从未定义的 `--dsw-alias-line-secondary`（因此从未渲染），现在绘制 `0.5px solid var(--dsw-alias-border-l2)`。Chromium 把亚设备像素 border 绘制为一个设备像素，因此 1x 屏与原先渲染完全一致，2x 屏得到发丝线。dashed 记号保持 1px（0.5px 虚线图案会退化），两个用 border 画的 spinner 圆环经 spec 显式豁免保留轨道宽度。
 
+社区桌面设置、引导、插件诊断和快照控件遵循相同的中性发丝线规则。选中文本操作菜单使用 prominent 层级 token 并配以 l1 描边；导入插件恢复对话框使用 panel token。状态色边框与焦点行为仍由各组件负责。
+
 ## Alternatives considered
 
 **保留 1px 真 border、只调柔投影。** 留下占布局的 border、浅色主题 `border-inverted` 浮层的描边缺口，以及两者并存处的双轮廓；描边入投影正是产生锐利发丝边缘的形式。

@@ -12,10 +12,12 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { createRequire } from 'node:module'
+import { createRequire, isBuiltin } from 'node:module'
 import { dirname, join, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { satisfies, validRange } from 'semver'
 import { isMap, parseDocument, YAMLMap } from 'yaml'
+import { initSync as initEsmLexer, parse as parseEsmImports } from 'es-module-lexer'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -102,6 +104,18 @@ export interface UnresolvableProfileBundleEntry {
   readonly entryId: string
   readonly moduleName: string
   readonly patchPath: string
+  readonly missingModule?: string
+  readonly importerPackage?: string
+  readonly failureKind?: 'loader-module' | 'loader-dependency'
+}
+
+/** A final Loader row that can be proven to originate from one active external bundle. */
+export interface ProfileBundleEntryOwnership {
+  readonly profile: string
+  readonly rootPackage: string
+  readonly entryId: string
+  readonly moduleName: string
+  readonly patchPath: string
 }
 
 /** Closed reason set persisted with each automatically isolated plugin. */
@@ -112,6 +126,7 @@ export type ProfileQuarantineReason =
   | 'build-script-blocked'
   | 'client-module-unavailable'
   | 'loader-module-unresolvable'
+  | 'loader-dependency-unavailable'
 
 /** Durable information required to explain or retry an automatically isolated plugin. */
 export interface QuarantinedProfilePlugin {
@@ -423,41 +438,80 @@ function insertedLoaderEntries(patches: readonly PatchOptions[]): EntryOptions[]
 }
 
 function loaderModuleDiagnostic(issue: UnresolvableProfileBundleEntry): ProfileDiagnostic {
+  const dependencyFailure = issue.failureKind === 'loader-dependency' && issue.missingModule !== undefined
   return {
     diagnosticId: randomUUID(),
-    code: 'profile.module-resolution',
-    source: 'profile',
+    code: dependencyFailure ? 'loader.dependency-unavailable' : 'profile.module-resolution',
+    source: dependencyFailure ? 'loader' : 'profile',
     phase: 'import',
     severity: 'blocked',
     attribution: {
       rootPackage: issue.rootPackage,
       entryId: issue.entryId,
       moduleName: issue.moduleName,
+      ...(issue.missingModule === undefined ? {} : { missingModule: issue.missingModule }),
+      ...(issue.importerPackage === undefined ? {} : { importerPackage: issue.importerPackage }),
+      configKind: 'profile-patch',
     },
     actions: ['repair', 'isolate', 'export'],
-    evidence: [`Loader module ${issue.moduleName} from bundle patch ${issue.patchPath} cannot be resolved`],
+    evidence: [dependencyFailure
+      ? `Loader module ${issue.moduleName} imports unavailable dependency ${issue.missingModule ?? '<unknown>'}`
+      : `Loader module ${issue.moduleName} from bundle patch ${issue.patchPath} cannot be resolved`],
   }
 }
 
-/**
- * Inspect final Loader entries for a missing bare module that can be proven to
- * originate from exactly one directly enabled external bundle. User-targeted
- * rows and ambiguous duplicate declarations are intentionally excluded.
- * @param options - Profile identity, installation anchor, and optional Harness home.
- * @returns Safe-to-quarantine module failures in Loader order.
- */
-export function inspectUnresolvableProfileBundleEntries(
+function packageNameFromSpecifier(specifier: string): string | undefined {
+  const segments = specifier.split('/')
+  return specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]
+}
+
+initEsmLexer()
+
+function unavailableStaticLoaderDependency(profileDir: string, entryUrl: string): string | undefined {
+  let entryPath: string
+  try {
+    entryPath = fileURLToPath(entryUrl)
+  } catch {
+    return undefined
+  }
+  let source: string
+  try {
+    source = readFileSync(entryPath, 'utf8')
+  } catch {
+    return undefined
+  }
+  // Static ESM imports link before plugin code runs. Keep this preflight
+  // deliberately bounded to the Loader entry itself: it catches incomplete
+  // published adapters without crawling or executing arbitrary plugin code.
+  if (Buffer.byteLength(source) > 2 * 1024 * 1024) return undefined
+  const request = createRequire(entryPath)
+  const [imports] = parseEsmImports(source, entryPath)
+  for (const imported of imports) {
+    // d === -1 is a static import/export-from. Dynamic imports are a runtime
+    // concern because their branch may never execute for this configuration.
+    const specifier = imported.d === -1 ? imported.n : undefined
+    if (specifier === undefined || specifier.startsWith('.') || specifier.startsWith('/')
+      || specifier.startsWith('file:') || specifier.startsWith('node:') || isBuiltin(specifier)) continue
+    try {
+      request.resolve(specifier)
+      continue
+    } catch {
+      if (resolveProfileLoaderModule(profileDir, specifier) !== undefined) continue
+      return specifier
+    }
+  }
+  return undefined
+}
+
+function profileBundleEntryOwnership(
   options: ProfileDependencyOptions,
-): UnresolvableProfileBundleEntry[] {
+): { profile: ReturnType<typeof loadProfile>; ownership: ProfileBundleEntryOwnership[] } | undefined {
   const home = options.home ?? resolveDshHome()
   let profile: ReturnType<typeof loadProfile>
   try {
     profile = loadProfile(options.binName, options.profile, options.installAnchor, home)
   } catch {
-    // Other Profile diagnostics own unreadable manifests, missing bundle
-    // patches, and malformed YAML. This classifier only claims a fully
-    // composed entry whose bare module alone is missing.
-    return []
+    return undefined
   }
   const manifest = readProfileManifest(options.binName, profile.dir)
   const dependencies = manifest.dependencies ?? {}
@@ -481,8 +535,7 @@ export function inspectUnresolvableProfileBundleEntries(
       origins.set(key, candidates)
     }
   }
-
-  const issues: UnresolvableProfileBundleEntry[] = []
+  const ownership: ProfileBundleEntryOwnership[] = []
   for (const entry of nestedLoaderEntries(composeEntries([
     profile.layers.flatMap(layer => layer.patches),
     profile.patches,
@@ -490,22 +543,75 @@ export function inspectUnresolvableProfileBundleEntries(
     if (typeof entry.id !== 'string' || typeof entry.name !== 'string'
       || userTargetedIds.has(entry.id)
       || new RegExp(`^\\s*-\\s+id:\\s*["']?${entry.id.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}["']?\\s*$`, 'mu')
-        .test(homePatchSource)
-      || entry.name.startsWith('cordis:')
-      || entry.name.startsWith('file:')
-      || entry.name.startsWith('.')
-      || entry.name.startsWith('/')) continue
+        .test(homePatchSource)) continue
     const candidates = origins.get(`${entry.id}\0${entry.name}`) ?? []
-    if (candidates.length !== 1 || resolveProfileLoaderModule(profile.dir, entry.name) !== undefined) continue
+    if (candidates.length !== 1) continue
     const [candidate] = candidates
     if (candidate === undefined) continue
-    issues.push({
+    ownership.push({
       profile: options.profile,
       rootPackage: candidate.rootPackage,
       entryId: entry.id,
       moduleName: entry.name,
       patchPath: candidate.patchPath,
     })
+  }
+  return { profile, ownership }
+}
+
+/**
+ * Resolve one final Loader row back to its unique directly enabled bundle.
+ * @param options - Profile identity, installation anchor, and optional Harness home.
+ * @param entryId - Final Loader entry id from the failure chain.
+ * @param moduleName - Final Loader module from the failure chain.
+ * @returns Unique external Bundle owner, or undefined when proof is incomplete.
+ */
+export function inspectProfileBundleEntryOwnership(
+  options: ProfileDependencyOptions,
+  entryId: string,
+  moduleName: string,
+): ProfileBundleEntryOwnership | undefined {
+  return profileBundleEntryOwnership(options)?.ownership.find(entry => (
+    entry.entryId === entryId && entry.moduleName === moduleName
+  ))
+}
+
+/**
+ * Inspect final Loader entries for a missing bare module that can be proven to
+ * originate from exactly one directly enabled external bundle. User-targeted
+ * rows and ambiguous duplicate declarations are intentionally excluded.
+ * @param options - Profile identity, installation anchor, and optional Harness home.
+ * @returns Safe-to-quarantine module failures in Loader order.
+ */
+export function inspectUnresolvableProfileBundleEntries(
+  options: ProfileDependencyOptions,
+): UnresolvableProfileBundleEntry[] {
+  const owned = profileBundleEntryOwnership(options)
+  if (owned === undefined) {
+    // Other Profile diagnostics own unreadable manifests, missing bundle
+    // patches, and malformed YAML. This classifier only claims a fully
+    // composed entry whose bare module alone is missing.
+    return []
+  }
+  const issues: UnresolvableProfileBundleEntry[] = []
+  for (const entry of owned.ownership) {
+    if (entry.moduleName.startsWith('cordis:') || entry.moduleName.startsWith('file:')
+      || entry.moduleName.startsWith('.') || entry.moduleName.startsWith('/')) continue
+    const resolved = resolveProfileLoaderModule(owned.profile.dir, entry.moduleName)
+    if (resolved === undefined) {
+      issues.push({ ...entry, failureKind: 'loader-module' })
+      continue
+    }
+    const missingModule = unavailableStaticLoaderDependency(owned.profile.dir, resolved)
+    if (missingModule !== undefined) {
+      const importerPackage = packageNameFromSpecifier(entry.moduleName)
+      issues.push({
+        ...entry,
+        failureKind: 'loader-dependency',
+        missingModule,
+        ...(importerPackage === undefined ? {} : { importerPackage }),
+      })
+    }
   }
   return issues
 }
@@ -956,7 +1062,7 @@ export function quarantineProfilePluginAfterLoadFailure(
   options: ProfileRepairOptions,
   packageName: string,
   issue: ProfileDiagnostic,
-  reason: Extract<ProfileQuarantineReason, 'client-module-unavailable' | 'loader-module-unresolvable'> = 'client-module-unavailable',
+  reason: Extract<ProfileQuarantineReason, 'client-module-unavailable' | 'loader-module-unresolvable' | 'loader-dependency-unavailable'> = 'client-module-unavailable',
 ): ProfileRepairReport {
   const home = options.home ?? resolveDshHome()
   const profileDir = resolveProfileDir(options.profile, home)
@@ -1236,7 +1342,9 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
         options,
         failure.rootPackage,
         loaderModuleDiagnostic(failure),
-        'loader-module-unresolvable',
+        failure.failureKind === 'loader-dependency'
+          ? 'loader-dependency-unavailable'
+          : 'loader-module-unresolvable',
       )
       if (loaderOutcome.status !== 'quarantined') return loaderOutcome
       quarantinedRoots.add(failure.rootPackage)

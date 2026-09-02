@@ -1,4 +1,7 @@
 .dialog {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+
   width: min(520px, calc(100vw - 32px));
   border-radius: 16px;
 }
@@ -16,6 +19,7 @@
   height: 32px;
   place-items: center;
   border-radius: 50%;
+  corner-shape: round;
   background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-error-primary)) 14%, transparent);
   color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-state-error-primary));
 }
@@ -42,7 +46,7 @@
   flex-direction: column;
   gap: 3px;
   padding: 9px 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 9px;
   background: var(--dsw-alias-bg-layer-3);
 }

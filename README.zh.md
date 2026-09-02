@@ -207,7 +207,7 @@ Cordis 的 Context、Service 注册和部分工具运行时依赖对象与 `Symb
 
 ### 诊断演练中心
 
-开发版与安装版都提供诊断演练中心。它使用客户端携带的离线故障样本，复现 Host 共享依赖影子副本、孤立 Bundle、scoped 根包与 unscoped Loader 名不匹配、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断，并展示“注入、检测、修复、复检、清理”的完整时间线。
+开发版与安装版都提供诊断演练中心。它使用客户端携带的离线故障样本，复现 Host 共享依赖影子副本、孤立 Bundle、scoped 根包与 unscoped Loader 名不匹配、聚合插件内部依赖缺失、损坏的 `settings.yaml`、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断，并展示“注入、检测、修复、复检、清理”的完整时间线。
 
 <p align="center">
   <img src="./assets/readme/diagnostics-lab-sandbox-zh.png" width="900" alt="诊断演练中心的隔离沙盒场景选择">
@@ -289,7 +289,7 @@ Electron 不只是包住 Web 页面的外壳。桌面宿主负责运行时准备
 
 ### Codex 与 Claude Code 按需安装
 
-Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免携带用户不需要的平台依赖。用户在“设置 → 外部工具”点击安装后，客户端才会联网下载与当前 Harness 版本匹配的官方包；Node 与 pnpm 由安装包提供，无需系统另行安装。
+Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免携带用户不需要的平台依赖。用户在“设置 → 外部工具”点击安装后，客户端才会联网下载经过审核的官方包；Node 与 pnpm 由安装包提供，无需系统另行安装。打包/发布门禁会先验证精确 Provider、原生运行时、平台包和 SHA-512 坐标确实存在；已发布客户端还会读取由 GitHub OIDC/Sigstore 签名的兼容清单。签名身份、摘要、有效期或网络校验失败时只使用安装包内置的已知可用精确版本，不会猜测同版本包，也不会退回 `latest`。
 
 连接成功后，完整模式的已有会话和新会话会在下一轮安全边界获得对应工具，正在运行的回合不会被中途改写，精简模式继续保持最小工具集。断开连接只撤下工具，不删除 Harness 会话或外部产品自身的数据。
 
@@ -301,7 +301,7 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 ### 预设插件
 
-安装包携带五个启动预设的完整性校验归档：插件市场、`dsh-im`、`dsh-skill-picker`、Better Sidebar 和 `dsh-pocket`；`dsh-font` 与最小离线 `@dsh-diagnostic-lab/scoped-loader-mismatch` 仅作为诊断演练样本提供。首次准备可以使用包内归档，不需要临时联网下载这些插件本体；插件仍保留包信息与来源身份，以便后续发现兼容的联网更新。普通传递依赖继续由 Profile 的 pnpm 解析规则管理。
+安装包携带五个启动预设的完整性校验归档：插件市场、`dsh-im`、`dsh-skill-picker`、Better Sidebar 和 `dsh-pocket`；`dsh-font`、最小离线 `@dsh-diagnostic-lab/scoped-loader-mismatch` 与 `@dsh-diagnostic-lab/loader-dependency-unavailable` 仅作为诊断演练样本提供。首次准备可以使用包内归档，不需要临时联网下载这些插件本体；插件仍保留包信息与来源身份，以便后续发现兼容的联网更新。普通传递依赖继续由 Profile 的 pnpm 解析规则管理。
 
 <p align="center">
   <img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="通过 dsh-pocket 的二维码和局域网地址连接手机">

@@ -140,6 +140,28 @@ Quarantine is not merely a disabled badge in the UI. It completes only after the
 
 The boundary is deliberate: **inspect before plugin execution, decide from the real dependency graph and physical module identity, preserve plugins through lossless convergence where possible, quarantine only when safety cannot be demonstrated, and verify every repair before startup.** In short, pnpm and Cordis errors no longer have to read like passwords; the client tries to explain who failed, why, which protection was applied, whether it can be repaired, and what to do next.
 
+### Diagnostics Lab
+
+Development and installed builds both provide Diagnostics Lab. Its bundled offline fault samples exercise shared-Host shadow copies, orphaned Bundles, scoped-root versus unscoped-Loader name mismatches, missing aggregate-plugin dependencies, invalid `settings.yaml` documents, missing modules, invalid patches, duplicate Loader entries, lifecycle failures, blocked build approval, and interrupted repair while showing the complete inject, detect, repair, verify, and cleanup timeline.
+
+<p align="center">
+  <img src="./assets/readme/diagnostics-lab-sandbox-zh.png" width="900" alt="Select isolated sandbox scenarios in Diagnostics Lab">
+  <br>
+  <sub>Isolated sandbox: exercise multiple offline faults without changing the user Profile</sub>
+</p>
+
+<p align="center">
+  <img src="./assets/readme/diagnostics-lab-live-profile-zh.png" width="900" alt="Run the advanced active-Profile target in Diagnostics Lab">
+  <br>
+  <sub>Advanced active-Profile target: verify the real quarantine, recovery, and reinspection path</sub>
+</p>
+
+Users can select one or more scenarios, which run sequentially while the UI reports the current scenario, phase, remaining scenarios, pass state, and duration. A global progress card retains the job across Harness renderer reloads. The default isolated target does not change the user's Profile. The advanced active-Profile target pauses Harness, records managed-file hashes and a recovery journal, then restores and reinspects when the run finishes. If clean recovery cannot be proven, Profile plugins do not restart. Each run persists redacted JSON and text summaries without usernames, local paths, or credentials, and the UI can export the JSON report.
+
+> [!CAUTION]
+>
+> The real-Profile exercise is not guaranteed to succeed in this release. Back up your configuration or use an isolated data directory before running it because it carries a significant crash risk. Do not use this mode in production. If a real test is necessary, enable only one scenario at a time.
+
 ## Text selection and context-menu actions
 
 Selecting text in read-only conversation messages, tool output, details, or file previews opens a horizontal action bar near the selection. Right-clicking selected text opens a vertical rounded menu with icons and labels.
@@ -176,7 +198,29 @@ The Electron host grants sanitized clipboard-write permission to the supervised 
 
 ### Preset plugin foundation
 
-The installer starts with the Plugin Marketplace, IM connections, Skill picker, font support, and Pocket ready to use. They remain ordinary Harness dependencies: users can uninstall them, and the desktop app respects that decision instead of silently restoring them. Connected installations retain exact npm or pinned Git identities so the market can discover later releases; integrity-checked archives provide an offline fallback. The larger Better Sidebar archive is carried by the installer and prepared only after the main interface becomes usable, with a visible non-blocking progress card.
+The installer carries integrity-checked archives for five startup presets: Plugin Marketplace, IM connections, Skill picker, Better Sidebar, and Pocket. `dsh-font`, the minimal offline `@dsh-diagnostic-lab/scoped-loader-mismatch` package, and `@dsh-diagnostic-lab/loader-dependency-unavailable` are supplied only as Diagnostics Lab samples. Initial preparation can use the local archives without fetching the plugin packages on demand, while package and source identities remain available for compatible online update discovery. They remain ordinary Harness dependencies: users can uninstall them, and the desktop app respects that decision instead of silently restoring them.
+
+<p align="center">
+  <img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="Connect a phone through the Pocket QR code or LAN address">
+  <br>
+  <sub>Mobile access: scan on the same network or explicitly enable public access when needed</sub>
+</p>
+
+<p align="center">
+  <img src="./assets/readme/preset-im-robot-zh.png" width="900" alt="Connect WeChat and other IM bots through dsh-im">
+  <br>
+  <sub>IM bots: connect WeChat, Feishu, DingTalk, WeCom, QQ, Slack, Telegram, Discord, and WhatsApp</sub>
+</p>
+
+> [!TIP]
+>
+> First startup uses the local plugin archives carried by the installer. They are useful for offline preparation, but a local source does not follow marketplace updates directly. Once online, open **Plugin Marketplace → Installed** and choose **Restore** for each preset: the client removes the local version and reinstalls it from the online source, after which normal update checks can deliver new versions promptly. Restore cannot roll back automatically; keep the local version if a fixed offline package is preferable.
+
+<p align="center">
+  <img src="./assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="Restore bundled local plugins as online plugins in the marketplace">
+  <br>
+  <sub>Recommended after going online: restore each local preset as an online package that can receive update checks</sub>
+</p>
 
 ### Dependency safety before plugin execution
 

@@ -149,6 +149,106 @@ describe('the default preset as a user setting', () => {
   })
 })
 
+describe('Host-connected external tools', () => {
+  it('resumes the removed desktop external-tools preset on standard', async () => {
+    const { ctx } = await harness()
+
+    expect((await ctx.agentPresets.resolve('external-tools')).id).toBe('standard')
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('legacy-external-tools'),
+      setup: async (agentCtx: Context) => void await ctx.agentPresets.mount(agentCtx, 'external-tools'),
+    })
+    try {
+      expect(toolNames(ctx, handle.agent)).toEqual(['alpha'])
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('updates an existing complete-mode session while keeping minimal lean', async () => {
+    const { ctx } = await harness()
+    const disposeProjector = ctx.agentPresets.registerExternalToolProjector((agent, tool) => (
+      agent.ctx.tools.register(defineContentToolFixture({
+        name: tool === 'codex' ? 'subagent_codex' : 'subagent_claude_code',
+        description: `fixture ${tool}`,
+        parameters: {},
+        execute: async () => [{ type: 'text', text: tool }],
+      }))
+    ))
+    const standard = await ctx.agents.create({
+      sessionId: SessionId('external-existing-standard'),
+      setup: async (agentCtx: Context) => void await ctx.agentPresets.mount(agentCtx, 'standard'),
+    })
+    const minimal = await ctx.agents.create({
+      sessionId: SessionId('external-existing-minimal'),
+      setup: async (agentCtx: Context) => void await ctx.agentPresets.mount(agentCtx, 'minimal'),
+    })
+    try {
+      expect(toolNames(ctx, standard.agent)).toEqual(['alpha'])
+      expect(toolNames(ctx, minimal.agent)).toEqual(['beta'])
+
+      await ctx.agentPresets.setExternalTool('codex', true)
+
+      expect(await ctx.agentPresets.externalToolsState()).toEqual({
+        scope: 'complete-presets',
+        codex: true,
+        claudeCode: false,
+      })
+      expect(toolNames(ctx, standard.agent)).toEqual(['alpha', 'subagent_codex'])
+      expect(toolNames(ctx, minimal.agent)).toEqual(['beta'])
+      const request = () => Promise.resolve({} as never)
+      await agentEvents(ctx, standard.agent).waterfall(
+        'agent/request',
+        { turn: 1, step: 1, signal: new AbortController().signal },
+        request,
+      )
+      await agentEvents(ctx, standard.agent).waterfall(
+        'agent/request',
+        { turn: 1, step: 1, signal: new AbortController().signal },
+        request,
+      )
+      expect(standard.agent.session.snapshotEvents().filter(event => event.type === 'external-tools/resolved'))
+        .toEqual([expect.objectContaining({ data: { turn: 1, step: 1, tools: ['codex'] } })])
+
+      Object.defineProperty(standard.agent, 'status', { configurable: true, value: 'running' })
+      await ctx.agentPresets.setExternalTool('codex', false)
+
+      // A disconnect cannot pull a schema out from under the request that
+      // already received it. The idle boundary performs the removal.
+      expect(toolNames(ctx, standard.agent)).toEqual(['alpha', 'subagent_codex'])
+      expect(toolNames(ctx, minimal.agent)).toEqual(['beta'])
+      Object.defineProperty(standard.agent, 'status', { configurable: true, value: 'idle' })
+      agentEvents(ctx, standard.agent).emit('agent/status', { status: 'idle' })
+      expect(toolNames(ctx, standard.agent)).toEqual(['alpha'])
+      await agentEvents(ctx, standard.agent).waterfall(
+        'agent/request',
+        { turn: 2, step: 1, signal: new AbortController().signal },
+        request,
+      )
+      expect(standard.agent.session.snapshotEvents().filter(event => event.type === 'external-tools/resolved'))
+        .toEqual([
+          expect.objectContaining({ data: { turn: 1, step: 1, tools: ['codex'] } }),
+          expect.objectContaining({ data: { turn: 2, step: 1, tools: [] } }),
+        ])
+    } finally {
+      delete (standard.agent as unknown as { status?: string }).status
+      disposeProjector()
+      await Promise.all([standard.dispose(), minimal.dispose()])
+    }
+  })
+
+  it('rejects a second Host projector', async () => {
+    const { ctx } = await harness()
+    const dispose = ctx.agentPresets.registerExternalToolProjector(() => () => {})
+    try {
+      expect(() => ctx.agentPresets.registerExternalToolProjector(() => () => {}))
+        .toThrow(/already registered/)
+    } finally {
+      dispose()
+    }
+  })
+})
+
 describe('a settings provider that goes away', () => {
   it('falls back to the composition default when the provider unloads', async () => {
     const { ctx, settingsFiber } = await harness()

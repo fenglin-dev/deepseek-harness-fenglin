@@ -1,5 +1,7 @@
 /** Browser-side copy of the narrow Electron preload protocol. */
+import type { DesktopIconsBridge } from './icon-protocol.ts'
 
+/** Closing hides the window in the tray or quits the desktop application. */
 export type CloseBehavior = 'tray' | 'quit'
 
 /** Persisted preference values exposed by the desktop main process. */
@@ -124,6 +126,7 @@ export interface DesktopReleasesBridge {
 export interface DesktopBridge {
   shell: DesktopShellBridge
   releases: DesktopReleasesBridge
+  icons?: DesktopIconsBridge
 }
 
 /**
@@ -135,8 +138,9 @@ export function readDesktopBridge(): DesktopBridge | null {
   const candidate = (globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop as {
     shell?: DesktopShellBridge
     releases?: DesktopReleasesBridge
+    icons?: DesktopIconsBridge
   } | undefined
   return candidate?.shell === undefined || candidate.releases === undefined
     ? null
-    : { shell: candidate.shell, releases: candidate.releases }
+    : { shell: candidate.shell, releases: candidate.releases, ...(candidate.icons === undefined ? {} : { icons: candidate.icons }) }
 }

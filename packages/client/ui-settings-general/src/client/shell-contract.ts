@@ -64,4 +64,3 @@ export type SettingsRootComponentProps =
     | 'settings.onboarding'
   >
   & InjectFace<SettingsRootInjected>
-  & PropsLocale<'settings'>

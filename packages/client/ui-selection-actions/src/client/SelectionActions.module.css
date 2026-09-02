@@ -2,10 +2,11 @@
   position: fixed;
   z-index: 1150;
   box-sizing: border-box;
-  border: 1px solid var(--dsw-alias-border-inverted);
+  border: 0;
   background: var(--dsw-specific-menu);
   color: var(--dsw-alias-label-primary);
-  box-shadow: var(--dsw-shadow-lv3);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-elevation-prominent);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }

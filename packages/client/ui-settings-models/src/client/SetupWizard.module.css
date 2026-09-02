@@ -20,7 +20,7 @@
   padding: 38px 28px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  border-right: 1px solid var(--dsw-alias-border-l2);
+  border-right: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .railTitle {
@@ -46,7 +46,7 @@
   top: 63px;
   bottom: -29px;
   left: 16px;
-  width: 1px;
+  width: 0.5px;
   background: var(--dsw-alias-border-l2);
   content: '';
 }
@@ -64,8 +64,9 @@
   justify-content: center;
   width: 34px;
   height: 34px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 50%;
+  corner-shape: round;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
 }
@@ -112,6 +113,7 @@
   padding: 0;
   border: 0;
   border-radius: 50%;
+  corner-shape: round;
   color: var(--dsw-alias-label-primary);
   background: transparent;
   cursor: pointer;
@@ -128,7 +130,7 @@
   min-width: 92px;
   height: 32px;
   padding: 0 10px 0 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 9px;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-2);
@@ -171,7 +173,7 @@
 
 .tasks {
   margin-top: 38px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .task {
@@ -180,7 +182,7 @@
   align-items: center;
   gap: 14px;
   min-height: 124px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .task[data-complete='true'] {
@@ -196,8 +198,9 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 50%;
+  corner-shape: round;
   color: var(--dsw-alias-state-success-primary);
 }
 
@@ -239,6 +242,7 @@
 .taskLabel {
   padding: 3px 10px;
   border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
@@ -271,7 +275,7 @@
 }
 
 .taskConfigure {
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-2);
 }
@@ -309,6 +313,7 @@
   height: 64px;
   margin-bottom: 22px;
   border-radius: 50%;
+  corner-shape: round;
   background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
   color: var(--dsw-alias-state-success-primary);
 }

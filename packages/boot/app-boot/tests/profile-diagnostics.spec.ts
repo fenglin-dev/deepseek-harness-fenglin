@@ -38,6 +38,9 @@ describe('profile diagnostic v2', () => {
     ['ERR_PNPM_YAML_PARSE pnpm-workspace.yaml', 'pnpm.config-parse', 'blocked'],
     ['ERR_PNPM_PATCH_FAILED', 'pnpm.patch-failed', 'blocked'],
     ['credentials-local: the value for "version" must be a string', 'config.credentials-invalid', 'blocked'],
+    ['settings-file: invalid document at C:\\Users\\Alice\\settings.yaml: DUPLICATE_KEY at line 9, column 3', 'config.settings-invalid', 'blocked'],
+    ["Cannot find package '@deepseek-ai/dsh-session-persistence-sqlite' imported from cordis.patch.yml", 'profile.session-persistence-migration', 'blocked'],
+    ['loader dependency unavailable: Loader module @fixture/ui imports unavailable dependency @deepseek-ai/dsh-host-apiproxy', 'loader.dependency-unavailable', 'blocked'],
     ['duplicate loader entry web-panel', 'loader.duplicate-entry', 'blocked'],
     ['persona already registered', 'loader.duplicate-registration', 'blocked'],
     ['pending (waiting for services: files)', 'loader.unresolved-injection', 'blocked'],
@@ -77,6 +80,27 @@ describe('profile diagnostic v2', () => {
       },
       actions: ['repair', 'isolate', 'export'],
     })
+  })
+
+  it('offers configuration migration without isolating an old SQLite persistence profile', () => {
+    const issue = classifyProfileDiagnostic({
+      source: 'loader',
+      phase: 'import',
+      value: 'failed to import loader entry session-storage (@deepseek-ai/dsh-session-persistence-sqlite): ERR_MODULE_NOT_FOUND',
+      attribution: { configKind: 'profile-patch' },
+    })
+    expect(issue).toMatchObject({
+      code: 'profile.session-persistence-migration',
+      source: 'profile',
+      severity: 'blocked',
+      actions: ['open-config', 'export'],
+      attribution: {
+        entryId: 'session-storage',
+        moduleName: '@deepseek-ai/dsh-session-persistence-sqlite',
+        configKind: 'profile-patch',
+      },
+    })
+    expect(issue.actions).not.toContain('isolate')
   })
 
   it('does not attribute a nested import failure to the outer include row', () => {

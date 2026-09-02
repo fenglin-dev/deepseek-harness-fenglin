@@ -23,6 +23,12 @@ interface DemoPolicy {
   readonly wrapper?: string
 }
 
+interface DesktopEntrypointOwner {
+  readonly source: string
+  readonly owner: string
+  readonly needle: string
+}
+
 /** Public product launcher plus the private build-only WebWorker packer. */
 const MANIFEST_BIN_ALLOWLIST = new Map<string, ManifestBin>([
   ['apps/cli/package.json', { dsh: 'lib/bin.js' }],
@@ -52,6 +58,22 @@ const ROOT_DEMO_POLICIES = new Map<string, DemoPolicy>([
   ['demo:ptc', { kind: 'dsh-wrapper', wrapper: 'scripts/demo-ptc.mjs' }],
   ['demo:inspector', { kind: 'dsh-direct' }],
 ])
+
+/** Community Desktop entrypoints that root knip no longer owns after alpha.4. */
+const DESKTOP_ENTRYPOINT_OWNERS: readonly DesktopEntrypointOwner[] = [
+  { source: 'apps/desktop/src/main.ts', owner: 'apps/desktop/package.json', needle: '"main": "lib/main.js"' },
+  { source: 'apps/desktop/src/preload.ts', owner: 'apps/desktop/tsdown.preload.config.ts', needle: 'lib/preload.js' },
+  { source: 'apps/desktop/src/data-home-preload.ts', owner: 'apps/desktop/tsdown.preload.config.ts', needle: 'lib/data-home-preload.js' },
+  { source: 'apps/desktop/src/titlebar-preload.ts', owner: 'apps/desktop/tsdown.preload.config.ts', needle: 'lib/titlebar-preload.js' },
+  { source: 'apps/desktop/scripts/copy-assets.mjs', owner: 'apps/desktop/package.json', needle: 'node scripts/copy-assets.mjs' },
+  { source: 'apps/desktop/scripts/dev-watch.mjs', owner: 'apps/desktop/package.json', needle: 'node scripts/dev-watch.mjs' },
+  { source: 'apps/desktop/scripts/prepare-unix-runtime.mjs', owner: 'apps/desktop/package.json', needle: 'node scripts/prepare-unix-runtime.mjs' },
+  { source: 'apps/desktop/scripts/prepare-windows-runtime.mjs', owner: 'apps/desktop/package.json', needle: 'node scripts/prepare-windows-runtime.mjs' },
+  { source: 'apps/desktop/scripts/refresh-bundled-plugins.ts', owner: 'package.json', needle: 'apps/desktop/scripts/refresh-bundled-plugins.ts' },
+  { source: 'apps/desktop/scripts/verify-external-tool-compatibility.ts', owner: 'package.json', needle: 'apps/desktop/scripts/verify-external-tool-compatibility.ts' },
+  { source: 'apps/desktop/scripts/smoke-windows-package.ps1', owner: '.github/workflows/desktop-packages.yml', needle: 'apps/desktop/scripts/smoke-windows-package.ps1' },
+  { source: 'apps/desktop/scripts/windows-command-shell.mjs', owner: 'apps/desktop/tests/windows-command-shell.spec.ts', needle: '../scripts/windows-command-shell.mjs' },
+]
 
 const SOURCE_PATTERNS = [
   '*.ts',
@@ -164,6 +186,22 @@ function rootDemoViolations(root: string): string[] {
   return failures
 }
 
+function desktopEntrypointViolations(root: string): string[] {
+  if (!existsSync(resolve(root, 'apps/desktop/package.json'))) return []
+  const failures: string[] = []
+  for (const entry of DESKTOP_ENTRYPOINT_OWNERS) {
+    if (!existsSync(resolve(root, entry.source))) {
+      failures.push(`${entry.source}: classified Desktop entrypoint is missing`)
+      continue
+    }
+    const ownerPath = resolve(root, entry.owner)
+    if (!existsSync(ownerPath) || !readFileSync(ownerPath, 'utf8').includes(entry.needle)) {
+      failures.push(`${entry.source}: not reachable from ${entry.owner}`)
+    }
+  }
+  return failures
+}
+
 /**
  * Find unsupported application entrypoints below a repository root.
  * @param root - repository or test-fixture root.
@@ -174,6 +212,7 @@ export function applicationEntrypointViolations(root: string): string[] {
     ...manifestBinViolations(root),
     ...executableSourceViolations(root),
     ...rootDemoViolations(root),
+    ...desktopEntrypointViolations(root),
   ]
 }
 

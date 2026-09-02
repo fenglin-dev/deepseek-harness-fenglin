@@ -193,6 +193,26 @@ async function readSeedMarker(path: string): Promise<BundledPluginSeedMarker | u
   }
 }
 
+async function snapshotVersionHeld(
+  dshHome: string,
+  entry: BundledPluginManifestEntry,
+  marker: BundledPluginSeedMarker,
+): Promise<boolean> {
+  if (marker.version === undefined) return false
+  try {
+    const value = JSON.parse(await readFile(
+      join(dshHome, 'bundled-plugins', 'snapshot-version-hold.json'),
+      'utf8',
+    )) as { schema?: unknown; versions?: Array<{ seedId?: unknown; version?: unknown }> }
+    return value.schema === 1 && Array.isArray(value.versions) && value.versions.some(version => (
+      version.seedId === entry.seedId && version.version === marker.version
+    ))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    return false
+  }
+}
+
 /**
  * Check the durable uninstall-aware seed marker for one packaged entry.
  * @param dshHome - Harness home directory that owns bundled-plugin state.
@@ -294,10 +314,16 @@ export async function seedBundledPlugin(options: SeedBundledPluginOptions): Prom
     join(dshHome, 'profiles', entry.profile, 'package.json'), stateDirectory,
     entry,
   )
-  let replaceDesktopOwnedDependency = false
+  // An explicit user restore hands ownership back to the current packaged
+  // archive even when a snapshot hold preserved an older desktop-owned file.
+  let replaceDesktopOwnedDependency = force && dependency.desktopOwned
   if (!force) {
     const marker = await readSeedMarker(markerPath)
     if (marker !== undefined) {
+      if (await snapshotVersionHeld(dshHome, entry, marker)) {
+        if (dependency.present) await prepare?.(entry)
+        return 'already-seeded'
+      }
       const bundledVersionChanged = marker.schema >= 2
         && marker.version !== undefined
         && marker.version !== entry.version

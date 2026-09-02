@@ -6,7 +6,7 @@
   width: min(440px, calc(100vw - 48px));
   box-sizing: border-box;
   padding: 22px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 16px;
   background: var(--dsw-alias-bg-base);
   box-shadow: 0 12px 36px rgb(17 24 39 / 12%);
@@ -83,8 +83,9 @@
   height: 20px;
   box-sizing: border-box;
   place-items: center;
-  border: 3px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 50%;
+  corner-shape: round;
   background: var(--dsw-alias-bg-base);
 }
 
@@ -119,22 +120,26 @@
   overflow: hidden;
   border: 0;
   border-radius: 999px;
+  corner-shape: round;
   appearance: none;
   background: var(--dsw-alias-border-l2);
 }
 
 .progress::-webkit-progress-bar {
   border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-border-l2);
 }
 
 .progress::-webkit-progress-value {
   border-radius: 999px;
+  corner-shape: round;
   background: var(--better-sidebar-accent);
 }
 
 .progress::-moz-progress-bar {
   border-radius: 999px;
+  corner-shape: round;
   background: var(--better-sidebar-accent);
 }
 

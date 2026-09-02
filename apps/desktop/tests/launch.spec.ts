@@ -61,6 +61,36 @@ describe('desktop Harness launch', () => {
     }).environment).toEqual({ DSH_HOME: '/desktop/dsh-home' })
   })
 
+  it('forwards only desktop-owned snapshot, bundled-plugin, and proxy metadata', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-snapshot-launch-'))
+    const harnessBin = join(root, 'bin.js')
+    writeFileSync(harnessBin, '')
+    expect(resolveHarnessInvocation({
+      DSH_HOME: '/desktop/dsh-home',
+      DSH_DESKTOP_APPLICATION_VERSION: '0.1.2-alpha.4',
+      DSH_DESKTOP_PNPM_VERSION: '11.7.0',
+      DSH_DESKTOP_BUNDLED_PLUGINS_DIR: '/desktop/bundled plugins',
+      DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN: 'lease-token',
+      DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID: '1234',
+      DSH_PLUGIN_SNAPSHOT_BATCH: '1',
+      HTTPS_PROXY: 'http://127.0.0.1:7890/',
+      NO_PROXY: '127.0.0.1,localhost,::1',
+      DSH_UNTRUSTED_RENDERER_VALUE: 'must-not-cross',
+    }, ['plugin', '--profile', 'web', 'snapshot', 'begin-startup-seed'], {
+      harnessBin,
+    }).environment).toEqual({
+      DSH_HOME: '/desktop/dsh-home',
+      DSH_DESKTOP_APPLICATION_VERSION: '0.1.2-alpha.4',
+      DSH_DESKTOP_PNPM_VERSION: '11.7.0',
+      DSH_DESKTOP_BUNDLED_PLUGINS_DIR: '/desktop/bundled plugins',
+      DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN: 'lease-token',
+      DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID: '1234',
+      DSH_PLUGIN_SNAPSHOT_BATCH: '1',
+      HTTPS_PROXY: 'http://127.0.0.1:7890/',
+      NO_PROXY: '127.0.0.1,localhost,::1',
+    })
+  })
+
   it('uses the packaged Windows Node executable without Electron compatibility flags', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-packaged-launch-'))
     const harnessBin = join(root, 'bin.js')

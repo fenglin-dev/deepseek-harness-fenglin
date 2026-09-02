@@ -65,6 +65,7 @@ export {
   clearLastProfileRepairReport,
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
+  inspectProfileBundleEntryOwnership,
   inspectUnresolvableProfileBundleEntries,
   inspectQuarantineRemovalResidue,
   listQuarantinedProfilePlugins,
@@ -77,6 +78,7 @@ export {
   uninstallQuarantinedProfilePlugin,
   type ProfileDependencyConflict,
   type OrphanedProfileBundle,
+  type ProfileBundleEntryOwnership,
   type ProfileQuarantineReason,
   type ProfileDependencyOptions,
   type ProfilePackageManagerResult,
@@ -113,6 +115,39 @@ export {
   type ProfileDiagnosticSeverity,
   type ProfileDiagnosticSource,
 } from './profile-diagnostics.ts'
+
+export {
+  backupAndResetInvalidSettings,
+  prepareDiagnosticSettingsDocument,
+  type ResetInvalidSettingsResult,
+} from './settings-diagnostics.ts'
+
+export {
+  acquireProfilePluginMutationLock,
+  assertProfilePluginMutationLease,
+  beginProfilePluginMutationLease,
+  createProfilePluginSnapshot,
+  finalizeProfilePluginSnapshot,
+  endProfilePluginMutationLease,
+  listProfilePluginSnapshots,
+  PROFILE_PLUGIN_SNAPSHOT_SCHEMA,
+  removeProfilePluginSnapshot,
+  restoreProfilePluginSnapshotFiles,
+  settleProfilePluginSafetySnapshot,
+  withAutomaticProfilePluginSnapshot,
+  type CreateProfilePluginSnapshotOptions,
+  type CreatedProfilePluginSnapshot,
+  type ProfilePluginSnapshotDifference,
+  type ProfilePluginSnapshotFile,
+  type ProfilePluginSnapshotKind,
+  type ProfilePluginSnapshotOptions,
+  type ProfilePluginSnapshotPackage,
+  type ProfilePluginSnapshotRecord,
+  type ProfilePluginSnapshotSummary,
+  type ProfilePluginSnapshotTrigger,
+  type ProfilePluginSnapshotVersionChange,
+  type RestoredProfilePluginSnapshot,
+} from './profile-plugin-snapshot.ts'
 
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
