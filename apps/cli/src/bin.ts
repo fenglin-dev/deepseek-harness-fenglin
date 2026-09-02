@@ -8,7 +8,7 @@
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
+import { healProfilesModuleFallback, loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
 import { parseDshArgs } from './args.ts'
 
 // Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit
@@ -38,7 +38,10 @@ switch (invocation.mode) {
   }
   case 'plugin': {
     const { runPlugin } = await import('./plugin.ts')
-    process.exit(runPlugin(invocation.profile, invocation.args))
+    const { INSTALL_ANCHOR } = await import('./install-anchor.ts')
+    await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR })
+    // Let native handles and output drain before Node tears down the process.
+    process.exitCode = runPlugin(invocation.profile, invocation.args)
     break
   }
   case 'dump-config': {

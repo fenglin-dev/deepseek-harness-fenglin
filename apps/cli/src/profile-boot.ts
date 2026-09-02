@@ -451,6 +451,7 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
   const safeMode = options.safeMode === true
   const profileDir = resolveProfileDir(options.profile)
   if (!safeMode && existsSync(join(profileDir, 'package.json'))) {
+    await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR })
     const dependencyHealth = repairProfileDependencies({
       binName: NAME,
       profile: options.profile,

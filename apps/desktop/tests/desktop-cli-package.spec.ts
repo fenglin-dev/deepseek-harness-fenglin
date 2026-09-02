@@ -46,4 +46,15 @@ describe('packaged desktop CLI inputs', () => {
       expect(source).toContain('to: cli/desktop-cli.mjs')
     }
   })
+
+  it('retains both installed startup logs and quarantine evidence before plugin assertions', async () => {
+    const source = await readFile(`${desktopRoot}/scripts/smoke-windows-package.ps1`, 'utf8')
+    expect(source.indexOf('First installed startup log:')).toBeLessThan(
+      source.lastIndexOf('Remove-Item -LiteralPath $harnessLog'),
+    )
+    expect(source).toContain('Restarted installed startup log:')
+    expect(source.indexOf('Installed smoke quarantine evidence:')).toBeLessThan(
+      source.indexOf('Bundled plugin dependency $($plugin.PackageName) is absent'),
+    )
+  })
 })

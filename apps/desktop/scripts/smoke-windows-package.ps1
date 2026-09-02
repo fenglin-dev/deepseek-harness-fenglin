@@ -129,6 +129,9 @@ try {
     $tail = if (-not (Test-Path -LiteralPath $harnessLog)) { 'No harness.log was created.' } else { (Get-Content -LiteralPath $harnessLog -Tail 80) -join "`n" }
     throw "Installed application did not reach Harness readiness within 480 seconds.`n$tail"
   }
+  # This fresh CI-only home contains no user credentials. Preserve first-boot
+  # evidence before the restart clears the log.
+  Write-Host "First installed startup log:`n$((Get-Content -LiteralPath $harnessLog -Tail 200) -join "`n")"
   $guardScript = Join-Path $PSScriptRoot '../build/installer-process-guard.ps1'
   $guardOutput = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guardScript -Action inspect -InstallDirectory $installRoot -AppExecutable 'DeepSeek Harness.exe' -ExcludeProcessId $PID 2>&1
   $guardExitCode = $LASTEXITCODE
@@ -155,6 +158,7 @@ try {
     }
   }
   if (-not $ready) { throw 'Restarted Windows application did not reach Harness readiness within 300 seconds' }
+  Write-Host "Restarted installed startup log:`n$((Get-Content -LiteralPath $harnessLog -Tail 200) -join "`n")"
 } finally {
   if (-not $app.HasExited) {
     $null = $app.CloseMainWindow()
@@ -189,6 +193,10 @@ $profileLockPath = Join-Path $profileDirectory 'pnpm-lock.yaml'
 if (-not (Test-Path $profileManifestPath)) { throw "Bundled plugin seed did not create $profileManifestPath" }
 if (-not (Test-Path $profileLockPath)) { throw "Bundled plugin seed did not create $profileLockPath" }
 $profileManifest = Get-Content $profileManifestPath -Raw | ConvertFrom-Json
+$quarantinePath = Join-Path $dshHome 'quarantine/profile-plugins.json'
+if (Test-Path -LiteralPath $quarantinePath) {
+  Write-Host "Installed smoke quarantine evidence:`n$(Get-Content -LiteralPath $quarantinePath -Raw)"
+}
 $bundledManifestPath = Join-Path $installRoot 'resources/bundled-plugins/manifest.json'
 $bundledManifest = Get-Content $bundledManifestPath -Raw | ConvertFrom-Json
 $bundledPlugins = @($bundledManifest.plugins)

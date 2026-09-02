@@ -50,6 +50,10 @@ On Windows, pnpm can briefly lose its atomic directory swap when antivirus softw
 
 `doctor` without an option is read-only and exits `0` when healthy or `2` when conflicts exist. `--repair` exits `10` after lossless convergence, `11` after quarantine, and `1` when the profile cannot be made safe. A quarantined plugin can be retried with `doctor --retry <quarantine-id>`; its original dependency specifier and bundle position are restored only if the ordinary health policy succeeds.
 
+Plugin commands preserve their result as the process exit code and let Node drain pending output and native handles before exiting.
+
+Plugin commands and normal startup prepare the installation-owned module fallback before dependency diagnostics. A fresh Profile can therefore resolve bundled Host services before its first launch; unavailable third-party dependencies still receive the ordinary diagnostic.
+
 Use `--dump-default-config` and `--dump-config` to inspect the composed tree without booting it.
 
 The [CLI behavior reference](reference/README.md) owns exact layer precedence, flags, shutdown behavior, deployment defaults, and source execution.

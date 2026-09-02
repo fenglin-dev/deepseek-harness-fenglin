@@ -24,6 +24,8 @@ Profile 软件包安装与 Cordis 启动可能在不同层失败，但普通子�
 
 Host 清单把持久 incident 与实时失败或未解析 Loader entry 合并，并通过生成的 Remote 方法提供精确授权、修复、隔离、恢复、卸载和导出操作。卸载已停用的隔离插件时，系统先清理该插件的陈旧 lockfile importer 与软件包残留，再只从修复报告和当前诊断报告中移除属于它的状态，最后删除持久隔离记录；其他 incident 保持不变。预检还会识别插件已停用且物理安装消失、持久隔离记录也已删除、但上述派生记录仍然存在的状态，以 `profile.quarantine-removal-residue` 报告并安全收敛元数据，不会重新隔离已经移除的插件。浏览器只显示当前 incident。完整双语规则总表位于 [`docs/profile-diagnostics.zh.md`](../../../../docs/profile-diagnostics.zh.md)，导出内容包括机器可读规则清单与版本、脱敏 incident、运行时事实、隔离记录和 Loader 摘要。
 
+插件 CLI 和普通 Profile 启动都会先准备模块回退映射，再运行诊断。即使是全新的数据目录，也必须在静态导入预检前使安装目录的依赖闭包可见；否则，可用的内置服务会被误判为缺失的第三方依赖，并导致使用它的插件被隔离。准备过程复用现有带锁的回退映射写入器，不会向 Profile 安装另一代 Host。
+
 ## Alternatives considered
 
 **只在 Diagnostics React 组件解析文本。** 这会把策略复制到不可信的展示层，丢失原始 cause 链，而且启动故障时浏览器根本没有挂载，无法提供结果。
