@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package adds desktop-oriented Copy, Ask in new conversation, and Add to current conversation actions for text selected inside explicit conversation scopes. It captures immutable text before the popup takes focus and never sends a draft automatically.
+This package adds desktop-oriented Copy, Ask in new conversation, and Add to current conversation actions for text selected inside explicit conversation scopes. In Electron, the right-click menu also ends with Quick restart, routed through the desktop's guarded lifecycle; ordinary browsers do not receive that action. It captures immutable text before the popup takes focus and never sends a draft automatically.
 
 ## Table of Contents
 
@@ -24,7 +24,7 @@ This package adds desktop-oriented Copy, Ask in new conversation, and Add to cur
 <a id="use-the-selection-actions"></a>
 ## Use the selection actions
 
-A primary-button selection opens a compact toolbar, while right-clicking an eligible selection opens a rounded menu. New-conversation and current-conversation actions write localized Markdown-quoted drafts without submitting them.
+A primary-button selection opens a compact toolbar, while right-clicking an eligible selection opens a rounded menu. New-conversation and current-conversation actions write localized Markdown-quoted drafts without submitting them. When the trusted Electron preload exposes its narrow restart capability, a separated Quick restart row appears at the bottom; it is omitted from the selection toolbar and browser mode.
 
 -----
 

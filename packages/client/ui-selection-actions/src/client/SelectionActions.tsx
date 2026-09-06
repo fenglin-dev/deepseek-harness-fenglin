@@ -5,7 +5,7 @@ import {
   type PointerEvent as ReactPointerEvent, type ReactNode,
 } from 'react'
 import {
-  IconCopyOutline16, IconNewChatOutline16, IconPlusOutline16, Toast, Tooltip,
+  IconCopyOutline16, IconNewChatOutline16, IconPlusOutline16, IconRefreshOutline16, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
@@ -36,6 +36,7 @@ export interface SelectionActionsInjected {
   copy: (text: string) => Promise<boolean>
   askInNewConversation: (workspaceId: WorkspaceId, draft: string) => Promise<void>
   appendToCurrent: (sessionId: SessionId, text: string) => void
+  restartDesktop?: () => Promise<void>
 }
 
 /** Props assembled by the shell overlay registration. */
@@ -56,6 +57,7 @@ export function SelectionActions({
   copy,
   askInNewConversation,
   appendToCurrent,
+  restartDesktop,
   t,
 }: SelectionActionsProps) {
   const currentSessionId = useSessions(state => state.current)
@@ -181,6 +183,12 @@ export function SelectionActions({
     }
   }
 
+  const onRestart = (): void => {
+    if (restartDesktop === undefined) return
+    close()
+    void restartDesktop().catch(() => { showToast(t('error.restart')) })
+  }
+
   const toolbarAction = (label: string, icon: ReactNode, onClick: () => void) => (
     <Tooltip label={label} side="top" delayMs={350}>
       <button type="button" className={css.action} aria-label={label} onPointerDown={preserveSelection} onClick={onClick}>
@@ -225,6 +233,12 @@ export function SelectionActions({
               {appendAvailable
                 ? menuAction(t('action.append'), <IconPlusOutline16 />, onAppend)
                 : null}
+              {restartDesktop !== undefined ? (
+                <>
+                  <div className={css.separator} role="separator" />
+                  {menuAction(t('action.restart'), <IconRefreshOutline16 />, onRestart)}
+                </>
+              ) : null}
             </>
           )}
         </div>

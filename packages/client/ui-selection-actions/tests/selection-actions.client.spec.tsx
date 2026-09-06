@@ -14,7 +14,7 @@ const workspaceState = {
   items: [{ workspaceId: 'workspace-1', sessionIds: ['session-1'] }],
 }
 
-function props(appendAvailable = true) {
+function props(appendAvailable = true, restartDesktop?: () => Promise<void>) {
   return {
     useSessions: (selector: (state: typeof sessionState) => unknown) => selector(sessionState),
     useWorkspaces: (selector: (state: typeof workspaceState) => unknown) => selector(workspaceState),
@@ -22,6 +22,7 @@ function props(appendAvailable = true) {
     copy: vi.fn(async () => true),
     askInNewConversation: vi.fn(async () => {}),
     appendToCurrent: vi.fn(),
+    ...(restartDesktop === undefined ? {} : { restartDesktop }),
     t: (key: keyof typeof en) => en[key],
   }
 }
@@ -92,6 +93,21 @@ describe('SelectionActions', () => {
     expect(screen.getByRole('menuitem', { name: 'Copy' })).toBeTruthy()
     expect(screen.getByRole('menuitem', { name: 'Ask in new conversation' })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: 'Add to current conversation' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Quick restart' })).toBeNull()
+  })
+
+  it('puts the desktop quick restart at the bottom of the context menu', () => {
+    const restartDesktop = vi.fn(async () => {})
+    render(<SelectionActions {...props(true, restartDesktop) as unknown as SelectionActionsProps} />)
+    selectText(text)
+    fireEvent.contextMenu(text, { clientX: 90, clientY: 70 })
+
+    const items = screen.getAllByRole('menuitem')
+    expect(items.at(-1)?.textContent).toBe('Quick restart')
+    expect(screen.getByRole('separator')).toBeTruthy()
+    fireEvent.click(items.at(-1)!)
+    expect(restartDesktop).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 
   it('keeps the native context menu without an eligible selection and dismisses on Escape', () => {
