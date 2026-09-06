@@ -799,13 +799,28 @@ export function acquireProfilePluginMutationLock(
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
       try {
         const ownerSource = readFileSync(lockPath, 'utf8')
+        if (ownerSource.trim() === '') {
+          // Empty/corrupt lock file from an interrupted write. Remove it and
+          // retry acquisition immediately.
+          try { unlinkSync(lockPath) } catch { /* best effort */ }
+          continue
+        }
         const owner = JSON.parse(ownerSource) as { pid?: unknown; token?: unknown }
         if (typeof owner.pid === 'number' && Number.isInteger(owner.pid) && !processExists(owner.pid)) {
           const current = readFileSync(lockPath, 'utf8')
           if (current === ownerSource) unlinkSync(lockPath)
           continue
         }
-      } catch {
+      } catch (readError) {
+        if ((readError as NodeJS.ErrnoException).code === 'ENOENT') {
+          // Lock disappeared between the EEXIST and the read; retry immediately.
+          continue
+        }
+        if (readError instanceof SyntaxError) {
+          // Corrupt JSON in the lock file. Remove it and retry acquisition.
+          try { unlinkSync(lockPath) } catch { /* best effort */ }
+          continue
+        }
         // An unreadable owner remains authoritative; another process may still be writing it.
       }
       if (Date.now() >= deadline) {
@@ -889,7 +904,28 @@ export function assertProfilePluginMutationLease(
   assertSnapshotId(options.token)
   const home = options.home ?? resolveDshHome()
   const lockPath = join(safeSnapshotRoot(home, false), `${SNAPSHOT_LOCK}.${options.profile}.lock`)
-  const owner = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid?: unknown; token?: unknown }
+  let owner: { pid?: unknown; token?: unknown }
+  try {
+    const source = readFileSync(lockPath, 'utf8')
+    if (source.trim() === '') {
+      // Empty/corrupt lock file from an interrupted write. Remove it so the
+      // next acquisition can recreate it cleanly.
+      try { unlinkSync(lockPath) } catch { /* best effort */ }
+      throw new Error('dsh: plugin mutation lease is unavailable (lock file was empty)')
+    }
+    owner = JSON.parse(source) as { pid?: unknown; token?: unknown }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error('dsh: plugin mutation lease is unavailable (no active lock)')
+    }
+    if (error instanceof SyntaxError) {
+      // Corrupt JSON in the lock file. Remove it so the next acquisition can
+      // recreate it cleanly.
+      try { unlinkSync(lockPath) } catch { /* best effort */ }
+      throw new Error('dsh: plugin mutation lease is unavailable (lock file was corrupt)')
+    }
+    throw error
+  }
   if (owner.token !== options.token || typeof owner.pid !== 'number' || !processExists(owner.pid)) {
     throw new Error('dsh: plugin mutation lease is unavailable or no longer owned by a live process')
   }

@@ -109,6 +109,20 @@ async function stagePackageRuntime() {
   await chmod(pnpmEntry, 0o755)
   await symlink('../lib/node_modules/pnpm/bin/pnpm.mjs', join(packageRuntime, 'bin', 'pnpm'))
 
+  // Patch pnpm's bundled undici fetch to use Node.js globalThis.fetch.
+  // pnpm 11.7.0 bundles undici 7.27.2 which has connection timeout bugs.
+  // Node.js built-in globalThis.fetch works correctly.
+  const pnpmDist = join(pnpmDestination, 'dist', 'pnpm.mjs')
+  if (existsSync(pnpmDist)) {
+    const pnpmContent = await readFile(pnpmDist, 'utf8')
+    const oldPnpmLine = 'const res = await (0, import_undici2.fetch)(urlString, { ...fetchOpts, signal, dispatcher });'
+    const newPnpmLine = 'const res = await globalThis.fetch(urlString, { ...fetchOpts, signal });'
+    if (pnpmContent.includes(oldPnpmLine) && !pnpmContent.includes(newPnpmLine)) {
+      await writeFile(pnpmDist, pnpmContent.replace(oldPnpmLine, newPnpmLine), 'utf8')
+      console.log('prepare-unix-runtime: patched pnpm undici fetch to use globalThis.fetch')
+    }
+  }
+
   const runtimeEnvironment = {
     ...process.env,
     PATH: `${join(packageRuntime, 'bin')}${delimiter}${process.env.PATH ?? ''}`,
