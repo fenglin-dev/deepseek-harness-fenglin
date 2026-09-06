@@ -5,10 +5,10 @@ import { spawn } from 'node:child_process'
 import { readdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { developmentElectron } from './development-electron.mjs'
 
 const APP_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PNPM = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
-const ELECTRON = process.platform === 'win32' ? 'electron.cmd' : 'electron'
 const WATCH_TARGETS = ['src', 'package.json', 'tsconfig.json', 'tsdown.preload.config.ts']
 const POLL_INTERVAL_MS = 500
 
@@ -38,7 +38,7 @@ function workspaceStamp() {
 }
 
 function startElectron() {
-  electron = spawn(ELECTRON, ['lib/main.js'], { cwd: APP_DIRECTORY, stdio: 'inherit', env: process.env })
+  electron = spawn(developmentElectron(), ['lib/main.js'], { cwd: APP_DIRECTORY, stdio: 'inherit', env: process.env })
   electron.once('exit', () => {
     electron = undefined
     if (restarting) {
@@ -67,7 +67,10 @@ function runBuild() {
     if (closing) return
     if (code === 0) {
       restarting = electron !== undefined
-      void stopElectron().then(startElectron)
+      void stopElectron().then(startElectron).catch((error) => {
+        console.error('desktop: could not start the project Electron application', error)
+        shutdown()
+      })
     }
     if (rebuildQueued) {
       rebuildQueued = false

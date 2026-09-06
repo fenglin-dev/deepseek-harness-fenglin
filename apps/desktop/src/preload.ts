@@ -1,6 +1,7 @@
 /** Narrow update bridge for the trusted Harness renderer. */
 
 import { contextBridge, ipcRenderer } from 'electron'
+import { CLIENT_COMMANDS } from './application-menu.ts'
 import type { DesktopIconsBridge, DesktopIconStatus, IconSelection } from './icon-protocol.ts'
 import type { OpenLogResult } from './log-reveal.ts'
 import type { DesktopPreferences, DesktopPreferencesPatch } from './preferences.ts'
@@ -40,6 +41,8 @@ import {
   type DesktopStartupProgress,
   type DesktopStartupStage,
 } from './startup-progress.ts'
+import type { StartupDiagnosticIncident } from './startup-diagnostics.ts'
+import type { DesktopWebOpenResult, DesktopWebStatus } from './desktop-web-access.ts'
 
 /** Renderer-visible update methods; no generic process or filesystem access is exposed. */
 export interface DesktopUpdateBridge {
@@ -95,6 +98,13 @@ export interface DesktopReleasesBridge {
   onDownloadStatus(callback: (status: DesktopReleaseDownloadStatus) => void): () => void
 }
 
+/** URL-free access to the main process's authenticated local Web handoff. */
+export interface DesktopWebBridge {
+  getStatus(): Promise<DesktopWebStatus>
+  open(): Promise<DesktopWebOpenResult>
+  onStatus(callback: (status: DesktopWebStatus) => void): () => void
+}
+
 /** Exact allowlisted bundled-plugin operations; no arbitrary package path is exposed. */
 export interface DesktopBundledPluginsBridge {
   startInstall(request: { profile: string; packageSpec: string }): Promise<BundledPluginStartResult>
@@ -139,6 +149,16 @@ export interface DesktopPluginSnapshotsBridge {
   startRestore(snapshotId: string, networkAllowed: boolean): Promise<PluginSnapshotRestoreSnapshot>
   getRestore(operationId: string): Promise<PluginSnapshotRestoreSnapshot>
   onStatus(callback: (snapshot: PluginSnapshotRestoreSnapshot) => void): () => void
+}
+
+/** Read-only startup incidents and a fixed log action. */
+export interface DesktopStartupDiagnosticsBridge {
+  list(): Promise<readonly StartupDiagnosticIncident[]>
+  retry(incidentId: string): Promise<{
+    readonly status: 'plugin-started' | 'restarting' | 'unsupported'
+    readonly installId?: string
+  }>
+  openLog(): Promise<OpenLogResult>
 }
 
 /** Device-local background persistence owned by the desktop data directory. */
@@ -200,6 +220,16 @@ const releasesBridge: DesktopReleasesBridge = {
     const listener = (_event: Electron.IpcRendererEvent, next: DesktopReleaseDownloadStatus): void => { callback(next) }
     ipcRenderer.on('dsh:desktop:release-download-status', listener)
     return () => { ipcRenderer.removeListener('dsh:desktop:release-download-status', listener) }
+  },
+}
+
+const desktopWebBridge: DesktopWebBridge = {
+  getStatus: () => ipcRenderer.invoke('dsh:desktop:web:get') as Promise<DesktopWebStatus>,
+  open: () => ipcRenderer.invoke('dsh:desktop:web:open') as Promise<DesktopWebOpenResult>,
+  onStatus(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, status: DesktopWebStatus): void => { callback(status) }
+    ipcRenderer.on('dsh:desktop:web:status', listener)
+    return () => { ipcRenderer.removeListener('dsh:desktop:web:status', listener) }
   },
 }
 
@@ -271,6 +301,19 @@ const pluginSnapshotsBridge: DesktopPluginSnapshotsBridge = {
   },
 }
 
+const startupDiagnosticsBridge: DesktopStartupDiagnosticsBridge = {
+  list: () => ipcRenderer.invoke(
+    'dsh:desktop:startup-diagnostics:list',
+  ) as Promise<readonly StartupDiagnosticIncident[]>,
+  retry: incidentId => ipcRenderer.invoke(
+    'dsh:desktop:startup-diagnostics:retry', incidentId,
+  ) as Promise<{
+    readonly status: 'plugin-started' | 'restarting' | 'unsupported'
+    readonly installId?: string
+  }>,
+  openLog: () => ipcRenderer.invoke('dsh:desktop:log:open') as Promise<OpenLogResult>,
+}
+
 const chatBackgroundBridge: DesktopChatBackgroundBridge = {
   read: () => ipcRenderer.invoke('dsh:desktop:chat-background:read') as Promise<DesktopChatBackground | undefined>,
   write: background => ipcRenderer.invoke(
@@ -295,9 +338,26 @@ const iconsBridge: DesktopIconsBridge = {
   },
 }
 contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
+  menu: Object.freeze({
+    reportState(state: { ready: boolean; locale: string }): void {
+      ipcRenderer.send('dsh:menu:client-state', state)
+    },
+    onCommand(callback: (command: string) => void | Promise<void>): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, request: { id: string; command: string }): void => {
+        if (typeof request.id !== 'string' || !(CLIENT_COMMANDS as readonly string[]).includes(request.command)) return
+        void Promise.resolve().then(() => callback(request.command)).then(
+          () => { ipcRenderer.send('dsh:menu:result', { id: request.id }) },
+          (error: unknown) => { ipcRenderer.send('dsh:menu:result', { id: request.id, error: String(error).slice(0, 1000) }) },
+        )
+      }
+      ipcRenderer.on('dsh:menu:command', listener)
+      return () => { ipcRenderer.removeListener('dsh:menu:command', listener) }
+    },
+  }),
   shell: Object.freeze(shellBridge),
   icons: Object.freeze(iconsBridge),
   releases: Object.freeze(releasesBridge),
+  desktopWeb: Object.freeze(desktopWebBridge),
   bundledPlugins: Object.freeze(bundledPluginsBridge),
   externalTools: Object.freeze(externalToolsBridge),
   importedPlugins: Object.freeze(sourceMode
@@ -305,6 +365,7 @@ contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
     : importedPluginsBridge),
   diagnosticLab: Object.freeze(diagnosticLabBridge),
   pluginSnapshots: Object.freeze(pluginSnapshotsBridge),
+  startupDiagnostics: Object.freeze(startupDiagnosticsBridge),
   chatBackground: Object.freeze(chatBackgroundBridge),
   ...(sourceMode ? {
     updater: Object.freeze(bridge),
@@ -361,6 +422,9 @@ function installLoadingPage(): void {
       snapshotNeedsNetwork: '本地缓存不完整，原状态已恢复。勾选允许联网后可再次恢复。',
       snapshotRolledBack: '所选快照未能安全启动，已自动恢复到操作前状态。',
       slow: '启动时间较长，你可以打开 Harness 日志查看当前进度。',
+      slowDetail: (task: string, elapsed: number, remaining?: number) => remaining === undefined
+        ? `${task} 已运行 ${elapsed} 秒。应用会自动降级或显示可恢复错误，不会无限等待。`
+        : `${task} 已运行 ${elapsed} 秒，最迟约 ${remaining} 秒后自动降级。`,
       stages: {
         'preparing-desktop': '正在准备桌面环境',
         'preparing-runtime': '正在准备内置运行时',
@@ -372,6 +436,15 @@ function installLoadingPage(): void {
         'restarting-harness': '正在重新启动 Harness',
         ready: '启动完成',
       } satisfies Record<DesktopStartupStage, string>,
+      operations: {
+        'profile-read-only-check': '正在只读检查插件兼容性',
+        'profile-lock-wait': 'Profile 正被其他操作占用，等待其完成',
+        'profile-lock-safe-mode': 'Profile 正被其他操作占用，已转入安全诊断模式',
+        'profile-check-timeout': '兼容性检查已超时，已跳过异常步骤并继续启动',
+        'profile-repair': '正在修复 Profile',
+        'profile-initialize': '正在初始化全新 Profile',
+        'profile-initialize-failed': '全新 Profile 初始化失败',
+      } satisfies Record<string, string>,
     }
     : {
       startupTitle: 'Starting DeepSeek Harness',
@@ -396,6 +469,9 @@ function installLoadingPage(): void {
       snapshotNeedsNetwork: 'The local cache is incomplete and the prior state was restored. Allow network access to retry.',
       snapshotRolledBack: 'The selected snapshot did not start safely, so the pre-restore state was restored.',
       slow: 'Startup is taking longer than expected. Open the Harness log to inspect its progress.',
+      slowDetail: (task: string, elapsed: number, remaining?: number) => remaining === undefined
+        ? `${task} has run for ${elapsed}s. The app will degrade or show a recoverable error instead of waiting forever.`
+        : `${task} has run for ${elapsed}s and will degrade in about ${remaining}s at the latest.`,
       stages: {
         'preparing-desktop': 'Preparing desktop environment',
         'preparing-runtime': 'Preparing the embedded runtime',
@@ -407,6 +483,15 @@ function installLoadingPage(): void {
         'restarting-harness': 'Restarting Harness',
         ready: 'Startup complete',
       } satisfies Record<DesktopStartupStage, string>,
+      operations: {
+        'profile-read-only-check': 'Checking plugin compatibility without changes',
+        'profile-lock-wait': 'Waiting for the operation that owns the Profile',
+        'profile-lock-safe-mode': 'Another operation owns the Profile; using diagnostic safe mode',
+        'profile-check-timeout': 'Compatibility check timed out; skipped the step and continued startup',
+        'profile-repair': 'Repairing the Profile',
+        'profile-initialize': 'Initializing a new Profile',
+        'profile-initialize-failed': 'New Profile initialization failed',
+      } satisfies Record<string, string>,
     }
   const title = document.querySelector<HTMLElement>('#title')
   const description = document.querySelector<HTMLElement>('#description')
@@ -445,13 +530,21 @@ function installLoadingPage(): void {
   ) return
   title.textContent = copy.startupTitle
   description.textContent = copy.startupDescription
+  let currentProgress: DesktopStartupProgress | undefined
+  const progressText = (snapshot: DesktopStartupProgress): string => {
+    const operation = snapshot.detail === undefined
+      ? undefined
+      : (copy.operations as Record<string, string>)[snapshot.detail]
+    if (operation !== undefined) return operation
+    if (snapshot.detail === undefined) return copy.stages[snapshot.stage]
+    return `${copy.stages[snapshot.stage]} · ${snapshot.detail}`
+  }
   const renderProgress = (snapshot: DesktopStartupProgress): void => {
+    currentProgress = snapshot
     const value = snapshot.progress
     progressBar.style.width = `${value}%`
     progressPercent.textContent = `${value}%`
-    progressTask.textContent = snapshot.detail === undefined
-      ? copy.stages[snapshot.stage]
-      : `${copy.stages[snapshot.stage]} · ${snapshot.detail}`
+    progressTask.textContent = progressText(snapshot)
     progress.setAttribute('aria-valuenow', String(value))
     progress.setAttribute('aria-valuetext', progressTask.textContent)
   }
@@ -481,10 +574,31 @@ function installLoadingPage(): void {
   openLogs.addEventListener('click', openLog)
   openSlowLog.addEventListener('click', openLog)
   if (query.get('state') !== 'failed') {
-    setTimeout(() => {
-      slowMessage.textContent = copy.slow
+    let slowTicker: ReturnType<typeof setInterval> | undefined
+    const showSlowProgress = (): void => {
+      const snapshot = currentProgress
+      if (snapshot === undefined) {
+        slowMessage.textContent = copy.slow
+      } else {
+        const now = Date.now()
+        const elapsed = Math.max(0, Math.floor((now - (snapshot.startedAt ?? now)) / 1_000))
+        const remaining = snapshot.deadlineAt === undefined
+          ? undefined
+          : Math.max(0, Math.ceil((snapshot.deadlineAt - now) / 1_000))
+        slowMessage.textContent = copy.slowDetail(
+          progressText(snapshot), elapsed, remaining,
+        )
+      }
       slow.hidden = false
+    }
+    const slowTimer = setTimeout(() => {
+      showSlowProgress()
+      slowTicker = setInterval(showSlowProgress, 1_000)
     }, 15_000)
+    window.addEventListener('unload', () => {
+      clearTimeout(slowTimer)
+      if (slowTicker !== undefined) clearInterval(slowTicker)
+    }, { once: true })
     return
   }
   title.textContent = copy.title

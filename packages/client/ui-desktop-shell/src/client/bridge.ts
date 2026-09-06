@@ -9,6 +9,19 @@ export interface DesktopPreferences {
   closeBehavior: CloseBehavior
   notificationsEnabled: boolean
   launchAtLoginEnabled: boolean
+  openBrowserOnStartup: boolean
+}
+
+/** URL-free state of the system-browser handoff. */
+export type DesktopWebStatus =
+  | { phase: 'starting' | 'ready' | 'opening' }
+  | { phase: 'error'; message: string }
+
+/** Restricted local-browser operations exposed by Electron. */
+export interface DesktopWebBridge {
+  getStatus(): Promise<DesktopWebStatus>
+  open(): Promise<{ opened: true; hidden: boolean }>
+  onStatus(callback: (status: DesktopWebStatus) => void): () => void
 }
 
 /** Platform and build-mode support reported by Electron. */
@@ -73,7 +86,14 @@ export interface DesktopCliStatus {
 export type DesktopReleaseStatus =
   | { phase: 'unsupported' }
   | { phase: 'idle' | 'checking' | 'current'; currentVersion: string }
-  | { phase: 'available'; currentVersion: string; latestVersion: string; publishedAt: string; releaseUrl: string }
+  | {
+    phase: 'available'
+    currentVersion: string
+    latestVersion: string
+    tagName: string
+    publishedAt: string
+    releaseUrl: string
+  }
   | { phase: 'error'; currentVersion: string; message: string }
 
 /** Installer download phases mirrored from the desktop wire protocol. */
@@ -124,8 +144,13 @@ export interface DesktopReleasesBridge {
 
 /** Complete Electron-only browser bridge consumed by this plugin. */
 export interface DesktopBridge {
+  menu?: {
+    reportState(state: { ready: boolean; locale: string }): void
+    onCommand(callback: (command: string) => void | Promise<void>): () => void
+  }
   shell: DesktopShellBridge
   releases: DesktopReleasesBridge
+  desktopWeb: DesktopWebBridge
   icons?: DesktopIconsBridge
 }
 
@@ -138,9 +163,13 @@ export function readDesktopBridge(): DesktopBridge | null {
   const candidate = (globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop as {
     shell?: DesktopShellBridge
     releases?: DesktopReleasesBridge
+    desktopWeb?: DesktopWebBridge
     icons?: DesktopIconsBridge
+    menu?: DesktopBridge['menu']
   } | undefined
-  return candidate?.shell === undefined || candidate.releases === undefined
+  return candidate?.shell === undefined || candidate.releases === undefined || candidate.desktopWeb === undefined
     ? null
-    : { shell: candidate.shell, releases: candidate.releases, ...(candidate.icons === undefined ? {} : { icons: candidate.icons }) }
+    : { shell: candidate.shell, releases: candidate.releases, desktopWeb: candidate.desktopWeb,
+      ...(candidate.menu === undefined ? {} : { menu: candidate.menu }),
+      ...(candidate.icons === undefined ? {} : { icons: candidate.icons }) }
 }

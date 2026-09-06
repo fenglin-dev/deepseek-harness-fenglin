@@ -1,10 +1,10 @@
 /** General Settings rows owned by the Electron desktop shell feature. */
 
-import { useCallback, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { Button, IconChevronDownOutline14, Menu, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { DesktopShellController } from './controller.ts'
+import { DEVELOPMENT_RELEASE_VERSION, type DesktopShellController } from './controller.ts'
 import type { DesktopIconsBridge } from './icon-protocol.ts'
 import { DesktopIconSettings } from './DesktopIconSettings.tsx'
 import css from './DesktopShell.module.css'
@@ -46,11 +46,31 @@ export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferenc
   const getSnapshot = useCallback(() => controller.getSnapshot(), [controller])
   const state = useSyncExternalStore(subscribe, getSnapshot)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [developmentUpdateAvailable, setDevelopmentUpdateAvailable] = useState(false)
   const [confirmingCommandLine, setConfirmingCommandLine] = useState(false)
   const [dataHomeOpen, setDataHomeOpen] = useState(false)
   const [dataHomeTarget, setDataHomeTarget] = useState<'desktop' | 'official' | 'custom' | 'create'>('desktop')
   const preferences = state.preferences
+  const updateRow = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (state.preferences === null || state.capabilities === null || state.menuDestination === undefined) return
+    if (state.menuDestination === 'data-home') {
+      setDataHomeTarget(state.dataHome?.activeKind === 'official' ? 'official' : 'desktop')
+      setDataHomeOpen(true)
+      controller.navigate()
+      return
+    }
+    let secondFrame = 0
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        updateRow.current?.scrollIntoView({ block: 'center' })
+        controller.navigate()
+      })
+    })
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      if (secondFrame !== 0) window.cancelAnimationFrame(secondFrame)
+    }
+  }, [controller, state.preferences, state.capabilities, state.menuDestination, state.dataHome])
   if (preferences === null || state.capabilities === null) return null
   const release = state.release
   const releaseDownload = state.releaseDownload
@@ -69,8 +89,8 @@ export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferenc
     || commandLine?.phase === 'unsupported-shell'
     || commandLine?.phase === 'setup-required'
   const releaseText = release.phase === 'unsupported'
-    ? developmentUpdateAvailable
-      ? t('release.developmentAvailable', { version: '0.1.1-rc.3' })
+    ? state.simulatedReleaseAvailable
+      ? t('release.developmentAvailable', { version: DEVELOPMENT_RELEASE_VERSION })
       : t('release.developmentCurrent')
     : release.phase === 'checking'
       ? t('release.checking')
@@ -81,6 +101,7 @@ export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferenc
           : t('release.error')
   const installerDownloadSupported = state.capabilities.packaged
     && (state.capabilities.platform === 'darwin' || state.capabilities.platform === 'win32')
+  const desktopWebSupported = state.capabilities.platform === 'darwin' || state.capabilities.platform === 'win32'
   const selectedDownload = release.phase === 'available'
     && 'version' in releaseDownload
     && releaseDownload.version === release.latestVersion
@@ -112,10 +133,40 @@ export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferenc
   return (
     <section className={css.group}>
       {icons !== undefined && ['darwin', 'win32'].includes(state.capabilities.platform) && <DesktopIconSettings bridge={icons} t={t} />}
+      {desktopWebSupported && <><div className={css.row}>
+        <div className={css.text}>
+          <div className={css.title}>{t('web.title')}</div>
+          <div className={css.description}>{t('web.description')}</div>
+          {state.desktopWeb.phase === 'error' && <div className={css.error}>{t('web.error', { message: state.desktopWeb.message })}</div>}
+        </div>
+        <div className={css.actions}>
+          <Button
+            variant="outline"
+            disabled={state.desktopWeb.phase === 'starting' || state.desktopWeb.phase === 'opening'}
+            onClick={() => { void controller.openDesktopWeb() }}
+          >
+            {t(state.desktopWeb.phase === 'starting' ? 'web.starting'
+              : state.desktopWeb.phase === 'opening' ? 'web.opening' : 'web.open')}
+          </Button>
+        </div>
+      </div>
+      <div className={css.row}>
+        <div className={css.text}>
+          <div className={css.title}>{t('web.auto.title')}</div>
+          <div className={css.description}>{t('web.auto.description')}</div>
+        </div>
+        <Toggle
+          label={t('web.auto.title')}
+          enabled={preferences.openBrowserOnStartup}
+          disabled={state.busy}
+          onChange={(enabled) => { controller.setOpenBrowserOnStartup(enabled) }}
+        />
+      </div></>}
       <div className={css.row}>
         <div className={css.text}>
           <div className={css.title}>{t('close.title')}</div>
           <div className={css.description}>{t('close.description')}</div>
+          {state.capabilities.platform === 'linux' && <div className={css.description}>{t('close.linux')}</div>}
         </div>
         <Menu
           open={menuOpen}
@@ -233,7 +284,7 @@ export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferenc
       </div>
       <div className={css.row}>
         <div className={css.text}>
-          <div className={css.title}>{t('release.title')}</div>
+          <div ref={updateRow} className={css.title}>{t('release.title')}</div>
           <div className={release.phase === 'error' ? css.error : css.description}>{releaseText}</div>
           {release.phase === 'available'
             && state.capabilities.platform === 'darwin'
@@ -255,10 +306,10 @@ export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferenc
         {release.phase === 'unsupported' ? (
           <div className={css.actions}>
             <Button
-              variant={developmentUpdateAvailable ? 'primary' : 'outline'}
-              onClick={() => { setDevelopmentUpdateAvailable(value => !value) }}
+              variant={state.simulatedReleaseAvailable ? 'primary' : 'outline'}
+              onClick={() => { controller.toggleSimulatedRelease() }}
             >
-              {t(developmentUpdateAvailable ? 'release.developmentOpen' : 'release.check')}
+              {t(state.simulatedReleaseAvailable ? 'release.developmentOpen' : 'release.check')}
             </Button>
           </div>
         ) : (

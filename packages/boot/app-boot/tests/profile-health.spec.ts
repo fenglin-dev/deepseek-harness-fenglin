@@ -752,6 +752,66 @@ describe('profile shared Host dependency repair', () => {
     expect(readlinkSync(profileCopy)).not.toContain('dsh-health-stale-host-')
   })
 
+  it('repairs a custom profile without a pnpm workspace file without installing packages', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('custom', home)
+    writeManifest(join(profileDir, 'package.json'), {
+      name: 'dsh-profile-custom',
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
+    })
+    const options = {
+      binName: 'test', profile: 'custom', installAnchor: anchor, home,
+      runPackageManager: () => { throw new Error('healthy profiles must not install packages') },
+    }
+
+    expect(repairProfileDependencies(options).status).toBe('healthy')
+    const workspacePath = join(profileDir, 'pnpm-workspace.yaml')
+    expect(readFileSync(workspacePath, 'utf8')).toBe('dedupePeerDependents: false\n')
+    expect(repairProfileDependencies(options).status).toBe('healthy')
+    expect(readFileSync(workspacePath, 'utf8')).toBe('dedupePeerDependents: false\n')
+  })
+
+  it('preserves workspace comments, build denials and unrelated settings during compatibility repair', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir } = stageProfile(home, {})
+    const workspacePath = join(profileDir, 'pnpm-workspace.yaml')
+    const source = '# user policy\nallowBuilds:\n  fixture-plugin: false\nminimumReleaseAge: 1440\n'
+    writeFileSync(workspacePath, source)
+    const options = {
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+      runPackageManager: () => { throw new Error('healthy profiles must not install packages') },
+    }
+
+    repairProfileDependencies(options)
+    const updated = readFileSync(workspacePath, 'utf8')
+    expect(updated).toBe(`${source}dedupePeerDependents: false\n`)
+    repairProfileDependencies(options)
+    expect(readFileSync(workspacePath, 'utf8')).toBe(updated)
+  })
+
+  it('does not replace a malformed or unreadable pnpm workspace file', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir } = stageProfile(home, {})
+    const workspacePath = join(profileDir, 'pnpm-workspace.yaml')
+    const source = 'allowBuilds: [\n'
+    writeFileSync(workspacePath, source)
+    const options = {
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+      runPackageManager: () => { throw new Error('invalid settings must stop repair before installation') },
+    }
+
+    expect(() => repairProfileDependencies(options)).toThrow(`cannot update ${workspacePath}`)
+    expect(readFileSync(workspacePath, 'utf8')).toBe(source)
+    rmSync(workspacePath)
+    mkdirSync(workspacePath)
+    expect(() => repairProfileDependencies(options)).toThrow()
+    expect(existsSync(workspacePath)).toBe(true)
+  })
+
   it('prunes stale lockfile importer dependencies without invoking pnpm', () => {
     const { anchor } = stageHarness()
     const home = temporaryDirectory('dsh-health-home-')

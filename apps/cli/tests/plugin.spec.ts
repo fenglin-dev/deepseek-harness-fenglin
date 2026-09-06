@@ -166,6 +166,23 @@ describe('profile plugin package manager', () => {
     )).toBe(false)
   })
 
+  it('retains a network diagnosis from a failing packaged pnpm process', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pnpm-network-'))
+    const entry = join(root, 'pnpm.mjs')
+    try {
+      writeFileSync(entry, "process.stderr.write('UND_ERR_CONNECT_TIMEOUT'); process.exitCode = 1\n")
+      vi.stubEnv('DSH_PNPM_BIN', entry)
+      const result = runProfilePackageManager(root, ['add', '@fixture/plugin'])
+      expect(result.exitCode).toBe(1)
+      expect(result.diagnostic).toContain('UND_ERR_CONNECT_TIMEOUT')
+      expect(result.diagnostic).toMatch(/pnpm network connect-timeout after \d+ ms/u)
+      expect(result.diagnostic).toContain('effective route unverified')
+    } finally {
+      vi.unstubAllEnvs()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('recovers when a packaged pnpm retry clears Windows rename contention', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-pnpm-windows-rename-'))
     const entry = join(root, 'pnpm retry.mjs')

@@ -10,7 +10,7 @@ Electron 会自动使用操作系统代理，但由桌面端拥有的 Harness �
 
 ## 决策
 
-Electron 就绪后，桌面宿主会让默认 Electron session 解析 ChatGPT Codex 端点。若父进程没有显式设置 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`，宿主会把 Chromium 返回的首个受支持 `PROXY`、`HTTPS`、`SOCKS4` 或 `SOCKS5` 路由转换成 Harness 使用的 `HTTP_PROXY` 与 `HTTPS_PROXY`。该环境还会绕过 `127.0.0.1`、`localhost` 和 `::1`，从而保留本地 Harness 通信。Harness 管理的子进程会通过现有凭据清洗逻辑继承这些普通环境项，因此已发布的 Codex 连接插件无需修改源码或用户 Codex 配置，也能取得相同网络路由。
+Electron 就绪后，桌面宿主解析 ChatGPT Codex 端点。[仅限 Codex 的作用范围决策](2026-09-03-desktop-codex-proxy-scope.zh.md)将该路由限定到官方 Provider 的运行时环境，并加入回环绕过，而不是作用于整个 Harness 环境。已发布的连接插件无需修改源码，也不改写用户的 Codex 配置。
 
 显式代理环境变量始终优先。直接路由、不受支持的代理路由、格式错误的结果或解析失败都会保持进程环境不变。宿主只记录是否启用了系统代理继承，绝不记录解析到的代理地址。
 
@@ -24,4 +24,4 @@ Electron 就绪后，桌面宿主会让默认 Electron session 解析 ChatGPT Co
 
 ## 后果
 
-当 Electron 能够解析系统代理时，macOS、Windows 与 Linux 上的桌面 Codex 委派都会采用该代理，而显式部署代理变量仍保持优先。该环境路由只在当前进程中生效，桌面端退出后即消失。若 PAC 文件针对不同外部目标返回不同代理，传统子进程环境变量只能表达一个代理 URL，因此仍有限制；未来由连接插件原生支持会更加精确。
+系统路由可用时，Codex 接收基于端点解析的结果；显式部署或 Provider 代理变量仍优先。插件安装保留自身 pnpm 与 Git 配置。单一代理 URL 不能表达全部 PAC 目标规则；此集成不声称具备完整 PAC 支持，也不代表已验证所有平台的连通性。

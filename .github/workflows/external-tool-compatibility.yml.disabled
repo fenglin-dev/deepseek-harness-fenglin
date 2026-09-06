@@ -7,6 +7,7 @@ on:
       - apps/desktop/external-tools/compatibility.v1.json
       - apps/desktop/scripts/verify-external-tool-compatibility.ts
       - apps/desktop/src/external-tool-compatibility-manifest.ts
+      - apps/desktop/src/external-tool-compatibility.ts
       - packages/subagent/subagent-codex/package.json
       - packages/subagent/subagent-claude-code/package.json
       - packages/client/ui-settings-plugin-inventory/src/client/external-tool-compatibility-bridge.ts
@@ -14,19 +15,22 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
-  artifact-metadata: write
+  contents: read
 
 concurrency:
-  group: external-tool-compatibility
+  group: github-pages
   cancel-in-progress: false
 
 jobs:
   publish:
-    if: github.ref == 'refs/heads/master'
+    if: github.repository == 'flaqai/open-deepseek-harness-desktop' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -44,7 +48,7 @@ jobs:
       - name: Verify exact providers and platform runtimes
         run: pnpm run verify:desktop:external-tools
 
-      - name: Prepare manifest Release asset
+      - name: Prepare compatibility manifest
         run: cp apps/desktop/external-tools/compatibility.v1.json external-tools-compatibility.v1.json
 
       - id: attest
@@ -53,17 +57,29 @@ jobs:
         with:
           subject-path: external-tools-compatibility.v1.json
 
-      - name: Prepare signed attestation asset
-        run: cp "${{ steps.attest.outputs.bundle-path }}" external-tools-compatibility.sigstore.json
-
-      - name: Publish rolling compatibility assets
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Prepare static metadata site
         run: |
-          gh release view external-tools-compatibility-v1 >/dev/null 2>&1 || \
-            gh release create external-tools-compatibility-v1 --title "External tool compatibility v1" --prerelease --latest=false \
-              --notes "Signed compatibility coordinates consumed by released desktop clients."
-          gh release upload external-tools-compatibility-v1 \
-            external-tools-compatibility.v1.json \
-            external-tools-compatibility.sigstore.json \
-            --clobber
+          mkdir -p .artifacts/external-tool-pages/metadata/external-tools/v1
+          cp external-tools-compatibility.v1.json .artifacts/external-tool-pages/metadata/external-tools/v1/
+          cp "${{ steps.attest.outputs.bundle-path }}" .artifacts/external-tool-pages/metadata/external-tools/v1/external-tools-compatibility.sigstore.json
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload signed metadata site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: .artifacts/external-tool-pages
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

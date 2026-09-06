@@ -11,6 +11,11 @@ export interface DesktopLifecycleOptions {
   disposeHost(): Promise<void>
   releaseQuit(): void
   reportError(error: unknown): void
+  /** Return false when an active mutation cannot safely be interrupted. */
+  canQuit?(): boolean
+  /** False only when the host positively knows tray creation failed. */
+  canHideToTray?(): boolean
+  onTrayUnavailable?(): void
 }
 
 /** Serialized desktop lifecycle actions. */
@@ -35,13 +40,18 @@ export function createDesktopLifecycle(options: DesktopLifecycleOptions): Deskto
     window.focus()
   }
 
-  const requestQuit = (): Promise<void> => {
-    if (quitOperation !== undefined) return quitOperation
+  const beginQuit = (): Promise<void> => {
     quitting = true
     quitOperation = options.disposeHost()
       .catch((error: unknown) => { options.reportError(error) })
       .then(() => { options.releaseQuit() })
     return quitOperation
+  }
+
+  const requestQuit = (): Promise<void> => {
+    if (quitOperation !== undefined) return quitOperation
+    if (options.canQuit?.() === false) return Promise.resolve()
+    return beginQuit()
   }
 
   return {
@@ -50,7 +60,8 @@ export function createDesktopLifecycle(options: DesktopLifecycleOptions): Deskto
       if (quitting) return
       event.preventDefault()
       if (options.readCloseBehavior() === 'tray') {
-        options.getWindow()?.hide()
+        if (options.canHideToTray?.() === false) options.onTrayUnavailable?.()
+        else options.getWindow()?.hide()
       } else {
         void requestQuit()
       }
@@ -58,11 +69,13 @@ export function createDesktopLifecycle(options: DesktopLifecycleOptions): Deskto
     showWindow,
     requestQuit,
     requestRestart(relaunch) {
+      if (quitOperation !== undefined) return quitOperation
+      if (options.canQuit?.() === false) return Promise.resolve()
       if (!restartRequested) {
         restartRequested = true
         relaunch()
       }
-      return requestQuit()
+      return beginQuit()
     },
   }
 }

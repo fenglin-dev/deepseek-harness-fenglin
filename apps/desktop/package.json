@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
   "description": "Cross-platform Electron host for the DeepSeek Harness Web GUI",
-  "version": "0.1.2-alpha.5",
+  "version": "0.1.2-rc.1",
   "private": true,
   "homepage": "https://github.com/flaqai/open-deepseek-harness-desktop",
   "author": {
@@ -18,12 +18,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && pnpm --config.verifyDepsBeforeRun=false exec tsdown --config tsdown.preload.config.ts && node scripts/copy-assets.mjs",
     "dev": "node scripts/dev-watch.mjs",
-    "dev:once": "pnpm run build && electron lib/main.js",
+    "dev:once": "pnpm run build && node scripts/start-electron.mjs",
     "package:win:x64": "pnpm --dir ../.. run prepare:desktop:bundled-plugins && pnpm --dir ../.. run build:community-desktop && node scripts/prepare-windows-runtime.mjs && node node_modules/electron-builder/out/cli/cli.js --win nsis --x64 --publish never",
     "package:macos:arm64": "pnpm --dir ../.. run prepare:desktop:bundled-plugins && pnpm --dir ../.. run build:community-desktop && node scripts/prepare-unix-runtime.mjs --target darwin-arm64 && CSC_IDENTITY_AUTO_DISCOVERY=false node node_modules/electron-builder/out/cli/cli.js --config electron-builder.macos.yml --mac dmg zip --arm64 --publish never",
     "package:macos:x64": "pnpm --dir ../.. run prepare:desktop:bundled-plugins && pnpm --dir ../.. run build:community-desktop && node scripts/prepare-unix-runtime.mjs --target darwin-x64 && CSC_IDENTITY_AUTO_DISCOVERY=false node node_modules/electron-builder/out/cli/cli.js --config electron-builder.macos.yml --mac dmg zip --x64 --publish never",
     "package:linux:x64": "pnpm --dir ../.. run prepare:desktop:bundled-plugins && pnpm --dir ../.. run build:community-desktop && node scripts/prepare-unix-runtime.mjs --target linux-x64 && node node_modules/electron-builder/out/cli/cli.js --config electron-builder.linux.yml --linux deb rpm --x64 --publish never",
-    "start": "electron lib/main.js",
+    "start": "node scripts/start-electron.mjs",
     "test": "vitest run --config vitest.config.ts"
   },
   "license": "MIT",

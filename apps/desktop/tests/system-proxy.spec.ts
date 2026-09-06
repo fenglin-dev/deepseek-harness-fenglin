@@ -13,9 +13,10 @@ describe('desktop system proxy', () => {
     expect(parseResolvedSystemProxy('QUIC proxy.example:443; DIRECT')).toBeUndefined()
     expect(parseResolvedSystemProxy('PROXY user:secret@proxy.example:8080')).toBeUndefined()
     expect(parseResolvedSystemProxy('DIRECT')).toBeUndefined()
+    expect(parseResolvedSystemProxy('DIRECT; PROXY fallback.example:8080')).toBeUndefined()
   })
 
-  it('adds the resolved route and loopback bypasses for managed child processes', async () => {
+  it('conveys only the Codex route without modifying pnpm or Git proxy settings', async () => {
     const resolveProxy = vi.fn(async () => 'PROXY 127.0.0.1:7890; DIRECT')
     const result = await resolveSystemProxyEnvironment({
       PATH: '/usr/bin',
@@ -27,9 +28,8 @@ describe('desktop system proxy', () => {
       applied: true,
       environment: {
         PATH: '/usr/bin',
-        HTTP_PROXY: 'http://127.0.0.1:7890/',
-        HTTPS_PROXY: 'http://127.0.0.1:7890/',
-        NO_PROXY: 'internal.example,localhost,127.0.0.1,::1',
+        DSH_DESKTOP_CODEX_PROXY: 'http://127.0.0.1:7890/',
+        NO_PROXY: 'internal.example,localhost',
       },
     })
   })
@@ -53,5 +53,30 @@ describe('desktop system proxy', () => {
       async () => 'DIRECT',
     )
     expect(result).toEqual({ applied: false, environment: { PATH: '/usr/bin' } })
+  })
+
+  it('bounds a stalled resolver and ignores its late completion', async () => {
+    vi.useFakeTimers()
+    try {
+      let finish: ((value: string) => void) | undefined
+      const parent = { PATH: '/usr/bin' }
+      const pending = resolveSystemProxyEnvironment(parent, () => new Promise((resolve) => { finish = resolve }))
+      const assertion = expect(pending).rejects.toThrow('timed out')
+      await vi.advanceTimersByTimeAsync(3_000)
+      await assertion
+      finish?.('PROXY late.example:8080')
+      await Promise.resolve()
+      expect(parent).toEqual({ PATH: '/usr/bin' })
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('propagates resolver errors without changing the parent environment', async () => {
+    const parent = { PATH: '/usr/bin' }
+    await expect(resolveSystemProxyEnvironment(parent, () => Promise.reject(new Error('resolver failed'))))
+      .rejects.toThrow('resolver failed')
+    expect(parent).toEqual({ PATH: '/usr/bin' })
   })
 })

@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DeepSeek Harness</title>
+  <title>Open DSH Desktop</title>
   <style>
     :root { color-scheme: light dark; }
     * { box-sizing: border-box; }
@@ -16,7 +16,7 @@
       border-bottom: 1px solid rgb(0 0 0 / 10%);
       color: #171719;
       display: flex;
-      font-family: "Segoe UI", sans-serif;
+      font-family: system-ui, "Segoe UI", sans-serif;
       height: 36px;
       margin: 0;
       overflow: hidden;
@@ -34,10 +34,18 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    #application-icon { width: 20px; height: 20px; margin: 0 8px; flex: none; object-fit: contain; }
+    #application-menu { display: flex; flex: none; min-width: 0; height: 100%; -webkit-app-region: no-drag; }
+    .menu-button { border: 0; background: transparent; color: inherit; font: inherit; font-size: 12px;
+      padding: 0 9px; white-space: nowrap; border-radius: 4px; margin: 3px 0; }
+    .menu-button:hover, .menu-button[aria-expanded="true"] { background: rgb(128 128 128 / 16%); }
+    .menu-button:focus-visible { outline: 2px solid #4176e6; outline-offset: -2px; }
+    .menu-button[hidden] { display: none; }
     #dsh-desktop-window-controls {
       -webkit-app-region: no-drag;
       align-self: stretch;
       display: flex;
+      flex: none;
     }
     .dsh-desktop-window-control {
       appearance: none;
@@ -53,7 +61,8 @@
     }
     .dsh-desktop-window-control:hover { background: rgb(0 0 0 / 8%); }
     .dsh-desktop-window-control:focus-visible { box-shadow: inset 0 0 0 2px #4176e6; }
-    .dsh-desktop-window-control[data-action="close"]:hover { background: #c42b1c; color: #fff; }
+    body[data-platform="win32"] .dsh-desktop-window-control[data-action="close"]:hover { background: #c42b1c; color: #fff; }
+    body[data-platform="linux"] .dsh-desktop-window-control { width: 38px; }
     .dsh-desktop-window-control::before,
     .dsh-desktop-window-control::after {
       border-top: 1px solid currentColor;
@@ -84,7 +93,9 @@
   </style>
 </head>
 <body>
-  <header id="dsh-desktop-titlebar-title">DeepSeek Harness</header>
+  <img id="application-icon" src="icon.png" alt="">
+  <nav id="application-menu" role="menubar" aria-label="Application menu"></nav>
+  <header id="dsh-desktop-titlebar-title">Open DSH Desktop</header>
   <div id="dsh-desktop-window-controls">
     <button class="dsh-desktop-window-control" data-action="minimize" type="button"></button>
     <button class="dsh-desktop-window-control" data-action="maximize" data-maximized="false" type="button"></button>

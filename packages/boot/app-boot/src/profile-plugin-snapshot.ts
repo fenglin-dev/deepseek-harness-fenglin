@@ -9,6 +9,7 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
   unlinkSync,
@@ -64,6 +65,8 @@ export interface ProfilePluginSnapshotRecord {
   readonly trigger: ProfilePluginSnapshotTrigger
   readonly label?: string
   readonly createdAt: string
+  /** Most recent proven successful startup for a deduplicated bootable point. */
+  readonly lastVerifiedAt?: string
   readonly fingerprint: string
   readonly packages: readonly ProfilePluginSnapshotPackage[]
   readonly bundles: readonly string[]
@@ -130,6 +133,7 @@ const SNAPSHOT_DIRECTORY = join('plugin-snapshots', 'v1')
 const SNAPSHOT_METADATA = 'snapshot.json'
 const SNAPSHOT_FILES = 'files'
 const SNAPSHOT_LOCK = '.profile-plugin-mutation'
+const SNAPSHOT_LOCK_SCHEMA = 'dsh/profile-plugin-mutation-lock/v2'
 const AUTOMATIC_RETENTION = 10
 const SNAPSHOT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 const PROFILE_NAME = /^[A-Za-z0-9._~-]{1,64}$/u
@@ -174,6 +178,19 @@ function snapshotRoot(home: string): string {
   return join(home, SNAPSHOT_DIRECTORY)
 }
 
+function safeSnapshotRoot(home: string, create: boolean): string {
+  const root = snapshotRoot(home)
+  if (!existsSync(root)) {
+    if (!create) throw new Error('dsh: plugin snapshot root is unavailable')
+    mkdirSync(root, { recursive: true, mode: 0o700 })
+  }
+  const status = lstatSync(root)
+  if (!status.isDirectory() || status.isSymbolicLink()) {
+    throw new Error(`dsh: plugin snapshot root is unsafe: ${root}`)
+  }
+  return root
+}
+
 function snapshotDirectory(home: string, snapshotId: string): string {
   assertSnapshotId(snapshotId)
   return join(snapshotRoot(home), snapshotId)
@@ -183,6 +200,21 @@ function assertInside(root: string, candidate: string): void {
   const path = relative(resolve(root), resolve(candidate))
   if (path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path)) {
     throw new Error(`dsh: plugin snapshot path escapes its root: ${candidate}`)
+  }
+}
+
+function assertPhysicalInside(root: string, candidate: string): void {
+  const physicalRoot = realpathSync(root)
+  let existing = candidate
+  while (!existsSync(existing)) {
+    const parent = dirname(existing)
+    if (parent === existing) throw new Error(`dsh: plugin snapshot path is unavailable: ${candidate}`)
+    existing = parent
+  }
+  const physicalPath = realpathSync(existing)
+  const path = relative(physicalRoot, physicalPath)
+  if (path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path)) {
+    throw new Error(`dsh: plugin snapshot path physically escapes its root: ${candidate}`)
   }
 }
 
@@ -292,7 +324,14 @@ function validSnapshotPackage(value: unknown): value is ProfilePluginSnapshotPac
 }
 
 function readRecord(home: string, snapshotId: string): ProfilePluginSnapshotRecord {
+  const root = safeSnapshotRoot(home, false)
   const directory = snapshotDirectory(home, snapshotId)
+  assertInside(root, directory)
+  if (!existsSync(directory)) throw new Error(`dsh: plugin snapshot metadata is unavailable: ${snapshotId}`)
+  const directoryStatus = lstatSync(directory)
+  if (!directoryStatus.isDirectory() || directoryStatus.isSymbolicLink()) {
+    throw new Error(`dsh: plugin snapshot directory is unsafe: ${snapshotId}`)
+  }
   const metadataPath = join(directory, SNAPSHOT_METADATA)
   if (!existsSync(metadataPath) || lstatSync(metadataPath).isSymbolicLink()) {
     throw new Error(`dsh: plugin snapshot metadata is unavailable: ${snapshotId}`)
@@ -309,6 +348,8 @@ function readRecord(home: string, snapshotId: string): ProfilePluginSnapshotReco
     || !Array.isArray(value.files) || !Array.isArray(value.packages) || !Array.isArray(value.bundles)
     || typeof value.createdAt !== 'string' || Number.isNaN(Date.parse(value.createdAt))
     || typeof value.fingerprint !== 'string' || !/^[0-9a-f]{64}$/u.test(value.fingerprint)
+    || (value.lastVerifiedAt !== undefined
+      && (typeof value.lastVerifiedAt !== 'string' || Number.isNaN(Date.parse(value.lastVerifiedAt))))
     || !['best-effort', 'local-source-missing'].includes(value.offlineState ?? '')
     || value.nodeVersion === undefined || typeof value.nodeVersion !== 'string'
     || (value.label !== undefined && typeof value.label !== 'string')
@@ -336,6 +377,7 @@ function snapshotPayloadIsValid(home: string, record: ProfilePluginSnapshotRecor
       if (!file.existed) continue
       const payload = join(payloadRoot, file.relativePath)
       assertInside(payloadRoot, payload)
+      assertPhysicalInside(payloadRoot, payload)
       const bytes = regularFileBytes(payload)
       if (bytes === undefined || bytes.length !== file.bytes || sha256(bytes) !== file.sha256) return false
     }
@@ -360,6 +402,7 @@ function currentFingerprint(
       }
       const source = join(home, relativePath)
       assertInside(home, source)
+      assertPhysicalInside(home, source)
       return { relativePath, source }
     })
   const files = selected.map(({ relativePath, source }) => {
@@ -396,11 +439,11 @@ export function createProfilePluginSnapshot(
   const label = normalizeLabel(options.label)
   const snapshotId = options.snapshotId ?? randomUUID()
   assertSnapshotId(snapshotId)
-  const root = snapshotRoot(home)
-  mkdirSync(root, { recursive: true, mode: 0o700 })
+  const root = safeSnapshotRoot(home, true)
   const destination = snapshotDirectory(home, snapshotId)
   if (existsSync(destination)) throw new Error(`dsh: plugin snapshot already exists: ${snapshotId}`)
   const captured = managedFiles(home, options.profile).map((file) => {
+    assertPhysicalInside(home, file.source)
     const bytes = regularFileBytes(file.source)
     const metadata: ProfilePluginSnapshotFile = bytes === undefined
       ? { relativePath: file.relativePath, existed: false }
@@ -408,11 +451,29 @@ export function createProfilePluginSnapshot(
     return { ...file, bytes, metadata }
   })
   const capturedFingerprint = fingerprint(captured.map(file => file.metadata))
+  if (options.kind === 'bootable') {
+    const duplicate = listProfilePluginSnapshots({ home, profile: options.profile })
+      .find(snapshot => snapshot.kind === 'bootable' && snapshot.fingerprint === capturedFingerprint)
+    if (duplicate !== undefined) {
+      const verifiedAt = (options.now ?? (() => new Date()))().toISOString()
+      const { difference: _difference, ...retained } = duplicate
+      const updated: ProfilePluginSnapshotRecord = { ...retained, lastVerifiedAt: verifiedAt }
+      const metadataPath = join(snapshotDirectory(home, duplicate.snapshotId), SNAPSHOT_METADATA)
+      const temporaryMetadata = `${metadataPath}.${process.pid}.${randomUUID()}.tmp`
+      try {
+        writePrivateFile(temporaryMetadata, `${JSON.stringify(updated, undefined, 2)}\n`)
+        renameSync(temporaryMetadata, metadataPath)
+      } catch (error) {
+        rmSync(temporaryMetadata, { force: true })
+        throw error
+      }
+      return { ...updated, deduplicated: true }
+    }
+  }
   if (options.kind === 'automatic') {
     const duplicate = listProfilePluginSnapshots({ home, profile: options.profile })
       .find(snapshot => snapshot.kind !== 'safety'
-        && snapshot.fingerprint === capturedFingerprint
-        && snapshotPayloadIsValid(home, snapshot))
+        && snapshot.fingerprint === capturedFingerprint)
     if (duplicate !== undefined) return { ...duplicate, deduplicated: true }
   }
   const temporary = join(root, `.${snapshotId}.${process.pid}.tmp`)
@@ -510,9 +571,7 @@ export function listProfilePluginSnapshots(
   const home = options.home ?? resolveDshHome()
   const root = snapshotRoot(home)
   if (!existsSync(root)) return []
-  if (!lstatSync(root).isDirectory() || lstatSync(root).isSymbolicLink()) {
-    throw new Error(`dsh: plugin snapshot root is unsafe: ${root}`)
-  }
+  safeSnapshotRoot(home, false)
   let current: ProfilePluginSnapshotPackage[] = []
   const manifestPath = join(resolveProfileDir(options.profile, home), 'package.json')
   if (existsSync(manifestPath)) current = packageProjection(readManifest(manifestPath))
@@ -522,12 +581,15 @@ export function listProfilePluginSnapshots(
     try {
       const record = readRecord(home, entry.name)
       if (record.profile !== options.profile) continue
+      if (!snapshotPayloadIsValid(home, record)) continue
       output.push({ ...record, difference: difference(record.packages, current) })
     } catch {
       // A damaged snapshot stays unavailable instead of hiding healthy entries.
     }
   }
-  return output.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+  return output.sort((left, right) => (
+    right.lastVerifiedAt ?? right.createdAt
+  ).localeCompare(left.lastVerifiedAt ?? left.createdAt))
 }
 
 /**
@@ -596,9 +658,11 @@ export function restoreProfilePluginSnapshotFiles(
     }
     const destination = join(home, file.relativePath)
     assertInside(home, destination)
+    assertPhysicalInside(home, destination)
     if (!file.existed) continue
     const payload = join(directory, SNAPSHOT_FILES, file.relativePath)
     assertInside(join(directory, SNAPSHOT_FILES), payload)
+    assertPhysicalInside(join(directory, SNAPSHOT_FILES), payload)
     const bytes = regularFileBytes(payload)
     if (bytes === undefined || sha256(bytes) !== file.sha256 || bytes.length !== file.bytes) {
       throw new Error(`dsh: plugin snapshot checksum mismatch: ${file.relativePath}`)
@@ -610,6 +674,11 @@ export function restoreProfilePluginSnapshotFiles(
     .map(file => basename(file.relativePath)))
   const bundledState = join(home, 'bundled-plugins')
   if (existsSync(bundledState)) {
+    assertPhysicalInside(home, bundledState)
+    const bundledStatus = lstatSync(bundledState)
+    if (!bundledStatus.isDirectory() || bundledStatus.isSymbolicLink()) {
+      throw new Error(`dsh: plugin snapshot refuses unsafe bundled-plugin state at ${bundledState}`)
+    }
     for (const entry of readdirSync(bundledState, { withFileTypes: true })) {
       if (entry.isFile() && entry.name.endsWith('.seeded.json') && !expectedSeedMarkers.has(entry.name)) {
         unlinkSync(join(bundledState, entry.name))
@@ -619,6 +688,7 @@ export function restoreProfilePluginSnapshotFiles(
   const restoredFiles: string[] = []
   for (const file of record.files) {
     const destination = join(home, file.relativePath)
+    assertPhysicalInside(home, destination)
     if (!file.existed) {
       rmSync(destination, { force: true })
       restoredFiles.push(file.relativePath)
@@ -643,7 +713,9 @@ export function restoreProfilePluginSnapshotFiles(
         return []
       }
     })
-    atomicReplace(join(home, 'bundled-plugins', 'snapshot-version-hold.json'), `${JSON.stringify({
+    const versionHold = join(home, 'bundled-plugins', 'snapshot-version-hold.json')
+    assertPhysicalInside(home, versionHold)
+    atomicReplace(versionHold, `${JSON.stringify({
       schema: 1,
       snapshotId: record.snapshotId,
       versions,
@@ -689,31 +761,48 @@ function wait(delayMs: number): void {
  * @returns Idempotent release callback.
  */
 export function acquireProfilePluginMutationLock(
-  options: ProfilePluginSnapshotOptions & { readonly waitMs?: number },
+  options: ProfilePluginSnapshotOptions & { readonly waitMs?: number; readonly operationKind?: string },
 ): () => void {
   assertProfile(options.profile)
   const home = options.home ?? resolveDshHome()
-  const root = snapshotRoot(home)
-  mkdirSync(root, { recursive: true, mode: 0o700 })
+  const root = safeSnapshotRoot(home, true)
   const lockPath = join(root, `${SNAPSHOT_LOCK}.${options.profile}.lock`)
   const deadline = Date.now() + (options.waitMs ?? 5_000)
+  const token = randomUUID()
   for (;;) {
     try {
       const descriptor = openSync(lockPath, 'wx', 0o600)
-      writeFileSync(descriptor, `${JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() })}\n`)
+      writeFileSync(descriptor, `${JSON.stringify({
+        schema: SNAPSHOT_LOCK_SCHEMA,
+        token,
+        pid: process.pid,
+        parentPid: process.ppid,
+        operationKind: options.operationKind ?? 'profile-mutation',
+        createdAt: new Date().toISOString(),
+      })}\n`)
       closeSync(descriptor)
       let released = false
       return () => {
         if (released) return
         released = true
-        rmSync(lockPath, { force: true })
+        try {
+          const current = JSON.parse(readFileSync(lockPath, 'utf8')) as { token?: unknown }
+          if (current.token === token) unlinkSync(lockPath)
+        } catch (error) {
+          // A missing, unreadable, or replaced lock no longer belongs to this
+          // owner. Leave it in place rather than risking deletion of a newer
+          // operation or turning cleanup into an application failure.
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+        }
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
       try {
-        const owner = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid?: unknown }
+        const ownerSource = readFileSync(lockPath, 'utf8')
+        const owner = JSON.parse(ownerSource) as { pid?: unknown; token?: unknown }
         if (typeof owner.pid === 'number' && Number.isInteger(owner.pid) && !processExists(owner.pid)) {
-          rmSync(lockPath, { force: true })
+          const current = readFileSync(lockPath, 'utf8')
+          if (current === ownerSource) unlinkSync(lockPath)
           continue
         }
       } catch {
@@ -741,12 +830,14 @@ export function beginProfilePluginMutationLease(
   }
   assertSnapshotId(options.token)
   const home = options.home ?? resolveDshHome()
-  const root = snapshotRoot(home)
-  mkdirSync(root, { recursive: true, mode: 0o700 })
+  const root = safeSnapshotRoot(home, true)
   const lockPath = join(root, `${SNAPSHOT_LOCK}.${options.profile}.lock`)
   const content = `${JSON.stringify({
+    schema: SNAPSHOT_LOCK_SCHEMA,
     pid: options.ownerPid,
+    parentPid: process.ppid,
     token: options.token,
+    operationKind: 'desktop-mutation-lease',
     createdAt: new Date().toISOString(),
   })}\n`
   try {
@@ -758,8 +849,11 @@ export function beginProfilePluginMutationLease(
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-    const current = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid?: unknown; token?: unknown }
-    if (current.pid !== process.pid || current.token !== undefined) {
+    const current = JSON.parse(readFileSync(lockPath, 'utf8')) as {
+      pid?: unknown
+      operationKind?: unknown
+    }
+    if (current.pid !== process.pid || current.operationKind === 'desktop-mutation-lease') {
       throw new Error(`dsh: another process is changing Profile ${options.profile}; cannot begin startup batch`)
     }
     writeFileSync(lockPath, content, { flag: 'w', mode: 0o600 })
@@ -776,9 +870,11 @@ export function endProfilePluginMutationLease(
   assertProfile(options.profile)
   assertSnapshotId(options.token)
   const home = options.home ?? resolveDshHome()
-  const lockPath = join(snapshotRoot(home), `${SNAPSHOT_LOCK}.${options.profile}.lock`)
+  const lockPath = join(safeSnapshotRoot(home, false), `${SNAPSHOT_LOCK}.${options.profile}.lock`)
   const owner = JSON.parse(readFileSync(lockPath, 'utf8')) as { token?: unknown }
   if (owner.token !== options.token) throw new Error('dsh: plugin mutation lease token does not match')
+  const current = JSON.parse(readFileSync(lockPath, 'utf8')) as { token?: unknown }
+  if (current.token !== options.token) throw new Error('dsh: plugin mutation lease changed before release')
   unlinkSync(lockPath)
 }
 
@@ -792,7 +888,7 @@ export function assertProfilePluginMutationLease(
   assertProfile(options.profile)
   assertSnapshotId(options.token)
   const home = options.home ?? resolveDshHome()
-  const lockPath = join(snapshotRoot(home), `${SNAPSHOT_LOCK}.${options.profile}.lock`)
+  const lockPath = join(safeSnapshotRoot(home, false), `${SNAPSHOT_LOCK}.${options.profile}.lock`)
   const owner = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid?: unknown; token?: unknown }
   if (owner.token !== options.token || typeof owner.pid !== 'number' || !processExists(owner.pid)) {
     throw new Error('dsh: plugin mutation lease is unavailable or no longer owned by a live process')

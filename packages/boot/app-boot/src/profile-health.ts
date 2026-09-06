@@ -653,10 +653,19 @@ function writeSharedHostOverrides(profileDir: string): void {
   if (rendered !== source) atomicWrite(workspacePath, rendered)
 }
 
-/** Disable pnpm peer-dependent deduplication, whose diamond resolver cannot handle this linked Host graph. */
+/**
+ * Disable peer-dependent deduplication for the linked Host graph, creating missing workspace settings.
+ * Custom profiles need not supply this file; unreadable or malformed existing settings still stop repair.
+ */
 function writeProfilePnpmCompatibility(profileDir: string): void {
   const workspacePath = join(profileDir, PROFILE_WORKSPACE_FILENAME)
-  const source = readFileSync(workspacePath, 'utf8')
+  let source: string
+  try {
+    source = readFileSync(workspacePath, 'utf8')
+  } catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error
+    source = ''
+  }
   const document = parseDocument(source)
   if (document.errors.length > 0) {
     throw new Error(`dsh: cannot update ${workspacePath}: ${document.errors.map(error => error.message).join('; ')}`)

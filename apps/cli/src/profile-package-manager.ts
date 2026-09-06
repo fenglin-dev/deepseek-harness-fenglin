@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process'
 import { extname, isAbsolute } from 'node:path'
 import type { ProfilePackageManagerResult } from '@deepseek-ai/dsh-app-boot'
+import { packageNetworkDiagnostic } from './package-network-diagnostic.ts'
 
 const NAME = 'dsh'
 const WINDOWS_PNPM_RENAME_RETRY_DELAYS_MS = [500, 1_500, 3_000] as const
@@ -201,6 +202,7 @@ export function runProfilePackageManager(
   const recoveryDiagnostics: string[] = []
   let completedRetries = 0
   while (true) {
+    const startedAt = performance.now()
     const result = spawnSync(invocation.command, invocation.args, {
       cwd: profileDir,
       encoding: 'utf8',
@@ -232,7 +234,10 @@ export function runProfilePackageManager(
         `${NAME}: Windows kept the pnpm node_modules destination locked after ${String(completedRetries)} retries`,
       )
     }
-    const retainedDiagnostic = [diagnostic, ...recoveryDiagnostics].filter(Boolean).join('\n')
+    const networkHint = result.status === 0
+      ? undefined
+      : packageNetworkDiagnostic(diagnostic, performance.now() - startedAt, process.env)
+    const retainedDiagnostic = [diagnostic, ...recoveryDiagnostics, networkHint].filter(Boolean).join('\n')
     return {
       exitCode: result.status ?? 1,
       ...(retainedDiagnostic === '' ? {} : { diagnostic: retainedDiagnostic.slice(-64 * 1024) }),

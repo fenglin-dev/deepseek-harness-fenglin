@@ -8,9 +8,9 @@ Idiomas: [简体中文](README.md) · [English](README.en.md) · [日本語](REA
 
 > [!IMPORTANT]
 >
-> **[A v0.1.2-alpha.1.1 já está disponível. Esta atualização corretiva da v0.1.2-alpha.1 está pronta para baixar e experimentar](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1).** Esta versão continua usando o DeepSeek Harness 0.1.2-alpha.1 como base upstream e reforça o gerenciamento do ambiente Desktop, a recuperação de plugins e a estabilidade multiplataforma.
+> **[A v0.1.2-rc.1 já está disponível: baixe e experimente](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1).** Esta versão usa o DeepSeek Harness 0.1.2-rc.1 como base upstream, adiciona menus nativos e fluxos protegidos de reinicialização e encerramento, melhora os ícones do Dock e da barra de menus do macOS e corrige o escopo do proxy de sistema para o Codex e a inicialização de Profiles personalizados.
 >
-> Esta é uma prévia Alpha. Faça backup das configurações importantes antes de atualizar e inclua logs ou relatórios de diagnóstico relevantes ao comunicar problemas.
+> Esta é uma versão candidata preliminar. Faça backup das configurações importantes antes de atualizar e inclua logs ou relatórios de diagnóstico relevantes ao comunicar problemas.
 
 Open DeepSeek Harness Desktop é uma distribuição independente e mantida pela comunidade do [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Os instaladores incluem Node.js, pnpm e o runtime Harness, permitindo configurar modelos, executar sessões de código, revisar a execução, gerenciar plugins e Skills e conectar ferramentas externas ou bots IM sem preparar um ambiente de desenvolvimento.
 
@@ -176,7 +176,7 @@ Suporta sistema, claro, escuro e oito temas de produto, oito ilustrações integ
 
 ## Download e instalação
 
-Baixe o pacote adequado em [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases).
+Baixe o pacote adequado em [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1).
 
 | Sistema | Arquitetura | Pacote |
 | --- | --- | --- |

@@ -128,7 +128,7 @@ function createProfileLifecycleFixture(): ProfileLifecycleFixture {
   writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
     name: 'dsh-profile-lifecycle',
     private: true,
-    dependencies: {},
+    dependencies: { 'dsh-lifecycle-bundle': '0.0.0' },
     dsh: { profile: { bundles: ['dsh-lifecycle-bundle'] } },
   }, undefined, 2))
   // Hand-place the "installed" bundle where profile resolution finds it.
@@ -298,7 +298,7 @@ function createStartupFixture(): StartupFixture {
   writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
     name: 'dsh-profile-startup',
     private: true,
-    dependencies: {},
+    dependencies: { 'dsh-startup-bundle': '0.0.0' },
     dsh: { profile: { bundles: ['dsh-startup-bundle'] } },
   }, undefined, 2))
   writeFileSync(join(profileDir, 'cordis.patch.yml'), '[]\n')

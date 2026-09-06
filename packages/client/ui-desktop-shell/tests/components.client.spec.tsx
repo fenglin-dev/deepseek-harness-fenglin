@@ -1,14 +1,24 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type {
-  DesktopBridge, DesktopCliStatus, DesktopReleaseDownloadStatus, DesktopReleaseStatus,
+  DesktopBridge, DesktopCliStatus, DesktopReleaseDownloadStatus, DesktopReleaseStatus, DesktopWebStatus,
 } from '../src/client/bridge.ts'
 import { DesktopShellController } from '../src/client/controller.ts'
 import { DesktopPreferencesRow, type DesktopPreferencesRowProps } from '../src/client/DesktopPreferencesRow.tsx'
+import { DesktopUpdateBadge, type DesktopUpdateBadgeProps } from '../src/client/DesktopUpdateBadge.tsx'
+import {
+  DesktopSidebarUpdateButton, type DesktopSidebarUpdateButtonProps,
+} from '../src/client/DesktopSidebarUpdateButton.tsx'
+import {
+  DesktopBrowserReturnButton, type DesktopBrowserReturnButtonProps,
+} from '../src/client/DesktopBrowserReturnButton.tsx'
 import { en } from '../src/client/locales.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 const t = ((key: string, params?: Record<string, string | number>) => {
   let value = (en as Record<string, string>)[key] ?? key
@@ -18,14 +28,18 @@ const t = ((key: string, params?: Record<string, string | number>) => {
 
 function setup(releaseStatus: DesktopReleaseStatus = {
   phase: 'available', currentVersion: '0.1.0-rc.7', latestVersion: '0.1.0-rc.8',
+  tagName: 'dsh-v0.1.0-rc.8',
   publishedAt: '2026-08-20T00:00:00Z', releaseUrl: 'https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/dsh-v0.1.0-rc.8',
 }, commandLine: DesktopCliStatus = {
   phase: 'uninstalled', commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
-}, downloadStatus: DesktopReleaseDownloadStatus = { phase: 'idle' }) {
+}, downloadStatus: DesktopReleaseDownloadStatus = { phase: 'idle' }, desktopWebStatus: DesktopWebStatus = {
+  phase: 'ready',
+}, platform: 'darwin' | 'win32' | 'linux' = 'darwin') {
   const updatePreferences = vi.fn((patch: Record<string, unknown>) => Promise.resolve({
     closeBehavior: patch.closeBehavior === 'quit' ? 'quit' as const : 'tray' as const,
     notificationsEnabled: patch.notificationsEnabled !== false,
     launchAtLoginEnabled: patch.launchAtLoginEnabled === true,
+    openBrowserOnStartup: patch.openBrowserOnStartup === true,
   }))
   const openDownload = vi.fn(() => Promise.resolve({ error: '' }))
   const startDownload = vi.fn(() => Promise.resolve({
@@ -33,6 +47,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
   }))
   const cancelDownload = vi.fn(() => Promise.resolve({ phase: 'cancelled' as const, version: '0.1.0-rc.8' }))
   const openInstaller = vi.fn(() => Promise.resolve({ error: '' }))
+  const openDesktopWeb = vi.fn(() => Promise.resolve({ opened: true as const, hidden: true }))
   const installCommandLine = vi.fn(() => Promise.resolve({
     phase: 'installed' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
   }))
@@ -50,7 +65,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
   const bridge: DesktopBridge = {
     shell: {
       getCapabilities: () => Promise.resolve({
-        platform: 'darwin', packaged: true, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
+        platform, packaged: true, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
         commandLineAvailable: true,
       }),
       getDataHome: () => Promise.resolve({
@@ -61,7 +76,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
       chooseDataHome,
       switchDataHome,
       getPreferences: () => Promise.resolve({
-        closeBehavior: 'tray', notificationsEnabled: true, launchAtLoginEnabled: false,
+        closeBehavior: 'tray', notificationsEnabled: true, launchAtLoginEnabled: false, openBrowserOnStartup: false,
       }),
       updatePreferences,
       onPreferences: () => () => {},
@@ -82,16 +97,72 @@ function setup(releaseStatus: DesktopReleaseStatus = {
       openInstaller,
       onDownloadStatus: () => () => {},
     },
+    desktopWeb: {
+      getStatus: () => Promise.resolve(desktopWebStatus),
+      open: openDesktopWeb,
+      onStatus: () => () => {},
+    },
   }
   const controller = new DesktopShellController(bridge)
   controller.start()
   return {
     controller, updatePreferences, openDownload, startDownload, cancelDownload, openInstaller, installCommandLine,
-    chooseDataHome, switchDataHome,
+    chooseDataHome, switchDataHome, openDesktopWeb,
   }
 }
 
 describe('desktop shell components', () => {
+  it('returns from a browser to Desktop and permits retry after failure', async () => {
+    const returnToDesktop = vi.fn()
+      .mockRejectedValueOnce(new Error('closed'))
+      .mockResolvedValueOnce(undefined)
+    render(<DesktopBrowserReturnButton {...({
+      returnToDesktop, t, wide: true,
+    } as DesktopBrowserReturnButtonProps)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Desktop' }))
+    await waitFor(() => { expect(screen.getByTitle(/Could not reveal Desktop/u)).toBeTruthy() })
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Desktop' }))
+    await waitFor(() => { expect(returnToDesktop).toHaveBeenCalledTimes(2) })
+  })
+
+  it('shows a quiet header badge only for an available update and opens its settings row', async () => {
+    const b = setup()
+    const openUpdates = vi.fn()
+    render(<DesktopUpdateBadge {...({ controller: b.controller, openUpdates, t } as DesktopUpdateBadgeProps)} />)
+    const badge = await screen.findByRole('button', { name: 'Version 0.1.0-rc.8' })
+    fireEvent.click(badge)
+    expect(openUpdates).toHaveBeenCalledOnce()
+    b.controller.dispose()
+  })
+
+  it('shows the blue sidebar action only for an available update in wide mode', async () => {
+    const b = setup()
+    const openUpdates = vi.fn()
+    const view = render(<DesktopSidebarUpdateButton {...({
+      controller: b.controller, openUpdates, t, wide: true,
+    } as DesktopSidebarUpdateButtonProps)} />)
+    const action = await screen.findByRole('button', { name: 'Version 0.1.0-rc.8' })
+    expect(action.textContent).toBe('Update')
+    fireEvent.click(action)
+    expect(openUpdates).toHaveBeenCalledOnce()
+
+    view.rerender(<DesktopSidebarUpdateButton {...({
+      controller: b.controller, openUpdates, t, wide: false,
+    } as DesktopSidebarUpdateButtonProps)} />)
+    expect(screen.queryByRole('button', { name: 'Version 0.1.0-rc.8' })).toBeNull()
+    b.controller.dispose()
+  })
+
+  it('keeps the sidebar update action hidden while no update is available', async () => {
+    const b = setup({ phase: 'current', currentVersion: '0.1.0-rc.8' })
+    render(<DesktopSidebarUpdateButton {...({
+      controller: b.controller, openUpdates: vi.fn(), t, wide: true,
+    } as DesktopSidebarUpdateButtonProps)} />)
+    await waitFor(() => { expect(b.controller.getSnapshot().release.phase).toBe('current') })
+    expect(screen.queryByRole('button')).toBeNull()
+    b.controller.dispose()
+  })
+
   it('shows preferences and sends toggle updates', async () => {
     const b = setup()
     render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
@@ -99,6 +170,63 @@ describe('desktop shell components', () => {
     fireEvent.click(notifications)
     await waitFor(() => { expect(b.updatePreferences).toHaveBeenCalledWith({ notificationsEnabled: false }) })
     expect(screen.getByText('Version 0.1.0-rc.8 is available')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open in browser' }))
+    await waitFor(() => { expect(b.openDesktopWeb).toHaveBeenCalledOnce() })
+    fireEvent.click(screen.getByRole('switch', { name: 'Open browser after startup' }))
+    await waitFor(() => { expect(b.updatePreferences).toHaveBeenCalledWith({ openBrowserOnStartup: true }) })
+    b.controller.dispose()
+  })
+
+  it('disables the browser handoff while Harness is starting', async () => {
+    const b = setup(undefined, undefined, undefined, { phase: 'starting' })
+    render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
+    const button = await screen.findByRole('button', { name: 'Starting…' })
+    expect(button.hasAttribute('disabled')).toBe(true)
+    expect(b.openDesktopWeb).not.toHaveBeenCalled()
+    b.controller.dispose()
+  })
+
+  it('shows a browser handoff error and permits a manual retry', async () => {
+    const b = setup(undefined, undefined, undefined, { phase: 'error', message: 'Browser launch was blocked' })
+    render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
+    expect(await screen.findByText('Could not open the browser: Browser launch was blocked')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Open in browser' }))
+    await waitFor(() => { expect(b.openDesktopWeb).toHaveBeenCalledOnce() })
+    b.controller.dispose()
+  })
+
+  it('does not expose local browser mode on Linux', async () => {
+    const b = setup(undefined, undefined, undefined, { phase: 'ready' }, 'linux')
+    render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
+    await screen.findByText('When closing the window')
+    expect(screen.queryByText('Use in a browser')).toBeNull()
+    expect(screen.queryByRole('switch', { name: 'Open browser after startup' })).toBeNull()
+    b.controller.dispose()
+  })
+
+  it('reveals the update row after the settings panel has completed layout', async () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    }))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    const b = setup()
+    render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
+    await screen.findAllByText('Check for updates')
+    const updateTitle = screen.getAllByText('Check for updates').find(element => element.tagName === 'DIV')
+    expect(updateTitle).toBeDefined()
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(updateTitle!, 'scrollIntoView', { configurable: true, value: scrollIntoView })
+
+    act(() => { b.controller.navigate('updates') })
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    expect(b.controller.getSnapshot().menuDestination).toBe('updates')
+    act(() => { frames.shift()?.(0) })
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    act(() => { frames.shift()?.(16) })
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center' })
+    expect(b.controller.getSnapshot().menuDestination).toBeUndefined()
     b.controller.dispose()
   })
 
@@ -141,13 +269,25 @@ describe('desktop shell components', () => {
 
   it('toggles simulated current and available update states in development mode', async () => {
     const b = setup({ phase: 'unsupported' })
-    render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
+    const openUpdates = vi.fn()
+    render(<>
+      <DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />
+      <DesktopUpdateBadge {...({ controller: b.controller, openUpdates, t } as DesktopUpdateBadgeProps)} />
+      <DesktopSidebarUpdateButton {...({
+        controller: b.controller, openUpdates, t, wide: true,
+      } as DesktopSidebarUpdateButtonProps)} />
+    </>)
 
     expect(await screen.findByText('Development mode: this is the latest version')).toBeTruthy()
+    expect(screen.queryAllByRole('button', { name: 'Version 0.1.1-rc.3' })).toHaveLength(0)
     fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }))
     expect(screen.getByText('Development mode: simulated version 0.1.1-rc.3 is available')).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: 'Version 0.1.1-rc.3' })).toHaveLength(2)
+    fireEvent.click(screen.getByText('Update'))
+    expect(openUpdates).toHaveBeenCalledOnce()
     fireEvent.click(screen.getByRole('button', { name: 'Update now' }))
     expect(screen.getByText('Development mode: this is the latest version')).toBeTruthy()
+    expect(screen.queryAllByRole('button', { name: 'Version 0.1.1-rc.3' })).toHaveLength(0)
     expect(b.openDownload).not.toHaveBeenCalled()
     b.controller.dispose()
   })

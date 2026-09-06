@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -30,6 +30,64 @@ function fixture() {
 }
 
 describe('Profile plugin snapshots', () => {
+  it.runIf(process.platform !== 'win32')('refuses a symlinked snapshot root', () => {
+    const { home } = fixture()
+    const outside = mkdtempSync(join(tmpdir(), 'dsh-plugin-snapshot-outside-'))
+    try {
+      mkdirSync(join(home, 'plugin-snapshots'), { recursive: true })
+      symlinkSync(outside, join(home, 'plugin-snapshots', 'v1'), 'dir')
+      expect(() => createProfilePluginSnapshot({
+        home, profile: 'web', kind: 'manual', trigger: 'manual',
+      })).toThrow('snapshot root is unsafe')
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it.runIf(process.platform !== 'win32')('refuses managed Profile files reached through an escaping symlink', () => {
+    const { home, profileDir } = fixture()
+    const outside = mkdtempSync(join(tmpdir(), 'dsh-plugin-profile-outside-'))
+    try {
+      writeFileSync(join(outside, 'package.json'), '{"name":"outside"}\n')
+      writeFileSync(join(outside, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+      writeFileSync(join(outside, 'pnpm-workspace.yaml'), 'packages: []\n')
+      rmSync(profileDir, { recursive: true, force: true })
+      symlinkSync(outside, profileDir, 'dir')
+      expect(() => createProfilePluginSnapshot({
+        home, profile: 'web', kind: 'manual', trigger: 'manual',
+      })).toThrow('physically escapes its root')
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  it.runIf(process.platform !== 'win32')('refuses a snapshot payload redirected outside its directory', () => {
+    const { home } = fixture()
+    const outside = mkdtempSync(join(tmpdir(), 'dsh-plugin-payload-outside-'))
+    try {
+      const record = createProfilePluginSnapshot({
+        home, profile: 'web', kind: 'manual', trigger: 'manual',
+      })
+      const payload = join(
+        home, 'plugin-snapshots', 'v1', record.snapshotId,
+        'files', 'profiles', 'web', 'package.json',
+      )
+      const outsidePayload = join(outside, 'package.json')
+      writeFileSync(outsidePayload, '{"name":"forged"}\n')
+      rmSync(payload)
+      symlinkSync(outsidePayload, payload, 'file')
+
+      expect(() => restoreProfilePluginSnapshotFiles({
+        home, profile: 'web', snapshotId: record.snapshotId,
+      })).toThrow('physically escapes its root')
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
   it('captures, compares, and restores only managed plugin-stack files', () => {
     const { home, profileDir } = fixture()
     try {
@@ -116,6 +174,35 @@ describe('Profile plugin snapshots', () => {
     }
   })
 
+  it('reuses an identical bootable point and only advances its verification time', () => {
+    const { home } = fixture()
+    try {
+      const retained = createProfilePluginSnapshot({
+        home, profile: 'web', kind: 'bootable', trigger: 'successful-startup',
+        now: () => new Date('2026-09-04T00:00:00.000Z'),
+      })
+      const duplicate = createProfilePluginSnapshot({
+        home, profile: 'web', kind: 'bootable', trigger: 'successful-startup',
+        now: () => new Date('2026-09-05T00:00:00.000Z'),
+      })
+
+      expect(duplicate).toMatchObject({
+        snapshotId: retained.snapshotId,
+        deduplicated: true,
+        createdAt: '2026-09-04T00:00:00.000Z',
+        lastVerifiedAt: '2026-09-05T00:00:00.000Z',
+      })
+      expect(listProfilePluginSnapshots({ home, profile: 'web' })).toEqual([
+        expect.objectContaining({
+          snapshotId: retained.snapshotId,
+          lastVerifiedAt: '2026-09-05T00:00:00.000Z',
+        }),
+      ])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('does not deduplicate against an identical snapshot with a damaged payload', () => {
     const { home } = fixture()
     try {
@@ -138,7 +225,9 @@ describe('Profile plugin snapshots', () => {
       })
       expect(replacement.snapshotId).not.toBe(damaged.snapshotId)
       expect(replacement.deduplicated).toBeUndefined()
-      expect(listProfilePluginSnapshots({ home, profile: 'web' })).toHaveLength(2)
+      expect(listProfilePluginSnapshots({ home, profile: 'web' })).toEqual([
+        expect.objectContaining({ snapshotId: replacement.snapshotId }),
+      ])
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
@@ -206,6 +295,61 @@ describe('Profile plugin snapshots', () => {
       endProfilePluginMutationLease({ home, profile: 'web', token })
       const release = acquireProfilePluginMutationLock({ home, profile: 'web', waitMs: 0 })
       release()
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('cleans a dead legacy PID-only lock and replaces it with a token-owned v2 lock', () => {
+    const { home } = fixture()
+    const lock = join(home, 'plugin-snapshots', 'v1', '.profile-plugin-mutation.web.lock')
+    try {
+      mkdirSync(join(home, 'plugin-snapshots', 'v1'), { recursive: true })
+      writeFileSync(lock, JSON.stringify({ pid: 2_147_483_647 }))
+      const release = acquireProfilePluginMutationLock({
+        home, profile: 'web', waitMs: 0, operationKind: 'legacy-upgrade-test',
+      })
+      expect(JSON.parse(readFileSync(lock, 'utf8'))).toMatchObject({
+        schema: 'dsh/profile-plugin-mutation-lock/v2',
+        pid: process.pid,
+        operationKind: 'legacy-upgrade-test',
+      })
+      release()
+      expect(existsSync(lock)).toBe(false)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('does not remove a lock whose owner token changed before release', () => {
+    const { home } = fixture()
+    try {
+      const release = acquireProfilePluginMutationLock({
+        home, profile: 'web', waitMs: 0, operationKind: 'test-operation',
+      })
+      const lock = join(home, 'plugin-snapshots', 'v1', '.profile-plugin-mutation.web.lock')
+      const owner = JSON.parse(readFileSync(lock, 'utf8')) as Record<string, unknown>
+      expect(owner).toMatchObject({
+        schema: 'dsh/profile-plugin-mutation-lock/v2',
+        pid: process.pid,
+        operationKind: 'test-operation',
+      })
+      writeFileSync(lock, JSON.stringify({ ...owner, token: randomUUID() }))
+      release()
+      expect(existsSync(lock)).toBe(true)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves a replaced malformed lock in place without failing cleanup', () => {
+    const { home } = fixture()
+    try {
+      const release = acquireProfilePluginMutationLock({ home, profile: 'web', waitMs: 0 })
+      const lock = join(home, 'plugin-snapshots', 'v1', '.profile-plugin-mutation.web.lock')
+      writeFileSync(lock, '{')
+      expect(release).not.toThrow()
+      expect(readFileSync(lock, 'utf8')).toBe('{')
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

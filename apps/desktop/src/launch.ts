@@ -9,6 +9,7 @@ export interface HarnessLaunch {
   command: string
   args: string[]
   environment?: NodeJS.ProcessEnv
+  cwd?: string
 }
 
 /** Environment variables accepted by {@link resolveHarnessLaunch}. */
@@ -22,6 +23,7 @@ export interface DesktopLaunchEnvironment {
 
 /** Desktop-owned values a bounded CLI child must receive in addition to DSH_HOME. */
 const HARNESS_INVOCATION_ENVIRONMENT = [
+  'DSH_DESKTOP_CODEX_PROXY',
   'DSH_DESKTOP_APPLICATION_VERSION',
   'DSH_DESKTOP_PNPM_VERSION',
   'DSH_DESKTOP_BUNDLED_PLUGINS_DIR',

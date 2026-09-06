@@ -18,6 +18,8 @@ Windows retains the AppUserModelID and updates only verified current-user links 
 
 General Settings owns the crop editor and reports results per OS destination. Crop motion uses pointer capture and animation-frame throttling, with arrow-key positioning and a local dialog focus loop. Confirm sends only the selection ID, fixed target, and crop rectangle to Electron. The operation does not restart Harness. Linux and Web do not present the editor.
 
+The default macOS application image uses `dev-dock-icon.png` in both development and installed builds, despite its legacy filename. Its loader crops 20 transparent pixels from each edge of the 1024px source and resizes the 984px viewport back to 1024px, enlarging the visible body by about 4% without clipping artwork or remasking corners. This is a product-specific optical correction, not an Apple-mandated inset: [Apple's icon guidance](https://developer.apple.com/videos/play/wwdc2025/220/) distinguishes the 1024px canvas from optically balanced artwork and system adaptation. Startup, previews, reset, and restart use the same loader and always derive from the bundled source, avoiding cumulative enlargement. Native smoke checks constrain the visible body to about 886px and cover transparent padding, rounded corners, and both installation modes. Custom crops, Windows default artwork, and the macOS tray template are unchanged.
+
 ## Alternatives considered
 
 **Rewrite application resources.** Modifying the macOS bundle or Windows executable affects signing and upgrades. Runtime APIs and owned shortcuts provide the requested personalization without changing those artifacts.

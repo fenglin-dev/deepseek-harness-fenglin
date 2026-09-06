@@ -167,7 +167,32 @@ describe('external tool compatibility', () => {
       source: 'remote',
     })
     expect(verifyBundle).toHaveBeenCalledOnce()
+    expect(fetchMock).toHaveBeenNthCalledWith(1,
+      'https://flaqai.github.io/open-deepseek-harness-desktop/metadata/external-tools/v1/external-tools-compatibility.v1.json',
+      expect.objectContaining({ redirect: 'follow' }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(2,
+      'https://flaqai.github.io/open-deepseek-harness-desktop/metadata/external-tools/v1/external-tools-compatibility.sigstore.json',
+      expect.objectContaining({ redirect: 'follow' }),
+    )
     expect(await readFile(join(cacheDirectory, 'external-tools-compatibility.v1.json'))).toEqual(Buffer.from(manifest))
+  })
+
+  it('falls back to embedded pins when Pages is unavailable without querying a Release', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('Not Found', { status: 404 }))
+    const manager = new ExternalToolCompatibilityManager({
+      cacheDirectory: await temporaryDirectory(),
+      desktopVersion: '0.1.2-alpha.5',
+      now: () => new Date('2026-09-03T00:00:00.000Z'),
+      fetch: fetchMock,
+    })
+    await expect(manager.resolve('codex')).resolves.toMatchObject({ source: 'embedded' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    for (const [input] of fetchMock.mock.calls) {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      expect(url).toMatch(/^https:\/\/flaqai\.github\.io\//)
+      expect(url).not.toContain('/releases/')
+    }
   })
 
   it('rejects a mismatched attestation and falls back to embedded pins', async () => {

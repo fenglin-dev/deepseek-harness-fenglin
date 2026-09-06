@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-02-custom-desktop-icons.md
-2026-09-02-custom-desktop-icons.md: 22e092867e4cc7abf8d1135e6f8c5cd4abe35a17
-2026-09-02-custom-desktop-icons.zh.md: ade7189649ccda924293864f34402305f60c6564
+2026-09-02-custom-desktop-icons.md: a4ab7b5e16dd35895697a449e7e9d7a8a07c75a9
+2026-09-02-custom-desktop-icons.zh.md: 618991d6bc643b1bf0b4013969472b52995dc2e1

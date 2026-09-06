@@ -18,6 +18,8 @@ Status: implemented
 
 成功的 `dsh plugin` 改动后也会运行同一修复策略。`dsh plugin --profile <name> doctor` 只读运行；`--repair` 通过普通策略执行修改，`--retry <quarantine-id>` 则以事务方式恢复记录中的说明符与 bundle 位置。Electron 与 Web Settings 会注册第一方的“诊断”分区，与“插件”清单标签和 `dshmarket` 都保持独立。该页面可以运行一次新的只读 doctor、明确启动修复、投影不含文件系统路径的结构化冲突和失管项结果，并管理保留的修复通知与隔离记录。冲突报告中的活动根插件会在用户明确确认风险后，使用核心结构化 `dsh plugin remove` 后台任务；失管 Loader 条目已不存在可管理依赖，因此不会提供该操作。只有当软件包已同时离开 profile 依赖和 bundle 顺序时，系统才接受残留卸载；第二次明确确认后，系统先删除顶层已安装软件包，再清除记录。这覆盖 Electron、`dsh web`、Web 快捷方式，以及所有通过 `runProfile()` 启动的其他入口。
 
+自定义 profile 可以只有 manifest 和 patch，而没有 `pnpm-workspace.yaml`。兼容性修复仅将 `ENOENT` 视为设置缺失，并以原子写入创建包含 `dedupePeerDependents: false` 的文件，不要求运行包管理器安装。现有注释、无关设置与明确拒绝的构建许可保持不变。YAML 损坏与其他文件系统错误仍会停止修复，而不会触发设置重置。profile-health 回归测试覆盖文件缺失、重复修复、内容保留和无效文件拒绝；构建后的 CLI 冒烟测试通过没有 workspace 设置的自定义 profile 验证启动。
+
 ## Alternatives considered
 
 - **纯客户端检测：**否决，因为 CLI 与官方 Web 启动可能在客户端存在之前就组合损坏的 profile，并且每个客户端都会重复包管理器策略。

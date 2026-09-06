@@ -10,7 +10,7 @@ Electron uses the operating system proxy automatically, but the desktop-owned Ha
 
 ## Decision
 
-After Electron becomes ready, the desktop host asks the default Electron session to resolve the ChatGPT Codex endpoint. When the parent process has no explicit `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY`, the host converts the first supported Chromium `PROXY`, `HTTPS`, `SOCKS4`, or `SOCKS5` route into `HTTP_PROXY` and `HTTPS_PROXY` for Harness. The environment also bypasses `127.0.0.1`, `localhost`, and `::1`, preserving local Harness traffic. Harness-managed subprocesses inherit these ordinary environment entries through the existing credential scrub, so the published Codex connector receives the same network route without modifying its source or the user's Codex configuration.
+After Electron becomes ready, the desktop host resolves the ChatGPT Codex endpoint. The [Codex-only scope decision](2026-09-03-desktop-codex-proxy-scope.md) limits that route to the official Provider's runtime environment, with loopback bypasses, rather than the entire Harness environment. The published connector needs no source changes and the user's Codex configuration is not rewritten.
 
 Explicit proxy environment variables remain authoritative. A direct route, unsupported proxy route, malformed result, or resolver failure leaves the process environment unchanged. The host logs only whether system proxy inheritance was enabled and never logs the resolved proxy address.
 
@@ -24,4 +24,4 @@ Explicit proxy environment variables remain authoritative. A direct route, unsup
 
 ## Consequences
 
-Codex delegation from the desktop follows the system proxy on macOS, Windows, and Linux when Electron can resolve one, while explicit deployment proxy variables retain priority. The environment route is process-scoped and disappears when the desktop exits. PAC files that resolve different proxies for different external destinations remain limited by the single proxy URL expressible through these conventional child-process variables; native connector support remains the more precise future path.
+Codex receives an endpoint-derived system route when available, while explicit deployment or Provider proxy variables retain priority. Plugin installation retains its own pnpm and Git configuration. One proxy URL cannot express all PAC destination rules; this integration does not claim full PAC support or verified connectivity on every platform.

@@ -33,6 +33,33 @@ function setup(platform = 'darwin') {
 }
 
 describe('desktop icon persistence and authority', () => {
+  it('uses the shared default application image for both packaged and development startup', () => {
+    const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
+    expect(main).toContain('defaultApplication: loadDefaultApplicationIcon(process.platform)')
+    expect(main).toContain('iconManager?.images().application ?? loadDefaultApplicationIcon(process.platform)')
+    expect(main).not.toContain("process.platform === 'darwin' && !app.isPackaged ? DEVELOPMENT_DOCK_ICON : WINDOW_ICON")
+  })
+  it.each([false, true])('preserves default artwork on first launch, reset and restart (packaged=%s)', (packaged) => {
+    const { options } = setup()
+    const bitmap = Buffer.alloc(512 * 512 * 4)
+    bitmap[(256 * 512 + 256) * 4 + 3] = 255
+    const application = new TestIconImage(512, 512, 8, bitmap) as unknown as NativeImage
+    const defaults = { ...options, packaged, defaultApplication: application }
+    const manager = new DesktopIconManager(defaults)
+    expect(manager.images().application).toBe(application)
+    const preview = application.resize({ width: 64, height: 64 }).toDataURL()
+    expect(manager.status().application).toBe(preview)
+    const selection = manager.selectBytes(7, raster())
+    manager.apply(7, selection.id, 'application', { x: 0, y: 0, size: 512 })
+    manager.reset('application')
+    expect(manager.images().application).toBe(application)
+    expect(options.apply).toHaveBeenCalled()
+    const restart = new DesktopIconManager(defaults)
+    expect(restart.images().application.toBitmap()).toEqual(bitmap)
+    expect(restart.status()).toMatchObject({ application: preview, applicationCustom: false })
+    expect(restart.images().tray).toBe(options.defaultTray)
+    expect(restart.images().trayTemplate).toBe(true)
+  })
   it('keeps defaults without creating a directory or mutating DSH_HOME', () => {
     const { root, manager } = setup()
     expect(manager.status()).toMatchObject({ supported: true, damaged: false, applicationCustom: false, trayFollowsApplication: true })

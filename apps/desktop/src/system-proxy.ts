@@ -1,4 +1,4 @@
-/** Translate Electron's resolved system proxy into child-process environment entries. */
+/** Resolve a Codex-only system route without changing package-manager proxy settings. */
 
 const PROXY_ENV_NAMES = [
   'HTTP_PROXY',
@@ -6,10 +6,22 @@ const PROXY_ENV_NAMES = [
   'ALL_PROXY',
 ] as const
 
-const LOOPBACK_NO_PROXY = ['127.0.0.1', 'localhost', '::1'] as const
-
 /** Network target used to resolve the proxy route required by ChatGPT-authenticated Codex. */
 export const CODEX_PROXY_TARGET = 'https://chatgpt.com/backend-api/'
+
+async function resolveWithDeadline(resolveProxy: (url: string) => Promise<string>): Promise<string> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      resolveProxy(CODEX_PROXY_TARGET),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => { reject(new Error('System proxy resolution timed out')) }, 3_000)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 function environmentEntry(
   environment: NodeJS.ProcessEnv,
@@ -48,6 +60,7 @@ function proxyUrl(kind: string, endpoint: string): string | undefined {
  */
 export function parseResolvedSystemProxy(proxyRules: string): string | undefined {
   for (const candidate of proxyRules.split(';')) {
+    if (candidate.trim().toUpperCase() === 'DIRECT') return undefined
     const match = /^\s*([A-Za-z0-9]+)\s+(.+?)\s*$/u.exec(candidate)
     if (match === null) continue
     const [, kind = '', endpoint = ''] = match
@@ -60,17 +73,18 @@ export function parseResolvedSystemProxy(proxyRules: string): string | undefined
 
 /** Result of applying one system proxy resolution to a Harness environment. */
 export interface ResolvedSystemProxyEnvironment {
-  /** Environment passed to Harness and inherited by managed product subagents. */
+  /** Harness environment containing a private Codex route, not generic proxy overrides. */
   readonly environment: NodeJS.ProcessEnv
   /** Whether system proxy entries were added. */
   readonly applied: boolean
 }
 
 /**
- * Preserve explicit proxy configuration or add Electron's system route for Harness children.
+ * Preserve explicit proxy configuration or convey Electron's route only to the Codex provider.
  * @param environment - Parent environment selected by the desktop host.
  * @param resolveProxy - Electron session proxy resolver.
  * @returns A copied environment and whether the system route was added.
+ * @throws When the resolver fails or exceeds three seconds; callers retain the original environment.
  */
 export async function resolveSystemProxyEnvironment(
   environment: NodeJS.ProcessEnv,
@@ -79,19 +93,12 @@ export async function resolveSystemProxyEnvironment(
   if (PROXY_ENV_NAMES.some(name => environmentEntry(environment, name) !== undefined)) {
     return { environment: { ...environment }, applied: false }
   }
-  const proxy = parseResolvedSystemProxy(await resolveProxy(CODEX_PROXY_TARGET))
+  const proxy = parseResolvedSystemProxy(await resolveWithDeadline(resolveProxy))
   if (proxy === undefined) return { environment: { ...environment }, applied: false }
 
   const resolved: NodeJS.ProcessEnv = {
     ...environment,
-    HTTP_PROXY: proxy,
-    HTTPS_PROXY: proxy,
+    DSH_DESKTOP_CODEX_PROXY: proxy,
   }
-  const currentNoProxy = environmentEntry(environment, 'NO_PROXY')
-  const values = currentNoProxy?.[1].split(',').map(value => value.trim()).filter(Boolean) ?? []
-  for (const host of LOOPBACK_NO_PROXY) {
-    if (!values.includes(host)) values.push(host)
-  }
-  resolved[currentNoProxy?.[0] ?? 'NO_PROXY'] = values.join(',')
   return { environment: resolved, applied: true }
 }

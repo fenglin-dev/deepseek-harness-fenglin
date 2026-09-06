@@ -18,6 +18,9 @@ extraResources:
   - from: lib/desktop-cli-launcher.js
     to: cli/desktop-cli.mjs
 mac:
+  extendInfo:
+    CFBundleName: Open DSH Desktop
+    CFBundleDisplayName: Open DSH Desktop
   icon: build/icon.icns
   # Open-source release baseline: keep Apple Silicon code structurally signed
   # without binding artifacts to a short-lived development certificate.

@@ -1,6 +1,19 @@
 /** Desktop shell settings and update copy. */
 
 export const zh = {
+  'menu.unavailable': '此设置页面尚未加载或对应插件未安装。请在设置中检查插件；不会自动安装。',
+  'close.linux': 'Linux 托盘可见性取决于桌面环境及其扩展。若看不到图标，可选择完整退出。',
+  'web.title': '在浏览器中使用',
+  'web.description': '在本机默认浏览器中打开当前配置、会话和插件。桌面客户端会隐藏到托盘并继续提供服务。',
+  'web.open': '在浏览器中打开',
+  'web.return': '返回客户端',
+  'web.return.opening': '正在返回…',
+  'web.return.error': '无法唤醒客户端，请确认桌面客户端仍在运行后重试。',
+  'web.starting': '正在启动…',
+  'web.opening': '正在打开…',
+  'web.error': '无法打开浏览器：{message}',
+  'web.auto.title': '启动后自动打开浏览器',
+  'web.auto.description': '每次 Harness 就绪后打开一次；完整退出桌面客户端会同时停止浏览器连接。',
   'icons.crop.sizes': '32 / 16 px',
   'icons.title': '应用图标',
   'icons.description': '仅保存在本机。支持 PNG / JPEG，最大 10 MB、1600 万像素；建议至少 512 × 512。',
@@ -125,6 +138,7 @@ export const zh = {
   'release.developmentAvailable': '开发模式：发现模拟新版本 {version}',
   'release.developmentOpen': '去更新',
   'release.badge': '新版本 {version}',
+  'release.sidebar': '有更新',
 } satisfies Record<string, string>
 
 /** Desktop-shell dictionary key union. */
@@ -132,6 +146,19 @@ export type DesktopShellKey = keyof typeof zh
 
 /** English dictionary checked against the Chinese key source. */
 export const en = {
+  'menu.unavailable': 'This settings page is unavailable or its plugin is not installed. Check plugins in Settings; nothing was installed automatically.',
+  'close.linux': 'Tray visibility on Linux depends on your desktop environment and extensions. Choose Quit client if the icon is not visible.',
+  'web.title': 'Use in a browser',
+  'web.description': 'Open the current configuration, sessions, and plugins in your default browser. The desktop client hides to the tray and keeps serving it.',
+  'web.open': 'Open in browser',
+  'web.return': 'Return to Desktop',
+  'web.return.opening': 'Returning…',
+  'web.return.error': 'Could not reveal Desktop. Keep the desktop client running and try again.',
+  'web.starting': 'Starting…',
+  'web.opening': 'Opening…',
+  'web.error': 'Could not open the browser: {message}',
+  'web.auto.title': 'Open browser after startup',
+  'web.auto.description': 'Open once after each Harness start. Quitting the desktop client also ends the browser connection.',
   'icons.crop.sizes': '32 / 16 px',
   'icons.title': 'Application icons',
   'icons.description': 'Stored only on this device. PNG / JPEG, up to 10 MB and 16 million pixels. At least 512 × 512 is recommended.',
@@ -256,4 +283,5 @@ export const en = {
   'release.developmentAvailable': 'Development mode: simulated version {version} is available',
   'release.developmentOpen': 'Update now',
   'release.badge': 'Version {version}',
+  'release.sidebar': 'Update',
 } satisfies Record<DesktopShellKey, string>

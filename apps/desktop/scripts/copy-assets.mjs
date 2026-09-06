@@ -1,8 +1,10 @@
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const outputDirectory = fileURLToPath(new URL('../lib/', import.meta.url))
 mkdirSync(outputDirectory, { recursive: true })
+const { version } = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'))
+writeFileSync(new URL('../lib/harness-version.json', import.meta.url), `${JSON.stringify({ version })}\n`)
 copyFileSync(
   fileURLToPath(new URL('../src/loading.html', import.meta.url)),
   fileURLToPath(new URL('../lib/loading.html', import.meta.url)),

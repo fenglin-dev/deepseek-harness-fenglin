@@ -16,7 +16,7 @@ import {
 
 const MANIFEST_NAME = 'external-tools-compatibility.v1.json'
 const BUNDLE_NAME = 'external-tools-compatibility.sigstore.json'
-const RELEASE_BASE = 'https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/external-tools-compatibility-v1'
+const METADATA_BASE = 'https://flaqai.github.io/open-deepseek-harness-desktop/metadata/external-tools/v1'
 const SIGNING_IDENTITY = 'https://github.com/flaqai/open-deepseek-harness-desktop/.github/workflows/external-tool-compatibility.yml@refs/heads/master'
 const SIGNING_ISSUER = 'https://token.actions.githubusercontent.com'
 const MAX_DOCUMENT_BYTES = 1024 * 1024
@@ -158,8 +158,8 @@ export class ExternalToolCompatibilityManager {
       const timer = setTimeout(() => { controller.abort() }, 6000)
       try {
         const [manifestResponse, bundleResponse] = await Promise.all([
-          fetcher(`${RELEASE_BASE}/${MANIFEST_NAME}`, { signal: controller.signal, redirect: 'follow' }),
-          fetcher(`${RELEASE_BASE}/${BUNDLE_NAME}`, { signal: controller.signal, redirect: 'follow' }),
+          fetcher(`${METADATA_BASE}/${MANIFEST_NAME}`, { signal: controller.signal, redirect: 'follow' }),
+          fetcher(`${METADATA_BASE}/${BUNDLE_NAME}`, { signal: controller.signal, redirect: 'follow' }),
         ])
         const [manifestBytes, bundleBytes] = await Promise.all([
           readLimited(manifestResponse),

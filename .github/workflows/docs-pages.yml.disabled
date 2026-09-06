@@ -35,6 +35,9 @@ env:
 
 jobs:
   build:
+    # The community repository reserves Pages for signed desktop metadata;
+    # its product website is hosted separately at opendshdesktop.com.
+    if: github.repository != 'flaqai/open-deepseek-harness-desktop'
     runs-on: ubuntu-latest
     permissions:
       contents: read

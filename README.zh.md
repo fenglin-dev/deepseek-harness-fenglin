@@ -12,9 +12,9 @@
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-alpha.1.1 已发布：作为 v0.1.2-alpha.1 的修复升级版，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1)。** 本版继续以官方 DeepSeek Harness 0.1.2-alpha.1 为核心基线，集中增强桌面环境管理、插件恢复和跨平台稳定性。
+> **[v0.1.2-rc.1 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1)。** 本版以官方 DeepSeek Harness 0.1.2-rc.1 为核心基线，新增桌面原生应用菜单与受保护的重启、退出流程，优化 macOS Dock 与菜单栏图标，并修复 Codex 系统代理作用范围及自定义 Profile 启动兼容性。
 >
-> 这是 Alpha 预发布版本。升级前建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈给我们。
+> 这是 Release Candidate 预发布版本。升级前建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈给我们。
 
 <p align="center">
   <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="下载量"></a>
@@ -342,13 +342,13 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
   </tr>
 </table>
 
-## 同步 DeepSeek Harness 0.1.2-alpha.1
+## 同步 DeepSeek Harness 0.1.2-rc.1
 
-当前桌面基线使用上游 `dsh-v0.1.2-alpha.1`。会话、模型、子 Agent、图片和文件能力由同一套 Harness Runtime 提供，桌面客户端在其上增加环境选择、插件管理、诊断保护和系统集成。文件与 Session 引用、多查询并发 `web_search`、推理内容回传、持久 PowerShell PTY、动态客户端包、构建 Profile 与品牌插槽继续可用；Electron 为 `dsh web` 传入 `--no-open`，启动桌面应用不会额外打开系统浏览器。
+当前桌面基线使用上游 `dsh-v0.1.2-rc.1`。会话、模型、子 Agent、图片和文件能力由同一套 Harness Runtime 提供，桌面客户端在其上增加环境选择、插件管理、诊断保护和系统集成。文件与 Session 引用、多查询并发 `web_search`、推理内容回传、持久 PowerShell PTY、动态客户端包、构建 Profile 与品牌插槽继续可用；Electron 默认不会额外打开系统浏览器，用户可以从通用设置、文件菜单或托盘菜单打开同一套本机 Web 界面，也可以选择在每次 Harness 就绪后自动打开。
 
 ## 下载安装
 
-请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) 页面下载安装包。[`v0.1.2-alpha.1.1`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1) 已提供以下发行产物：
+请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1) 页面下载安装包。[`v0.1.2-rc.1`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1) 已提供以下发行产物：
 
 | 平台 | 架构 | 发行包 | 状态 |
 | --- | --- | --- | --- |
@@ -406,7 +406,7 @@ pnpm run build
 pnpm run dev:desktop
 ```
 
-桌面宿主会启动本地 Harness 进程，并在加固的 Electron 窗口中打开其回环地址。若只需运行 Web 客户端：
+桌面宿主会启动本地 Harness 进程，并在加固的 Electron 窗口中打开其回环地址。macOS 和 Windows 安装版可从通用设置选择“在浏览器中打开”，浏览器与桌面窗口共用当前配置、会话和插件；浏览器中的“返回客户端”会唤醒同一个桌面窗口，完整退出桌面客户端则会停止该连接。若只需从源码独立运行 Web 客户端：
 
 ```sh
 pnpm dsh web

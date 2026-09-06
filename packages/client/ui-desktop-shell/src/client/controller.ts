@@ -4,21 +4,28 @@ import type {
   CloseBehavior, DesktopBridge, DesktopCapabilities, DesktopCliStatus, DesktopDataHomeSelectionResult,
   DesktopDataHomeSelectionKind, DesktopDataHomeStatus, DesktopDataHomeSwitchRequest, DesktopPreferences,
   DesktopReleaseDownloadStatus, DesktopReleaseStatus,
+  DesktopWebStatus,
 } from './bridge.ts'
 
 /** Immutable renderer state shared by the desktop settings and footer action. */
 export interface DesktopShellSnapshot {
+  menuDestination?: 'data-home' | 'updates' | undefined
   capabilities: DesktopCapabilities | null
   preferences: DesktopPreferences | null
   release: DesktopReleaseStatus
+  simulatedReleaseAvailable: boolean
   releaseDownload: DesktopReleaseDownloadStatus
   commandLine: DesktopCliStatus | null
   dataHome: DesktopDataHomeStatus | null
   dataHomeSelection: DesktopDataHomeSelectionResult | null
+  desktopWeb: DesktopWebStatus
   restartPending: boolean
   busy: boolean
   error: string | null
 }
+
+/** Fixed presentation version used only by the development-mode update simulator. */
+export const DEVELOPMENT_RELEASE_VERSION = '0.1.1-rc.3'
 
 /** Small external store shared by the General row and sidebar badge. */
 export class DesktopShellController {
@@ -26,10 +33,12 @@ export class DesktopShellController {
     capabilities: null,
     preferences: null,
     release: { phase: 'unsupported' },
+    simulatedReleaseAvailable: false,
     releaseDownload: { phase: 'unsupported' },
     commandLine: null,
     dataHome: null,
     dataHomeSelection: null,
+    desktopWeb: { phase: 'starting' },
     restartPending: false,
     busy: false,
     error: null,
@@ -38,6 +47,11 @@ export class DesktopShellController {
   #disposers: (() => void)[] = []
 
   constructor(readonly bridge: DesktopBridge) {}
+
+  /** Queue or consume a native-menu destination after General Settings mounts.
+   * @param destination - Existing panel to reveal, or undefined to consume the request.
+   */
+  navigate(destination?: 'data-home' | 'updates'): void { this.#publish({ menuDestination: destination }) }
 
   /** Read the current immutable desktop state.
    * @returns the current snapshot.
@@ -62,6 +76,7 @@ export class DesktopShellController {
       this.bridge.shell.onPreferences((preferences) => { this.#publish({ preferences }) }),
       this.bridge.releases.onStatus((release) => { this.#publish({ release }) }),
       this.bridge.releases.onDownloadStatus((releaseDownload) => { this.#publish({ releaseDownload }) }),
+      this.bridge.desktopWeb.onStatus((desktopWeb) => { this.#publish({ desktopWeb }) }),
     ]
     void Promise.all([
       this.bridge.shell.getCapabilities(),
@@ -70,8 +85,9 @@ export class DesktopShellController {
       this.bridge.releases.getDownloadStatus(),
       this.bridge.shell.getCommandLine(),
       this.bridge.shell.getDataHome(),
-    ]).then(([capabilities, preferences, release, releaseDownload, commandLine, dataHome]) => {
-      this.#publish({ capabilities, preferences, release, releaseDownload, commandLine, dataHome })
+      this.bridge.desktopWeb.getStatus(),
+    ]).then(([capabilities, preferences, release, releaseDownload, commandLine, dataHome, desktopWeb]) => {
+      this.#publish({ capabilities, preferences, release, releaseDownload, commandLine, dataHome, desktopWeb })
     }).catch((error: unknown) => {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })
     })
@@ -109,6 +125,18 @@ export class DesktopShellController {
    * @param enabled - desired login-launch state.
    */
   setLaunchAtLogin(enabled: boolean): void { void this.setPreference({ launchAtLoginEnabled: enabled }) }
+  /** Enable or disable opening the local Web interface after each Harness start.
+   * @param enabled - Desired automatic browser handoff.
+   */
+  setOpenBrowserOnStartup(enabled: boolean): void { void this.setPreference({ openBrowserOnStartup: enabled }) }
+
+  /** Open the current Harness generation in the system browser. */
+  async openDesktopWeb(): Promise<void> {
+    this.#publish({ error: null })
+    try { await this.bridge.desktopWeb.open() } catch (error) {
+      this.#publish({ error: error instanceof Error ? error.message : String(error) })
+    }
+  }
 
   /** Install or repair the packaged desktop `dsh` command.
    * @param force - whether a detected non-owned command may be shadowed.
@@ -171,6 +199,12 @@ export class DesktopShellController {
     try { this.#publish({ release: await this.bridge.releases.check() }) } catch (error) {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })
     }
+  }
+
+  /** Toggle the shared development-only update state used by every update surface. */
+  toggleSimulatedRelease(): void {
+    if (this.#snapshot.release.phase !== 'unsupported') return
+    this.#publish({ simulatedReleaseAvailable: !this.#snapshot.simulatedReleaseAvailable })
   }
 
   /** Open the currently selected repository-validated Release page. */

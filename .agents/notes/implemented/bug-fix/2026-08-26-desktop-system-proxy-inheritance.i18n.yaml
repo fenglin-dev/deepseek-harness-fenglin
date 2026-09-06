@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-26-desktop-system-proxy-inheritance.md
-2026-08-26-desktop-system-proxy-inheritance.md: 4b3c790411f74c748343df36a9b9b86a7dc91d31
-2026-08-26-desktop-system-proxy-inheritance.zh.md: c256d800e16260b47839c71d08ea867223157b69
+2026-08-26-desktop-system-proxy-inheritance.md: f8173cb6ad21b7c9f859970136fa14a5842074e4
+2026-08-26-desktop-system-proxy-inheritance.zh.md: a1e630652fd521b4b4e50e2dbf62fd5a4ee1b7c0
