@@ -2,6 +2,9 @@
 name: Desktop packages
 
 on:
+  push:
+    tags:
+      - 'dsh-v*'
   workflow_dispatch:
     inputs:
       target:
@@ -108,7 +111,7 @@ jobs:
 
   windows:
     name: Windows x64
-    if: ${{ inputs.target == 'all' || inputs.target == 'windows-x64' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/dsh-v') || inputs.target == 'all' || inputs.target == 'windows-x64' }}
     needs: bundled-plugins
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
@@ -152,7 +155,7 @@ jobs:
 
   linux:
     name: Linux x64
-    if: ${{ inputs.target == 'all' || inputs.target == 'linux-x64' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/dsh-v') || inputs.target == 'all' || inputs.target == 'linux-x64' }}
     needs: bundled-plugins
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
@@ -202,6 +205,7 @@ jobs:
     needs: [macos, windows, linux]
     if: >-
       ${{ always() && (
+        (startsWith(github.ref, 'refs/tags/dsh-v') && needs.windows.result == 'success' && needs.linux.result == 'success') ||
         (inputs.target == 'all' && needs.macos.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success') ||
         (inputs.target == 'macos' && needs.macos.result == 'success') ||
         (inputs.target == 'windows-x64' && needs.windows.result == 'success') ||
@@ -225,3 +229,29 @@ jobs:
           path: dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Create GitHub Release
+    needs: [windows, linux, checksums]
+    if: ${{ startsWith(github.ref, 'refs/tags/dsh-v') && needs.windows.result == 'success' && needs.linux.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: dist
+          merge-multiple: true
+
+      - name: Display structure of downloaded files
+        run: ls -la dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: DeepSeek Harness Desktop ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/DeepSeek-Harness-*
