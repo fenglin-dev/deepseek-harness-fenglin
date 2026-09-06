@@ -152,7 +152,7 @@ Quand la session attend un choix, une confirmation ou une réponse, ou que l’�
 
 ### Plugins prédéfinis
 
-L’installateur contient cinq presets de démarrage sous forme d’archives locales dont l’intégrité est vérifiée : Plugin Marketplace, dsh-im, dsh-skill-picker, Better Sidebar et dsh-pocket. `dsh-font` est fourni uniquement comme échantillon pour les exercices de diagnostic. Lorsqu’un utilisateur désinstalle un preset, le client ne le réinstalle pas automatiquement.
+L’installateur contient sept presets de démarrage sous forme d’archives locales dont l’intégrité est vérifiée : Plugin Marketplace, dsh-im, dsh-skill-picker, Better Sidebar, dsh-pocket, `@ychris12138/dsh-usage-stats` et `dsh-smooth-stream`. Usage Stats ajoute le suivi des tokens, les comptes fournisseurs, l’estimation des coûts de session, les budgets et les exports ; Smooth Stream apporte un rendu progressif et un défilement fluides pour le Markdown, les blocs de code, les tableaux et les résultats d’outils. `dsh-font` est fourni uniquement comme échantillon pour les exercices de diagnostic. Lorsqu’un utilisateur désinstalle un preset, le client ne le réinstalle pas automatiquement.
 
 <p align="center"><img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="Connecter un téléphone par le QR code ou l’adresse LAN de Pocket"><br><sub>Accès mobile : scanner sur le même réseau et activer l’accès public uniquement si nécessaire</sub></p>
 

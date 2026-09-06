@@ -174,7 +174,7 @@ Cordis の Context、Service、Symbol はバージョン番号だけでなく物
 
 ### プリセットプラグイン
 
-インストーラーには、Plugin Marketplace、dsh-im、dsh-skill-picker、Better Sidebar、dsh-pocket の 5 つの起動プリセットが、整合性を検証したローカルアーカイブとして含まれます。`dsh-font` は診断演習用サンプルとしてのみ提供されます。ユーザーがプリセットをアンインストールしても、クライアントが自動で戻すことはありません。
+インストーラーには、Plugin Marketplace、dsh-im、dsh-skill-picker、Better Sidebar、dsh-pocket、`@ychris12138/dsh-usage-stats`、`dsh-smooth-stream` の 7 つの起動プリセットが、整合性を検証したローカルアーカイブとして含まれます。Usage Stats は Token 使用量、Provider アカウント、セッション費用の見積もり、予算、エクスポート機能を提供し、Smooth Stream は Markdown、コードブロック、表、ツール結果の滑らかなストリーミング表示とスクロールを提供します。`dsh-font` は診断演習用サンプルとしてのみ提供されます。ユーザーがプリセットをアンインストールしても、クライアントが自動で戻すことはありません。
 
 <p align="center"><img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="Pocket の QR コードまたは LAN アドレスでスマートフォンを接続"><br><sub>スマートフォンアクセス：同じネットワークでスキャンし、必要に応じて公開アクセスも有効化</sub></p>
 
