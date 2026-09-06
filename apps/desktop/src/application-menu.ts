@@ -7,7 +7,7 @@ export const DESKTOP_COMMANDS = [
   'undo', 'redo', 'cut', 'copy', 'paste', 'select-all', 'zoom-in', 'zoom-out', 'zoom-reset',
   'fullscreen', 'market', 'plugin-restore', 'diagnostics', 'snapshots', 'external-tools',
   'phone', 'im', 'data-home', 'restart', 'show', 'minimize', 'maximize',
-  'docs', 'repository', 'feedback', 'logs', 'devtools', 'emoji',
+  'docs', 'repository', 'feedback', 'logs', 'devtools', 'emoji', 'reload',
 ] as const
 /** Whitelisted desktop command identifier. */
 export type DesktopCommand = typeof DESKTOP_COMMANDS[number]
@@ -29,7 +29,7 @@ const en = {
   show: 'Show Main Window', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore',
   docs: 'Documentation', repository: 'Project Repository', feedback: 'Report an Issue', logs: 'Open Log Directory',
   devtools: 'Developer Tools', services: 'Services', hide: 'Hide DeepSeek Harness Fenglin', 'hide-others': 'Hide Others',
-  unhide: 'Show All', emoji: 'Emoji & Symbols', error: 'Unable to Complete Action',
+  unhide: 'Show All', emoji: 'Emoji & Symbols', reload: 'Reload', error: 'Unable to Complete Action',
   unavailable: 'This action is unavailable while the client is starting, disconnected, or recovering.',
   busy: 'A plugin operation or recovery is in progress. Wait for it to finish before restarting or quitting.',
   tray: 'The system tray is unavailable. Cancel to keep the window open, or quit completely.',
@@ -45,7 +45,7 @@ const zh: typeof en = {
   'data-home': '切换配置目录…', restart: '快速重启', show: '显示主窗口', minimize: '最小化', maximize: '最大化',
   restore: '还原', docs: '使用文档', repository: '项目仓库', feedback: '反馈问题', logs: '打开日志目录',
   devtools: '开发者工具', services: '服务', hide: '隐藏 DeepSeek Harness Fenglin', 'hide-others': '隐藏其他应用',
-  unhide: '显示全部', emoji: '表情与符号', error: '无法完成操作',
+  unhide: '显示全部', emoji: '表情与符号', reload: '刷新', error: '无法完成操作',
   unavailable: '客户端正在启动、已断开连接或正在恢复，暂时无法执行此操作。',
   busy: '插件操作或恢复正在进行，请等待完成后再重启或退出。',
   tray: '系统托盘不可用。可以取消并保留窗口，或完整退出客户端。', cancel: '取消',
@@ -98,6 +98,7 @@ export function applicationMenuTemplate(
     undo: 'CmdOrCtrl+Z', redo: mac ? 'Command+Shift+Z' : 'Ctrl+Y', cut: 'CmdOrCtrl+X', copy: 'CmdOrCtrl+C',
     paste: 'CmdOrCtrl+V', 'select-all': 'CmdOrCtrl+A', 'zoom-in': 'CmdOrCtrl+Plus',
     'zoom-out': 'CmdOrCtrl+-', 'zoom-reset': 'CmdOrCtrl+0', fullscreen: mac ? 'Control+Command+F' : 'F11',
+    reload: 'CmdOrCtrl+R',
   }
   const item = (command: DesktopCommand): MenuItemConstructorOptions => ({
     id: command,
@@ -119,6 +120,7 @@ export function applicationMenuTemplate(
       ...(['darwin', 'win32'].includes(state.platform) ? [item('open-web')] : []), separator,
       ...(!mac ? [item('settings'), separator] : []), item('close'), ...(!mac ? [item('quit')] : [])]),
     group('edit', [item('undo'), item('redo'), separator, item('cut'), item('copy'), item('paste'), item('select-all'),
+      separator, item('reload'),
       ...(mac ? [separator, item('emoji')] : [])]),
     group('view', [item('zoom-in'), item('zoom-out'), item('zoom-reset'), separator, item('fullscreen'),
       ...(state.development ? [separator, item('devtools')] : [])]),
