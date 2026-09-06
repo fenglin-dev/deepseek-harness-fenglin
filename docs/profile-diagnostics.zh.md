@@ -35,7 +35,7 @@
 | `profile.orphaned-bundle` | 软件包不再是可管理依赖，但仍存在于 `dsh.profile.bundles` | 移除失效 bundle 引用，不重新安装用户已经卸载的插件。 |
 | `profile.quarantine-removal-residue` | 停用插件、活动 manifest 条目和持久隔离记录都已消失，但修复报告、诊断报告、lockfile importer 或不完整软件包目录仍引用它 | 只移除陈旧派生状态，不重装或再次隔离已消失的插件，并保留其他无关 incident。 |
 | `profile.module-resolution` | `failed to import loader entry`、`ERR_MODULE_NOT_FOUND`、`missed the module table`、模块未实体化或缺少 package factory | 遍历完整 cause 链并归属最深层 Loader entry。若最终 entry 与唯一一个直接启用的外部 Bundle 原始声明完全一致，但裸模块无法解析，则安装后立即以 `loader-module-unresolvable` 隔离该根包；用户改写或来源有歧义时只进入诊断安全模式，不自动移除。 |
-| `loader.dependency-unavailable` | 可解析的 Loader 模块静态导入或在运行时请求另一个不可用软件包 | 把故障归属到唯一声明该 Loader 行的直接启用 Bundle，并以 `loader-dependency-unavailable` 隔离其根包。缺失 `@deepseek-ai/dsh-*` 包表示 DSH 代际不匹配；自动修复绝不把内部 Host 包安装进 Profile。 |
+| `loader.dependency-unavailable` | 可解析的 Loader 模块导入不可用的软件包，或请求已安装依赖没有提供的命名导出 | 把故障归属到唯一声明最深层 Loader 行的直接启用 Bundle，并以 `loader-dependency-unavailable` 隔离其根包。Node 能提供依赖名和缺失导出名时一并保留。缺失 `@deepseek-ai/dsh-*` 包或导出表示 DSH 代际不匹配；界面提供卸载和查找兼容版本操作，但绝不把另一版内部 Host 安装进 Profile。 |
 | `loader.duplicate-entry` 与 `loader.duplicate-registration` | Loader id、配置路径、persona、route、prompt section、service 或进程全局单例重复 | 身份能证明是旧行时移除；否则标明冲突双方并隔离外部根，或要求手动修复配置。 |
 | `loader.lifecycle-failed` | `failed to apply loader entry`、import、mount、apply、activate 或 fiber 失败 | 沿 `cause` 走到最内层，归属 entry 与模块；只有重试或收敛无法修复外部根时才隔离。 |
 | `config.credentials-invalid` | `.credentials.yaml` 解析或字段类型错误，包括非字符串 `version` | 报告字段路径和期望类型，保持用户凭据文档不变；阻断启动时进入诊断安全模式。 |
@@ -77,7 +77,7 @@
 
 安全模式记录进入时间、跳过的 bundle 名称，以及是否跳过用户层。其裸模块解析以安装方维护的 `$DSH_HOME/profiles/node_modules` fallback 为锚点，不再使用活动 Profile 或 CLI 包。主界面的“诊断”页面保持可用，展示根因、证据、风险和受保护操作。修复成功后重新启动正常 Profile。启动最多执行一次普通尝试和一次安全模式尝试；若安装自带的诊断 Profile 也失败，监督器会立即停止，保留原始 Profile incident 作为主证据，并把安全模式失败追加为次级证据。
 
-诊断演练中心为这两条规则提供固定场景。`@dsh-diagnostic-lab/loader-dependency-unavailable` 会在隔离 home 与当前 Profile 中验证安装后的根插件归属和隔离。损坏设置场景写入重复键，等待真实活动 Profile 报告 `config.settings-invalid` 与 `skippedUserSettings: true`，确认原始字节保持不变，并通过**全部恢复**逐字节还原演练前设置。测试包始终属于 `diagnostic` 资源，普通启动绝不会预装。
+诊断演练中心为这些规则提供固定场景。`@dsh-diagnostic-lab/loader-dependency-unavailable` 会在隔离 home 与当前 Profile 中验证安装后缺失软件包的归属和隔离。仅限当前 Profile 的 `@dsh-diagnostic-lab/loader-export-unavailable` 会从已安装的 settings Host 导入一个故意不存在的命名导出，恢复真实 Harness，并验证系统在回退安全模式前完成运行时隔离。损坏设置场景写入重复键，等待真实活动 Profile 报告 `config.settings-invalid` 与 `skippedUserSettings: true`，确认原始字节保持不变，并通过**全部恢复**逐字节还原演练前设置。测试包始终属于 `diagnostic` 资源，普通启动绝不会预装。
 
 ## 导出
 

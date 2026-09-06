@@ -31,7 +31,13 @@ import {
   DesktopOperationSupervisor,
   HarnessInvocationError,
 } from './harness-invocation.ts'
-import { allowsHarnessPermission } from './permissions.ts'
+import {
+  harnessPermissionDecisionKeys,
+  harnessPermissionName,
+  isSilentHarnessPermission,
+  isTrustedHarnessPermissionRequest,
+  type HarnessPermissionDetails,
+} from './permissions.ts'
 import { ensurePackagedRuntime, packagedRuntimeArchiveRoot } from './packaged-runtime.ts'
 import { HarnessSupervisor, type HarnessFailure, type HarnessState } from './supervisor.ts'
 import { terminateWindowsProcessTree } from './windows-process-tree.ts'
@@ -186,6 +192,8 @@ const startupWarnings: string[] = []
 let trayUnavailable = false
 let trayWarningOpen = false
 const pendingMenuCommands = new Map<string, { resolve(): void; reject(error: Error): void; timer: NodeJS.Timeout }>()
+let permissionPromptQueue: Promise<void> = Promise.resolve()
+const pendingPermissionPrompts = new Map<string, Promise<boolean>>()
 
 function runDesktopInvocation(
   launch: HarnessLaunch,
@@ -522,7 +530,7 @@ async function showDataHomeChooser(
     minWidth: 920,
     minHeight: 620,
     backgroundColor: desktopThemeBackground('system', nativeTheme.shouldUseDarkColors),
-    icon: iconManager?.images().application ?? WINDOW_ICON,
+    icon: desktopWindowIcon(),
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -879,6 +887,14 @@ function desktopTrayImage(images: DesktopIconImages): Electron.NativeImage {
   return image
 }
 
+function desktopWindowIcon(): Electron.NativeImage | string {
+  const images = iconManager?.images()
+  if (process.platform === 'win32' && images?.applicationIco !== null && images?.applicationIco !== undefined) {
+    return images.applicationIco
+  }
+  return images?.application ?? WINDOW_ICON
+}
+
 function applyDesktopIcons(images: DesktopIconImages, shortcuts: boolean, createShortcut: boolean): IconSurfaceResult[] {
   applicationMenu?.refresh()
   const results: IconSurfaceResult[] = []
@@ -887,7 +903,7 @@ function applyDesktopIcons(images: DesktopIconImages, shortcuts: boolean, create
       if (app.dock === undefined) throw new Error('Dock unavailable')
       app.dock.setIcon(images.application)
     } else {
-      for (const window of BrowserWindow.getAllWindows()) window.setIcon(images.application)
+      for (const window of BrowserWindow.getAllWindows()) window.setIcon(images.applicationIco ?? images.application)
       if (app.isPackaged) {
         for (const window of BrowserWindow.getAllWindows()) window.setAppDetails({
           appId: 'ai.flaq.deepseek-harness', appIconPath: images.applicationIco ?? process.execPath,
@@ -1094,6 +1110,60 @@ function showLoading(state: HarnessState, failure?: HarnessFailure & { logPath: 
 }
 
 function configureNavigation(renderer: WebContents): void {
+  const permissionGrants = new Set<string>()
+  const permissionDetails = (details: object): HarnessPermissionDetails => ({
+    ...('mediaType' in details && details.mediaType !== undefined
+      ? { mediaType: details.mediaType as Exclude<HarnessPermissionDetails['mediaType'], undefined> }
+      : {}),
+    ...('mediaTypes' in details && Array.isArray(details.mediaTypes)
+      ? { mediaTypes: details.mediaTypes as ('video' | 'audio')[] }
+      : {}),
+  })
+  const originGrantKey = (origin: string, key: string): string => `${origin}\n${key}`
+  const requestPermissionConsent = (
+    permission: string,
+    details: HarnessPermissionDetails,
+    origin: string,
+  ): Promise<boolean> => {
+    const decisionKeys = harnessPermissionDecisionKeys(permission, details)
+    if (decisionKeys.length === 0) return Promise.resolve(false)
+    const promptKey = `${renderer.id}\n${origin}\n${decisionKeys.join(',')}`
+    const existing = pendingPermissionPrompts.get(promptKey)
+    if (existing !== undefined) return existing
+
+    const chinese = app.getLocale().toLowerCase().startsWith('zh')
+    const capability = harnessPermissionName(permission, details, chinese ? 'zh' : 'en')
+    const options: MessageBoxOptions = {
+      type: 'question',
+      title: chinese ? `${APP_NAME} 权限请求` : `${APP_NAME} permission request`,
+      message: chinese
+        ? `当前功能请求${capability}`
+        : `The current feature wants to ${capability}`,
+      detail: chinese
+        ? '仅在你确认后，当前本机 Harness 页面才能使用此能力。拒绝不会影响其他功能。'
+        : 'Only the current local Harness page can use this capability after you approve it. Denying it will not affect other features.',
+      buttons: chinese ? ['拒绝', '允许'] : ['Deny', 'Allow'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    }
+    const decision = permissionPromptQueue.then(async () => {
+      if (renderer.isDestroyed() || harnessOrigin !== origin) return false
+      const owner = BrowserWindow.fromWebContents(renderer)
+      const result = owner === null
+        ? await dialog.showMessageBox(options)
+        : await dialog.showMessageBox(owner, options)
+      return result.response === 1 && !renderer.isDestroyed() && harnessOrigin === origin
+    })
+    permissionPromptQueue = decision.then(() => undefined, () => undefined)
+    pendingPermissionPrompts.set(promptKey, decision)
+    void decision.then(
+      () => pendingPermissionPrompts.delete(promptKey),
+      () => pendingPermissionPrompts.delete(promptKey),
+    )
+    return decision
+  }
+
   renderer.on('will-navigate', (event, target) => {
     if (harnessOrigin !== undefined && new URL(target).origin === harnessOrigin) return
     event.preventDefault()
@@ -1109,22 +1179,45 @@ function configureNavigation(renderer: WebContents): void {
     return { action: 'deny' }
   })
   renderer.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
-    return contents === renderer && allowsHarnessPermission(
-      permission,
-      details.requestingUrl ?? requestingOrigin,
-      harnessOrigin,
-      details.isMainFrame,
-    )
+    const origin = harnessOrigin
+    const trustedContents = contents === renderer
+      || (contents === null && details.embeddingOrigin === undefined)
+    if (!trustedContents || !isTrustedHarnessPermissionRequest(
+      permission, details.requestingUrl ?? requestingOrigin, origin, details.isMainFrame,
+    )) return false
+    if (isSilentHarnessPermission(permission)) return true
+    if (origin === undefined) return false
+    const keys = harnessPermissionDecisionKeys(permission, permissionDetails(details))
+    return keys.length > 0 && keys.every(key => permissionGrants.has(originGrantKey(origin, key)))
   })
   renderer.session.setPermissionRequestHandler((contents, permission, callback, details) => {
-    const requestingUrl = 'requestingUrl' in details ? details.requestingUrl : undefined
+    const requestingUrl = details.requestingUrl
     const isMainFrame = 'isMainFrame' in details && details.isMainFrame
-    callback(contents === renderer && allowsHarnessPermission(
-      permission,
-      requestingUrl,
-      harnessOrigin,
-      isMainFrame,
-    ))
+    const origin = harnessOrigin
+    if (contents !== renderer || !isTrustedHarnessPermissionRequest(
+      permission, requestingUrl, origin, isMainFrame,
+    )) {
+      callback(false)
+      return
+    }
+    if (isSilentHarnessPermission(permission)) {
+      callback(true)
+      return
+    }
+    if (origin === undefined) {
+      callback(false)
+      return
+    }
+    const parsedDetails = permissionDetails(details)
+    const keys = harnessPermissionDecisionKeys(permission, parsedDetails)
+    if (keys.length > 0 && keys.every(key => permissionGrants.has(originGrantKey(origin, key)))) {
+      callback(true)
+      return
+    }
+    void requestPermissionConsent(permission, parsedDetails, origin).then((allowed) => {
+      if (allowed) for (const key of keys) permissionGrants.add(originGrantKey(origin, key))
+      callback(allowed)
+    }, () => { callback(false) })
   })
 }
 
@@ -1145,7 +1238,7 @@ function createWindow(): BrowserWindow {
       minWidth: 960,
       minHeight: 640,
       backgroundColor: desktopThemeBackground(desktopThemeSource, nativeTheme.shouldUseDarkColors),
-      icon: iconManager?.images().application ?? WINDOW_ICON,
+      icon: desktopWindowIcon(),
       show: false,
     },
     rendererPreferences,
@@ -1465,7 +1558,13 @@ async function startApplication(): Promise<void> {
   ipcMain.handle('dsh:desktop:icons:choose', async (event) => {
     const manager = requireIcons(event.sender)
     const owner = event.sender.id
-    const options = { properties: ['openFile'] as const, filters: [{ name: 'PNG / JPEG', extensions: ['png', 'jpg', 'jpeg'] }] }
+    const options = {
+      properties: ['openFile'] as const,
+      filters: [{
+        name: process.platform === 'win32' ? 'PNG / JPEG / ICO' : 'PNG / JPEG',
+        extensions: process.platform === 'win32' ? ['png', 'jpg', 'jpeg', 'ico'] : ['png', 'jpg', 'jpeg'],
+      }],
+    }
     const picked = mainWindow === undefined
       ? await dialog.showOpenDialog({ ...options, properties: ['openFile'] })
       : await dialog.showOpenDialog(mainWindow, { ...options, properties: ['openFile'] })

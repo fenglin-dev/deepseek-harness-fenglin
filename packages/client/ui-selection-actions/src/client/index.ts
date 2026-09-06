@@ -26,6 +26,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Required client services. */
 export const inject = ['slots', 'sessions', 'uiSession', 'uiWorkspace', 'conversation', 'locale']
 
+function readDesktopRestart(): (() => Promise<void>) | undefined {
+  const desktop = (globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop
+  if (desktop === null || typeof desktop !== 'object') return undefined
+  const restart = (desktop as { restart?: unknown }).restart
+  if (typeof restart !== 'function') return undefined
+  return async () => { await restart.call(desktop) }
+}
+
 function appendAvailable(ctx: Context, sessionId: SessionId | undefined): boolean {
   if (sessionId === undefined) return false
   const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
@@ -82,6 +90,7 @@ function createAppendAvailability(ctx: Context): HostObservable<boolean> {
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-selection-actions: dictionaries')
   const availability = createAppendAvailability(ctx)
+  const restartDesktop = readDesktopRestart()
   const injected = (): SelectionActionsInjected => ({
     hooks: { appendAvailable: availability },
     copy: writeClipboard,
@@ -102,6 +111,7 @@ export function apply(ctx: Context): void {
       const input = ctx.conversation.input.for(actx)
       input.setDraft(appendSelectionToDraft(input.state.getSnapshot().draft, text))
     },
+    ...(restartDesktop === undefined ? {} : { restartDesktop }),
   })
 
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({

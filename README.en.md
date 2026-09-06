@@ -210,7 +210,7 @@ The boundary is deliberate: **inspect before plugin execution, decide from the r
 
 ### Diagnostics Lab
 
-Development and installed builds both provide Diagnostics Lab. Its bundled offline fault samples exercise shared-Host shadow copies, orphaned Bundles, scoped-root versus unscoped-Loader name mismatches, missing aggregate-plugin dependencies, invalid `settings.yaml` documents, missing modules, invalid patches, duplicate Loader entries, lifecycle failures, blocked build approval, and interrupted repair while showing the complete inject, detect, repair, verify, and cleanup timeline.
+Development and installed builds both provide Diagnostics Lab. Its bundled offline fault samples exercise shared-Host shadow copies, orphaned Bundles, scoped-root versus unscoped-Loader name mismatches, missing aggregate-plugin dependencies, installed dependencies that lack an API expected by a plugin, invalid `settings.yaml` documents, missing modules, invalid patches, duplicate Loader entries, lifecycle failures, blocked build approval, and interrupted repair while showing the complete inject, detect, repair, verify, and cleanup timeline.
 
 <p align="center">
   <img src="./assets/readme/diagnostics-lab-sandbox-zh.png" width="900" alt="Select isolated sandbox scenarios in Diagnostics Lab">
@@ -274,11 +274,11 @@ The Settings sidebar has its own scroll region, so plugin-provided sections rema
 
 ### Copy from the desktop client
 
-The Electron host grants sanitized clipboard-write permission to the supervised Harness page, so message, code, and conversation copy controls work in the desktop client just as they do in the upstream Web client. Clipboard reads and unrelated browser permissions remain denied.
+The Electron host grants sanitized clipboard-write permission to the supervised Harness page, so message, code, and conversation copy controls keep working without repetitive prompts. When the trusted main frame first requests microphone, camera, clipboard-read, notifications, geolocation, or another supported browser capability, Desktop presents a native consent dialog and grants it only after the user approves.
 
 ### Preset plugins
 
-The installer carries integrity-checked archives for five startup presets: Plugin Marketplace, IM connections, Skill picker, Better Sidebar, and Pocket. `dsh-font`, the minimal offline `@dsh-diagnostic-lab/scoped-loader-mismatch` package, and `@dsh-diagnostic-lab/loader-dependency-unavailable` are supplied only as Diagnostics Lab samples. Initial preparation can use the local archives without fetching the plugin packages on demand, while package and source identities remain available for compatible online update discovery. They remain ordinary Harness dependencies: users can uninstall them, and the desktop app respects that decision instead of silently restoring them.
+The installer carries integrity-checked archives for seven startup presets: Plugin Marketplace, IM connections, Skill picker, Better Sidebar, Pocket, `@ychris12138/dsh-usage-stats`, and `dsh-smooth-stream`. Usage Stats adds token usage, provider accounts, session cost estimates, budgets, and exports; Smooth Stream adds fluid streaming rendering and scrolling for Markdown, code blocks, tables, and tool results. `dsh-font` and the minimal offline `@dsh-diagnostic-lab/scoped-loader-mismatch`, `@dsh-diagnostic-lab/loader-dependency-unavailable`, and `@dsh-diagnostic-lab/loader-export-unavailable` packages are supplied only as Diagnostics Lab samples. Initial preparation can use the local archives without fetching the plugin packages on demand, while package and source identities remain available for compatible online update discovery. They remain ordinary Harness dependencies: users can uninstall them, and the desktop app respects that decision instead of silently restoring them.
 
 <p align="center">
   <img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="Connect a phone through the Pocket QR code or LAN address">
@@ -471,7 +471,7 @@ Skills remain managed through Harness providers and are invoked in the same sess
 
 ## Security and privacy
 
-The renderer runs with Node integration disabled, context isolation enabled, and Chromium sandboxing enabled. Navigation is restricted to the exact loopback Harness origin, renderer permission requests are denied, and no generic command or filesystem bridge is exposed to Web content.
+The renderer runs with Node integration disabled, context isolation enabled, and Chromium sandboxing enabled. Navigation is restricted to the exact loopback Harness origin. Apart from non-reading sanitized clipboard writes, supported renderer permissions are admitted only for the current Harness main frame and only after native user consent; unknown permissions, foreign origins, and subframes remain denied. No generic command or filesystem bridge is exposed to Web content.
 
 API keys remain owned by the Harness credentials service. Do not commit credentials. Before selecting any compatible provider, review its endpoint, model support, tool-calling behavior, pricing, rate limits, and data-handling terms.
 

@@ -79,4 +79,25 @@ describe('Profile diagnostic recovery policy', () => {
       moduleName: 'wrong-loader-name',
     })
   })
+
+  it('attributes a Loader whose installed dependency lacks the API expected by the plugin', () => {
+    const incompatibleApi = new SyntaxError(
+      "The requested module '@deepseek-ai/dsh-settings' does not provide an export named 'installSettingsSection'",
+    )
+    const inner = new Error('failed to import loader entry webchat (dsh-webchat)', { cause: incompatibleApi })
+    const outer = new Error('failed to apply loader entry include (cordis:include)', { cause: inner })
+
+    expect(loaderClientModuleFailure(outer)).toEqual({
+      entryId: 'webchat',
+      moduleName: 'dsh-webchat',
+      dependencyModule: '@deepseek-ai/dsh-settings',
+      missingExport: 'installSettingsSection',
+    })
+  })
+
+  it('does not attribute an unowned plugin exception as an incompatible dependency API', () => {
+    expect(loaderClientModuleFailure(
+      new Error("The requested module '@fixture/api' does not provide an export named 'missing'"),
+    )).toBeUndefined()
+  })
 })

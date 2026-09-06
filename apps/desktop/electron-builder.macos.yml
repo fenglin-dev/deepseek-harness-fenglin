@@ -21,6 +21,9 @@ mac:
   extendInfo:
     CFBundleName: Open DSH Desktop
     CFBundleDisplayName: Open DSH Desktop
+    NSMicrophoneUsageDescription: DeepSeek Harness uses the microphone only after you approve a voice-input or recording request.
+    NSCameraUsageDescription: DeepSeek Harness uses the camera only after you approve a camera request.
+    NSLocationWhenInUseUsageDescription: DeepSeek Harness uses your location only after you approve a location request.
   icon: build/icon.icns
   # Open-source release baseline: keep Apple Silicon code structurally signed
   # without binding artifacts to a short-lived development certificate.

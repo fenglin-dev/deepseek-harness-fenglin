@@ -214,7 +214,7 @@ Cordis 的 Context、Service 注册和部分工具运行时依赖对象与 `Symb
 
 ### 诊断演练中心
 
-开发版与安装版都提供诊断演练中心。它使用客户端携带的离线故障样本，复现 Host 共享依赖影子副本、孤立 Bundle、scoped 根包与 unscoped Loader 名不匹配、聚合插件内部依赖缺失、损坏的 `settings.yaml`、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断，并展示“注入、检测、修复、复检、清理”的完整时间线。
+开发版与安装版都提供诊断演练中心。它使用客户端携带的离线故障样本，复现 Host 共享依赖影子副本、孤立 Bundle、scoped 根包与 unscoped Loader 名不匹配、聚合插件内部依赖缺失、已安装依赖缺少插件要求的 DSH API、损坏的 `settings.yaml`、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断，并展示“注入、检测、修复、复检、清理”的完整时间线。
 
 <p align="center">
   <img src="./assets/readme/diagnostics-lab-sandbox-zh.png" width="900" alt="诊断演练中心的隔离沙盒场景选择">
@@ -267,7 +267,7 @@ Electron 不只是包住 Web 页面的外壳。桌面宿主负责运行时准备
 - **应用内更新**：“通用设置”可以检查 GitHub Release、显示下载进度、校验 `SHA256SUMS` 并通过系统打开已验证的安装包。
 - **命令行注册**：可将客户端内置的 `dsh` 命令注册到系统 `PATH`，也可以从同一设置项安全移除。
 - **跨平台标题栏**：Windows 和 Linux 使用独立的原生标题栏视图与 Harness 内容视图。插件的 `100vh`、固定定位和高层 Overlay 只覆盖内容区域，无法遮挡最小化、最大化和关闭按钮；macOS 保留原生窗口行为。
-- **桌面复制**：消息、代码和对话复制按钮通过受限剪贴板桥正常工作；页面无法获得剪贴板读取或通用系统权限。
+- **桌面权限**：消息、代码和对话复制继续直接使用受限的剪贴板写入；当可信主界面首次请求麦克风、摄像头、剪贴板读取、通知、定位或其他受支持的浏览器系统能力时，桌面端会显示原生确认框，只有用户允许后才放行。
 
 渲染页面只能调用经过白名单约束的桌面接口，不能访问任意文件、命令或 URL。异常状态和偏好存储均由 Electron 主进程管理，不向普通 Web 页面暴露。
 
@@ -308,7 +308,7 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 ### 预设插件
 
-安装包携带五个启动预设的完整性校验归档：插件市场、`dsh-im`、`dsh-skill-picker`、Better Sidebar 和 `dsh-pocket`；`dsh-font`、最小离线 `@dsh-diagnostic-lab/scoped-loader-mismatch` 与 `@dsh-diagnostic-lab/loader-dependency-unavailable` 仅作为诊断演练样本提供。首次准备可以使用包内归档，不需要临时联网下载这些插件本体；插件仍保留包信息与来源身份，以便后续发现兼容的联网更新。普通传递依赖继续由 Profile 的 pnpm 解析规则管理。
+安装包携带七个启动预设的完整性校验归档：插件市场、`dsh-im`、`dsh-skill-picker`、Better Sidebar、`dsh-pocket`、`@ychris12138/dsh-usage-stats` 和 `dsh-smooth-stream`；Usage Stats 提供 Token 用量、Provider 账户、会话费用估算、预算与导出能力，Smooth Stream 为回复中的 Markdown、代码块、表格和工具结果提供平滑流式渲染与滚动。`dsh-font`、最小离线 `@dsh-diagnostic-lab/scoped-loader-mismatch`、`@dsh-diagnostic-lab/loader-dependency-unavailable` 与 `@dsh-diagnostic-lab/loader-export-unavailable` 仅作为诊断演练样本提供。首次准备可以使用包内归档，不需要临时联网下载这些插件本体；插件仍保留包信息与来源身份，以便后续发现兼容的联网更新。普通传递依赖继续由 Profile 的 pnpm 解析规则管理。
 
 <p align="center">
   <img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="通过 dsh-pocket 的二维码和局域网地址连接手机">
@@ -446,7 +446,7 @@ Skill 继续由 Harness 管理，并与智能体的其他能力在同一会话�
 
 ## 安全与隐私
 
-渲染进程禁用 Node 集成，启用上下文隔离和 Chromium 沙箱。页面导航只允许准确的 Harness 回环来源，渲染进程权限请求默认拒绝，Web 内容也无法访问通用命令、任意文件或不受约束的浏览器打开能力。
+渲染进程禁用 Node 集成，启用上下文隔离和 Chromium 沙箱。页面导航只允许准确的 Harness 回环来源；除无敏感读取能力的剪贴板写入外，受支持的渲染进程权限仅在当前 Harness 主框架逐项请求并经用户原生确认后放行，未知权限、异源页面与子框架仍默认拒绝。Web 内容也无法访问通用命令、任意文件或不受约束的浏览器打开能力。
 
 API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容提供商前，请核对端点、模型支持、工具调用行为、价格、速率限制和数据处理条款。
 
@@ -477,6 +477,16 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 - 贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；使用编码智能体处理本仓库时请遵循 [AGENTS.md](AGENTS.md)。
 
 如果你遇到 Bug，或者希望客户端增加新的使用方式，欢迎提出反馈。这个项目能持续变好，离不开真实用户提供的复现信息、日志与耐心测试。
+
+### 加入交流群
+
+欢迎扫码加入 Open DSH Desktop 交流群，与其他用户和插件作者交流使用经验、问题排查与功能建议。
+
+<p align="center">
+  <img src="./assets/readme/wechat-group-qr-2026-09-13.jpg" width="360" alt="Open DSH Desktop 微信交流群二维码">
+  <br>
+  <sub>当前二维码有效期至 2026 年 9 月 13 日；过期后请关注 README 中更新的二维码</sub>
+</p>
 
 ## 致谢
 

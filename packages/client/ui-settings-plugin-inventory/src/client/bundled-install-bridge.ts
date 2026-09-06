@@ -39,6 +39,7 @@ export type DiagnosticLabScenarioId =
   | 'loader-package-name-mismatch'
   | 'startup-operation-timeout'
   | 'loader-dependency-unavailable'
+  | 'loader-export-unavailable'
   | 'settings-invalid'
   | 'module-resolution-missing'
   | 'patch-invalid'

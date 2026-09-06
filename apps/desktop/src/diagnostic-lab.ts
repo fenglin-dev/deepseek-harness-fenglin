@@ -19,6 +19,7 @@ export type DiagnosticLabScenarioId =
   | 'client-module-unavailable'
   | 'loader-package-name-mismatch'
   | 'loader-dependency-unavailable'
+  | 'loader-export-unavailable'
   | 'settings-invalid'
   | 'module-resolution-missing'
   | 'patch-invalid'
@@ -133,7 +134,8 @@ export interface DiagnosticLabManagerOptions {
     packageName:
       | 'dsh-font'
       | '@dsh-diagnostic-lab/scoped-loader-mismatch'
-      | '@dsh-diagnostic-lab/loader-dependency-unavailable',
+      | '@dsh-diagnostic-lab/loader-dependency-unavailable'
+      | '@dsh-diagnostic-lab/loader-export-unavailable',
   ): Promise<void>
   runDoctor(home: string, repair: boolean): Promise<DiagnosticLabDoctorResult>
   /** Run the desktop-owned fake CLI that proves timeout cancellation and rollback. */
@@ -158,6 +160,7 @@ const SCENARIOS: readonly DiagnosticLabScenario[] = [
   { id: 'quarantine-removal-residue', title: 'Incomplete quarantine removal', description: 'Recreates a legacy uninstall that removed the plugin and quarantine record but left derived Profile state, then verifies bounded cleanup.', expectedCode: 'profile.quarantine-removal-residue', targets: ['isolated', 'active-profile'] },
   { id: 'loader-package-name-mismatch', title: 'Scoped Loader package-name mismatch', description: 'Installs a safe scoped package whose Bundle Patch names a missing unscoped module, then verifies immediate attribution and quarantine.', expectedCode: 'profile.module-resolution', targets: ['isolated', 'active-profile'] },
   { id: 'loader-dependency-unavailable', title: 'Loader dependency unavailable', description: 'Installs a resolvable aggregate Loader whose published entry imports a missing internal Host dependency, then verifies root attribution and quarantine.', expectedCode: 'loader.dependency-unavailable', targets: ['isolated', 'active-profile'] },
+  { id: 'loader-export-unavailable', title: 'Loader dependency export unavailable', description: 'Installs a Loader that expects an API export absent from the installed DSH generation, then verifies runtime attribution and quarantine before safe-mode fallback.', expectedCode: 'loader.dependency-unavailable', targets: ['active-profile'] },
   { id: 'settings-invalid', title: 'Invalid settings document', description: 'Writes a duplicate-key settings.yaml and verifies that diagnostic safe mode skips it without modifying the original document.', expectedCode: 'config.settings-invalid', targets: ['isolated', 'active-profile'] },
   { id: 'client-module-unavailable', title: 'Packaged dsh-font client incompatibility', description: 'Installs the packaged dsh-font 1.1.0 fixture and verifies that the real browser boot path quarantines it without blocking the main UI.', expectedCode: 'profile.module-resolution', targets: ['active-profile'] },
   { id: 'module-resolution-missing', title: 'Missing plugin module', description: 'Attributes a missing module directory to the owning plugin.', expectedCode: 'profile.module-resolution', targets: ['isolated'] },
@@ -200,6 +203,7 @@ const FIXTURES: Record<DiagnosticLabScenarioId, ScenarioFixture> = {
   'quarantine-removal-residue': { code: 'profile.quarantine-removal-residue', file: 'profile/quarantine-removal-residue.json', content: '{"package":"@dsh-diagnostic-lab/quarantine-removal-residue","state":"legacy-uninstall-residue"}\n', checksum: 'fabaf15aaf1b81b1a5b018761927a15a60f823153692439c2b23c5256fe5921b', repairedContent: '{"removed":true}\n' },
   'loader-package-name-mismatch': { code: 'profile.module-resolution', file: 'profile/scoped-loader-mismatch.json', content: '{"package":"@dsh-diagnostic-lab/scoped-loader-mismatch","version":"1.0.0"}\n', checksum: '891275ddb0053315f3d9ec6f90aa0d7cbee3a5720364d3a8fd10122ff3104967' },
   'loader-dependency-unavailable': { code: 'loader.dependency-unavailable', file: 'profile/loader-dependency-unavailable.json', content: '{"package":"@dsh-diagnostic-lab/loader-dependency-unavailable","version":"1.0.0"}\n', checksum: 'b9251b2ec6e6b2d834acb5b6d4c13b55a9ef6e8a53890012072ccdaf19cea6f0' },
+  'loader-export-unavailable': { code: 'loader.dependency-unavailable', file: 'profile/loader-export-unavailable.json', content: '{"package":"@dsh-diagnostic-lab/loader-export-unavailable","version":"1.0.0","missingExport":"installDiagnosticLabMissingSettingsSection"}\n', checksum: '07cfd0d9fb335e2b0c42d65e13c705c63208acfd59b0738503b4218031eb3a37' },
   'settings-invalid': { code: 'config.settings-invalid', file: 'profile/settings-invalid.json', content: 'diagnostic-lab-duplicate: one\ndiagnostic-lab-duplicate: two\n', checksum: 'af6043d7e12cbf592177d0ca81872a8a0ef09e4cb1d15589e368b906076208a2' },
   'client-module-unavailable': { code: 'profile.module-resolution', file: 'profile/dsh-font.json', content: '{"package":"dsh-font","version":"1.1.0","source":"packaged-diagnostic"}\n', checksum: 'ff3cf467522316802d16c7ad88863be9becc9789b2e61f94b121c44e786ffec7' },
   'module-resolution-missing': { code: 'profile.module-resolution', file: 'profile/missing-module.json', content: '{"module":"@hecoococ/dsh-lab-missing","exists":false}\n', checksum: '089ed0ccd5e318ad94cae5ea48017bc946676bfa6f4a66e041740369fbc2f221', repairedContent: '{"disabled":true}\n' },
@@ -406,7 +410,13 @@ export class DiagnosticLabManager {
       throw new TypeError('desktop: invalid diagnostic lab request')
     }
     const restartRank = (id: DiagnosticLabScenarioId): number => (
-      id === 'settings-invalid' ? 2 : id === 'client-module-unavailable' ? 1 : 0
+      id === 'settings-invalid'
+        ? 3
+        : id === 'client-module-unavailable'
+          ? 2
+          : id === 'loader-export-unavailable'
+            ? 1
+            : 0
     )
     const scenarioIds = [...new Set(request.scenarioIds)].sort((left, right) => (
       restartRank(left) - restartRank(right)
@@ -549,12 +559,12 @@ export class DiagnosticLabManager {
       this.#replace({ ...initial, phase: 'running' })
       for (const scenarioId of initial.scenarioIds) {
         if (this.#cancelled.has(initial.runId)) break
-        if (scenarioId === 'client-module-unavailable') {
+        if (scenarioId === 'client-module-unavailable' || scenarioId === 'loader-export-unavailable') {
           if (!suspended) {
             await this.#options.suspendHarness()
             suspended = true
           }
-          await this.#runClientModuleScenario(() => {
+          await this.#runRuntimeLoaderScenario(scenarioId, () => {
             this.#options.resumeHarness()
             suspended = false
           })
@@ -932,12 +942,20 @@ export class DiagnosticLabManager {
     }
   }
 
-  /** Exercise the actual client Loader failure and wait for browser-driven quarantine. */
-  async #runClientModuleScenario(resumeHarness: () => void): Promise<void> {
-    const scenarioId = 'client-module-unavailable' as const
+  /** Exercise an actual Loader import failure and wait for runtime quarantine. */
+  async #runRuntimeLoaderScenario(
+    scenarioId: 'client-module-unavailable' | 'loader-export-unavailable',
+    resumeHarness: () => void,
+  ): Promise<void> {
     const fixture = FIXTURES[scenarioId]
     const active = this.#requireActive()
-    if (active.target !== 'active-profile') throw new Error('dsh-font diagnostic requires the active Profile')
+    if (active.target !== 'active-profile') throw new Error('runtime Loader diagnostics require the active Profile')
+    const packageName = scenarioId === 'client-module-unavailable'
+      ? 'dsh-font' as const
+      : '@dsh-diagnostic-lab/loader-export-unavailable' as const
+    const reason = scenarioId === 'client-module-unavailable'
+      ? 'client-module-unavailable' as const
+      : 'loader-dependency-unavailable' as const
     const scenarioRoot = join(
       this.#options.activeDshHome,
       'profiles',
@@ -963,17 +981,17 @@ export class DiagnosticLabManager {
       if (sha256(await readFile(fixturePath)) !== fixture.checksum) {
         throw new Error('diagnostic fixture integrity check failed')
       }
-      await this.#options.installDiagnosticPlugin(this.#options.activeDshHome, 'dsh-font')
+      await this.#options.installDiagnosticPlugin(this.#options.activeDshHome, packageName)
 
       await this.#step(scenarioId, 'detect')
       resumeHarness()
-      await this.#waitForClientModuleQuarantine('dsh-font')
+      await this.#waitForRuntimeLoaderQuarantine(packageName, reason, fixture.code)
       actualCode = fixture.code
 
       await this.#step(scenarioId, 'repair')
       await this.#step(scenarioId, 'verify')
-      if (!await this.#hasClientModuleQuarantine('dsh-font')) {
-        throw new Error('dsh-font was not durably quarantined after browser recovery')
+      if (!await this.#hasQuarantine(this.#options.activeDshHome, packageName, reason, fixture.code)) {
+        throw new Error(`${packageName} was not durably quarantined after runtime recovery`)
       }
       await this.#step(scenarioId, 'retain')
       this.#appendResult({
@@ -1001,22 +1019,17 @@ export class DiagnosticLabManager {
     }
   }
 
-  async #waitForClientModuleQuarantine(packageName: 'dsh-font'): Promise<void> {
+  async #waitForRuntimeLoaderQuarantine(
+    packageName: 'dsh-font' | '@dsh-diagnostic-lab/loader-export-unavailable',
+    reason: 'client-module-unavailable' | 'loader-dependency-unavailable',
+    issueCode: string,
+  ): Promise<void> {
     const deadline = Date.now() + (this.#options.clientRecoveryTimeoutMs ?? 45_000)
     while (Date.now() <= deadline) {
-      if (await this.#hasClientModuleQuarantine(packageName)) return
+      if (await this.#hasQuarantine(this.#options.activeDshHome, packageName, reason, issueCode)) return
       await new Promise<void>((resolvePromise) => { setTimeout(resolvePromise, 200) })
     }
-    throw new Error(`timed out waiting for browser recovery to quarantine ${packageName}`)
-  }
-
-  async #hasClientModuleQuarantine(packageName: 'dsh-font'): Promise<boolean> {
-    return await this.#hasQuarantine(
-      this.#options.activeDshHome,
-      packageName,
-      'client-module-unavailable',
-      'profile.module-resolution',
-    )
+    throw new Error(`timed out waiting for runtime recovery to quarantine ${packageName}`)
   }
 
   async #waitForSettingsSafeMode(home: string): Promise<void> {

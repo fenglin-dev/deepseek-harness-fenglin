@@ -65,6 +65,12 @@
   white-space: nowrap;
 }
 
+.separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--dsw-alias-border-l1);
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .surface:not(.measuring) {
     animation: selection-actions-in 120ms ease-out;

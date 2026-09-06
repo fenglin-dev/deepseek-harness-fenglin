@@ -95,4 +95,20 @@ describe('ui-selection-actions apply', () => {
     stop()
     await b.ctx.fiber.dispose()
   })
+
+  it('projects only the trusted desktop restart bridge', async () => {
+    const root = globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }
+    const previous = root.deepSeekHarnessDesktop
+    const restart = vi.fn(async () => ({ restarting: true }))
+    root.deepSeekHarnessDesktop = { restart }
+    try {
+      const b = await bench()
+      await expect(b.injected.restartDesktop?.()).resolves.toBeUndefined()
+      expect(restart).toHaveBeenCalledOnce()
+      await b.ctx.fiber.dispose()
+    } finally {
+      if (previous === undefined) delete root.deepSeekHarnessDesktop
+      else root.deepSeekHarnessDesktop = previous
+    }
+  })
 })

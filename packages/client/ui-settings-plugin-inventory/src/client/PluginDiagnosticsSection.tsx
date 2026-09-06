@@ -615,6 +615,11 @@ export function PluginDiagnosticsSection({
               {issue.attribution?.moduleName !== undefined ? <code>{issue.attribution.moduleName}</code> : null}
               {issue.attribution?.importerPackage !== undefined ? <code>{issue.attribution.importerPackage}</code> : null}
               {issue.attribution?.missingModule !== undefined ? <code>{issue.attribution.missingModule}</code> : null}
+              {issue.attribution?.missingExport !== undefined ? (
+                <p data-missing-export={issue.attribution.missingExport}>
+                  {t('diagnostics.issue.missingExport').replace('{export}', issue.attribution.missingExport)}
+                </p>
+              ) : null}
               {issue.attribution?.entryId !== undefined ? <code>{issue.attribution.entryId}</code> : null}
               <p>{t('diagnostics.issue.phase')}: {issue.phase} · {t('diagnostics.issue.actions')}: {issue.actions.map(action => t(DIAGNOSTIC_ACTION_KEYS[action])).join(', ')}</p>
               {issue.evidence.length > 0 ? (

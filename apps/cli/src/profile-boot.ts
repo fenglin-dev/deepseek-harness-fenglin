@@ -353,6 +353,13 @@ const CLIENT_MODULE_UNAVAILABLE = new RegExp(
   'isu',
 )
 const MISSING_IMPORTED_MODULE = /(?:require\(|Cannot find (?:package|module)\s+)["']([^"']+)["']/giu
+const MISSING_IMPORTED_EXPORT = /The requested module\s+["']([^"']+)["']\s+does not provide an export named\s+["']([^"']+)["']/iu
+
+function boundedLoaderToken(value: string | undefined, maxLength: number): string | undefined {
+  return value === undefined || value === '' || /[\0\r\n]/u.test(value)
+    ? undefined
+    : value.slice(0, maxLength)
+}
 
 function startupErrorChain(error: unknown): string {
   const messages: string[] = []
@@ -379,13 +386,28 @@ function startupErrorChain(error: unknown): string {
  */
 export function loaderClientModuleFailure(
   error: unknown,
-): { readonly entryId: string; readonly moduleName: string } | undefined {
+): {
+  readonly entryId: string
+  readonly moduleName: string
+  readonly dependencyModule?: string
+  readonly missingExport?: string
+} | undefined {
   const diagnostic = startupErrorChain(error)
   if (!CLIENT_MODULE_UNAVAILABLE.test(diagnostic)
-    && !/ERR_MODULE_NOT_FOUND|Cannot find (?:package|module)/iu.test(diagnostic)) return undefined
+    && !/ERR_MODULE_NOT_FOUND|Cannot find (?:package|module)/iu.test(diagnostic)
+    && !MISSING_IMPORTED_EXPORT.test(diagnostic)) return undefined
   const match = [...diagnostic.matchAll(LOADER_IMPORT_FAILURE)].at(-1)
   if (match?.[1] === undefined || match[2] === undefined) return undefined
-  return { entryId: match[1], moduleName: match[2] }
+  const missingExport = diagnostic.match(MISSING_IMPORTED_EXPORT)
+  const dependencyModule = boundedLoaderToken(missingExport?.[1], 512)
+  const missingExportName = boundedLoaderToken(missingExport?.[2], 256)
+  if (missingExport !== null && (dependencyModule === undefined || missingExportName === undefined)) return undefined
+  return {
+    entryId: match[1],
+    moduleName: match[2],
+    ...(dependencyModule === undefined ? {} : { dependencyModule }),
+    ...(missingExportName === undefined ? {} : { missingExport: missingExportName }),
+  }
 }
 
 function loaderMissingDependency(error: unknown, loaderModule: string): string | undefined {
@@ -620,19 +642,32 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
             missingModule,
             importerPackage: loaderFailure.moduleName,
           }
+        } else if (owner !== undefined
+          && loaderFailure.dependencyModule !== undefined
+          && loaderFailure.missingExport !== undefined) {
+          ownedFailure = {
+            ...owner,
+            failureKind: 'loader-dependency',
+            missingModule: loaderFailure.dependencyModule,
+            importerPackage: loaderFailure.moduleName,
+          }
         }
       }
     } catch {
       ownedFailure = undefined
     }
     const externalBundle = ownedFailure?.rootPackage ?? (
-      loaderFailure !== undefined && configuredExternalBundles(options.profile).includes(loaderFailure.moduleName)
+      loaderFailure !== undefined
+        && loaderFailure.missingExport === undefined
+        && configuredExternalBundles(options.profile).includes(loaderFailure.moduleName)
         ? loaderFailure.moduleName
         : undefined
     )
     const issueValue = ownedFailure?.failureKind === 'loader-dependency'
       ? new Error(
-        `loader dependency unavailable: Loader module ${ownedFailure.moduleName} imports unavailable dependency ${ownedFailure.missingModule ?? '<unknown>'}`,
+        loaderFailure?.missingExport === undefined
+          ? `loader dependency unavailable: Loader module ${ownedFailure.moduleName} imports unavailable dependency ${ownedFailure.missingModule ?? '<unknown>'}`
+          : `loader dependency unavailable: Loader module ${ownedFailure.moduleName} expects export ${loaderFailure.missingExport} from ${ownedFailure.missingModule ?? '<unknown>'}, but the installed dependency does not provide it`,
         { cause: error instanceof Error ? error : undefined },
       )
       : error
@@ -648,6 +683,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
             entryId: loaderFailure.entryId,
             moduleName: loaderFailure.moduleName,
             ...(ownedFailure?.missingModule === undefined ? {} : { missingModule: ownedFailure.missingModule }),
+            ...(loaderFailure.missingExport === undefined ? {} : { missingExport: loaderFailure.missingExport }),
             ...(ownedFailure?.importerPackage === undefined ? {} : { importerPackage: ownedFailure.importerPackage }),
             ...(ownedFailure === undefined ? {} : { configKind: 'profile-patch' as const }),
             ...(externalBundle === undefined ? {} : { rootPackage: externalBundle }),

@@ -26,7 +26,8 @@ async function bench(): Promise<{
   installDiagnosticPlugin: Mock<(home: string, packageName:
     | 'dsh-font'
     | '@dsh-diagnostic-lab/scoped-loader-mismatch'
-    | '@dsh-diagnostic-lab/loader-dependency-unavailable') => Promise<void>>
+    | '@dsh-diagnostic-lab/loader-dependency-unavailable'
+    | '@dsh-diagnostic-lab/loader-export-unavailable') => Promise<void>>
   runDoctor: Mock<() => Promise<{ status: string; issueCodes: string[]; output: string }>>
   runStartupTimeoutExercise: Mock<() => Promise<{
     actualCode: 'runtime.profile-check-timeout'
@@ -49,7 +50,8 @@ async function bench(): Promise<{
     packageName:
       | 'dsh-font'
       | '@dsh-diagnostic-lab/scoped-loader-mismatch'
-      | '@dsh-diagnostic-lab/loader-dependency-unavailable',
+      | '@dsh-diagnostic-lab/loader-dependency-unavailable'
+      | '@dsh-diagnostic-lab/loader-export-unavailable',
   ) => {
     if (packageName === 'dsh-font') return
     await mkdir(join(targetHome, 'profiles', 'web'), { recursive: true })
@@ -59,6 +61,7 @@ async function bench(): Promise<{
       name: 'dsh-profile-web', private: true, dependencies: {}, dsh: { profile: { bundles: [] } },
     }))
     const dependencyFailure = packageName === '@dsh-diagnostic-lab/loader-dependency-unavailable'
+      || packageName === '@dsh-diagnostic-lab/loader-export-unavailable'
     const reason = dependencyFailure ? 'loader-dependency-unavailable' : 'loader-module-unresolvable'
     const issueCode = dependencyFailure ? 'loader.dependency-unavailable' : 'profile.module-resolution'
     const record = { packageName, reason }
@@ -67,7 +70,18 @@ async function bench(): Promise<{
     }))
     await writeFile(join(targetHome, 'profile-health', 'web.json'), JSON.stringify({
       status: 'quarantined', quarantined: [record],
-      issues: [{ code: issueCode, attribution: { rootPackage: packageName } }],
+      issues: [{
+        code: issueCode,
+        attribution: {
+          rootPackage: packageName,
+          ...(packageName === '@dsh-diagnostic-lab/loader-export-unavailable'
+            ? {
+              missingModule: '@deepseek-ai/dsh-settings',
+              missingExport: 'installDiagnosticLabMissingSettingsSection',
+            }
+            : {}),
+        },
+      }],
     }))
   })
   const runDoctor = vi.fn(async () => ({ status: 'healthy', issueCodes: [], output: '{}' }))
@@ -318,6 +332,33 @@ describe('DiagnosticLabManager', () => {
     expect(existsSync(join(b.home, 'profile-health', 'web.json'))).toBe(false)
   })
 
+  it('restarts the active Profile and isolates a plugin that expects an unavailable dependency export', async () => {
+    const b = await bench()
+    const packageName = '@dsh-diagnostic-lab/loader-export-unavailable'
+    const initial = b.manager.start({
+      scenarioIds: ['loader-export-unavailable'],
+      target: 'active-profile',
+    })
+    const active = await waitForTerminal(b.manager, initial.runId)
+
+    expect(active).toMatchObject({ phase: 'active', recovery: 'retained' })
+    expect(active.results).toEqual([expect.objectContaining({
+      scenarioId: 'loader-export-unavailable',
+      actualCode: 'loader.dependency-unavailable',
+      disposition: 'quarantined',
+    })])
+    expect(b.installDiagnosticPlugin).toHaveBeenCalledWith(b.home, packageName)
+    expect(b.resumeHarness).toHaveBeenCalledOnce()
+    expect(await readFile(join(b.home, 'profile-health', 'web.json'), 'utf8'))
+      .toContain('loader.dependency-unavailable')
+    expect(await readFile(join(b.home, 'profile-health', 'web.json'), 'utf8'))
+      .toContain('installDiagnosticLabMissingSettingsSection')
+
+    await expect(b.manager.restoreAll(initial.runId)).resolves.toMatchObject({ phase: 'restored' })
+    expect(existsSync(join(b.home, 'quarantine', 'profile-plugins.json'))).toBe(false)
+    expect(existsSync(join(b.home, 'profile-health', 'web.json'))).toBe(false)
+  })
+
   it('retains invalid settings in real safe mode and restores the exact original document', async () => {
     const b = await bench()
     const settingsPath = join(b.home, 'settings.yaml')
@@ -381,7 +422,8 @@ describe('DiagnosticLabManager', () => {
       packageName:
         | 'dsh-font'
         | '@dsh-diagnostic-lab/scoped-loader-mismatch'
-        | '@dsh-diagnostic-lab/loader-dependency-unavailable',
+        | '@dsh-diagnostic-lab/loader-dependency-unavailable'
+        | '@dsh-diagnostic-lab/loader-export-unavailable',
     ) => {
       expect(home).toBe(b.home)
       expect(packageName).toBe('dsh-font')

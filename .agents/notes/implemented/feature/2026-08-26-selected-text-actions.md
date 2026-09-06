@@ -14,6 +14,8 @@ The Web bundle includes one browser-only selection-actions plugin. The layout ma
 
 Copy writes the exact selected text. Ask connects the current Workspace's blank New Session, fills a localized Markdown-quoted draft, and opens it without sending. Add appends a Markdown quote to the current draft. The add action is absent instead of disabled while the composer cannot accept edits, especially during a pending DSH approval or answer interaction. Every action rechecks its runtime preconditions before writing.
 
+When the trusted Electron preload exposes its narrow restart method, the context menu adds a separated Quick restart row at the bottom. It calls the same guarded desktop lifecycle as Settings and the native menus, so an active plugin mutation can still refuse the restart. The primary-selection toolbar and ordinary browser mode omit this desktop-only action.
+
 ## Alternatives considered
 
 **Use only the browser-native context menu:** rejected because Web cannot add application actions to that menu consistently, and it provides no primary-selection toolbar.
@@ -24,7 +26,7 @@ Copy writes the exact selected text. Ask connects the current Workspace's blank 
 
 ## Consequences
 
-- Electron and `dsh web` receive identical behavior from the default Web bundle.
+- Electron and `dsh web` share selection and draft behavior; Electron alone projects Quick restart from its trusted preload.
 - Settings, navigation, editors, inputs, and third-party menus retain native selection and context-menu behavior.
 - No model request occurs until the human reviews and submits the resulting draft.
 - The first version does not provide touch long-press actions or a third-party action registry.

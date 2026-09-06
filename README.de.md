@@ -152,7 +152,7 @@ Wartet die Sitzung auf Auswahl, Bestätigung oder Antwort oder ist der Editor ge
 
 ### Voreingestellte Plugins
 
-Der Installer enthält fünf Start-Presets als integritätsgeprüfte lokale Archive: Plugin Marketplace, dsh-im, dsh-skill-picker, Better Sidebar und dsh-pocket. `dsh-font` wird ausschließlich als Beispiel für Diagnoseübungen bereitgestellt. Deinstalliert ein Benutzer ein Preset, installiert der Client es nicht automatisch erneut.
+Der Installer enthält sieben Start-Presets als integritätsgeprüfte lokale Archive: Plugin Marketplace, dsh-im, dsh-skill-picker, Better Sidebar, dsh-pocket, `@ychris12138/dsh-usage-stats` und `dsh-smooth-stream`. Usage Stats ergänzt Token-Nutzung, Provider-Konten, Kostenschätzungen für Sitzungen, Budgets und Exporte; Smooth Stream sorgt für flüssiges Streaming und Scrollen bei Markdown, Codeblöcken, Tabellen und Werkzeugergebnissen. `dsh-font` wird ausschließlich als Beispiel für Diagnoseübungen bereitgestellt. Deinstalliert ein Benutzer ein Preset, installiert der Client es nicht automatisch erneut.
 
 <p align="center"><img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="Telefon über Pocket-QR-Code oder LAN-Adresse verbinden"><br><sub>Mobiler Zugriff: im selben Netzwerk scannen und öffentlichen Zugriff nur bei Bedarf aktivieren</sub></p>
 
