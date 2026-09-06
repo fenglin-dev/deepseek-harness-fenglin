@@ -1,7 +1,7 @@
 /** GitHub Release discovery without downloading or installing application files. */
 
-const RELEASES_ENDPOINT = 'https://api.github.com/repos/flaqai/open-deepseek-harness-desktop/releases?per_page=30'
-const RELEASE_URL_PREFIX = 'https://github.com/flaqai/open-deepseek-harness-desktop/releases/'
+const RELEASES_ENDPOINT = 'https://api.github.com/repos/fenglin-dev/deepseek-harness-fenglin/releases?per_page=30'
+const RELEASE_URL_PREFIX = 'https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/'
 const RELEASE_CHECK_TIMEOUT_MS = 15_000
 export const RELEASE_CHECK_INITIAL_DELAY_MS = 10_000
 export const RELEASE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000
