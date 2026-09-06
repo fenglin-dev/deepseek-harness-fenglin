@@ -21,6 +21,25 @@ const temporary: string[] = []
 afterEach(() => { faults.save = false; for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true }) })
 const raster = (width = 700, height = 600, color = 1): Buffer => new TestIconImage(width, height, color).toPNG()
 
+function ico(...frames: Buffer[]): Buffer {
+  const directory = Buffer.alloc(6 + frames.length * 16)
+  directory.writeUInt16LE(1, 2)
+  directory.writeUInt16LE(frames.length, 4)
+  let offset = directory.length
+  frames.forEach((frame, index) => {
+    const entry = 6 + index * 16
+    // ICO directory dimensions are one byte and cannot describe values above 256.
+    directory[entry] = frame.readUInt32BE(16) % 256
+    directory[entry + 1] = frame.readUInt32BE(20) % 256
+    directory.writeUInt16LE(1, entry + 4)
+    directory.writeUInt16LE(32, entry + 6)
+    directory.writeUInt32LE(frame.length, entry + 8)
+    directory.writeUInt32LE(offset, entry + 12)
+    offset += frame.length
+  })
+  return Buffer.concat([directory, ...frames])
+}
+
 function setup(platform = 'darwin') {
   const root = mkdtempSync(join(tmpdir(), 'desktop-icon-test-')); temporary.push(root)
   const options = {
@@ -38,6 +57,8 @@ describe('desktop icon persistence and authority', () => {
     expect(main).toContain('defaultApplication: loadDefaultApplicationIcon(process.platform)')
     expect(main).toContain('iconManager?.images().application ?? loadDefaultApplicationIcon(process.platform)')
     expect(main).not.toContain("process.platform === 'darwin' && !app.isPackaged ? DEVELOPMENT_DOCK_ICON : WINDOW_ICON")
+    expect(main.match(/icon: desktopWindowIcon\(\)/gu)).toHaveLength(2)
+    expect(main).toContain('window.setIcon(images.applicationIco ?? images.application)')
   })
   it.each([false, true])('preserves default artwork on first launch, reset and restart (packaged=%s)', (packaged) => {
     const { options } = setup()
@@ -212,6 +233,22 @@ describe('bounded icon image protocol', () => {
     expect(() => inspectIconImage(raster(8000, 8000))).toThrow('icon.too-many-pixels')
     expect(() => inspectIconImage(Buffer.alloc(10 * 1024 * 1024 + 1))).toThrow('icon.too-large')
   })
+  it('uses the actual largest PNG frame inside an ICO instead of its one-byte directory size', () => {
+    const small = raster(32, 32, 2)
+    const large = raster(514, 514, 9)
+    const header = inspectIconImage(ico(small, large))
+    expect(header).toMatchObject({ width: 514, height: 514, orientation: 1 })
+    expect(header.encoded).toEqual(large)
+  })
+  it('rejects legacy DIB-only ICO files instead of silently decoding a low-resolution frame', () => {
+    const directory = Buffer.alloc(22)
+    directory.writeUInt16LE(1, 2)
+    directory.writeUInt16LE(1, 4)
+    directory[6] = directory[7] = 32
+    directory.writeUInt32LE(4, 14)
+    directory.writeUInt32LE(22, 18)
+    expect(() => inspectIconImage(Buffer.concat([directory, Buffer.alloc(4)]))).toThrow('icon.ico-unsupported')
+  })
   it.each([
     {}, { x: NaN, y: 0, size: 1 }, { x: -1, y: 0, size: 1 }, { x: 0, y: 0, size: 0 },
     { x: 0, y: 0, size: Infinity }, { x: 0.5, y: 0, size: 1 }, { x: 99, y: 0, size: 2 },
@@ -233,11 +270,14 @@ describe('bounded icon image protocol', () => {
       expect(output.width).toBe(orientation >= 5 ? 2 : 3)
     }
   })
-  it('generates seven indexed PNG frames in an ICO', () => {
+  it('generates exact Windows DPI sizes as indexed PNG frames in an ICO', () => {
     const bytes = encodeIconIco(new TestIconImage(512, 512) as unknown as NativeImage)
+    const sizes = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256]
     expect(bytes.readUInt16LE(2)).toBe(1)
-    expect(bytes.readUInt16LE(4)).toBe(7)
-    for (let i = 0; i < 7; i++) {
+    expect(bytes.readUInt16LE(4)).toBe(sizes.length)
+    for (let i = 0; i < sizes.length; i++) {
+      expect(bytes[6 + i * 16]).toBe(sizes[i] % 256)
+      expect(bytes[6 + i * 16 + 1]).toBe(sizes[i] % 256)
       const offset = bytes.readUInt32LE(6 + i * 16 + 12)
       expect(bytes.subarray(offset, offset + 8).toString('hex')).toBe('89504e470d0a1a0a')
     }

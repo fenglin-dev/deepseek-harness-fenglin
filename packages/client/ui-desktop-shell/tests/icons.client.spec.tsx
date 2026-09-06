@@ -141,6 +141,14 @@ describe('icon settings crop and preview', () => {
     fireEvent.click(screen.getByText('Create my desktop shortcut'))
     await waitFor(() => { expect(bridge.createShortcut).toHaveBeenCalledTimes(1) })
   })
+  it('advertises modern ICO input on Windows and explains legacy ICO conversion', async () => {
+    const { bridge } = setup('win32')
+    vi.mocked(bridge.choose).mockRejectedValueOnce(new Error('icon.ico-unsupported'))
+    render(<DesktopIconSettings bridge={bridge} t={t} />)
+    expect(await screen.findByText(/modern ICO files containing PNG frames/)).toBeDefined()
+    fireEvent.click(screen.getByText('Change image'))
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', en['icons.error.ico'])
+  })
   it('hides unsupported Linux and disposes selected pixels on unmount', async () => {
     const { bridge } = setup('linux')
     const first = render(<DesktopIconSettings bridge={bridge} t={t} />)

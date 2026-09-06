@@ -529,7 +529,7 @@ async function showDataHomeChooser(
     minWidth: 920,
     minHeight: 620,
     backgroundColor: desktopThemeBackground('system', nativeTheme.shouldUseDarkColors),
-    icon: iconManager?.images().application ?? WINDOW_ICON,
+    icon: desktopWindowIcon(),
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -886,6 +886,14 @@ function desktopTrayImage(images: DesktopIconImages): Electron.NativeImage {
   return image
 }
 
+function desktopWindowIcon(): Electron.NativeImage | string {
+  const images = iconManager?.images()
+  if (process.platform === 'win32' && images?.applicationIco !== null && images?.applicationIco !== undefined) {
+    return images.applicationIco
+  }
+  return images?.application ?? WINDOW_ICON
+}
+
 function applyDesktopIcons(images: DesktopIconImages, shortcuts: boolean, createShortcut: boolean): IconSurfaceResult[] {
   applicationMenu?.refresh()
   const results: IconSurfaceResult[] = []
@@ -894,7 +902,7 @@ function applyDesktopIcons(images: DesktopIconImages, shortcuts: boolean, create
       if (app.dock === undefined) throw new Error('Dock unavailable')
       app.dock.setIcon(images.application)
     } else {
-      for (const window of BrowserWindow.getAllWindows()) window.setIcon(images.application)
+      for (const window of BrowserWindow.getAllWindows()) window.setIcon(images.applicationIco ?? images.application)
       if (app.isPackaged) {
         for (const window of BrowserWindow.getAllWindows()) window.setAppDetails({
           appId: 'ai.flaq.deepseek-harness', appIconPath: images.applicationIco ?? process.execPath,
@@ -1229,7 +1237,7 @@ function createWindow(): BrowserWindow {
       minWidth: 960,
       minHeight: 640,
       backgroundColor: desktopThemeBackground(desktopThemeSource, nativeTheme.shouldUseDarkColors),
-      icon: iconManager?.images().application ?? WINDOW_ICON,
+      icon: desktopWindowIcon(),
       show: false,
     },
     rendererPreferences,
@@ -1549,7 +1557,13 @@ async function startApplication(): Promise<void> {
   ipcMain.handle('dsh:desktop:icons:choose', async (event) => {
     const manager = requireIcons(event.sender)
     const owner = event.sender.id
-    const options = { properties: ['openFile'] as const, filters: [{ name: 'PNG / JPEG', extensions: ['png', 'jpg', 'jpeg'] }] }
+    const options = {
+      properties: ['openFile'] as const,
+      filters: [{
+        name: process.platform === 'win32' ? 'PNG / JPEG / ICO' : 'PNG / JPEG',
+        extensions: process.platform === 'win32' ? ['png', 'jpg', 'jpeg', 'ico'] : ['png', 'jpg', 'jpeg'],
+      }],
+    }
     const picked = mainWindow === undefined
       ? await dialog.showOpenDialog({ ...options, properties: ['openFile'] })
       : await dialog.showOpenDialog(mainWindow, { ...options, properties: ['openFile'] })

@@ -106,11 +106,11 @@ async function run() {
       assert.equal(alpha(inset, inset), 0)
       assert.equal(alpha(256, 256), 255)
       const frames = encodeIconIco(rounded)
-      for (let index = 0; index < 7; index++) {
+      for (let index = 0; index < 10; index++) {
         const offset = frames.readUInt32LE(6 + index * 16 + 12)
         const length = frames.readUInt32LE(6 + index * 16 + 8)
         const frame = nativeImage.createFromBuffer(frames.subarray(offset, offset + length))
-        assert.equal(frame.toBitmap()[3], 0)
+        assert.ok(frame.toBitmap()[3] <= 2, 'transparent rounded corner remains visually clear after small-frame resampling')
       }
       if (process.env.DSH_ICON_SMOKE_PREVIEW !== undefined) {
         const artwork = nativeImage.createFromPath(new URL('../src/icon.png', import.meta.url).pathname)
@@ -121,12 +121,14 @@ async function run() {
     const softened = renderIconPresentation(translucent, 'darwin', 'application')
     assert.equal(softened.toBitmap()[(256 * 512 + 256) * 4 + 3], 128)
     const ico = encodeIconIco(decoded)
-    assert.equal(ico.readUInt16LE(4), 7)
-    for (let index = 0; index < 7; index++) {
+    assert.equal(ico.readUInt16LE(4), 10)
+    for (let index = 0; index < 10; index++) {
       const offset = ico.readUInt32LE(6 + index * 16 + 12)
       const length = ico.readUInt32LE(6 + index * 16 + 8)
       assert.equal(nativeImage.createFromBuffer(ico.subarray(offset, offset + length)).isEmpty(), false)
     }
+    const decodedIco = decodeIconImage(ico)
+    assert.deepEqual(decodedIco.getSize(), { width: 256, height: 256 })
     const options = {
       directory: join(directory, 'icons'), platform: process.platform, packaged: false,
       defaultApplication: loadDefaultApplicationIcon(process.platform), defaultTray: image,
@@ -154,7 +156,7 @@ async function run() {
     assert.equal(new DesktopIconManager(options).status().applicationCustom, false)
     assert.deepEqual(manager.images().application.toBitmap(), options.defaultApplication.toBitmap())
     console.log('PASS: real default macOS artwork has padding/corners; packaged and development startup, preview, reset and restart preserve it without repeated insetting')
-    console.log('PASS: native padding, rounded corners in seven ICO sizes, preserved alpha, JPEG EXIF orientation, Dock/window + tray apply/reset, persistence without repeated insetting')
+    console.log('PASS: native padding, rounded corners in ten Windows DPI ICO sizes, modern ICO input, preserved alpha, JPEG EXIF orientation, Dock/window + tray apply/reset, persistence without repeated insetting')
   } catch (error) {
     console.error(error)
     process.exitCode = 1

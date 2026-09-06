@@ -69,7 +69,7 @@ function IconCropDialog({ selection, platform, t, busy, error, onCancel, onConfi
   }, [])
   return <Modal open title={t('icons.crop.title')} closeLabel={t('icons.cancel')} onClose={() => { if (!busy) onCancel() }}
     className={css.modal ?? ''} contentClassName={css.modalContent ?? ''}
-    description={t('icons.crop.description')}
+    description={t(platform === 'win32' ? 'icons.crop.description.windows' : 'icons.crop.description')}
     footer={<div className={css.actions}><Button disabled={busy} onClick={onCancel}>{t('icons.cancel')}</Button>
       <Button variant="primary" disabled={busy} onClick={() => { const finalCrop = pending.current ?? crop; flush(); onConfirm(finalCrop) }}>{t('icons.confirm')}</Button></div>}>
     <div ref={body} className={css.editor}>
@@ -150,6 +150,7 @@ export function DesktopIconSettings({ bridge, t }: { bridge: DesktopIconsBridge;
     if (code === 'too-many-pixels') return t('icons.error.pixels')
     if (code === 'expired') return t('icons.error.expired')
     if (code === 'invalid-image') return t('icons.error.image')
+    if (code === 'ico-unsupported') return t('icons.error.ico')
     if (code === 'invalid-crop') return t('icons.error.crop')
     return t('icons.error.generic')
   }
@@ -191,7 +192,8 @@ export function DesktopIconSettings({ bridge, t }: { bridge: DesktopIconsBridge;
   return <section className={css.card} aria-label={t('icons.title')}>
     <h3>{t('icons.title')}</h3>
     {loadFailed && <p role="alert" className={css.error}>{t('icons.error.generic')}</p>}
-    <p className={css.hint}>{t(status?.platform === 'darwin' ? 'icons.mac' : 'icons.description')}</p>
+    <p className={css.hint}>{t(status?.platform === 'darwin' ? 'icons.mac'
+      : status?.platform === 'win32' ? 'icons.description.windows' : 'icons.description')}</p>
     {status !== null && <>
       <div className={css.iconRow}><img src={status.application} width="56" height="56" alt={t('icons.application')} />
         <span>{t('icons.application')}</span><div className={css.actions}>

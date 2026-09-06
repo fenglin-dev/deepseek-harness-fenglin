@@ -18,12 +18,45 @@ export function loadDefaultApplicationIcon(platform: string): NativeImage {
     .resize({ width: 1024, height: 1024, quality: 'best' })
 }
 
-/** Maximum encoded PNG/JPEG input size, checked before native decoding. */
+/** Maximum encoded PNG/JPEG/ICO input size, checked before native decoding. */
 export const ICON_MAX_BYTES = 10 * 1024 * 1024
 const MAX_PIXELS = 16_000_000
+const PNG_SIGNATURE = Buffer.from('89504e470d0a1a0a', 'hex')
 
 /** Validated encoded dimensions and EXIF orientation, before native allocation. */
 export interface IconImageHeader { width: number; height: number; orientation: number; encoded: Buffer }
+
+function inspectPng(bytes: Buffer): { width: number; height: number } | undefined {
+  if (bytes.length < 33 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)
+    || bytes.toString('ascii', 12, 16) !== 'IHDR' || bytes.readUInt32BE(8) !== 13) return undefined
+  const width = bytes.readUInt32BE(16)
+  const height = bytes.readUInt32BE(20)
+  if (width < 1 || height < 1) throw new Error('icon.invalid-image')
+  if (width > Math.floor(MAX_PIXELS / height)) throw new Error('icon.too-many-pixels')
+  return { width, height }
+}
+
+/** Extract the highest-resolution PNG frame from a modern ICO container. */
+function extractIcoPng(bytes: Buffer): Buffer | undefined {
+  if (bytes.length < 6 || bytes.readUInt16LE(0) !== 0 || bytes.readUInt16LE(2) !== 1) return undefined
+  const count = bytes.readUInt16LE(4)
+  if (count < 1 || count > 256 || 6 + count * 16 > bytes.length) throw new Error('icon.invalid-image')
+  const frames: Array<{ bytes: Buffer; width: number; height: number }> = []
+  for (let index = 0; index < count; index++) {
+    const entry = 6 + index * 16
+    const length = bytes.readUInt32LE(entry + 8)
+    const offset = bytes.readUInt32LE(entry + 12)
+    if (length < 1 || offset < 6 + count * 16 || offset > bytes.length - length) throw new Error('icon.invalid-image')
+    const frame = bytes.subarray(offset, offset + length)
+    const png = inspectPng(frame)
+    if (png !== undefined) frames.push({ bytes: frame, ...png })
+  }
+  if (frames.length === 0) throw new Error('icon.ico-unsupported')
+  frames.sort((left, right) => right.width * right.height - left.width * left.height)
+  const selected = frames[0]
+  if (selected === undefined) throw new Error('icon.ico-unsupported')
+  return selected.bytes
+}
 
 function exifOrientation(segment: Buffer): number {
   if (segment.toString('ascii', 0, 6) !== 'Exif\0\0') return 1
@@ -50,20 +83,26 @@ function exifOrientation(segment: Buffer): number {
 }
 
 /**
- * Inspect PNG/JPEG magic and dimensions; strip JPEG APP1 to prevent double orientation.
+ * Inspect PNG/JPEG/ICO magic and dimensions; strip JPEG APP1 to prevent double orientation.
  * @param bytes - Encoded source selected through the native picker.
  * @returns Bounded dimensions, orientation, and decoder input without JPEG APP1 metadata.
  */
 export function inspectIconImage(bytes: Buffer): IconImageHeader {
   if (bytes.length > ICON_MAX_BYTES) throw new Error('icon.too-large')
+  const icoPng = extractIcoPng(bytes)
+  if (icoPng !== undefined) {
+    const png = inspectPng(icoPng)
+    if (png === undefined) throw new Error('icon.invalid-image')
+    return { ...png, orientation: 1, encoded: icoPng }
+  }
   let width = 0
   let height = 0
   let orientation = 1
   let encoded = bytes
-  if (bytes.length >= 33 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
-    && bytes.toString('ascii', 12, 16) === 'IHDR' && bytes.readUInt32BE(8) === 13) {
-    width = bytes.readUInt32BE(16)
-    height = bytes.readUInt32BE(20)
+  const png = inspectPng(bytes)
+  if (png !== undefined) {
+    width = png.width
+    height = png.height
   } else if (bytes.length >= 4 && bytes.readUInt16BE(0) === 0xffd8) {
     const chunks = [bytes.subarray(0, 2)]
     let offset = 2
@@ -85,14 +124,14 @@ export function inspectIconImage(bytes: Buffer): IconImageHeader {
         if (length < 8 || width !== 0 || height !== 0) throw new Error('icon.invalid-image')
         height = bytes.readUInt16BE(offset + 3)
         width = bytes.readUInt16BE(offset + 5)
-        if (width * height > MAX_PIXELS) throw new Error('icon.too-many-pixels')
+        if (height > 0 && width > Math.floor(MAX_PIXELS / height)) throw new Error('icon.too-many-pixels')
       }
       offset += length
     }
     encoded = Buffer.concat(chunks)
   }
   if (width < 1 || height < 1) throw new Error('icon.invalid-image')
-  if (width * height > MAX_PIXELS) throw new Error('icon.too-many-pixels')
+  if (width > Math.floor(MAX_PIXELS / height)) throw new Error('icon.too-many-pixels')
   return { width, height, orientation, encoded }
 }
 
@@ -130,7 +169,7 @@ export function orientIconBitmap(pixels: Buffer, width: number, height: number, 
 
 /**
  * Decode only a bounded raster and normalize orientation before showing a preview.
- * @param bytes - Encoded PNG/JPEG source.
+ * @param bytes - Encoded PNG/JPEG source or a modern PNG-compressed ICO.
  * @returns An oriented image with a maximum edge length of 2048 pixels.
  */
 export function decodeIconImage(bytes: Buffer): NativeImage {
@@ -200,10 +239,10 @@ export function renderIconPresentation(crop: NativeImage, platform: string, targ
 /**
  * Encode a Windows ICO directory containing PNG frames at all shell sizes.
  * @param image - Normalized square crop.
- * @returns An ICO with 16, 24, 32, 48, 64, 128, and 256 pixel frames.
+ * @returns An ICO with exact Windows shell and DPI-scale frames from 16 through 256 pixels.
  */
 export function encodeIconIco(image: NativeImage): Buffer {
-  const sizes = [16, 24, 32, 48, 64, 128, 256]
+  const sizes = [16, 20, 24, 32, 40, 48, 64, 96, 128, 256]
   const frames = sizes.map(size => image.resize({ width: size, height: size, quality: 'best' }).toPNG())
   const directory = Buffer.alloc(6 + sizes.length * 16)
   directory.writeUInt16LE(1, 2)

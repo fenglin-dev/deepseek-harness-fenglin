@@ -119,7 +119,7 @@ Electron 主进程不经过 shell，直接启动 `node apps/cli/lib/bin.js web -
 
 ## 安全性
 
-渲染进程使用 `nodeIntegration: false`、`contextIsolation: true` 和 `sandbox: true`。导航仅允许 Harness 进程对应的精确回环来源。新开的 HTTPS 窗口交给系统浏览器，其余新窗口全部拒绝。除受监管 Harness 来源的主框架发起的安全剪贴板写入外，渲染进程的权限请求全部拒绝；剪贴板读取和其他所有权限仍保持拒绝。因此，共用客户端可直接使用标准 Web Clipboard API，而不必暴露通用的高权限 Electron bridge。
+渲染进程使用 `nodeIntegration: false`、`contextIsolation: true` 和 `sandbox: true`。导航仅允许 Harness 进程对应的精确回环来源。新开的 HTTPS 窗口交给系统浏览器，其余新窗口全部拒绝。受监管主框架发起的安全剪贴板写入保持静默，因此普通复制不会弹窗。其他已识别的渲染能力进入串行原生确认流程，只有用户允许后才会在当前 Harness 来源和本次渲染运行期间获得内存授权；麦克风与摄像头分别授权。未知权限、外部来源、子框架和 `openExternal` 权限请求继续拒绝。因此，共用客户端可使用标准 Web API，而不必暴露通用的高权限 Electron bridge。
 
 API 密钥仍由 Harness credentials 服务持有。可选的首次导入只会把凭据文档作为不透明用户数据复制到独立 home；不会解析、显示、记录或删除来源。直接复用则是用户明确选择让桌面版就地使用官方 credentials 服务。沙箱 preload 在源码运行中暴露类型化源码更新调用，并提供桌面能力、偏好更新、不含 URL 的当前认证回环页面打开请求、固定日志定位、Release 发现、安装包归档精确白名单，以及桌面端拥有的导入插件恢复清单与插件快照中的不透明 id。Electron 从经过校验的进程状态或本机记录解析 Web URL、恢复说明符和快照文件；渲染层不能提交 URL、快照文件、包说明符、命令、路径或文件内容。一个使用独立随机端口的回环监听器只接受当前 Harness 精确来源发出的空 POST，并要求携带当前启动代次凭证；该请求只能显示已有窗口。浏览器通过 URL 片段接收此凭证，将其保存在当前标签页，并从可见地址中删除。其他任意包名仍必须经过受保护的 Harness 插件服务。Release URL 仅限本仓库。在 Windows 和 Linux 上，preload 还会渲染桌面宿主自有标题栏，并将固定的最小化、最大化或还原、关闭意图直接发送给主进程。它不暴露通用命令、文件系统、URL 打开或下载方法。
 
