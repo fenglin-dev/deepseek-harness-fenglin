@@ -41,6 +41,7 @@ describe('profile diagnostic v2', () => {
     ['settings-file: invalid document at C:\\Users\\Alice\\settings.yaml: DUPLICATE_KEY at line 9, column 3', 'config.settings-invalid', 'blocked'],
     ["Cannot find package '@deepseek-ai/dsh-session-persistence-sqlite' imported from cordis.patch.yml", 'profile.session-persistence-migration', 'blocked'],
     ['loader dependency unavailable: Loader module @fixture/ui imports unavailable dependency @deepseek-ai/dsh-host-apiproxy', 'loader.dependency-unavailable', 'blocked'],
+    ['loader dependency unavailable: Loader module dsh-webchat expects export installSettingsSection from @deepseek-ai/dsh-settings, but the installed dependency does not provide it', 'loader.dependency-unavailable', 'blocked'],
     ['duplicate loader entry web-panel', 'loader.duplicate-entry', 'blocked'],
     ['persona already registered', 'loader.duplicate-registration', 'blocked'],
     ['pending (waiting for services: files)', 'loader.unresolved-injection', 'blocked'],

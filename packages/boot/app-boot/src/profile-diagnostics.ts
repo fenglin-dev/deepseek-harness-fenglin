@@ -78,6 +78,7 @@ export interface ProfileDiagnosticAttribution {
   readonly entryId?: string
   readonly moduleName?: string
   readonly missingModule?: string
+  readonly missingExport?: string
   readonly importerPackage?: string
   readonly configKind?: 'profile-manifest' | 'workspace' | 'lockfile' | 'profile-patch' | 'home-patch' | 'credentials' | 'settings'
 }

@@ -1,0 +1,79 @@
+// @vitest-environment jsdom
+import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { PluginInventorySnapshot } from '@deepseek-ai/dsh-api-remotes/client'
+import {
+  PluginDiagnosticsSection,
+  type PluginDiagnosticsSectionProps,
+} from '../src/client/PluginDiagnosticsSection.tsx'
+import { en, type PluginInventoryLocaleKey } from '../src/client/locales.ts'
+
+afterEach(cleanup)
+
+const t = ((key: PluginInventoryLocaleKey): string => en[key]) as PluginDiagnosticsSectionProps['t']
+
+function props(snapshot: PluginInventorySnapshot): PluginDiagnosticsSectionProps {
+  const unexpected = async (): Promise<never> => { throw new Error('unexpected mutation') }
+  return {
+    t,
+    list: async () => snapshot,
+    startDependencyDoctor: unexpected,
+    getDependencyDoctor: unexpected,
+    getInstall: unexpected,
+    startUninstall: unexpected,
+    startQuarantineRetry: unexpected,
+    approveQuarantineBuild: unexpected,
+    approveDiagnosticBuild: unexpected,
+    exportDiagnostics: async () => '{}',
+    uninstallQuarantine: async () => true,
+    dismissDependencyHealth: async () => true,
+    openPluginMarket: vi.fn(),
+  } as unknown as PluginDiagnosticsSectionProps
+}
+
+describe('PluginDiagnosticsSection', () => {
+  it('shows the missing dependency export and compatible-version recovery actions', async () => {
+    const packageName = 'dsh-webchat'
+    const missingExport = 'installSettingsSection'
+    render(<PluginDiagnosticsSection {...props({
+      entries: [],
+      dependencyHealth: {
+        lastRepair: null,
+        safeMode: null,
+        quarantined: [{
+          quarantineId: '00000000-0000-4000-8000-000000000014',
+          profile: 'web',
+          packageName,
+          packageSpec: '0.2.0',
+          installedVersion: '0.2.0',
+          quarantinedAt: '2026-09-05T12:00:00.000Z',
+          reason: 'loader-dependency-unavailable',
+          conflicts: [],
+        }],
+        issues: [{
+          diagnosticId: '00000000-0000-4000-8000-000000000015',
+          code: 'loader.dependency-unavailable',
+          source: 'loader',
+          phase: 'import',
+          severity: 'blocked',
+          attribution: {
+            rootPackage: packageName,
+            entryId: 'webchat',
+            moduleName: packageName,
+            importerPackage: packageName,
+            missingModule: '@deepseek-ai/dsh-settings',
+            missingExport,
+          },
+          actions: ['restore', 'export'],
+          evidence: [],
+        }],
+      },
+    } as unknown as PluginInventorySnapshot)} />)
+
+    expect(await screen.findByText(`Dependency does not export the API required by the plugin: ${missingExport}`))
+      .toBeTruthy()
+    expect(screen.getAllByText(en['health.quarantine.solution.loader-dependency-unavailable'])).toHaveLength(2)
+    expect(screen.getByRole('button', { name: en['health.quarantine.action.findUpdate'] })).toBeTruthy()
+    expect(screen.getByRole('button', { name: en['health.uninstall'] })).toBeTruthy()
+  })
+})

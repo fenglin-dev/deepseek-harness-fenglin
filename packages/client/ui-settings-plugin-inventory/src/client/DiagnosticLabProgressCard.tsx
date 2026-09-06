@@ -21,6 +21,7 @@ const SCENARIO_TITLES: Record<DiagnosticLabScenarioId, PluginInventoryLocaleKey>
   'loader-package-name-mismatch': 'lab.scenario.loaderPackageNameMismatch.title',
   'startup-operation-timeout': 'lab.scenario.startupTimeout.title',
   'loader-dependency-unavailable': 'lab.scenario.loaderDependency.title',
+  'loader-export-unavailable': 'lab.scenario.loaderExport.title',
   'settings-invalid': 'lab.scenario.settingsInvalid.title',
   'module-resolution-missing': 'lab.scenario.module.title',
   'patch-invalid': 'lab.scenario.patch.title',
