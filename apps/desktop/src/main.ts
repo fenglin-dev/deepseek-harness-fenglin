@@ -1703,7 +1703,7 @@ async function startApplication(): Promise<void> {
     if (releaseChecker === undefined || releaseDownloader === undefined) {
       return { phase: 'unsupported' } satisfies DesktopReleaseDownloadStatus
     }
-    await releaseChecker.check()
+    // 复用当前已有的 release 检查状态，避免重复调用 GitHub API 触发速率限制
     return releaseDownloader.start()
   })
   ipcMain.handle('dsh:desktop:releases:download:cancel', (event): DesktopReleaseDownloadStatus => {

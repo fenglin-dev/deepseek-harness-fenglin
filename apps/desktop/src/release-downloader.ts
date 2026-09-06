@@ -10,6 +10,13 @@ const API_RELEASE_PREFIX = `https://api.github.com/repos/${REPOSITORY}/releases/
 const RELEASE_DOWNLOAD_PREFIX = `/${REPOSITORY}/releases/download/`
 const CHECKSUM_ASSET = 'SHA256SUMS'
 const MAX_CHECKSUM_BYTES = 1024 * 1024
+const RELEASE_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000 // 5 分钟缓存，避免重复调用 GitHub API
+
+interface ReleaseDetailsCacheEntry {
+  tag: string
+  details: GitHubReleaseDetails
+  expiresAt: number
+}
 
 /** Accept only the tag families recognized by Release discovery for this exact version. */
 export function isAllowedReleaseTag(tag: string, version: string): boolean {
@@ -124,6 +131,7 @@ export class DesktopReleaseDownloader {
   #running: Promise<DesktopReleaseDownloadStatus> | undefined
   #abortController: AbortController | undefined
   #readyPath: string | undefined
+  #releaseDetailsCache: ReleaseDetailsCacheEntry | undefined
   readonly #listeners = new Set<(status: DesktopReleaseDownloadStatus) => void>()
   readonly #fetch: typeof fetch
   readonly #assetName: string | undefined
@@ -207,14 +215,27 @@ export class DesktopReleaseDownloader {
     signal: AbortSignal,
   ): Promise<DesktopReleaseDownloadStatus> {
     if (!isAllowedReleaseTag(tag, version)) throw new Error('Selected Release tag did not match its version.')
-    const releaseResponse = await this.#fetch(`${API_RELEASE_PREFIX}${encodeURIComponent(tag)}`, {
-      headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'DeepSeek-Harness-Desktop' },
-      signal,
-    })
-    if (!releaseResponse.ok) throw new Error(`GitHub Release returned HTTP ${releaseResponse.status}`)
-    const details: unknown = await releaseResponse.json()
-    if (details === null || typeof details !== 'object') throw new Error('GitHub Release returned invalid metadata.')
-    const releaseDetails = details as GitHubReleaseDetails
+    // 检查缓存，避免重复调用 GitHub API 触发速率限制
+    const now = Date.now()
+    let releaseDetails: GitHubReleaseDetails
+    if (this.#releaseDetailsCache?.tag === tag && this.#releaseDetailsCache.expiresAt > now) {
+      releaseDetails = this.#releaseDetailsCache.details
+    } else {
+      const releaseResponse = await this.#fetch(`${API_RELEASE_PREFIX}${encodeURIComponent(tag)}`, {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'DeepSeek-Harness-Desktop' },
+        signal,
+      })
+      if (!releaseResponse.ok) throw new Error(`GitHub Release returned HTTP ${releaseResponse.status}`)
+      const details: unknown = await releaseResponse.json()
+      if (details === null || typeof details !== 'object') throw new Error('GitHub Release returned invalid metadata.')
+      releaseDetails = details as GitHubReleaseDetails
+      // 更新缓存
+      this.#releaseDetailsCache = {
+        tag,
+        details: releaseDetails,
+        expiresAt: now + RELEASE_DETAILS_CACHE_TTL_MS,
+      }
+    }
     if (releaseDetails.draft === true || releaseDetails.prerelease === true) {
       throw new Error('Release is no longer available for in-app updates.')
     }
