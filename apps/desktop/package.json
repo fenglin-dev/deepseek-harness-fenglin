@@ -1,4 +1,4 @@
-﻿{
+{
     "name":  "@deepseek-ai/dsh-desktop",
     "description":  "Cross-platform Electron host for the DeepSeek Harness Web GUI",
     "version":  "2.2.0",
