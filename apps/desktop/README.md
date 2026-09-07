@@ -16,6 +16,8 @@ pnpm run dev:desktop
 
 The desktop `dev` command watches the shell sources, rebuilds after a short debounce, and restarts Electron only after a successful build. A failed build leaves the current application running and the watcher retries after the next edit.
 
+Source builds expose Enter recovery mode in General Settings. The action opens the real startup-failure recovery page while the healthy Harness remains alive; Retry returns to the active client. The capability is absent from packaged builds and accepts no renderer-supplied path, URL, command, or diagnostic text.
+
 The app opens the same onboarding and settings surfaces as `dsh web`. Users can configure DeepSeek or another compatible API provider, choose models, inspect installed plugins, edit supported plugin settings, invoke Skills, select workspaces, and manage sessions without a second configuration store.
 
 On packaged macOS and Windows, General Settings, the File menu, and the tray menu can open the active Harness generation in the system browser. The main process validates and retains its authenticated loopback URL without exposing it to the renderer; after the browser accepts the launch token, it redirects to a clean URL backed by the same Profile and process. That page can reveal the same Electron client through Return to Desktop beside Settings. A saved preference opens one browser page after each successful Harness start. Successful handoff hides the desktop window when the tray is available, while failure keeps or restores the window. Quitting Desktop stops the shared Harness and disconnects the browser page.
