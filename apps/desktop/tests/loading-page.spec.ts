@@ -32,6 +32,18 @@ describe('desktop loading page', () => {
     expect(preload).not.toContain("{ kind: 'custom', path:")
   })
 
+  it('lets source builds preview and leave the real recovery page without stopping Harness', async () => {
+    const main = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8')
+    const preload = await readFile(new URL('../src/preload.ts', import.meta.url), 'utf8')
+
+    expect(preload).toContain("ipcRenderer.invoke(\n    'dsh:desktop:recovery:enter'")
+    expect(main).toContain("ipcMain.handle('dsh:desktop:recovery:enter'")
+    expect(main).toContain("if (app.isPackaged) throw new Error('desktop: recovery preview is available only in development mode')")
+    expect(main).toContain("if (harnessOrigin === undefined) throw new Error('desktop: Harness must be ready before opening recovery mode')")
+    expect(main).toContain("showLoading('failed'")
+    expect(main).toContain('void mainSurface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))')
+  })
+
   it('shows the active bounded operation and its automatic degradation policy', async () => {
     const preload = await readFile(new URL('../src/preload.ts', import.meta.url), 'utf8')
 
