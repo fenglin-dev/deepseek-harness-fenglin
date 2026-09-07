@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-07-atomic-profile-lock-publication.md
+2026-09-07-atomic-profile-lock-publication.md: 73eea58214209ca9092fed85978ac1cea9223cb0
+2026-09-07-atomic-profile-lock-publication.zh.md: 027e4114925fe8358d89257c3f53b1908a11d4b1

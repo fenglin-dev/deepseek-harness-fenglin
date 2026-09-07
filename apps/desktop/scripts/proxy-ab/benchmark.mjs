@@ -191,9 +191,12 @@ async function main() {
   const pnpm = resolve(values.pnpm)
   const pnpmSha256 = createHash('sha256').update(await readFile(pnpm)).digest('hex')
   let pnpmImplementationSha256 = null
+  let pnpmUndiciVersion = null
   for (const filename of ['pnpm.mjs', 'pnpm.cjs']) {
     try {
-      pnpmImplementationSha256 = createHash('sha256').update(await readFile(resolve(dirname(pnpm), '../dist', filename))).digest('hex')
+      const implementation = await readFile(resolve(dirname(pnpm), '../dist', filename))
+      pnpmImplementationSha256 = createHash('sha256').update(implementation).digest('hex')
+      pnpmUndiciVersion = implementation.toString('utf8').match(/links\/@\/undici\/(\d+\.\d+\.\d+)\//u)?.[1] ?? null
       break
     } catch (error) {
       if (error.code !== 'ENOENT') throw error
@@ -208,14 +211,15 @@ async function main() {
   process.once('SIGTERM', abort)
   let local
   const report = { schema: 'odsh-proxy-policy-ab/v1', createdAt: new Date().toISOString(), mode: values.mode, stage: 'runtime-probe',
-    platform: process.platform, arch: process.arch, pnpmSha256, pnpmImplementationSha256, rounds,
+    platform: process.platform, arch: process.arch, pnpmSha256, pnpmImplementationSha256, pnpmUndiciVersion, rounds,
     limitations: 'Environment-policy benchmark, not full Desktop, PAC discovery, Codex, Git, or private-registry validation. No user .npmrc is loaded. Fixture gains are synthetic, not Internet speed gains.',
     results: [], cleanup: false }
   try {
     const env = baseEnvironment(root, values.mode === 'live')
     await writeFile(join(root, 'empty.npmrc'), '')
     await writeFile(join(root, 'empty-global.npmrc'), '')
-    for (const [field, args] of [['nodeVersion', ['--version']], ['pnpmVersion', [pnpm, '--version']]]) {
+    for (const [field, args] of [['nodeVersion', ['--version']],
+      ['nodeUndiciVersion', ['-p', 'process.versions.undici ?? "unknown"']], ['pnpmVersion', [pnpm, '--version']]]) {
       const result = await command(node, args, root, env, controller.signal, 15000)
       if (result.exitCode !== 0 || result.timedOut || result.cancelled || result.signal) throw new Error('Runtime version probe failed')
       report[field] = result.output.trim().match(/v?\d+\.\d+\.\d+/u)?.[0] ?? 'unknown'

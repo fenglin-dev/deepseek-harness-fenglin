@@ -4,6 +4,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
   closeSync,
   existsSync,
+  fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -755,6 +757,47 @@ function wait(delayMs: number): void {
   Atomics.wait(signal, 0, 0, delayMs)
 }
 
+// Hard-link publication is exclusive: readers never observe a partially written owner.
+function publishMutationOwner(lockPath: string, content: string, replace = false): void {
+  const temporary = `${lockPath}.${randomUUID()}.tmp`
+  const descriptor = openSync(temporary, 'wx', 0o600)
+  try {
+    try {
+      writeFileSync(descriptor, content)
+      fsyncSync(descriptor)
+    } finally {
+      closeSync(descriptor)
+    }
+    if (replace) renameSync(temporary, lockPath)
+    else linkSync(temporary, lockPath)
+  } finally {
+    // A completed rename already removed the temporary name.
+    rmSync(temporary, { force: true })
+  }
+}
+
+function readMutationOwner(lockPath: string): { pid: number; token?: string; operationKind?: string } {
+  try {
+    if (!lstatSync(lockPath).isFile()) throw new Error('not a regular file')
+    const owner = JSON.parse(readFileSync(lockPath, 'utf8')) as {
+      pid?: unknown
+      token?: unknown
+      operationKind?: unknown
+    } | null
+    if (owner === null || !Number.isSafeInteger(owner.pid) || (owner.pid as number) <= 0
+      || (owner.token !== undefined && typeof owner.token !== 'string')
+      || (owner.operationKind !== undefined && typeof owner.operationKind !== 'string')) {
+      throw new Error('invalid owner')
+    }
+    return owner as { pid: number; token?: string; operationKind?: string }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error('dsh: plugin mutation lease is unavailable (no active lock)', { cause: error })
+    }
+    throw new Error(`dsh: plugin mutation lock is unreadable or corrupt: ${lockPath}; close all DSH instances before manually moving this lock aside and retrying`, { cause: error })
+  }
+}
+
 /**
  * Acquire the cross-process mutation lock shared by CLI and Electron recovery.
  * @param options - Profile identity, wait budget, and optional Harness home.
@@ -771,8 +814,7 @@ export function acquireProfilePluginMutationLock(
   const token = randomUUID()
   for (;;) {
     try {
-      const descriptor = openSync(lockPath, 'wx', 0o600)
-      writeFileSync(descriptor, `${JSON.stringify({
+      publishMutationOwner(lockPath, `${JSON.stringify({
         schema: SNAPSHOT_LOCK_SCHEMA,
         token,
         pid: process.pid,
@@ -780,7 +822,6 @@ export function acquireProfilePluginMutationLock(
         operationKind: options.operationKind ?? 'profile-mutation',
         createdAt: new Date().toISOString(),
       })}\n`)
-      closeSync(descriptor)
       let released = false
       return () => {
         if (released) return
@@ -800,7 +841,7 @@ export function acquireProfilePluginMutationLock(
       try {
         const ownerSource = readFileSync(lockPath, 'utf8')
         const owner = JSON.parse(ownerSource) as { pid?: unknown; token?: unknown }
-        if (typeof owner.pid === 'number' && Number.isInteger(owner.pid) && !processExists(owner.pid)) {
+        if (typeof owner.pid === 'number' && Number.isSafeInteger(owner.pid) && owner.pid > 0 && !processExists(owner.pid)) {
           const current = readFileSync(lockPath, 'utf8')
           if (current === ownerSource) unlinkSync(lockPath)
           continue
@@ -809,6 +850,7 @@ export function acquireProfilePluginMutationLock(
         // An unreadable owner remains authoritative; another process may still be writing it.
       }
       if (Date.now() >= deadline) {
+        readMutationOwner(lockPath)
         throw new Error(`dsh: another process is changing Profile ${options.profile}; close it and retry`)
       }
       wait(50)
@@ -841,22 +883,14 @@ export function beginProfilePluginMutationLease(
     createdAt: new Date().toISOString(),
   })}\n`
   try {
-    const descriptor = openSync(lockPath, 'wx', 0o600)
-    try {
-      writeFileSync(descriptor, content)
-    } finally {
-      closeSync(descriptor)
-    }
+    publishMutationOwner(lockPath, content)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-    const current = JSON.parse(readFileSync(lockPath, 'utf8')) as {
-      pid?: unknown
-      operationKind?: unknown
-    }
+    const current = readMutationOwner(lockPath)
     if (current.pid !== process.pid || current.operationKind === 'desktop-mutation-lease') {
       throw new Error(`dsh: another process is changing Profile ${options.profile}; cannot begin startup batch`)
     }
-    writeFileSync(lockPath, content, { flag: 'w', mode: 0o600 })
+    publishMutationOwner(lockPath, content, true)
   }
 }
 
@@ -871,9 +905,9 @@ export function endProfilePluginMutationLease(
   assertSnapshotId(options.token)
   const home = options.home ?? resolveDshHome()
   const lockPath = join(safeSnapshotRoot(home, false), `${SNAPSHOT_LOCK}.${options.profile}.lock`)
-  const owner = JSON.parse(readFileSync(lockPath, 'utf8')) as { token?: unknown }
+  const owner = readMutationOwner(lockPath)
   if (owner.token !== options.token) throw new Error('dsh: plugin mutation lease token does not match')
-  const current = JSON.parse(readFileSync(lockPath, 'utf8')) as { token?: unknown }
+  const current = readMutationOwner(lockPath)
   if (current.token !== options.token) throw new Error('dsh: plugin mutation lease changed before release')
   unlinkSync(lockPath)
 }
@@ -889,7 +923,7 @@ export function assertProfilePluginMutationLease(
   assertSnapshotId(options.token)
   const home = options.home ?? resolveDshHome()
   const lockPath = join(safeSnapshotRoot(home, false), `${SNAPSHOT_LOCK}.${options.profile}.lock`)
-  const owner = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid?: unknown; token?: unknown }
+  const owner = readMutationOwner(lockPath)
   if (owner.token !== options.token || typeof owner.pid !== 'number' || !processExists(owner.pid)) {
     throw new Error('dsh: plugin mutation lease is unavailable or no longer owned by a live process')
   }
