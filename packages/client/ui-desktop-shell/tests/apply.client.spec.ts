@@ -22,7 +22,7 @@ function installBridge(): ReturnType<typeof vi.fn> {
     shell: {
       getCapabilities: vi.fn(() => Promise.resolve({
         platform: 'darwin', packaged: true, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
-        commandLineAvailable: true,
+        commandLineAvailable: true, developmentRecoveryAvailable: false,
       })),
       getDataHome: vi.fn(() => Promise.resolve({
         activePath: '/desktop/dsh-home', activeKind: 'desktop', desktopPath: '/desktop/dsh-home',
@@ -36,7 +36,7 @@ function installBridge(): ReturnType<typeof vi.fn> {
       getCommandLine: vi.fn(() => Promise.resolve({
         phase: 'uninstalled', commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
       })),
-      installCommandLine: vi.fn(), removeCommandLine: vi.fn(),
+      installCommandLine: vi.fn(), removeCommandLine: vi.fn(), enterRecoveryMode: vi.fn(),
       reportReadiness,
     },
     releases: {

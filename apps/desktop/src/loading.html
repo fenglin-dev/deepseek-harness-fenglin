@@ -3,80 +3,113 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'">
     <title>DeepSeek Harness</title>
     <style>
-      :root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f4f2ed; color: #24221f; }
-      main { width: min(420px, calc(100vw - 48px)); text-align: center; }
-      .mark { width: 64px; height: 64px; margin: 0 auto 24px; border-radius: 16px; object-fit: cover; box-shadow: 0 12px 32px rgb(36 34 31 / 16%); }
-      h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
-      p { margin: 12px 0 28px; color: #706c65; font-size: 14px; line-height: 1.6; }
+      :root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --accent: #3977f6; --accent-hover: #2865de; --background: #f7f8fa; --surface: #fff; --surface-muted: #f5f7fa; --text: #17191d; --muted: #737982; --border: #e1e4e9; --danger: #df3038; --danger-hover: #c9262e; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: var(--background); color: var(--text); }
+      body:not(.recovery) { display: grid; place-items: center; }
+      body.recovery { overflow: hidden; }
+      main { width: min(620px, calc(100vw - 48px)); margin: 0 auto; transition: width 240ms ease, padding 240ms ease; }
+      body.recovery main { display: flex; flex-direction: column; height: 100vh; width: min(1040px, calc(100vw - 48px)); padding: 44px 0 28px; }
+      .brand { align-items: center; display: flex; gap: 11px; margin-bottom: 28px; }
+      .brand img { border-radius: 9px; height: 32px; width: 32px; }
+      .brand-name { font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
+      .brand-badge { background: #1d1f23; border-radius: 3px; color: #fff; font: 700 9px/1.5 ui-monospace, monospace; letter-spacing: .04em; padding: 1px 4px; }
+      .startup-header { max-width: 620px; }
+      h1 { font-size: 26px; letter-spacing: -.025em; line-height: 1.25; margin: 0; }
+      .description { color: var(--muted); font-size: 14px; line-height: 1.65; margin: 10px 0 24px; }
       .progress-meta { align-items: center; display: flex; gap: 16px; justify-content: space-between; margin: 0 0 9px; text-align: left; }
-      .progress-task { color: #4f4b45; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .progress-percent { color: #706c65; flex: none; font: 600 12px/1 ui-monospace, monospace; }
-      .track { height: 4px; overflow: hidden; border-radius: 999px; background: #dedbd4; }
-      .bar { width: 4%; height: 100%; border-radius: inherit; background: #3f7f67; transition: width 220ms ease-out; }
-      .failure { margin-top: 22px; text-align: left; }
+      .progress-task { color: #4c525b; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .progress-percent { color: var(--muted); flex: none; font: 600 12px/1 ui-monospace, monospace; }
+      .track { background: #dfe4ec; border-radius: 999px; height: 4px; overflow: hidden; }
+      .bar { background: var(--accent); border-radius: inherit; height: 100%; transition: width 220ms ease-out; width: 4%; }
+      .detail-link { background: none; border: 0; color: var(--accent); cursor: pointer; font: 500 13px/1.4 inherit; margin: 17px 0 0; padding: 0; }
+      .detail-link:hover { color: var(--accent-hover); text-decoration: underline; }
+      .failure-details { background: var(--surface-muted); border: 1px solid var(--border); border-radius: 10px; margin-top: 14px; padding: 12px 14px; }
+      .failure-details[hidden], .slow[hidden], .recovery-workspace[hidden], .panel[hidden], .status[hidden], [hidden] { display: none; }
+      .failure-message { color: #a7272d; font-size: 13px; line-height: 1.55; margin: 0 0 8px; }
+      .log-path { color: var(--muted); font: 12px/1.5 ui-monospace, monospace; margin: 0; overflow-wrap: anywhere; }
       .slow { margin-top: 22px; text-align: left; }
-      .failure[hidden], .slow[hidden], .progress-surface[hidden] { display: none; }
-      .failure-message { color: #a12b27; margin: 0 0 10px; }
-      .log-path { background: rgb(36 34 31 / 6%); border-radius: 8px; color: inherit; font: 12px/1.5 ui-monospace, monospace; margin: 0 0 16px; overflow-wrap: anywhere; padding: 10px 12px; }
+      .slow p { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0 0 12px; }
+      .recovery-workspace { animation: reveal 260ms ease-out; display: flex; flex: 1; flex-direction: column; margin-top: 34px; min-height: 0; }
+      #recovery-home, #recovery-detail { min-height: 0; overflow: auto; padding-right: 6px; }
+      .home-title, .panel-title { font-size: 18px; font-weight: 650; letter-spacing: -.01em; margin: 0; }
+      .home-subtitle, .panel-description { color: var(--muted); font-size: 13px; line-height: 1.55; margin: 7px 0 18px; }
+      .recovery-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .recovery-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; color: inherit; cursor: pointer; min-height: 138px; padding: 22px; text-align: left; transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
+      .recovery-card:hover { border-color: #b7c9f4; box-shadow: 0 8px 24px rgb(42 72 130 / 8%); transform: translateY(-1px); }
+      .recovery-card:focus-visible, .tab:focus-visible, button:focus-visible, select:focus-visible { outline: 3px solid rgb(57 119 246 / 28%); outline-offset: 2px; }
+      .card-title { display: block; font-size: 16px; font-weight: 650; margin-bottom: 8px; }
+      .card-description { color: var(--muted); display: block; font-size: 13px; line-height: 1.55; min-height: 40px; }
+      .card-action { color: var(--accent); display: block; font-size: 13px; font-weight: 550; margin-top: 12px; }
+      .tabs { border-bottom: 1px solid var(--border); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 26px; }
+      .tab { background: transparent; border: 0; border-bottom: 2px solid transparent; color: #575d66; cursor: pointer; font: 500 14px/1 inherit; margin-bottom: -1px; padding: 13px 10px; }
+      .tab[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent); font-weight: 650; }
+      .panel { animation: panel-in 170ms ease-out; }
+      .plugin-table { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+      .plugin-header, .plugin-row { align-items: center; display: grid; gap: 14px; grid-template-columns: minmax(220px, 2fr) 90px minmax(150px, 1fr) 92px; padding: 12px 16px; }
+      .plugin-header { background: var(--surface-muted); color: var(--muted); font-size: 12px; }
+      .plugin-row { background: var(--surface); border-top: 1px solid var(--border); min-height: 62px; }
+      .plugin-name { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .plugin-version, .plugin-source, .plugin-status { color: var(--muted); font-size: 13px; }
+      .plugin-status.attention { color: var(--danger); }
+      .plugin-remove { background: var(--danger); border: 1px solid var(--danger); border-radius: 8px; color: #fff; cursor: pointer; font: 600 13px/1 inherit; justify-self: end; padding: 8px 16px; }
+      .plugin-remove:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
+      .plugin-remove:disabled { cursor: wait; opacity: .55; }
+      .empty-state { background: var(--surface); border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); font-size: 13px; padding: 28px; text-align: center; }
+      .protected { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; color: #555b64; font-size: 13px; margin-top: 12px; padding: 13px 16px; }
+      .snapshot-surface, .action-surface { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+      .snapshot-surface select { appearance: none; background: var(--surface); border: 1px solid #cbd0d8; border-radius: 8px; color: inherit; font: inherit; max-width: 520px; padding: 10px 32px 10px 11px; width: 100%; }
+      .snapshot-network { align-items: center; color: var(--muted); display: flex; font-size: 12px; gap: 7px; margin: 13px 0; }
       .actions { display: flex; flex-wrap: wrap; gap: 10px; }
-      .directory-error { color: #a12b27; font-size: 13px; margin: -6px 0 14px; }
-      .directory-error[hidden] { display: none; }
-      .snapshot-recovery { border: 1px solid #d8d4cc; border-radius: 12px; margin: 16px 0; padding: 14px; }
-      .snapshot-recovery[hidden] { display: none; }
-      .snapshot-recovery strong { display: block; font-size: 14px; margin-bottom: 5px; }
-      .snapshot-recovery p { font-size: 12px; margin: 0 0 10px; }
-      .snapshot-recovery select { appearance: none; background: #fff; border: 1px solid #c9c5bd; border-radius: 8px; color: inherit; font: inherit; max-width: 100%; padding: 8px 32px 8px 10px; width: 100%; }
-      .snapshot-network { align-items: center; display: flex; font-size: 12px; gap: 7px; margin: 10px 0; }
-      button { border: 1px solid #c9c5bd; border-radius: 8px; background: #fff; color: inherit; cursor: pointer; font: inherit; padding: 8px 13px; }
-      button.primary { background: #24221f; border-color: #24221f; color: #fff; }
-      button:disabled { cursor: wait; opacity: .6; }
-      @media (prefers-reduced-motion: reduce) { .bar { transition: none; } }
-      @media (prefers-color-scheme: dark) { body { background: #1b1b1a; color: #f3f1ec; } p, .progress-percent { color: #aaa69f; } .progress-task { color: #d2cfc9; } .track { background: #343330; } .log-path { background: rgb(255 255 255 / 8%); } .snapshot-recovery { border-color: #45423d; } .snapshot-recovery select, button { background: #292826; border-color: #4a4843; } button.primary { background: #f3f1ec; border-color: #f3f1ec; color: #1b1b1a; } }
+      button.action, button.primary, button.secondary { border-radius: 8px; cursor: pointer; font: 500 14px/1 inherit; padding: 10px 16px; }
+      button.action, button.secondary { background: var(--surface); border: 1px solid #cbd0d8; color: inherit; }
+      button.primary { background: var(--accent); border: 1px solid var(--accent); color: #fff; font-weight: 600; }
+      button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+      button:disabled { cursor: wait; opacity: .58; }
+      .status { color: #a7272d; font-size: 13px; line-height: 1.55; margin: 12px 0 0; }
+      .safe-note { color: var(--muted); flex: none; font-size: 12px; margin-top: 20px; }
+      .footer { align-items: center; border-top: 1px solid var(--border); display: flex; flex: none; gap: 14px; justify-content: flex-end; margin-top: 18px; padding-top: 18px; }
+      .footer-hint { color: var(--muted); font-size: 12px; margin-right: auto; }
+      @keyframes reveal { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes panel-in { from { opacity: .3; transform: translateX(4px); } to { opacity: 1; transform: translateX(0); } }
+      @media (max-width: 760px) { body.recovery main { padding-top: 28px; } .recovery-grid { grid-template-columns: 1fr; } .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); } .plugin-header { display: none; } .plugin-row { grid-template-columns: 1fr auto; } .plugin-version, .plugin-source { display: none; } .footer { align-items: stretch; flex-direction: column; } .footer-hint { margin: 0 0 4px; } }
+      @media (prefers-reduced-motion: reduce) { main, .bar, .recovery-workspace, .panel, .recovery-card { animation: none; transition: none; } }
+      @media (prefers-color-scheme: dark) { :root { --background: #16181c; --surface: #202329; --surface-muted: #252930; --text: #f3f5f7; --muted: #a6abb4; --border: #353a43; } .brand-badge { background: #f1f3f6; color: #1d1f23; } .progress-task { color: #c7cbd2; } .track { background: #343a45; } button.action, button.secondary, .snapshot-surface select { border-color: #474d58; } }
     </style>
   </head>
   <body>
     <main>
-      <img class="mark" src="icon.png" alt="DeepSeek Harness">
-      <h1 id="title">Starting DeepSeek Harness</h1>
-      <p id="description">Checking plugin compatibility and preparing your local agent workspace. Your sessions and credentials stay on this machine.</p>
-      <div id="progress-surface" class="progress-surface">
-        <div class="progress-meta" aria-live="polite">
-          <span id="progress-task" class="progress-task">Preparing desktop environment</span>
-          <span id="progress-percent" class="progress-percent">4%</span>
-        </div>
-        <div id="progress" class="track" role="progressbar" aria-label="Starting DeepSeek Harness" aria-valuemin="0" aria-valuemax="100" aria-valuenow="4">
-          <div id="progress-bar" class="bar"></div>
-        </div>
-      </div>
-      <section id="slow" class="slow" aria-live="polite" hidden>
-        <p id="slow-message"></p>
-        <div class="actions">
-          <button id="open-slow-log" type="button">Open Harness log</button>
-        </div>
+      <header class="brand"><img src="./icon.png" alt=""><span class="brand-name">DeepSeek Harness</span><span class="brand-badge">HARNESS</span></header>
+      <section class="startup-header">
+        <h1 id="title">Starting DeepSeek Harness</h1>
+        <p id="description" class="description">Checking plugin compatibility and preparing your local agent workspace. Your sessions and credentials stay on this machine.</p>
+        <div id="progress-surface" class="progress-surface"><div class="progress-meta" aria-live="polite"><span id="progress-task" class="progress-task">Preparing desktop environment</span><span id="progress-percent" class="progress-percent">4%</span></div><div id="progress" class="track" role="progressbar" aria-label="Starting DeepSeek Harness" aria-valuemin="0" aria-valuemax="100" aria-valuenow="4"><div id="progress-bar" class="bar"></div></div></div>
+        <button id="toggle-details" class="detail-link" type="button" hidden>View error details</button>
+        <div id="failure-details" class="failure-details" hidden><p id="failure-message" class="failure-message"></p><p id="log-path" class="log-path"></p></div>
       </section>
-      <section id="failure" class="failure" role="alert" hidden>
-        <p id="failure-message" class="failure-message"></p>
-        <p id="log-path" class="log-path"></p>
-        <p id="directory-error" class="directory-error" role="status" hidden></p>
-        <div id="snapshot-recovery" class="snapshot-recovery" hidden>
-          <strong id="snapshot-title">Restore a plugin snapshot</strong>
-          <p id="snapshot-description">Return only the plugin stack to a previously saved state.</p>
-          <select id="snapshot-select" aria-label="Plugin snapshot"></select>
-          <label class="snapshot-network"><input id="snapshot-network" type="checkbox"> Allow network if the local package cache is incomplete</label>
-          <div class="actions">
-            <button id="snapshot-restore" type="button">Restore and restart</button>
+      <section id="slow" class="slow" aria-live="polite" hidden><p id="slow-message"></p><div class="actions"><button id="open-slow-log" class="action" type="button">Open Harness log</button></div></section>
+      <section id="recovery-workspace" class="recovery-workspace" hidden>
+        <div id="recovery-home">
+          <h2 id="home-title" class="home-title">Choose a recovery option</h2><p id="home-subtitle" class="home-subtitle">These options are independent and can be used in any order.</p>
+          <div class="recovery-grid">
+            <button class="recovery-card" type="button" data-open-panel="plugins"><span id="card-plugins-title" class="card-title">Manage plugins</span><span id="card-plugins-description" class="card-description">Remove recently installed or unhealthy external plugins.</span><span id="card-plugins-action" class="card-action">Open plugin manager →</span></button>
+            <button class="recovery-card" type="button" data-open-panel="snapshots"><span id="card-snapshots-title" class="card-title">Roll back plugin snapshot</span><span id="card-snapshots-description" class="card-description">Restore a previously saved plugin state.</span><span id="card-snapshots-action" class="card-action">View snapshots →</span></button>
+            <button class="recovery-card" type="button" data-open-panel="directory"><span id="card-directory-title" class="card-title">Switch data directory</span><span id="card-directory-description" class="card-description">Use another configuration or begin again in an empty folder.</span><span id="card-directory-action" class="card-action">Choose directory →</span></button>
+            <button class="recovery-card" type="button" data-open-panel="diagnostics"><span id="card-diagnostics-title" class="card-title">Export diagnostics</span><span id="card-diagnostics-description" class="card-description">Save a redacted report for further troubleshooting.</span><span id="card-diagnostics-action" class="card-action">Export diagnostics →</span></button>
           </div>
-          <p id="snapshot-status" class="directory-error" role="status" hidden></p>
         </div>
-        <div class="actions">
-          <button id="retry" class="primary" type="button">Retry</button>
-          <button id="switch-data-home" type="button">Switch data directory</button>
-          <button id="open-logs" type="button">Open log folder</button>
+        <div id="recovery-detail" hidden>
+          <nav class="tabs" role="tablist" aria-label="Recovery options"><button id="tab-plugins" class="tab" type="button" role="tab" aria-controls="panel-plugins" data-panel="plugins">Plugin manager</button><button id="tab-snapshots" class="tab" type="button" role="tab" aria-controls="panel-snapshots" data-panel="snapshots">Plugin snapshots</button><button id="tab-directory" class="tab" type="button" role="tab" aria-controls="panel-directory" data-panel="directory">Data directory</button><button id="tab-diagnostics" class="tab" type="button" role="tab" aria-controls="panel-diagnostics" data-panel="diagnostics">Diagnostics</button></nav>
+          <section id="panel-plugins" class="panel" role="tabpanel"><h2 id="plugins-title" class="panel-title">Check installed plugins</h2><p id="plugins-description" class="panel-description">Core components are protected. Sessions and credentials are not affected.</p><div id="plugin-loading" class="empty-state">Loading installed plugins…</div><div id="plugin-table" class="plugin-table" hidden><div class="plugin-header"><span id="plugin-column-name">Plugin</span><span id="plugin-column-version">Version</span><span id="plugin-column-status">Status</span><span></span></div><div id="plugin-rows"></div></div><div id="plugin-empty" class="empty-state" hidden>No removable external plugins are installed.</div><div id="protected-components" class="protected" hidden></div><p id="plugin-status" class="status" role="status" hidden></p></section>
+          <section id="panel-snapshots" class="panel" role="tabpanel" hidden><h2 id="snapshot-title" class="panel-title">Roll back plugin snapshot</h2><p id="snapshot-description" class="panel-description">Only plugin dependencies, versions, order and build permissions are restored.</p><div class="snapshot-surface"><select id="snapshot-select" aria-label="Plugin snapshot"></select><label class="snapshot-network"><input id="snapshot-network" type="checkbox"> Allow network if the local cache is incomplete</label><button id="snapshot-restore" class="action" type="button">Restore snapshot</button><p id="snapshot-status" class="status" role="status" hidden></p></div></section>
+          <section id="panel-directory" class="panel" role="tabpanel" hidden><h2 id="directory-title" class="panel-title">Switch data directory</h2><p id="directory-description" class="panel-description">Choose another existing configuration, or select an empty folder to create a new one.</p><div class="action-surface"><button id="switch-data-home" class="action" type="button">Choose directory</button><p id="directory-error" class="status" role="status" hidden></p></div></section>
+          <section id="panel-diagnostics" class="panel" role="tabpanel" hidden><h2 id="diagnostics-title" class="panel-title">Export diagnostics</h2><p id="diagnostics-description" class="panel-description">Export a redacted startup and plugin summary, or open the local log folder for deeper inspection.</p><div class="action-surface"><div class="actions"><button id="export-diagnostics" class="action" type="button">Export report</button><button id="open-logs" class="action" type="button">Open log folder</button></div><p id="diagnostics-status" class="status" role="status" hidden></p></div></section>
         </div>
+        <div class="safe-note"><span id="safe-note">Sessions and credentials are not changed in recovery mode.</span></div>
+        <footer class="footer"><span id="footer-hint" class="footer-hint">You can continue without making any changes.</span><button id="exit" class="secondary" type="button">Quit</button><button id="retry" class="primary" type="button">Continue</button></footer>
       </section>
     </main>
   </body>

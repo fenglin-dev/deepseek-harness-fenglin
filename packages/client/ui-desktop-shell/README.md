@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package contributes Electron-only General Settings rows for local-browser handoff, close behavior, native notifications, login launch, the managed `dsh` command-line entry, and Release discovery. A browser page opened by Desktop receives only a Return to Desktop action; an independent `dsh web` browser receives no contribution.
+This package contributes Electron-only General Settings rows for local-browser handoff, close behavior, native notifications, login launch, the managed `dsh` command-line entry, Release discovery, and a source-build recovery-page entry. A browser page opened by Desktop receives only a Return to Desktop action; an independent `dsh web` browser receives no contribution.
 
 ## Table of Contents
 
@@ -32,6 +32,8 @@ Native application-menu navigation uses the existing workspace and settings serv
 
 Release discovery projects one shared state into General Settings, the settings-panel header, and a blue sidebar action immediately beside Settings. Both update actions are absent unless a newer Release is available; selecting either opens General Settings and reveals the update row after the panel has completed layout. Source builds expose the same projection through their development update simulator.
 
+Source builds also show Enter recovery mode. It opens the same startup-failure workspace used when Harness cannot become ready, while the healthy development Harness keeps running. Continue returns to that Harness. Four independent tools remain directly switchable after entry: external-plugin removal, plugin snapshots, data-directory selection, and redacted diagnostic export. Packaged applications neither report nor permit the development entry.
+
 On Windows and macOS, Application icons provides local image selection, a keyboard-accessible square crop, zoom, previews, and independent tray preferences. Windows additionally accepts PNG-compressed ICO files and reports legacy DIB-only containers instead of degrading to a small frame. Cancel does not save. The card shows per-destination results and missing-image warnings; Windows adds explicit shortcut creation and update retry controls. See the [desktop icon guide](../../../apps/desktop/README.md#custom-application-icons) for platform limits and storage ownership.
 
 -----
@@ -39,7 +41,7 @@ On Windows and macOS, Application icons provides local image selection, a keyboa
 <a id="understand-the-security-boundary"></a>
 ## Understand the security boundary
 
-The preload bridge owns every privileged desktop setting. The return action receives a per-generation loopback capability in the URL fragment, moves it to tab-scoped storage, removes it from the visible URL, and can request only that Electron reveal its window. The control listener requires the exact current Harness origin and token. This package cannot read the authenticated Web URL, read arbitrary files, run arbitrary commands, choose arbitrary external URLs, or replace the application runtime.
+The preload bridge owns every privileged desktop setting. The return action receives a per-generation loopback capability in the URL fragment, moves it to tab-scoped storage, removes it from the visible URL, and can request only that Electron reveal its window. The control listener requires the exact current Harness origin and token. The development recovery request carries no path, URL, failure text, or command; Electron supplies the fixed page and current log path after confirming a ready Harness and a source build. This package cannot read the authenticated Web URL, read arbitrary files, run arbitrary commands, choose arbitrary external URLs, or replace the application runtime.
 
 The crop UI submits only a renderer-bound selection ID, a fixed destination, and bounded square coordinates. Electron validates and crops the image before atomic persistence; browser preview pixels are not authoritative. Closing the editor releases the draft. Icon changes do not invoke Harness or rewrite plugin configuration.
 

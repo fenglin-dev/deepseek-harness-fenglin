@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -15,7 +16,7 @@ import {
 import { createRequire, isBuiltin } from 'node:module'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { satisfies, validRange } from 'semver'
+import { satisfies, valid, validRange } from 'semver'
 import { isMap, parseDocument, YAMLMap } from 'yaml'
 import { initSync as initEsmLexer, parse as parseEsmImports } from 'es-module-lexer'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -39,6 +40,7 @@ import {
   createProfileDiagnosticReport,
   extractProfileBuildApprovalKey,
   orphanedBundleDiagnostic,
+  profileHostCompatibilityDiagnostic,
   profileDependencyConflictDiagnostic,
   quarantinedPluginDiagnostic,
   readProfileDiagnosticReport,
@@ -66,7 +68,11 @@ const PROFILE_LOCKFILE_FILENAME = 'pnpm-lock.yaml'
 const QUARANTINE_DIRECTORY = 'quarantine'
 const QUARANTINE_FILENAME = 'profile-plugins.json'
 const PROFILE_HEALTH_DIRECTORY = 'profile-health'
+const PLUGIN_COMPATIBILITY_FILENAME = 'compatibility.json'
+const MAX_PLUGIN_COMPATIBILITY_BYTES = 64 * 1024
+const MAX_SUPPORTED_HOSTS = 32
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/iu
+const DIST_TAG = /^[a-z0-9][a-z0-9._-]{0,63}$/iu
 
 interface PackageManifest extends ProfileManifest {
   version?: string
@@ -97,6 +103,17 @@ export interface OrphanedProfileBundle {
   readonly resolvedPath?: string
 }
 
+/** An active plugin whose valid package-owned declaration excludes the running Harness version. */
+export interface ProfileHostCompatibilityIssue {
+  readonly profile: string
+  readonly packageName: string
+  readonly installedVersion?: string
+  readonly hostVersion: string
+  readonly supportedHostVersions: readonly string[]
+  readonly recommendedHostVersion?: string
+  readonly previewTag?: string
+}
+
 /** A uniquely attributable Loader entry whose declared module cannot resolve from the active Profile. */
 export interface UnresolvableProfileBundleEntry {
   readonly profile: string
@@ -120,6 +137,7 @@ export interface ProfileBundleEntryOwnership {
 
 /** Closed reason set persisted with each automatically isolated plugin. */
 export type ProfileQuarantineReason =
+  | 'incompatible-host-version'
   | 'incompatible-host-dependency'
   | 'convergence-failed'
   | 'orphaned-bundle'
@@ -138,6 +156,7 @@ export interface QuarantinedProfilePlugin {
   readonly bundleIndex: number | null
   readonly quarantinedAt: string
   readonly reason: ProfileQuarantineReason
+  readonly hostCompatibility?: ProfileHostCompatibilityIssue
   readonly buildApprovalKey?: string
   readonly conflicts: readonly ProfileDependencyConflict[]
 }
@@ -168,6 +187,7 @@ export interface ProfileRepairReport {
   readonly status: 'healthy' | 'repaired' | 'quarantined' | 'failed'
   readonly conflicts: readonly ProfileDependencyConflict[]
   readonly orphanedBundles?: readonly OrphanedProfileBundle[]
+  readonly hostCompatibilityIssues?: readonly ProfileHostCompatibilityIssue[]
   readonly quarantined: readonly QuarantinedProfilePlugin[]
   readonly diagnostic?: string
   readonly issues?: readonly ProfileDiagnostic[]
@@ -258,6 +278,108 @@ function directPackageDir(anchor: string, packageName: string): string | undefin
 
 function readPackageManifest(path: string): PackageManifest {
   return JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
+}
+
+interface PluginCompatibilityDeclaration {
+  readonly supportedHostVersions: readonly string[]
+  readonly recommendedHostVersion?: string
+  readonly previewTag?: string
+}
+
+function parsePluginCompatibilityDeclaration(value: unknown): PluginCompatibilityDeclaration | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (record.schemaVersion !== 1 || !Array.isArray(record.supportedHosts)
+    || record.supportedHosts.length === 0 || record.supportedHosts.length > MAX_SUPPORTED_HOSTS) return undefined
+
+  const supportedHostVersions: string[] = []
+  const seen = new Set<string>()
+  for (const item of record.supportedHosts) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return undefined
+    const versionValue = (item as Record<string, unknown>).version
+    if (typeof versionValue !== 'string') return undefined
+    const version = valid(versionValue)
+    if (version === null || seen.has(version)) return undefined
+    seen.add(version)
+    supportedHostVersions.push(version)
+  }
+
+  const recommendedHostValue = record.recommendedHost
+  const recommendedHostVersion = recommendedHostValue === undefined
+    ? undefined
+    : typeof recommendedHostValue === 'string'
+      ? valid(recommendedHostValue) ?? undefined
+      : undefined
+  if (recommendedHostValue !== undefined
+    && (recommendedHostVersion === undefined || !seen.has(recommendedHostVersion))) return undefined
+
+  const previewTagValue = record.previewTag
+  const previewTag = previewTagValue === undefined
+    ? undefined
+    : typeof previewTagValue === 'string' && DIST_TAG.test(previewTagValue)
+      ? previewTagValue
+      : undefined
+  if (previewTagValue !== undefined && previewTag === undefined) return undefined
+
+  return {
+    supportedHostVersions,
+    ...(recommendedHostVersion === undefined ? {} : { recommendedHostVersion }),
+    ...(previewTag === undefined ? {} : { previewTag }),
+  }
+}
+
+function readPluginCompatibilityDeclaration(packageDir: string): PluginCompatibilityDeclaration | undefined {
+  const path = join(packageDir, PLUGIN_COMPATIBILITY_FILENAME)
+  if (!existsSync(path)) return undefined
+  try {
+    const stats = lstatSync(path)
+    if (!stats.isFile() || stats.isSymbolicLink() || stats.size > MAX_PLUGIN_COMPATIBILITY_BYTES) return undefined
+    return parsePluginCompatibilityDeclaration(JSON.parse(readFileSync(path, 'utf8')))
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Inspect valid package-owned Harness compatibility declarations without executing plugin code.
+ * Missing, malformed, oversized, symlinked, or unknown declarations remain compatible-by-default;
+ * only a valid schema-v1 declaration that excludes the current Host produces an issue.
+ * @param options - Profile and running installation identity.
+ * @returns Active external bundles that explicitly exclude the running Harness version.
+ */
+export function inspectProfileHostCompatibility(
+  options: ProfileDependencyOptions,
+): ProfileHostCompatibilityIssue[] {
+  const home = options.home ?? resolveDshHome()
+  const hostVersionValue = readPackageManifest(options.installAnchor).version
+  const hostVersion = typeof hostVersionValue === 'string' ? valid(hostVersionValue) : null
+  if (hostVersion === null) return []
+
+  const profileDir = resolveProfileDir(options.profile, home)
+  const manifest = readProfileManifest(options.binName, profileDir)
+  const installationOwned = new Set(PROFILE_TEMPLATES[options.profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
+  const issues: ProfileHostCompatibilityIssue[] = []
+  for (const packageName of manifest.dsh?.profile?.bundles ?? []) {
+    if (installationOwned.has(packageName) || manifest.dependencies?.[packageName] === undefined
+      || !PACKAGE_NAME.test(packageName)) continue
+    const packageDir = directPackageDir(join(profileDir, 'package.json'), packageName)
+    if (packageDir === undefined) continue
+    const declaration = readPluginCompatibilityDeclaration(packageDir)
+    if (declaration === undefined || declaration.supportedHostVersions.includes(hostVersion)) continue
+    const installedVersionValue = readPackageManifest(join(packageDir, 'package.json')).version
+    issues.push({
+      profile: options.profile,
+      packageName,
+      ...(typeof installedVersionValue === 'string' ? { installedVersion: installedVersionValue } : {}),
+      hostVersion,
+      supportedHostVersions: declaration.supportedHostVersions,
+      ...(declaration.recommendedHostVersion === undefined
+        ? {}
+        : { recommendedHostVersion: declaration.recommendedHostVersion }),
+      ...(declaration.previewTag === undefined ? {} : { previewTag: declaration.previewTag }),
+    })
+  }
+  return issues
 }
 
 function canonical(path: string): string {
@@ -955,10 +1077,12 @@ function quarantineRecords(
   conflicts: readonly ProfileDependencyConflict[],
   now: Date,
   orphanedRoots: ReadonlySet<string> = new Set(),
+  hostCompatibilityIssues: readonly ProfileHostCompatibilityIssue[] = [],
 ): QuarantinedProfilePlugin[] {
   const bundles = manifest.dsh?.profile?.bundles ?? []
   return [...roots].sort().map((packageName) => {
     const version = installedVersion(profileDir, packageName)
+    const hostCompatibility = hostCompatibilityIssues.find(issue => issue.packageName === packageName)
     return {
       quarantineId: randomUUID(),
       profile,
@@ -969,9 +1093,12 @@ function quarantineRecords(
       quarantinedAt: now.toISOString(),
       reason: orphanedRoots.has(packageName)
         ? 'orphaned-bundle'
-        : conflicts.some(conflict => conflict.rootPackage === packageName && !conflict.compatible)
-          ? 'incompatible-host-dependency'
-          : 'convergence-failed',
+        : hostCompatibility !== undefined
+          ? 'incompatible-host-version'
+          : conflicts.some(conflict => conflict.rootPackage === packageName && !conflict.compatible)
+            ? 'incompatible-host-dependency'
+            : 'convergence-failed',
+      ...(hostCompatibility === undefined ? {} : { hostCompatibility }),
       conflicts: conflicts.filter(conflict => conflict.rootPackage === packageName),
     }
   })
@@ -1009,6 +1136,7 @@ function report(
   quarantined: readonly QuarantinedProfilePlugin[] = [],
   diagnostic?: string,
   orphanedBundles: readonly OrphanedProfileBundle[] = [],
+  hostCompatibilityIssues: readonly ProfileHostCompatibilityIssue[] = [],
 ): ProfileRepairReport {
   const base: ProfileRepairReport = {
     schema: 'dsh/profile-dependency-repair/v1',
@@ -1017,6 +1145,7 @@ function report(
     status,
     conflicts,
     ...(orphanedBundles.length === 0 ? {} : { orphanedBundles }),
+    ...(hostCompatibilityIssues.length === 0 ? {} : { hostCompatibilityIssues }),
     quarantined,
     ...(diagnostic === undefined ? {} : { diagnostic }),
   }
@@ -1030,7 +1159,17 @@ function diagnosticsForRepair(value: ProfileRepairReport): ProfileDiagnostic[] {
       conflict.dependencyChain,
     )),
     ...(value.orphanedBundles ?? []).map(bundle => orphanedBundleDiagnostic(bundle.packageName)),
-    ...value.quarantined.map(record => quarantinedPluginDiagnostic(record.packageName, record.reason)),
+    ...(value.hostCompatibilityIssues ?? []).map(issue => profileHostCompatibilityDiagnostic(
+      issue.packageName,
+      issue.hostVersion,
+      issue.supportedHostVersions,
+      issue.recommendedHostVersion,
+    )),
+    ...value.quarantined.map(record => quarantinedPluginDiagnostic(
+      record.packageName,
+      record.reason,
+      record.hostCompatibility,
+    )),
   ]
   if (value.diagnostic !== undefined) {
     issues.push(classifyProfileDiagnostic({
@@ -1341,7 +1480,8 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
   const repairedHostResidue = repairUnmanagedSharedHostResidue(options, home, profileDir)
   const initial = inspectProfileDependencies({ ...options, home })
   const initialOrphans = inspectOrphanedProfileBundles({ ...options, home })
-  if (initial.length === 0 && initialOrphans.length === 0) {
+  const initialHostCompatibility = inspectProfileHostCompatibility({ ...options, home })
+  if (initial.length === 0 && initialOrphans.length === 0 && initialHostCompatibility.length === 0) {
     const loaderFailures = inspectUnresolvableProfileBundleEntries({ ...options, home })
     let loaderOutcome: ProfileRepairReport | undefined
     const quarantinedRoots = new Set<string>()
@@ -1393,6 +1533,7 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
   const incompatibleRoots = new Set(initial.filter(conflict => !conflict.compatible).map(conflict => conflict.rootPackage))
   const orphanedRoots = new Set(initialOrphans.map(issue => issue.packageName))
   for (const root of orphanedRoots) incompatibleRoots.add(root)
+  for (const issue of initialHostCompatibility) incompatibleRoots.add(issue.packageName)
   if (incompatibleRoots.size > 0) {
     quarantined.push(...quarantineRecords(
       options.profile,
@@ -1402,6 +1543,7 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
       initial,
       now,
       orphanedRoots,
+      initialHostCompatibility,
     ))
     writeProfileManifest(profileDir, withoutRoots(originalManifest, incompatibleRoots))
   }
@@ -1410,8 +1552,10 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
   if (firstInstall.exitCode === 0) {
     const remaining = inspectProfileDependencies({ ...options, home })
     const remainingOrphans = inspectOrphanedProfileBundles({ ...options, home })
+    const remainingHostCompatibility = inspectProfileHostCompatibility({ ...options, home })
     if (remaining.length === 0
       && remainingOrphans.length === 0
+      && remainingHostCompatibility.length === 0
       && retainedPluginDirectories(profileDir, quarantined).length === 0) {
       persistQuarantines(home, quarantined)
       return retainMaterialReport(
@@ -1423,11 +1567,13 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
           quarantined,
           undefined,
           initialOrphans,
+          initialHostCompatibility,
         ),
       )
     }
     const remainingRoots = new Set(remaining.map(conflict => conflict.rootPackage))
     for (const issue of remainingOrphans) remainingRoots.add(issue.packageName)
+    for (const issue of remainingHostCompatibility) remainingRoots.add(issue.packageName)
     const beforeQuarantine = readProfileManifest(options.binName, profileDir)
     const extra = quarantineRecords(
       options.profile,
@@ -1437,12 +1583,14 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
       remaining,
       now,
       new Set(remainingOrphans.map(issue => issue.packageName)),
+      remainingHostCompatibility,
     )
     writeProfileManifest(profileDir, withoutRoots(beforeQuarantine, remainingRoots))
     const removalInstall = options.runPackageManager(['install'])
     if (removalInstall.exitCode === 0
       && inspectProfileDependencies({ ...options, home }).length === 0
       && inspectOrphanedProfileBundles({ ...options, home }).length === 0
+      && inspectProfileHostCompatibility({ ...options, home }).length === 0
       && retainedPluginDirectories(profileDir, [...quarantined, ...extra]).length === 0) {
       quarantined.push(...extra)
       persistQuarantines(home, quarantined)
@@ -1453,6 +1601,7 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
         quarantined,
         undefined,
         initialOrphans,
+        initialHostCompatibility,
       ))
     }
     writeProfileManifest(profileDir, originalManifest)
@@ -1463,11 +1612,13 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
       quarantined,
       removalInstall.diagnostic ?? 'profile remained conflicted after quarantine',
       initialOrphans,
+      initialHostCompatibility,
     ))
   }
 
   const fallbackRoots = new Set(initial.map(conflict => conflict.rootPackage))
   for (const issue of initialOrphans) fallbackRoots.add(issue.packageName)
+  for (const issue of initialHostCompatibility) fallbackRoots.add(issue.packageName)
   const fallbackRecords = quarantineRecords(
     options.profile,
     profileDir,
@@ -1476,6 +1627,7 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
     initial,
     now,
     orphanedRoots,
+    initialHostCompatibility,
   )
   writeProfileManifest(profileDir, withoutRoots(originalManifest, fallbackRoots))
   const fallbackInstall = options.runPackageManager(['install'])
@@ -1483,11 +1635,20 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
   if (fallbackInstall.exitCode === 0
     && inspectProfileDependencies({ ...options, home }).length === 0
     && inspectOrphanedProfileBundles({ ...options, home }).length === 0
+    && inspectProfileHostCompatibility({ ...options, home }).length === 0
     && retainedPluginDirectories(profileDir, fallbackRecordsWithReason).length === 0) {
     persistQuarantines(home, fallbackRecordsWithReason)
     return retainMaterialReport(
       home,
-      report(options.profile, 'quarantined', initial, fallbackRecordsWithReason, firstInstall.diagnostic, initialOrphans),
+      report(
+        options.profile,
+        'quarantined',
+        initial,
+        fallbackRecordsWithReason,
+        firstInstall.diagnostic,
+        initialOrphans,
+        initialHostCompatibility,
+      ),
     )
   }
   // The manifest already deactivated every implicated root. A blocked lifecycle
@@ -1498,8 +1659,10 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
     removeInterruptedQuarantineResidue(options, home, profileDir, fallbackRecordsWithReason)
     const remainingConflicts = inspectProfileDependencies({ ...options, home })
     const remainingOrphans = inspectOrphanedProfileBundles({ ...options, home })
+    const remainingHostCompatibility = inspectProfileHostCompatibility({ ...options, home })
     if (remainingConflicts.length === 0
       && remainingOrphans.length === 0
+      && remainingHostCompatibility.length === 0
       && retainedPluginDirectories(profileDir, fallbackRecordsWithReason).length === 0) {
       persistQuarantines(home, fallbackRecordsWithReason)
       return retainMaterialReport(home, report(
@@ -1509,6 +1672,7 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
         fallbackRecordsWithReason,
         `pnpm cleanup failed; inactive plugin residue was removed directly\n${fallbackInstall.diagnostic ?? firstInstall.diagnostic ?? ''}`.trim(),
         initialOrphans,
+        initialHostCompatibility,
       ))
     }
   } catch {
@@ -1523,6 +1687,7 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
     [],
     fallbackInstall.diagnostic ?? firstInstall.diagnostic ?? 'profile dependency repair failed',
     initialOrphans,
+    initialHostCompatibility,
   ))
 }
 

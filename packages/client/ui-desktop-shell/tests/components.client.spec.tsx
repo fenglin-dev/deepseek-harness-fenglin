@@ -34,7 +34,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
   phase: 'uninstalled', commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
 }, downloadStatus: DesktopReleaseDownloadStatus = { phase: 'idle' }, desktopWebStatus: DesktopWebStatus = {
   phase: 'ready',
-}, platform: 'darwin' | 'win32' | 'linux' = 'darwin') {
+}, platform: 'darwin' | 'win32' | 'linux' = 'darwin', packaged = true) {
   const updatePreferences = vi.fn((patch: Record<string, unknown>) => Promise.resolve({
     closeBehavior: patch.closeBehavior === 'quit' ? 'quit' as const : 'tray' as const,
     notificationsEnabled: patch.notificationsEnabled !== false,
@@ -48,6 +48,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
   const cancelDownload = vi.fn(() => Promise.resolve({ phase: 'cancelled' as const, version: '0.1.0-rc.8' }))
   const openInstaller = vi.fn(() => Promise.resolve({ error: '' }))
   const openDesktopWeb = vi.fn(() => Promise.resolve({ opened: true as const, hidden: true }))
+  const enterRecoveryMode = vi.fn(() => Promise.resolve({ entered: true as const }))
   const installCommandLine = vi.fn(() => Promise.resolve({
     phase: 'installed' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
   }))
@@ -65,8 +66,8 @@ function setup(releaseStatus: DesktopReleaseStatus = {
   const bridge: DesktopBridge = {
     shell: {
       getCapabilities: () => Promise.resolve({
-        platform, packaged: true, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
-        commandLineAvailable: true,
+        platform, packaged, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
+        commandLineAvailable: true, developmentRecoveryAvailable: !packaged,
       }),
       getDataHome: () => Promise.resolve({
         activePath: '/desktop/dsh-home', activeKind: 'desktop' as const,
@@ -86,6 +87,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
       removeCommandLine: vi.fn(() => Promise.resolve({
         phase: 'uninstalled' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
       })),
+      enterRecoveryMode,
       reportReadiness: vi.fn(),
     },
     releases: {
@@ -107,7 +109,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
   controller.start()
   return {
     controller, updatePreferences, openDownload, startDownload, cancelDownload, openInstaller, installCommandLine,
-    chooseDataHome, switchDataHome, openDesktopWeb,
+    chooseDataHome, switchDataHome, openDesktopWeb, enterRecoveryMode,
   }
 }
 
@@ -314,6 +316,15 @@ describe('desktop shell components', () => {
     expect(screen.getByText('Development mode does not modify PATH. Install or remove dsh from a packaged app.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Install dsh' })).toBeNull()
     expect(b.installCommandLine).not.toHaveBeenCalled()
+    b.controller.dispose()
+  })
+
+  it('opens the startup recovery page only from a development build', async () => {
+    const b = setup(undefined, undefined, undefined, undefined, 'darwin', false)
+    render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Enter recovery mode' }))
+    await waitFor(() => { expect(b.enterRecoveryMode).toHaveBeenCalledOnce() })
     b.controller.dispose()
   })
 

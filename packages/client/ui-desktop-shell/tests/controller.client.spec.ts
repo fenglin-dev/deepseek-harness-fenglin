@@ -13,11 +13,12 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
   }))
   const openInstaller = vi.fn(() => Promise.resolve({ error: '' }))
   const openDesktopWeb = vi.fn(() => Promise.resolve({ opened: true as const, hidden: true }))
+  const enterRecoveryMode = vi.fn(() => Promise.resolve({ entered: true as const }))
   const bridge: DesktopBridge = {
     shell: {
       getCapabilities: vi.fn(() => Promise.resolve({
         platform: 'darwin', packaged: true, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
-        commandLineAvailable: true,
+        commandLineAvailable: true, developmentRecoveryAvailable: false,
       })),
       getDataHome: vi.fn(() => Promise.resolve({
         activePath: '/desktop/dsh-home', activeKind: 'desktop' as const,
@@ -42,6 +43,7 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
       removeCommandLine: vi.fn(() => Promise.resolve({
         phase: 'uninstalled' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
       })),
+      enterRecoveryMode,
       reportReadiness: vi.fn(),
     },
     releases: {
@@ -69,7 +71,7 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
     },
   }
   const controller = new DesktopShellController(bridge)
-  return { bridge, controller, openDownload, startDownload, openInstaller, openDesktopWeb }
+  return { bridge, controller, openDownload, startDownload, openInstaller, openDesktopWeb, enterRecoveryMode }
 }
 
 describe('DesktopShellController', () => {
@@ -107,6 +109,8 @@ describe('DesktopShellController', () => {
     expect(b.controller.getSnapshot().commandLine?.phase).toBe('installed')
     await b.controller.removeCommandLine()
     expect(b.controller.getSnapshot().commandLine?.phase).toBe('uninstalled')
+    await b.controller.enterRecoveryMode()
+    expect(b.enterRecoveryMode).toHaveBeenCalledOnce()
     await b.controller.chooseDataHome('existing')
     expect(b.controller.getSnapshot().dataHomeSelection?.status).toBe('cancelled')
     await b.controller.switchDataHome({ kind: 'official' })

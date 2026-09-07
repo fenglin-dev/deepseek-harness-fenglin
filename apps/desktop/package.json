@@ -1,38 +1,38 @@
-{
-  "name": "@deepseek-ai/dsh-desktop",
-  "description": "Cross-platform Electron host for the DeepSeek Harness Web GUI",
-  "version": "2.1.0",
-  "private": true,
-  "homepage": "https://github.com/fenglin-dev/deepseek-harness-fenglin",
-  "author": {
-    "name": "FLAQ.AI",
-    "email": "haoweibing@6677.ai"
-  },
-  "type": "module",
-  "main": "lib/main.js",
-  "dependencies": {
-    "sigstore": "4.1.1",
-    "tar": "^7.5.22",
-    "yaml": "^2.9.0"
-  },
-  "scripts": {
-    "build": "tsc -p tsconfig.json && pnpm --config.verifyDepsBeforeRun=false exec tsdown --config tsdown.preload.config.ts && node scripts/copy-assets.mjs",
-    "dev": "node scripts/dev-watch.mjs",
-    "dev:once": "pnpm run build && node scripts/start-electron.mjs",
-    "package:win:x64": "pnpm --dir ../.. run prepare:desktop:bundled-plugins && pnpm --dir ../.. run build:community-desktop && node scripts/prepare-windows-runtime.mjs && node node_modules/electron-builder/out/cli/cli.js --win nsis --x64 --publish never",
-    "package:macos:arm64": "pnpm --dir ../.. run prepare:desktop:bundled-plugins && pnpm --dir ../.. run build:community-desktop && node scripts/prepare-unix-runtime.mjs --target darwin-arm64 && CSC_IDENTITY_AUTO_DISCOVERY=false node node_modules/electron-builder/out/cli/cli.js --config electron-builder.macos.yml --mac dmg zip --arm64 --publish never",
-    "package:macos:x64": "pnpm --dir ../.. run prepare:desktop:bundled-plugins && pnpm --dir ../.. run build:community-desktop && node scripts/prepare-unix-runtime.mjs --target darwin-x64 && CSC_IDENTITY_AUTO_DISCOVERY=false node node_modules/electron-builder/out/cli/cli.js --config electron-builder.macos.yml --mac dmg zip --x64 --publish never",
-    "package:linux:x64": "pnpm --dir ../.. run prepare:desktop:bundled-plugins && pnpm --dir ../.. run build:community-desktop && node scripts/prepare-unix-runtime.mjs --target linux-x64 && node node_modules/electron-builder/out/cli/cli.js --config electron-builder.linux.yml --linux deb rpm --x64 --publish never",
-    "start": "node scripts/start-electron.mjs",
-    "test": "vitest run --config vitest.config.ts"
-  },
-  "license": "MIT",
-  "devDependencies": {
-    "@types/node": "^22.20.0",
-    "electron": "43.2.0",
-    "electron-builder": "26.15.3",
-    "pnpm": "11.7.0",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.8"
-  }
+﻿{
+    "name":  "@deepseek-ai/dsh-desktop",
+    "description":  "Cross-platform Electron host for the DeepSeek Harness Web GUI",
+    "version":  "2.2.0",
+    "private":  true,
+    "homepage":  "https://github.com/fenglin-dev/deepseek-harness-fenglin",
+    "author":  {
+                   "name":  "FLAQ.AI",
+                   "email":  "haoweibing@6677.ai"
+               },
+    "type":  "module",
+    "main":  "lib/main.js",
+    "dependencies":  {
+                         "sigstore":  "4.1.1",
+                         "tar":  "^7.5.22",
+                         "yaml":  "^2.9.0"
+                     },
+    "scripts":  {
+                    "build":  "tsc -p tsconfig.json \u0026\u0026 pnpm --config.verifyDepsBeforeRun=false exec tsdown --config tsdown.preload.config.ts \u0026\u0026 node scripts/copy-assets.mjs",
+                    "dev":  "node scripts/dev-watch.mjs",
+                    "dev:once":  "pnpm run build \u0026\u0026 node scripts/start-electron.mjs",
+                    "package:win:x64":  "pnpm --dir ../.. run prepare:desktop:bundled-plugins \u0026\u0026 pnpm --dir ../.. run build:community-desktop \u0026\u0026 node scripts/prepare-windows-runtime.mjs \u0026\u0026 node node_modules/electron-builder/out/cli/cli.js --win nsis --x64 --publish never",
+                    "package:macos:arm64":  "pnpm --dir ../.. run prepare:desktop:bundled-plugins \u0026\u0026 pnpm --dir ../.. run build:community-desktop \u0026\u0026 node scripts/prepare-unix-runtime.mjs --target darwin-arm64 \u0026\u0026 CSC_IDENTITY_AUTO_DISCOVERY=false node node_modules/electron-builder/out/cli/cli.js --config electron-builder.macos.yml --mac dmg zip --arm64 --publish never",
+                    "package:macos:x64":  "pnpm --dir ../.. run prepare:desktop:bundled-plugins \u0026\u0026 pnpm --dir ../.. run build:community-desktop \u0026\u0026 node scripts/prepare-unix-runtime.mjs --target darwin-x64 \u0026\u0026 CSC_IDENTITY_AUTO_DISCOVERY=false node node_modules/electron-builder/out/cli/cli.js --config electron-builder.macos.yml --mac dmg zip --x64 --publish never",
+                    "package:linux:x64":  "pnpm --dir ../.. run prepare:desktop:bundled-plugins \u0026\u0026 pnpm --dir ../.. run build:community-desktop \u0026\u0026 node scripts/prepare-unix-runtime.mjs --target linux-x64 \u0026\u0026 node node_modules/electron-builder/out/cli/cli.js --config electron-builder.linux.yml --linux deb rpm --x64 --publish never",
+                    "start":  "node scripts/start-electron.mjs",
+                    "test":  "vitest run --config vitest.config.ts"
+                },
+    "license":  "MIT",
+    "devDependencies":  {
+                            "@types/node":  "^22.20.0",
+                            "electron":  "43.2.0",
+                            "electron-builder":  "26.15.3",
+                            "pnpm":  "11.7.0",
+                            "typescript":  "^6.0.3",
+                            "vitest":  "^4.1.8"
+                        }
 }

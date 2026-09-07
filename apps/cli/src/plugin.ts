@@ -26,6 +26,7 @@ import {
   finalizeProfilePluginSnapshot,
   initProfile,
   inspectProfileDependencies,
+  inspectProfileHostCompatibility,
   inspectOrphanedProfileBundles,
   inspectUnresolvableProfileBundleEntries,
   listProfilePluginSnapshots,
@@ -33,6 +34,7 @@ import {
   orphanedBundleDiagnostic,
   PROFILE_TEMPLATES,
   profileDependencyConflictDiagnostic,
+  profileHostCompatibilityDiagnostic,
   quarantineRemovalResidueDiagnostic,
   quarantineProfilePluginAfterLoadFailure,
   removeProfilePluginSnapshot,
@@ -471,6 +473,11 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[]): num
         installAnchor: INSTALL_ANCHOR,
       })
       const conflicts = inspectProfileDependencies({ binName: NAME, profile, installAnchor: INSTALL_ANCHOR })
+      const hostCompatibilityIssues = inspectProfileHostCompatibility({
+        binName: NAME,
+        profile,
+        installAnchor: INSTALL_ANCHOR,
+      })
       const quarantineRemovalResidue = inspectQuarantineRemovalResidue({
         binName: NAME,
         profile,
@@ -488,6 +495,7 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[]): num
         status: 'healthy' as const,
         conflicts,
         ...(orphanedBundles.length === 0 ? {} : { orphanedBundles }),
+        ...(hostCompatibilityIssues.length === 0 ? {} : { hostCompatibilityIssues }),
         quarantined: [],
         issues: [
           ...conflicts.map(conflict => profileDependencyConflictDiagnostic(
@@ -495,6 +503,12 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[]): num
             conflict.dependencyChain,
           )),
           ...orphanedBundles.map(bundle => orphanedBundleDiagnostic(bundle.packageName)),
+          ...hostCompatibilityIssues.map(issue => profileHostCompatibilityDiagnostic(
+            issue.packageName,
+            issue.hostVersion,
+            issue.supportedHostVersions,
+            issue.recommendedHostVersion,
+          )),
           ...quarantineRemovalResidue.map(residue => quarantineRemovalResidueDiagnostic(
             residue.packageName,
             residue.staleComponents,
@@ -515,6 +529,7 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[]): num
     const normalized = !mutatesProfile
       && (outcome.conflicts.length > 0
         || (outcome.orphanedBundles?.length ?? 0) > 0
+        || (outcome.hostCompatibilityIssues?.length ?? 0) > 0
         || (outcome.issues?.length ?? 0) > 0)
       ? { ...outcome, status: 'failed' as const }
       : outcome

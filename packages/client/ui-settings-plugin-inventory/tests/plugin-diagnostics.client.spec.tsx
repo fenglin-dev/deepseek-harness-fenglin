@@ -32,6 +32,38 @@ function props(snapshot: PluginInventorySnapshot): PluginDiagnosticsSectionProps
 }
 
 describe('PluginDiagnosticsSection', () => {
+  it('shows declared Harness compatibility before offering a market update', async () => {
+    render(<PluginDiagnosticsSection {...props({
+      entries: [],
+      dependencyHealth: {
+        lastRepair: null,
+        safeMode: null,
+        quarantined: [{
+          quarantineId: '00000000-0000-4000-8000-000000000012',
+          profile: 'web',
+          packageName: '@fixture/compatibility-plugin',
+          packageSpec: '1.0.0',
+          installedVersion: '1.0.0',
+          quarantinedAt: '2026-09-07T12:00:00.000Z',
+          reason: 'incompatible-host-version',
+          hostCompatibility: {
+            hostVersion: '0.1.2-rc.1',
+            supportedHostVersions: ['0.1.2-alpha.5'],
+            recommendedHostVersion: '0.1.2-alpha.5',
+            previewTag: 'next',
+          },
+          conflicts: [],
+        }],
+        issues: [],
+      },
+    } as unknown as PluginInventorySnapshot)} />)
+
+    expect(await screen.findAllByText('0.1.2-rc.1')).toHaveLength(2)
+    expect(screen.getAllByText('0.1.2-alpha.5').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText(en['health.quarantine.solution.incompatible-host-version'])).toHaveLength(2)
+    expect(screen.getByRole('button', { name: en['health.quarantine.action.findUpdate'] })).toBeTruthy()
+  })
+
   it('shows the missing dependency export and compatible-version recovery actions', async () => {
     const packageName = 'dsh-webchat'
     const missingExport = 'installSettingsSection'

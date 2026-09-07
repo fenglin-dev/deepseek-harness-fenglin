@@ -53,6 +53,7 @@ export type ProfileDiagnosticCode =
   | 'pnpm.invalid-dependency'
   | 'pnpm.config-parse'
   | 'pnpm.patch-failed'
+  | 'profile.host-version-incompatible'
   | 'profile.host-dependency-conflict'
   | 'profile.orphaned-bundle'
   | 'profile.bundle-invalid'
@@ -80,6 +81,9 @@ export interface ProfileDiagnosticAttribution {
   readonly missingModule?: string
   readonly missingExport?: string
   readonly importerPackage?: string
+  readonly hostVersion?: string
+  readonly supportedHostVersions?: readonly string[]
+  readonly recommendedHostVersion?: string
   readonly configKind?: 'profile-manifest' | 'workspace' | 'lockfile' | 'profile-patch' | 'home-patch' | 'credentials' | 'settings'
 }
 
@@ -457,6 +461,37 @@ export function profileDependencyConflictDiagnostic(
 }
 
 /**
+ * Build one explicit issue for a plugin declaration that excludes the running Harness version.
+ * @param packageName - Active external plugin package.
+ * @param hostVersion - Running Harness package version.
+ * @param supportedHostVersions - Exact versions accepted by the plugin declaration.
+ * @param recommendedHostVersion - Optional preferred Host version from that declaration.
+ * @returns Client-safe blocked issue discovered before plugin code executes.
+ */
+export function profileHostCompatibilityDiagnostic(
+  packageName: string,
+  hostVersion: string,
+  supportedHostVersions: readonly string[],
+  recommendedHostVersion?: string,
+): ProfileDiagnostic {
+  return {
+    diagnosticId: randomUUID(),
+    code: 'profile.host-version-incompatible',
+    source: 'profile',
+    phase: 'preflight',
+    severity: 'blocked',
+    attribution: {
+      rootPackage: packageName,
+      hostVersion,
+      supportedHostVersions,
+      ...(recommendedHostVersion === undefined ? {} : { recommendedHostVersion }),
+    },
+    actions: ['isolate', 'export'],
+    evidence: [],
+  }
+}
+
+/**
  * Build one explicit issue for a configured bundle with no manageable dependency.
  * @param packageName - Bundle package retained by the Profile manifest.
  * @returns Client-safe blocked issue.
@@ -500,28 +535,47 @@ export function quarantineRemovalResidueDiagnostic(
  * Build one current issue for a plugin retained outside the active Profile.
  * @param packageName - Quarantined root plugin.
  * @param reason - Core quarantine decision.
+ * @param hostCompatibility - Optional package-declared Host compatibility retained by preflight.
  * @returns Client-safe issue with actions appropriate to the retained state.
  */
 export function quarantinedPluginDiagnostic(
   packageName: string,
-  reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable' | 'loader-dependency-unavailable',
+  reason: 'incompatible-host-version' | 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable' | 'loader-dependency-unavailable',
+  hostCompatibility?: {
+    readonly hostVersion: string
+    readonly supportedHostVersions: readonly string[]
+    readonly recommendedHostVersion?: string
+  },
 ): ProfileDiagnostic {
-  const code = reason === 'orphaned-bundle'
-    ? 'profile.orphaned-bundle'
-    : reason === 'build-script-blocked'
-      ? 'pnpm.build-script-blocked'
-      : reason === 'loader-dependency-unavailable'
-        ? 'loader.dependency-unavailable'
-        : reason === 'client-module-unavailable' || reason === 'loader-module-unresolvable'
-          ? 'profile.module-resolution'
-          : 'profile.host-dependency-conflict'
+  const code = reason === 'incompatible-host-version'
+    ? 'profile.host-version-incompatible'
+    : reason === 'orphaned-bundle'
+      ? 'profile.orphaned-bundle'
+      : reason === 'build-script-blocked'
+        ? 'pnpm.build-script-blocked'
+        : reason === 'loader-dependency-unavailable'
+          ? 'loader.dependency-unavailable'
+          : reason === 'client-module-unavailable' || reason === 'loader-module-unresolvable'
+            ? 'profile.module-resolution'
+            : 'profile.host-dependency-conflict'
   return {
     diagnosticId: randomUUID(),
     code,
     source: reason === 'build-script-blocked' ? 'pnpm' : 'profile',
     phase: 'repair',
     severity: reason === 'build-script-blocked' ? 'security' : 'blocked',
-    attribution: { rootPackage: packageName },
+    attribution: {
+      rootPackage: packageName,
+      ...(hostCompatibility === undefined
+        ? {}
+        : {
+          hostVersion: hostCompatibility.hostVersion,
+          supportedHostVersions: hostCompatibility.supportedHostVersions,
+          ...(hostCompatibility.recommendedHostVersion === undefined
+            ? {}
+            : { recommendedHostVersion: hostCompatibility.recommendedHostVersion }),
+        }),
+    },
     actions: reason === 'build-script-blocked'
       ? ['approve-build', 'restore', 'export']
       : ['restore', 'export'],

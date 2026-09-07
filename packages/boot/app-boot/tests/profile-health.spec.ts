@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   initProfile,
   inspectProfileDependencies,
+  inspectProfileHostCompatibility,
   inspectOrphanedProfileBundles,
   inspectProfileBundleEntryOwnership,
   inspectUnresolvableProfileBundleEntries,
@@ -49,7 +50,7 @@ function writeManifest(path: string, manifest: Record<string, unknown>): void {
   writeFileSync(path, `${JSON.stringify(manifest, undefined, 2)}\n`)
 }
 
-function stageHarness(): { anchor: string; packageDirs: Map<string, string> } {
+function stageHarness(appVersion = '1.0.0'): { anchor: string; packageDirs: Map<string, string> } {
   const appDir = join(temporaryDirectory('dsh-health-host-'), 'app')
   const packageDirs = new Map<string, string>()
   const dependencies: Record<string, string> = {}
@@ -60,7 +61,7 @@ function stageHarness(): { anchor: string; packageDirs: Map<string, string> } {
     dependencies[packageName] = '0.1.0-rc.7'
   }
   const anchor = join(appDir, 'package.json')
-  writeManifest(anchor, { name: 'dsh-test-app', version: '1.0.0', dependencies })
+  writeManifest(anchor, { name: 'dsh-test-app', version: appVersion, dependencies })
   return { anchor, packageDirs }
 }
 
@@ -218,6 +219,112 @@ describe('profile shared Host dependency inspection', () => {
       })])
   })
 
+})
+
+describe('profile plugin Host compatibility inspection', () => {
+  it('reports only a valid declaration that excludes the running Harness version', () => {
+    const { anchor } = stageHarness('0.1.2-rc.1')
+    const home = temporaryDirectory('dsh-health-home-')
+    const { pluginDir } = stageProfile(home, {})
+    writeManifest(join(pluginDir, 'compatibility.json'), {
+      schemaVersion: 1,
+      recommendedHost: '0.1.2-alpha.5',
+      previewTag: 'next',
+      supportedHosts: [
+        { version: '0.1.2-alpha.5', track: 'recommended' },
+        { version: '0.1.2-alpha.2', track: 'legacy' },
+      ],
+    })
+
+    expect(inspectProfileHostCompatibility({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toEqual([{
+      profile: 'web',
+      packageName: 'fixture-plugin',
+      installedVersion: '2.3.4',
+      hostVersion: '0.1.2-rc.1',
+      supportedHostVersions: ['0.1.2-alpha.5', '0.1.2-alpha.2'],
+      recommendedHostVersion: '0.1.2-alpha.5',
+      previewTag: 'next',
+    }])
+  })
+
+  it('allows a declared supported Host and treats missing or malformed declarations as unknown', () => {
+    const { anchor } = stageHarness('0.1.2-rc.1')
+    const home = temporaryDirectory('dsh-health-home-')
+    const { pluginDir } = stageProfile(home, {})
+    const options = { binName: 'test', profile: 'web', installAnchor: anchor, home }
+
+    expect(inspectProfileHostCompatibility(options)).toEqual([])
+    writeManifest(join(pluginDir, 'compatibility.json'), {
+      schemaVersion: 1,
+      supportedHosts: [{ version: '0.1.2-rc.1', track: 'recommended' }],
+    })
+    expect(inspectProfileHostCompatibility(options)).toEqual([])
+    writeFileSync(join(pluginDir, 'compatibility.json'), '{ invalid json')
+    expect(inspectProfileHostCompatibility(options)).toEqual([])
+    writeManifest(join(pluginDir, 'compatibility.json'), {
+      schemaVersion: 2,
+      supportedHosts: [{ version: '0.1.2-alpha.5' }],
+    })
+    expect(inspectProfileHostCompatibility(options)).toEqual([])
+    writeFileSync(join(pluginDir, 'compatibility.json'), ' '.repeat(64 * 1024 + 1))
+    expect(inspectProfileHostCompatibility(options)).toEqual([])
+  })
+
+  it('quarantines an explicitly incompatible plugin before its code can load', () => {
+    const { anchor } = stageHarness('0.1.2-rc.1')
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir, pluginDir } = stageProfile(home, {})
+    writeManifest(join(pluginDir, 'compatibility.json'), {
+      schemaVersion: 1,
+      recommendedHost: '0.1.2-alpha.5',
+      supportedHosts: [{ version: '0.1.2-alpha.5', track: 'recommended' }],
+    })
+
+    const result = repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      now: () => new Date('2026-09-07T01:02:03.000Z'),
+      runPackageManager: () => {
+        if (readProfileManifest('test', profileDir).dependencies?.['fixture-plugin'] === undefined) {
+          rmSync(pluginDir, { recursive: true, force: true })
+        }
+        return { exitCode: 0 }
+      },
+    })
+
+    expect(result).toMatchObject({
+      status: 'quarantined',
+      hostCompatibilityIssues: [{
+        packageName: 'fixture-plugin',
+        hostVersion: '0.1.2-rc.1',
+        supportedHostVersions: ['0.1.2-alpha.5'],
+      }],
+      quarantined: [{
+        packageName: 'fixture-plugin',
+        reason: 'incompatible-host-version',
+        hostCompatibility: {
+          hostVersion: '0.1.2-rc.1',
+          supportedHostVersions: ['0.1.2-alpha.5'],
+          recommendedHostVersion: '0.1.2-alpha.5',
+        },
+      }],
+      issues: [{
+        code: 'profile.host-version-incompatible',
+        phase: 'preflight',
+        attribution: {
+          rootPackage: 'fixture-plugin',
+          hostVersion: '0.1.2-rc.1',
+          supportedHostVersions: ['0.1.2-alpha.5'],
+        },
+      }],
+    })
+    expect(readProfileManifest('test', profileDir).dependencies?.['fixture-plugin']).toBeUndefined()
+    expect(readProfileManifest('test', profileDir).dsh?.profile?.bundles).not.toContain('fixture-plugin')
+  })
 })
 
 describe('profile composition inspection', () => {

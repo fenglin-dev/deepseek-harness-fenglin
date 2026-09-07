@@ -208,6 +208,20 @@ function projectQuarantine(record: QuarantinedProfilePlugin) {
     ...(record.installedVersion === undefined ? {} : { installedVersion: record.installedVersion }),
     quarantinedAt: record.quarantinedAt,
     reason: record.reason,
+    ...(record.hostCompatibility === undefined
+      ? {}
+      : {
+        hostCompatibility: {
+          hostVersion: record.hostCompatibility.hostVersion,
+          supportedHostVersions: record.hostCompatibility.supportedHostVersions,
+          ...(record.hostCompatibility.recommendedHostVersion === undefined
+            ? {}
+            : { recommendedHostVersion: record.hostCompatibility.recommendedHostVersion }),
+          ...(record.hostCompatibility.previewTag === undefined
+            ? {}
+            : { previewTag: record.hostCompatibility.previewTag }),
+        },
+      }),
     ...(record.buildApprovalKey === undefined ? {} : { buildApprovalKey: record.buildApprovalKey }),
     conflicts: record.conflicts.map(projectConflict),
   }

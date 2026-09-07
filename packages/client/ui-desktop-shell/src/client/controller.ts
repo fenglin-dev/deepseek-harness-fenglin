@@ -164,6 +164,18 @@ export class DesktopShellController {
     }
   }
 
+  /** Open the existing startup-recovery page from a source build. */
+  async enterRecoveryMode(): Promise<void> {
+    this.#publish({ busy: true, error: null })
+    try {
+      await this.bridge.shell.enterRecoveryMode()
+    } catch (error) {
+      this.#publish({ error: error instanceof Error ? error.message : String(error) })
+    } finally {
+      this.#publish({ busy: false })
+    }
+  }
+
   /** Open the native picker and retain its opaque validated selection.
    * @param kind - Whether the picker accepts an existing DSH home or an empty folder.
    */

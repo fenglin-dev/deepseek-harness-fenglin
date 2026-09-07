@@ -1,11 +1,16 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import * as filesystem from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+vi.mock('node:fs', async importOriginal => ({
+  ...await importOriginal<typeof import('node:fs')>(),
+}))
 import {
   createProfilePluginSnapshot,
   acquireProfilePluginMutationLock,
+  assertProfilePluginMutationLease,
   beginProfilePluginMutationLease,
   endProfilePluginMutationLease,
   finalizeProfilePluginSnapshot,
@@ -30,6 +35,74 @@ function fixture() {
 }
 
 describe('Profile plugin snapshots', () => {
+  it('publishes only complete owners and refuses a concurrent contender', () => {
+    const { home } = fixture()
+    const originalLink = filesystem.linkSync
+    let observed = false
+    const publish = vi.spyOn(filesystem, 'linkSync').mockImplementation((source, destination) => {
+      originalLink(source, destination)
+      observed = true
+      expect(JSON.parse(readFileSync(destination, 'utf8'))).toMatchObject({ pid: process.pid })
+      expect(() => acquireProfilePluginMutationLock({ home, profile: 'web', waitMs: 0 }))
+        .toThrow('another process is changing Profile web')
+    })
+    try {
+      const release = acquireProfilePluginMutationLock({ home, profile: 'web', waitMs: 0 })
+      expect(observed).toBe(true)
+      release()
+      expect(readdirSync(join(home, 'plugin-snapshots', 'v1'))).toEqual([])
+    } finally {
+      publish.mockRestore()
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('retains the current owner when lease publication fails', () => {
+    const { home } = fixture()
+    const release = acquireProfilePluginMutationLock({ home, profile: 'web', waitMs: 0 })
+    const lock = join(home, 'plugin-snapshots', 'v1', '.profile-plugin-mutation.web.lock')
+    const previous = readFileSync(lock, 'utf8')
+    const rename = vi.spyOn(filesystem, 'renameSync').mockImplementation(() => { throw new Error('disk failure') })
+    try {
+      expect(() => { beginProfilePluginMutationLease({ home, profile: 'web', ownerPid: process.pid, token: randomUUID() }) })
+        .toThrow('disk failure')
+      expect(readFileSync(lock, 'utf8')).toBe(previous)
+      expect(readdirSync(join(home, 'plugin-snapshots', 'v1'))).toEqual(['.profile-plugin-mutation.web.lock'])
+    } finally {
+      rename.mockRestore()
+      release()
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it.each(['', '{', 'null', '{"pid":0}', '{"pid":"123"}'])('preserves an uncertain owner: %j', (source) => {
+    const { home } = fixture()
+    const root = join(home, 'plugin-snapshots', 'v1')
+    const lock = join(root, '.profile-plugin-mutation.web.lock')
+    try {
+      mkdirSync(root, { recursive: true })
+      writeFileSync(lock, source)
+      expect(() => acquireProfilePluginMutationLock({ home, profile: 'web', waitMs: 0 }))
+        .toThrow('lock is unreadable or corrupt')
+      expect(() => { assertProfilePluginMutationLease({ home, profile: 'web', token: randomUUID() }) })
+        .toThrow('lock is unreadable or corrupt')
+      expect(readFileSync(lock, 'utf8')).toBe(source)
+      expect(readdirSync(root)).toEqual(['.profile-plugin-mutation.web.lock'])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('reports a missing lease without exposing a JSON or filesystem exception', () => {
+    const { home } = fixture()
+    try {
+      mkdirSync(join(home, 'plugin-snapshots', 'v1'), { recursive: true })
+      expect(() => { assertProfilePluginMutationLease({ home, profile: 'web', token: randomUUID() }) })
+        .toThrow('no active lock')
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
   it.runIf(process.platform !== 'win32')('refuses a symlinked snapshot root', () => {
     const { home } = fixture()
     const outside = mkdtempSync(join(tmpdir(), 'dsh-plugin-snapshot-outside-'))
