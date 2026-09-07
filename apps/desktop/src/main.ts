@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir, userInfo } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, session, shell, Tray,
@@ -97,6 +97,10 @@ import {
 } from './desktop-data-home.ts'
 import { mapBundledPluginProgress, type DesktopStartupProgress } from './startup-progress.ts'
 import {
+  isRecoveryPluginPackageName,
+  readRecoveryPluginInventory,
+} from './recovery-plugins.ts'
+import {
   DesktopCliManager,
   type DesktopCliRuntime,
   type DesktopCliStatus,
@@ -186,6 +190,10 @@ let activeMenuHome: string | undefined
 let menuLocale = 'en'
 let menuClientReady = false
 let snapshotMutationActive = false
+let recoveryHarnessSuspended = false
+let recoveryRestartRequired = false
+let recoveryPluginRemove: ((packageName: string) => Promise<void>) | undefined
+let latestRecoveryFailure: string | undefined
 const oneShotOperations = new DesktopOperationSupervisor()
 let bootableSnapshotTimer: NodeJS.Timeout | undefined
 const startupWarnings: string[] = []
@@ -1099,6 +1107,7 @@ function publishStartupProgress(next: DesktopStartupProgress): void {
 
 function showLoading(state: HarnessState, failure?: HarnessFailure & { logPath: string }): void {
   if (mainSurface === undefined || mainSurface.window.isDestroyed() || state === 'ready' || state === 'stopped') return
+  if (failure !== undefined) latestRecoveryFailure = failure.message
   void mainSurface.loadFile(LOADING_PAGE, {
     query: {
       state,
@@ -1746,14 +1755,79 @@ async function startApplication(): Promise<void> {
     if (harnessOrigin === undefined) throw new Error('desktop: Harness must be ready before opening recovery mode')
     showLoading('failed', {
       message: app.getLocale().toLowerCase().startsWith('zh')
-        ? '已从开发模式手动进入恢复页面。Harness 仍在运行，点击“重试”即可返回客户端。'
-        : 'Recovery mode was opened manually from a development build. Harness is still running; choose Retry to return to the client.',
+        ? '已从开发模式手动进入恢复工作区。Harness 仍在运行，可以不做任何修改，直接点击“继续”返回客户端。'
+        : 'Recovery workspace was opened manually from a development build. Harness is still running; you can choose Continue without making changes to return to the client.',
       logPath: harnessLogPath,
     })
     return { entered: true as const }
   })
+  ipcMain.handle('dsh:desktop:recovery-plugins:list', (event) => {
+    assertMainRenderer(event.sender)
+    if (activeMenuHome === undefined) throw new Error('desktop: active Profile is unavailable')
+    return readRecoveryPluginInventory(activeMenuHome)
+  })
+  ipcMain.handle('dsh:desktop:recovery-plugins:remove', async (event, packageName: unknown) => {
+    assertMainRenderer(event.sender)
+    if (!isRecoveryPluginPackageName(packageName)) throw new TypeError('desktop: invalid recovery plugin identity')
+    if (activeMenuHome === undefined || recoveryPluginRemove === undefined) {
+      throw new Error('desktop: recovery plugin removal is not ready')
+    }
+    const inventory = await readRecoveryPluginInventory(activeMenuHome)
+    if (!inventory.plugins.some(plugin => plugin.packageName === packageName)) {
+      throw new Error('desktop: recovery plugin is not a direct removable dependency')
+    }
+    await recoveryPluginRemove(packageName)
+    return readRecoveryPluginInventory(activeMenuHome)
+  })
+  ipcMain.handle('dsh:desktop:recovery:export', async (event) => {
+    assertMainRenderer(event.sender)
+    if (activeMenuHome === undefined) throw new Error('desktop: active Profile is unavailable')
+    const surface = mainSurface
+    if (surface === undefined) throw new Error('desktop: main window is unavailable')
+    const inventory = await readRecoveryPluginInventory(activeMenuHome)
+    const day = new Date().toISOString().slice(0, 10)
+    const result = await dialog.showSaveDialog(surface.window, {
+      title: app.getLocale().toLowerCase().startsWith('zh') ? '导出诊断报告' : 'Export diagnostic report',
+      defaultPath: join(app.getPath('documents'), `DeepSeek-Harness-diagnostic-${day}.json`),
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (result.canceled) return { saved: false as const }
+    const redact = (value: string): string => value
+      .replaceAll(activeMenuHome ?? '', '<dsh-home>')
+      .replace(/\b(api[ _-]?key|token|password|secret|authorization|cookie)(\s*[:=]\s*)([^\s,;]+)/giu, '$1$2<redacted>')
+      .slice(0, 8_192)
+    await writeFile(result.filePath, `${JSON.stringify({
+      schema: 'dsh/desktop-recovery-diagnostic/v1',
+      generatedAt: new Date().toISOString(),
+      desktopVersion: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      startup: {
+        stage: startupProgress.stage,
+        progress: startupProgress.progress,
+        detail: startupProgress.detail,
+        state: startupProgress.state,
+        ...(latestRecoveryFailure === undefined ? {} : { failure: redact(latestRecoveryFailure) }),
+      },
+      plugins: inventory,
+    }, undefined, 2)}\n`, { mode: 0o600 })
+    return { saved: true as const, fileName: basename(result.filePath) }
+  })
+  ipcMain.handle('dsh:desktop:recovery:exit', (event) => {
+    assertMainRenderer(event.sender)
+    setTimeout(() => { void lifecycle?.requestQuit() }, 0)
+    return { exiting: true as const }
+  })
   ipcMain.handle('dsh:harness:retry', (event) => {
     assertMainRenderer(event.sender)
+    if (recoveryRestartRequired) {
+      setTimeout(() => { requestDesktopRestart() }, 150)
+      return { started: true }
+    }
+    if (recoveryHarnessSuspended) {
+      recoveryHarnessSuspended = false
+      return { started: supervisor?.resume() ?? false }
+    }
     const started = supervisor?.retry() ?? false
     if (!started && harnessOrigin !== undefined && mainSurface !== undefined && !mainSurface.window.isDestroyed()) {
       void mainSurface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))
@@ -2182,6 +2256,23 @@ async function startApplication(): Promise<void> {
   } catch (error) {
     console.warn('desktop: could not refresh the registered dsh command', error)
   }
+  recoveryPluginRemove = async (packageName) => {
+    if (!recoveryHarnessSuspended && supervisor !== undefined) {
+      cancelBootableSnapshot()
+      await supervisor.stop()
+      recoveryHarnessSuspended = true
+      harnessOrigin = undefined
+      desktopReturnControl?.clear()
+      desktopWebAccess?.clear()
+    } else if (supervisor === undefined) {
+      recoveryRestartRequired = true
+    }
+    await appendDesktopStartupLog(`Recovery mode is removing external plugin ${packageName}.`)
+    await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
+      'plugin', '--profile', 'web', 'remove', packageName,
+    ], launchOptions), `recovery-plugin-remove:${packageName}`, BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS)
+    await appendDesktopStartupLog(`Recovery mode removed external plugin ${packageName}.`)
+  }
   const runSnapshotCommand = async <T>(
     args: readonly string[],
     timeoutMs?: number,
@@ -2549,6 +2640,9 @@ async function startApplication(): Promise<void> {
       : {}),
     ...(process.platform === 'win32' ? { terminateProcessTree: terminateWindowsProcessTree } : {}),
     onReady: (url) => {
+      recoveryHarnessSuspended = false
+      recoveryRestartRequired = false
+      latestRecoveryFailure = undefined
       harnessOrigin = new URL(url).origin
       desktopReturnControl?.setHarnessOrigin(`${harnessOrigin}/`)
       desktopWebAccess?.setReady(url)

@@ -21,15 +21,15 @@ describe('desktop loading page', () => {
 
   it('offers a bounded data-home recovery action only after startup failure', async () => {
     const html = await readFile(new URL('../src/loading.html', import.meta.url), 'utf8')
-    const preload = await readFile(new URL('../src/preload.ts', import.meta.url), 'utf8')
+    const loadingPage = await readFile(new URL('../src/loading-page.ts', import.meta.url), 'utf8')
 
     expect(html).toContain('id="switch-data-home"')
     expect(html).toContain('id="directory-error"')
-    expect(preload).toContain("ipcRenderer.invoke('dsh:desktop:data-home:choose-recovery')")
-    expect(preload).toContain("selection.selectionKind === 'empty'")
-    expect(preload).toContain("{ kind: 'create', selectionId: selection.selectionId }")
-    expect(preload).toContain("{ kind: 'custom', selectionId: selection.selectionId }")
-    expect(preload).not.toContain("{ kind: 'custom', path:")
+    expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:data-home:choose-recovery')")
+    expect(loadingPage).toContain("selection.selectionKind === 'empty'")
+    expect(loadingPage).toContain("{ kind: 'create', selectionId: selection.selectionId }")
+    expect(loadingPage).toContain("{ kind: 'custom', selectionId: selection.selectionId }")
+    expect(loadingPage).not.toContain("{ kind: 'custom', path:")
   })
 
   it('lets source builds preview and leave the real recovery page without stopping Harness', async () => {
@@ -44,13 +44,44 @@ describe('desktop loading page', () => {
     expect(main).toContain('void mainSurface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))')
   })
 
-  it('shows the active bounded operation and its automatic degradation policy', async () => {
-    const preload = await readFile(new URL('../src/preload.ts', import.meta.url), 'utf8')
+  it('restricts recovery plugin removal to direct package identities in the main process', async () => {
+    const main = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8')
 
-    expect(preload).toContain("'profile-read-only-check': '正在只读检查插件兼容性'")
-    expect(preload).toContain("'profile-check-timeout': '兼容性检查已超时，已跳过异常步骤并继续启动'")
-    expect(preload).toContain('snapshot.deadlineAt - now')
-    expect(preload).toContain("ipcRenderer.invoke('dsh:desktop:log:open')")
-    expect(preload).toContain('不会无限等待')
+    expect(main).toContain("ipcMain.handle('dsh:desktop:recovery-plugins:list'")
+    expect(main).toContain("ipcMain.handle('dsh:desktop:recovery-plugins:remove'")
+    expect(main).toContain('isRecoveryPluginPackageName(packageName)')
+    expect(main).toContain('inventory.plugins.some(plugin => plugin.packageName === packageName)')
+    expect(main).toContain("'plugin', '--profile', 'web', 'remove', packageName")
+  })
+
+  it('shows the active bounded operation and its automatic degradation policy', async () => {
+    const loadingPage = await readFile(new URL('../src/loading-page.ts', import.meta.url), 'utf8')
+
+    expect(loadingPage).toContain("'profile-read-only-check': '正在只读检查插件兼容性'")
+    expect(loadingPage).toContain("'profile-check-timeout': '兼容性检查已超时，已跳过异常步骤并继续启动'")
+    expect(loadingPage).toContain('snapshot.deadlineAt - now')
+    expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:log:open')")
+    expect(loadingPage).toContain('不会无限等待')
+  })
+
+  it('keeps the paused startup bar while exposing four peer recovery tools', async () => {
+    const html = await readFile(new URL('../src/loading.html', import.meta.url), 'utf8')
+    const loadingPage = await readFile(new URL('../src/loading-page.ts', import.meta.url), 'utf8')
+
+    expect(html).toContain('id="recovery-home"')
+    expect(html).toContain('data-open-panel="plugins"')
+    expect(html).toContain('data-open-panel="snapshots"')
+    expect(html).toContain('data-open-panel="directory"')
+    expect(html).toContain('data-open-panel="diagnostics"')
+    expect(html).toContain('role="tablist"')
+    expect(html).not.toContain('id="previous"')
+    expect(html).toContain('body.recovery { overflow: hidden; }')
+    expect(html).toContain('#recovery-home, #recovery-detail { min-height: 0; overflow: auto;')
+    expect(loadingPage).toContain("const failed = query.get('state') === 'failed'")
+    expect(loadingPage).toContain("if (!failed) {\n    ipcRenderer.on('dsh:startup-progress'")
+    expect(loadingPage).toContain('progressTask.textContent = copy.paused')
+    expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:recovery-plugins:list')")
+    expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:recovery-plugins:remove', plugin.packageName)")
+    expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:recovery:export')")
   })
 })
