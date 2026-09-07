@@ -1,114 +1,114 @@
 {
-  "schema": 2,
-  "plugins": [
-    {
-      "seedId": "dshmarket",
-      "packageName": "dshmarket",
-      "version": "1.44.0",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dshmarket@1.44.0",
-      "archive": "dshmarket-1.44.0.tgz",
-      "integrity": "sha512-MNWOVxrBarj1cY9VcrEx1joltnnp/xZHTRqZsM8vJhVe58m6wBG6zEa7/RncsAmwnXkR1499paxwtYi1BAC1sw=="
-    },
-    {
-      "seedId": "xmanrui-dsh-im",
-      "packageName": "@xmanrui/dsh-im",
-      "version": "4.13.0",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "@xmanrui/dsh-im@4.13.0",
-      "archive": "xmanrui-dsh-im-4.13.0.tgz",
-      "integrity": "sha512-zgP+CHx0VeFm91Rwfghny43eP9gwJ8QFyypcT4NOBJtEsKufOCrORLx6/ew72rAilZqVAq840Y6iDCt317GK2w=="
-    },
-    {
-      "seedId": "dsh-skill-picker",
-      "packageName": "dsh-skill-picker",
-      "version": "0.5.6",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dsh-skill-picker@0.5.6",
-      "archive": "dsh-skill-picker-0.5.6.tgz",
-      "integrity": "sha512-Uyciggwson6AaLp2f/TAsEkKQPUDja2E43JorV5LZBc6TuBCCe7aO68AHodaY4ciXyHri+ZJ5nRb7Grz+h/Mgg=="
-    },
-    {
-      "seedId": "dsh-better-sidebar",
-      "packageName": "dsh-better-sidebar",
-      "version": "0.18.0",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dsh-better-sidebar@0.18.0",
-      "approvedBuilds": [
-        "node-pty"
-      ],
-      "archive": "dsh-better-sidebar-0.18.0.tgz",
-      "integrity": "sha512-6sGUIpgrFLXikACKBXLSiyngULceZCIr5M4bLw2IdCJ3KWHcbNsJJl+TLHJw0lM9voRw0etbr5fC16VQ9YvshQ=="
-    },
-    {
-      "seedId": "dsh-pocket",
-      "packageName": "dsh-pocket",
-      "version": "2.10.3",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dsh-pocket@2.10.3",
-      "archive": "dsh-pocket-2.10.3.tgz",
-      "integrity": "sha512-3z60cvEuriyFM5lEIl3z5yIMU3UojChnsEJodD2TTRU2QU3VmOqwE9iurTCgDZS8tWgpW8sffmHDDGHXcUBC7g=="
-    },
-    {
-      "seedId": "ychris12138-dsh-usage-stats",
-      "packageName": "@ychris12138/dsh-usage-stats",
-      "version": "0.3.2",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "@ychris12138/dsh-usage-stats@0.3.2",
-      "archive": "ychris12138-dsh-usage-stats-0.3.2.tgz",
-      "integrity": "sha512-R85d0bgIzKk1/A8M32YiMeItgQWevNNSkb0gsedoHJY7Mc67sZf/UjsukTn4OrxREYt2h6Z6zGm5btKC0X8PCQ=="
-    },
-    {
-      "seedId": "dsh-smooth-stream",
-      "packageName": "dsh-smooth-stream",
-      "version": "0.6.0",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dsh-smooth-stream@0.6.0",
-      "archive": "dsh-smooth-stream-0.6.0.tgz",
-      "integrity": "sha512-qGxi0pe5YUt+N0yMkXtrGiVyG2X23NN5h8MDfutiUvyjXNjyAvizo+y+VD7kDlWMKO+qD6Do4CD3DsU9bZ8YnQ=="
-    },
-    {
-      "seedId": "diagnostic-dsh-font",
-      "packageName": "dsh-font",
-      "version": "1.1.0",
-      "profile": "web",
-      "installPolicy": "diagnostic",
-      "archive": "dsh-font-1.1.0.tgz",
-      "integrity": "sha512-FJVCYih4My+9NwqvDjwW17AVP/9F843nL0O0mS8+Z/YQdVkmoGT0q3fPLXvNdr8M68FVo0Wr2upnud0y406a0g=="
-    },
-    {
-      "seedId": "diagnostic-scoped-loader-mismatch",
-      "packageName": "@dsh-diagnostic-lab/scoped-loader-mismatch",
-      "version": "1.0.0",
-      "profile": "web",
-      "installPolicy": "diagnostic",
-      "archive": "dsh-diagnostic-lab-scoped-loader-mismatch-1.0.0.tgz",
-      "integrity": "sha512-AVs8NsGQdMcEr7ATNQqUjmMjUzLgvQoisz5C9fwcAj7oUARQdTo+74ANKzEez2LbNWNOKGwCbilwstPSgVAYxQ=="
-    },
-    {
-      "seedId": "diagnostic-loader-dependency-unavailable",
-      "packageName": "@dsh-diagnostic-lab/loader-dependency-unavailable",
-      "version": "1.0.0",
-      "profile": "web",
-      "installPolicy": "diagnostic",
-      "archive": "dsh-diagnostic-lab-loader-dependency-unavailable-1.0.0.tgz",
-      "integrity": "sha512-sEjViwufnwVG4bWMMIFLwzOMLBUX3pyt/IZzVsSCf53wFIAiDgDWihDUdTVVIL4v5vMIZw8Aa4zZIQA8SQvhLQ=="
-    },
-    {
-      "seedId": "diagnostic-loader-export-unavailable",
-      "packageName": "@dsh-diagnostic-lab/loader-export-unavailable",
-      "version": "1.0.0",
-      "profile": "web",
-      "installPolicy": "diagnostic",
-      "archive": "dsh-diagnostic-lab-loader-export-unavailable-1.0.0.tgz",
-      "integrity": "sha512-WyqR0+nwUFI4iTZTsuUyn7QKq5JCGZ/OTUg5/clbd9dbu2kGFzOe6Kqt0qoL/NeFMqbE46/x0v26wsgkn7LbpQ=="
-    }
-  ]
+    "schema":  2,
+    "plugins":  [
+                    {
+                        "seedId":  "dshmarket",
+                        "packageName":  "dshmarket",
+                        "version":  "1.45.0",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dshmarket@1.45.0",
+                        "archive":  "dshmarket-1.45.0.tgz",
+                        "integrity":  "sha512-HuOU/eEnNCuX3Q44qkFjjW1yDiE+hmXv32JjNylFyPSq2SSB/OCxFuE9yvnoMv9tB3Cd8chtBlKYrvP9xr1nYQ=="
+                    },
+                    {
+                        "seedId":  "xmanrui-dsh-im",
+                        "packageName":  "@xmanrui/dsh-im",
+                        "version":  "4.13.0",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "@xmanrui/dsh-im@4.13.0",
+                        "archive":  "xmanrui-dsh-im-4.13.0.tgz",
+                        "integrity":  "sha512-zgP+CHx0VeFm91Rwfghny43eP9gwJ8QFyypcT4NOBJtEsKufOCrORLx6/ew72rAilZqVAq840Y6iDCt317GK2w=="
+                    },
+                    {
+                        "seedId":  "dsh-skill-picker",
+                        "packageName":  "dsh-skill-picker",
+                        "version":  "0.5.6",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dsh-skill-picker@0.5.6",
+                        "archive":  "dsh-skill-picker-0.5.6.tgz",
+                        "integrity":  "sha512-Uyciggwson6AaLp2f/TAsEkKQPUDja2E43JorV5LZBc6TuBCCe7aO68AHodaY4ciXyHri+ZJ5nRb7Grz+h/Mgg=="
+                    },
+                    {
+                        "seedId":  "dsh-better-sidebar",
+                        "packageName":  "dsh-better-sidebar",
+                        "version":  "0.18.0",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dsh-better-sidebar@0.18.0",
+                        "approvedBuilds":  [
+                                               "node-pty"
+                                           ],
+                        "archive":  "dsh-better-sidebar-0.18.0.tgz",
+                        "integrity":  "sha512-6sGUIpgrFLXikACKBXLSiyngULceZCIr5M4bLw2IdCJ3KWHcbNsJJl+TLHJw0lM9voRw0etbr5fC16VQ9YvshQ=="
+                    },
+                    {
+                        "seedId":  "dsh-pocket",
+                        "packageName":  "dsh-pocket",
+                        "version":  "2.10.3",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dsh-pocket@2.10.3",
+                        "archive":  "dsh-pocket-2.10.3.tgz",
+                        "integrity":  "sha512-3z60cvEuriyFM5lEIl3z5yIMU3UojChnsEJodD2TTRU2QU3VmOqwE9iurTCgDZS8tWgpW8sffmHDDGHXcUBC7g=="
+                    },
+                    {
+                        "seedId":  "ychris12138-dsh-usage-stats",
+                        "packageName":  "@ychris12138/dsh-usage-stats",
+                        "version":  "0.3.2",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "@ychris12138/dsh-usage-stats@0.3.2",
+                        "archive":  "ychris12138-dsh-usage-stats-0.3.2.tgz",
+                        "integrity":  "sha512-R85d0bgIzKk1/A8M32YiMeItgQWevNNSkb0gsedoHJY7Mc67sZf/UjsukTn4OrxREYt2h6Z6zGm5btKC0X8PCQ=="
+                    },
+                    {
+                        "seedId":  "dsh-smooth-stream",
+                        "packageName":  "dsh-smooth-stream",
+                        "version":  "0.6.0",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dsh-smooth-stream@0.6.0",
+                        "archive":  "dsh-smooth-stream-0.6.0.tgz",
+                        "integrity":  "sha512-qGxi0pe5YUt+N0yMkXtrGiVyG2X23NN5h8MDfutiUvyjXNjyAvizo+y+VD7kDlWMKO+qD6Do4CD3DsU9bZ8YnQ=="
+                    },
+                    {
+                        "seedId":  "diagnostic-dsh-font",
+                        "packageName":  "dsh-font",
+                        "version":  "1.1.0",
+                        "profile":  "web",
+                        "installPolicy":  "diagnostic",
+                        "archive":  "dsh-font-1.1.0.tgz",
+                        "integrity":  "sha512-FJVCYih4My+9NwqvDjwW17AVP/9F843nL0O0mS8+Z/YQdVkmoGT0q3fPLXvNdr8M68FVo0Wr2upnud0y406a0g=="
+                    },
+                    {
+                        "seedId":  "diagnostic-scoped-loader-mismatch",
+                        "packageName":  "@dsh-diagnostic-lab/scoped-loader-mismatch",
+                        "version":  "1.0.0",
+                        "profile":  "web",
+                        "installPolicy":  "diagnostic",
+                        "archive":  "dsh-diagnostic-lab-scoped-loader-mismatch-1.0.0.tgz",
+                        "integrity":  "sha512-AVs8NsGQdMcEr7ATNQqUjmMjUzLgvQoisz5C9fwcAj7oUARQdTo+74ANKzEez2LbNWNOKGwCbilwstPSgVAYxQ=="
+                    },
+                    {
+                        "seedId":  "diagnostic-loader-dependency-unavailable",
+                        "packageName":  "@dsh-diagnostic-lab/loader-dependency-unavailable",
+                        "version":  "1.0.0",
+                        "profile":  "web",
+                        "installPolicy":  "diagnostic",
+                        "archive":  "dsh-diagnostic-lab-loader-dependency-unavailable-1.0.0.tgz",
+                        "integrity":  "sha512-sEjViwufnwVG4bWMMIFLwzOMLBUX3pyt/IZzVsSCf53wFIAiDgDWihDUdTVVIL4v5vMIZw8Aa4zZIQA8SQvhLQ=="
+                    },
+                    {
+                        "seedId":  "diagnostic-loader-export-unavailable",
+                        "packageName":  "@dsh-diagnostic-lab/loader-export-unavailable",
+                        "version":  "1.0.0",
+                        "profile":  "web",
+                        "installPolicy":  "diagnostic",
+                        "archive":  "dsh-diagnostic-lab-loader-export-unavailable-1.0.0.tgz",
+                        "integrity":  "sha512-WyqR0+nwUFI4iTZTsuUyn7QKq5JCGZ/OTUg5/clbd9dbu2kGFzOe6Kqt0qoL/NeFMqbE46/x0v26wsgkn7LbpQ=="
+                    }
+                ]
 }
