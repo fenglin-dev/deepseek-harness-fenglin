@@ -49,6 +49,8 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 Profile 预检会在组合前收敛依赖身份与隔离状态。如果旧版或中断的卸载已经删除停用插件及其持久隔离记录，却留下 lockfile、修复报告或诊断引用，检查会报告 `profile.quarantine-removal-residue`；修复只移除这些陈旧引用和不完整的软件包目录，不会再次隔离已经消失的插件。
 
+执行活动外部 bundle 之前，预检还会读取插件包根目录中固定的 `compatibility.json`。有效的 schema-v1 文档通过 `supportedHosts` 列出精确支持的 Harness 版本；如果列表排除了当前 Harness，插件会以 `incompatible-host-version` 隔离，诊断页在提供市场更新查找前展示当前版本、支持版本与可选推荐版本。声明缺失、损坏、超限、使用符号链接或 schema 未知时均保持“未知”，不会阻止激活；宽泛的 `peerDependencies` 不会被当成兼容性证据。
+
 对于每个能唯一归属的外部 Loader 行，预检会在不执行模块的情况下解析声明模块，并检查入口文件中的静态裸导入。Loader 模块缺失时以 `loader-module-unresolvable` 隔离；Loader 模块可用但其导入依赖缺失时以 `loader-dependency-unavailable` 隔离，并在诊断中保留外层 Bundle、Loader entry、导入方与缺失包。如果 Node 在运行时证明已安装依赖缺少插件要求的命名导出，也会遵守同一唯一归属边界，保留依赖名和导出名后隔离不兼容插件。用户改写或来源有歧义的行绝不自动移除。诊断安全模式还会把 settings provider 指向应用维护的空文档，因此无效用户设置保持不动，也无法继续阻止诊断 UI 加载。
 
 你的机器本地偏好同样位于 harness home 中：

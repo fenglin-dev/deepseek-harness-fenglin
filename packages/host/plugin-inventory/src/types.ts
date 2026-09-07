@@ -79,6 +79,14 @@ export interface PluginDependencyConflict {
   readonly compatible: boolean
 }
 
+/** Client-safe projection of one explicit plugin-to-Harness compatibility mismatch. */
+export interface PluginHostCompatibilityIssue {
+  readonly hostVersion: string
+  readonly supportedHostVersions: readonly string[]
+  readonly recommendedHostVersion?: string
+  readonly previewTag?: string
+}
+
 /** Client-safe retained repair result. */
 export interface PluginDependencyRepairNotice {
   readonly status: 'repaired' | 'quarantined' | 'failed'
@@ -95,7 +103,8 @@ export interface PluginQuarantineRecord {
   readonly packageSpec: string
   readonly installedVersion?: string
   readonly quarantinedAt: string
-  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable' | 'loader-dependency-unavailable'
+  readonly reason: 'incompatible-host-version' | 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable' | 'loader-dependency-unavailable'
+  readonly hostCompatibility?: PluginHostCompatibilityIssue
   readonly buildApprovalKey?: string
   readonly conflicts: readonly PluginDependencyConflict[]
 }

@@ -188,6 +188,50 @@ describe('PluginInventoryGateway', () => {
       .rejects.toThrow(/unsupported external tool/)
   })
 
+  it('projects declared Host compatibility without exposing package paths', async () => {
+    const home = temporaryDirectory()
+    vi.stubEnv('DSH_HOME', home)
+    writeJson(join(home, 'quarantine', 'profile-plugins.json'), {
+      schema: 1,
+      plugins: [{
+        quarantineId: '00000000-0000-4000-8000-000000000016',
+        profile: 'web',
+        packageName: '@fixture/compatibility-plugin',
+        packageSpec: '1.0.0',
+        installedVersion: '1.0.0',
+        bundleIndex: 1,
+        quarantinedAt: '2026-09-07T12:00:00.000Z',
+        reason: 'incompatible-host-version',
+        hostCompatibility: {
+          profile: 'web',
+          packageName: '@fixture/compatibility-plugin',
+          installedVersion: '1.0.0',
+          hostVersion: '0.1.2-rc.1',
+          supportedHostVersions: ['0.1.2-alpha.5'],
+          recommendedHostVersion: '0.1.2-alpha.5',
+          previewTag: 'next',
+        },
+        conflicts: [],
+      }],
+    })
+    const { inventory } = await harness()
+
+    await expect(inventory.list()).resolves.toMatchObject({
+      dependencyHealth: {
+        quarantined: [{
+          packageName: '@fixture/compatibility-plugin',
+          reason: 'incompatible-host-version',
+          hostCompatibility: {
+            hostVersion: '0.1.2-rc.1',
+            supportedHostVersions: ['0.1.2-alpha.5'],
+            recommendedHostVersion: '0.1.2-alpha.5',
+            previewTag: 'next',
+          },
+        }],
+      },
+    })
+  })
+
   it('runs the core doctor in read-only and repair modes with structured phases', async () => {
     const { inventory, subprocess } = await harness()
     subprocess.stdout = JSON.stringify({

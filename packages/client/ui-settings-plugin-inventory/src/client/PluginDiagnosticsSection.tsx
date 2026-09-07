@@ -103,6 +103,7 @@ const RETRY_KEYS = {
 } satisfies Record<Exclude<PluginInstallSnapshot['phase'], 'running'>, PluginInventoryLocaleKey>
 
 const QUARANTINE_REASON_KEYS = {
+  'incompatible-host-version': 'health.quarantine.reason.hostVersionIncompatible',
   'incompatible-host-dependency': 'health.quarantine.reason.incompatible',
   'convergence-failed': 'health.quarantine.reason.convergenceFailed',
   'orphaned-bundle': 'health.quarantine.reason.orphanedBundle',
@@ -113,6 +114,7 @@ const QUARANTINE_REASON_KEYS = {
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 const QUARANTINE_SOLUTION_KEYS = {
+  'incompatible-host-version': 'health.quarantine.solution.incompatible-host-version',
   'incompatible-host-dependency': 'health.quarantine.solution.incompatible-host-dependency',
   'convergence-failed': 'health.quarantine.solution.convergence-failed',
   'orphaned-bundle': 'health.quarantine.solution.orphaned-bundle',
@@ -123,6 +125,7 @@ const QUARANTINE_SOLUTION_KEYS = {
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 const QUARANTINE_RETRY_KEYS = {
+  'incompatible-host-version': 'health.quarantine.action.findUpdate',
   'incompatible-host-dependency': 'health.quarantine.action.compatibleRetry',
   'convergence-failed': 'health.quarantine.action.convergeRetry',
   'orphaned-bundle': 'health.quarantine.action.restoreSource',
@@ -439,7 +442,8 @@ export function PluginDiagnosticsSection({
   const quarantinedWithoutIssue = quarantined.filter(record => !currentIssues.some(issue => (
     issue.attribution?.rootPackage === record.packageName
   )))
-  const dependencyIssueCount = currentIssues.filter(issue => issue.code === 'profile.host-dependency-conflict').length
+  const dependencyIssueCount = currentIssues.filter(issue => issue.code === 'profile.host-dependency-conflict'
+    || issue.code === 'profile.host-version-incompatible').length
     + quarantinedWithoutIssue.reduce((count, record) => count + record.conflicts.length, 0)
   const loadIssueCount = currentIssues.filter(issue => (
     issue.source === 'loader' || issue.source === 'cordis-runtime'
@@ -506,6 +510,13 @@ export function PluginDiagnosticsSection({
                   </p>
                 )) : (
                   <p>{t(`health.quarantine.analysis.${record.reason}`)}</p>
+                )}
+                {record.hostCompatibility === undefined ? null : (
+                  <p>
+                    {t('health.quarantine.compatibility.current')} <code>{record.hostCompatibility.hostVersion}</code>
+                    {' · '}{t('health.quarantine.compatibility.supported')}{' '}
+                    <code>{record.hostCompatibility.supportedHostVersions.join(', ')}</code>
+                  </p>
                 )}
                 <p className={css.summarySolution}>
                   <b>{t('health.quarantine.solution.title')}：</b>{t(QUARANTINE_SOLUTION_KEYS[record.reason])}
@@ -609,6 +620,23 @@ export function PluginDiagnosticsSection({
                 <span>{issue.nativeCode ?? issue.code}</span>
               </div>
               {issue.attribution?.rootPackage !== undefined ? <code>{issue.attribution.rootPackage}</code> : null}
+              {issue.attribution?.hostVersion === undefined ? null : (
+                <p>
+                  {t('health.quarantine.compatibility.current')} <code>{issue.attribution.hostVersion}</code>
+                  {issue.attribution.supportedHostVersions === undefined ? null : (
+                    <>
+                      {' · '}{t('health.quarantine.compatibility.supported')}{' '}
+                      <code>{issue.attribution.supportedHostVersions.join(', ')}</code>
+                    </>
+                  )}
+                </p>
+              )}
+              {issue.attribution?.recommendedHostVersion === undefined ? null : (
+                <p>
+                  {t('health.quarantine.compatibility.recommended')}{' '}
+                  <code>{issue.attribution.recommendedHostVersion}</code>
+                </p>
+              )}
               {issue.attribution?.dependencyChain !== undefined ? (
                 <code>{issue.attribution.dependencyChain.join(' → ')}</code>
               ) : null}
@@ -801,6 +829,23 @@ export function PluginDiagnosticsSection({
                   </div>
                 ))}
                 {record.conflicts.length === 0 ? <p>{t(`health.quarantine.analysis.${record.reason}`)}</p> : null}
+                {record.hostCompatibility === undefined ? null : (
+                  <div className={css.conflictDetail}>
+                    <p>
+                      {t('health.quarantine.compatibility.current')} <code>{record.hostCompatibility.hostVersion}</code>
+                    </p>
+                    <p>
+                      {t('health.quarantine.compatibility.supported')}{' '}
+                      <code>{record.hostCompatibility.supportedHostVersions.join(', ')}</code>
+                    </p>
+                    {record.hostCompatibility.recommendedHostVersion === undefined ? null : (
+                      <p>
+                        {t('health.quarantine.compatibility.recommended')}{' '}
+                        <code>{record.hostCompatibility.recommendedHostVersion}</code>
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className={css.solution}>
                   <strong>{t('health.quarantine.solution.title')}</strong>
                   <p>{t(QUARANTINE_SOLUTION_KEYS[record.reason])}</p>
@@ -812,7 +857,8 @@ export function PluginDiagnosticsSection({
                   </div>
                 </div>
                 <div className={css.actions}>
-                  {record.reason === 'client-module-unavailable'
+                  {record.reason === 'incompatible-host-version'
+                    || record.reason === 'client-module-unavailable'
                     || record.reason === 'loader-module-unresolvable'
                     || record.reason === 'loader-dependency-unavailable' ? (
                       <Button

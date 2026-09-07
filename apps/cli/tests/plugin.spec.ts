@@ -354,6 +354,47 @@ describe('profile plugin package manager', () => {
     }
   })
 
+  it('reports an explicit Host compatibility mismatch in inspect-only doctor mode', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-doctor-compatibility-'))
+    const profileDir = join(home, 'profiles', 'web')
+    const pluginDir = join(profileDir, 'node_modules', 'fixture-plugin')
+    mkdirSync(pluginDir, { recursive: true })
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web',
+      dependencies: { 'fixture-plugin': '1.0.0' },
+      dsh: { profile: { bundles: ['fixture-plugin'] } },
+    }))
+    writeFileSync(join(pluginDir, 'package.json'), JSON.stringify({
+      name: 'fixture-plugin',
+      version: '1.0.0',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    }))
+    writeFileSync(join(pluginDir, 'cordis.patch.yml'), '[]\n')
+    writeFileSync(join(pluginDir, 'compatibility.json'), JSON.stringify({
+      schemaVersion: 1,
+      supportedHosts: [{ version: '0.0.0' }],
+    }))
+    vi.stubEnv('DSH_HOME', home)
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', ['doctor'])).toBe(2)
+      expect(JSON.parse(String(stdout.mock.calls.at(-1)?.[0]))).toMatchObject({
+        status: 'failed',
+        hostCompatibilityIssues: [{
+          packageName: 'fixture-plugin',
+          supportedHostVersions: ['0.0.0'],
+        }],
+        issues: [{
+          code: 'profile.host-version-incompatible',
+          attribution: { rootPackage: 'fixture-plugin' },
+        }],
+      })
+      expect(existsSync(join(pluginDir, 'package.json'))).toBe(true)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('persists a guarded client Loader quarantine through the internal doctor command', () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-client-loader-quarantine-'))
     const profileDir = join(home, 'profiles', 'web')
