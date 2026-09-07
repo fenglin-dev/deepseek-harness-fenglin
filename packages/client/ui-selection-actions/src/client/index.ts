@@ -29,9 +29,11 @@ export const inject = ['slots', 'sessions', 'uiSession', 'uiWorkspace', 'convers
 function readDesktopRestart(): (() => Promise<void>) | undefined {
   const desktop = (globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop
   if (desktop === null || typeof desktop !== 'object') return undefined
-  const restart = (desktop as { restart?: unknown }).restart
+  const shell = (desktop as { shell?: unknown }).shell
+  if (shell === null || typeof shell !== 'object') return undefined
+  const restart = (shell as { restart?: unknown }).restart
   if (typeof restart !== 'function') return undefined
-  return async () => { await restart.call(desktop) }
+  return async () => { await restart.call(shell) }
 }
 
 function appendAvailable(ctx: Context, sessionId: SessionId | undefined): boolean {

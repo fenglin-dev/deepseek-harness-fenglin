@@ -100,12 +100,28 @@ describe('ui-selection-actions apply', () => {
     const root = globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }
     const previous = root.deepSeekHarnessDesktop
     const restart = vi.fn(async () => ({ restarting: true }))
-    root.deepSeekHarnessDesktop = { restart }
+    root.deepSeekHarnessDesktop = { shell: { restart } }
     try {
       const b = await bench()
       await expect(b.injected.restartDesktop?.()).resolves.toBeUndefined()
       expect(restart).toHaveBeenCalledOnce()
       await b.ctx.fiber.dispose()
+    } finally {
+      if (previous === undefined) delete root.deepSeekHarnessDesktop
+      else root.deepSeekHarnessDesktop = previous
+    }
+  })
+
+  it('does not project obsolete or incomplete desktop bridge shapes', async () => {
+    const root = globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }
+    const previous = root.deepSeekHarnessDesktop
+    try {
+      for (const desktop of [{ restart: vi.fn() }, { shell: {} }, { shell: null }]) {
+        root.deepSeekHarnessDesktop = desktop
+        const b = await bench()
+        expect(b.injected.restartDesktop).toBeUndefined()
+        await b.ctx.fiber.dispose()
+      }
     } finally {
       if (previous === undefined) delete root.deepSeekHarnessDesktop
       else root.deepSeekHarnessDesktop = previous
