@@ -256,6 +256,23 @@ export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferenc
           </div>
         </div>
       )}
+      {state.capabilities.developmentRecoveryAvailable && (
+        <div className={css.row}>
+          <div className={css.text}>
+            <div className={css.title}>{t('recovery.development.title')}</div>
+            <div className={css.description}>{t('recovery.development.description')}</div>
+          </div>
+          <div className={css.actions}>
+            <Button
+              variant="outline"
+              disabled={state.busy}
+              onClick={() => { void controller.enterRecoveryMode() }}
+            >
+              {t('recovery.development.open')}
+            </Button>
+          </div>
+        </div>
+      )}
       <div className={css.row}>
         <div className={css.text}>
           <div className={css.title}>{t('notifications.title')}</div>

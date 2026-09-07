@@ -64,6 +64,7 @@ export interface DesktopCapabilities {
   launchAtLoginAvailable: boolean
   sourceUpdateAvailable: boolean
   commandLineAvailable: boolean
+  developmentRecoveryAvailable: boolean
 }
 
 /** Narrow desktop-shell preference and diagnostics bridge. */
@@ -82,6 +83,7 @@ export interface DesktopShellBridge {
   getCommandLine(): Promise<DesktopCliStatus>
   installCommandLine(force: boolean): Promise<DesktopCliStatus>
   removeCommandLine(): Promise<DesktopCliStatus>
+  enterRecoveryMode(): Promise<{ entered: true }>
   reportReadiness(phase: 'client' | 'event-dispatch'): void
 }
 
@@ -192,6 +194,9 @@ const shellBridge: DesktopShellBridge = {
   getCommandLine: () => ipcRenderer.invoke('dsh:desktop:cli:get') as Promise<DesktopCliStatus>,
   installCommandLine: force => ipcRenderer.invoke('dsh:desktop:cli:install', force) as Promise<DesktopCliStatus>,
   removeCommandLine: () => ipcRenderer.invoke('dsh:desktop:cli:remove') as Promise<DesktopCliStatus>,
+  enterRecoveryMode: () => ipcRenderer.invoke(
+    'dsh:desktop:recovery:enter',
+  ) as Promise<{ entered: true }>,
   reportReadiness: (phase) => { ipcRenderer.send('dsh:desktop:readiness', phase) },
 }
 

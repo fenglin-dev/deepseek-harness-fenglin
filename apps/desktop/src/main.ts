@@ -421,6 +421,7 @@ interface DesktopCapabilities {
   launchAtLoginAvailable: boolean
   sourceUpdateAvailable: boolean
   commandLineAvailable: boolean
+  developmentRecoveryAvailable: boolean
 }
 
 function applyDesktopThemeSource(source: DesktopThemeSource): void {
@@ -445,6 +446,7 @@ function desktopCapabilities(): DesktopCapabilities {
     // reports `unsupported` there, while packaged macOS/Windows builds expose
     // the real install, repair, and remove actions.
     commandLineAvailable: process.platform === 'win32' || process.platform === 'darwin',
+    developmentRecoveryAvailable: !app.isPackaged,
   }
 }
 
@@ -1738,9 +1740,25 @@ async function startApplication(): Promise<void> {
     }, 250)
     return { restarting: true as const }
   })
+  ipcMain.handle('dsh:desktop:recovery:enter', (event) => {
+    assertMainRenderer(event.sender)
+    if (app.isPackaged) throw new Error('desktop: recovery preview is available only in development mode')
+    if (harnessOrigin === undefined) throw new Error('desktop: Harness must be ready before opening recovery mode')
+    showLoading('failed', {
+      message: app.getLocale().toLowerCase().startsWith('zh')
+        ? '已从开发模式手动进入恢复页面。Harness 仍在运行，点击“重试”即可返回客户端。'
+        : 'Recovery mode was opened manually from a development build. Harness is still running; choose Retry to return to the client.',
+      logPath: harnessLogPath,
+    })
+    return { entered: true as const }
+  })
   ipcMain.handle('dsh:harness:retry', (event) => {
     assertMainRenderer(event.sender)
-    return { started: supervisor?.retry() ?? false }
+    const started = supervisor?.retry() ?? false
+    if (!started && harnessOrigin !== undefined && mainSurface !== undefined && !mainSurface.window.isDestroyed()) {
+      void mainSurface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))
+    }
+    return { started }
   })
   ipcMain.handle('dsh:harness:open-logs', (event) => {
     assertMainRenderer(event.sender)

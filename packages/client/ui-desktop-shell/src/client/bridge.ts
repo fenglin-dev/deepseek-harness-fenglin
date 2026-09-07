@@ -31,6 +31,7 @@ export interface DesktopCapabilities {
   launchAtLoginAvailable: boolean
   sourceUpdateAvailable: boolean
   commandLineAvailable: boolean
+  developmentRecoveryAvailable: boolean
 }
 
 /** Active Harness home and the two built-in switch targets. */
@@ -126,6 +127,7 @@ export interface DesktopShellBridge {
   getCommandLine(): Promise<DesktopCliStatus>
   installCommandLine(force: boolean): Promise<DesktopCliStatus>
   removeCommandLine(): Promise<DesktopCliStatus>
+  enterRecoveryMode(): Promise<{ entered: true }>
   reportReadiness(phase: 'client' | 'event-dispatch'): void
 }
 
