@@ -6,7 +6,7 @@ import { homedir, tmpdir, userInfo } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, session, shell, Tray,
+  app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, Notification, session, shell, Tray,
   type MenuItemConstructorOptions, type MessageBoxOptions, type WebContents, type WebPreferences,
 } from 'electron'
 import { appendBundledPluginFailure, verifyBundledPluginArchive } from './bundled-plugin-seed.ts'
@@ -1419,6 +1419,8 @@ async function startApplication(): Promise<void> {
     downloadDirectory: join(app.getPath('userData'), 'updates'),
     getRelease: () => releaseChecker?.status ?? { phase: 'unsupported' },
     openPath: path => shell.openPath(path),
+    netFetch: net.fetch.bind(net) as typeof fetch,
+    directFetch: fetch,
   })
   externalToolCompatibility = new ExternalToolCompatibilityManager({
     cacheDirectory: join(app.getPath('userData'), 'external-tool-compatibility'),

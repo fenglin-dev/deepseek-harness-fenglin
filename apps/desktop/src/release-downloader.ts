@@ -7,10 +7,12 @@ import type { DesktopReleaseStatus } from './release-checker.ts'
 
 const REPOSITORY = 'fenglin-dev/deepseek-harness-fenglin'
 const API_RELEASE_PREFIX = `https://api.github.com/repos/${REPOSITORY}/releases/tags/`
+const API_ASSET_PREFIX = `https://api.github.com/repos/${REPOSITORY}/releases/assets/`
 const RELEASE_DOWNLOAD_PREFIX = `/${REPOSITORY}/releases/download/`
 const CHECKSUM_ASSET = 'SHA256SUMS'
 const MAX_CHECKSUM_BYTES = 1024 * 1024
 const RELEASE_DETAILS_CACHE_TTL_MS = 5 * 60 * 1000 // 5 分钟缓存，避免重复调用 GitHub API
+const PROXY_FETCH_TIMEOUT_MS = 8000 // 代理通道超时时间，超时后自动回退直连通道
 
 interface ReleaseDetailsCacheEntry {
   tag: string
@@ -42,6 +44,7 @@ export type DesktopReleaseDownloadStatus =
   | { phase: 'error'; version?: string; message: string }
 
 interface GitHubReleaseAsset {
+  id?: unknown
   name?: unknown
   size?: unknown
   digest?: unknown
@@ -59,6 +62,7 @@ interface ReleaseAsset {
   name: string
   size: number
   url: string
+  apiUrl?: string
   sha256?: string
 }
 
@@ -69,6 +73,8 @@ interface DesktopReleaseDownloaderOptions {
   getRelease(): DesktopReleaseStatus
   openPath(path: string): Promise<string>
   fetch?: typeof fetch
+  netFetch?: typeof fetch
+  directFetch?: typeof fetch
 }
 
 /** Resolve the single installer format that the desktop can open safely. */
@@ -109,10 +115,12 @@ function parseAsset(value: GitHubReleaseAsset, tag: string, expectedName: string
   if (typeof value.size !== 'number' || !Number.isSafeInteger(value.size) || value.size <= 0) return undefined
   if (!isAllowedReleaseAssetUrl(value.browser_download_url, tag, expectedName)) return undefined
   const digest = typeof value.digest === 'string' ? /^sha256:([0-9a-fA-F]{64})$/u.exec(value.digest) : null
+  const apiUrl = typeof value.id === 'number' ? `${API_ASSET_PREFIX}${value.id}` : undefined
   return {
     name: expectedName,
     size: value.size,
     url: value.browser_download_url,
+    ...(apiUrl === undefined ? {} : { apiUrl }),
     ...(digest?.[1] === undefined ? {} : { sha256: digest[1].toLowerCase() }),
   }
 }
@@ -134,12 +142,16 @@ export class DesktopReleaseDownloader {
   #releaseDetailsCache: ReleaseDetailsCacheEntry | undefined
   readonly #listeners = new Set<(status: DesktopReleaseDownloadStatus) => void>()
   readonly #fetch: typeof fetch
+  readonly #netFetch: typeof fetch | undefined
+  readonly #directFetch: typeof fetch | undefined
   readonly #assetName: string | undefined
 
   constructor(readonly options: DesktopReleaseDownloaderOptions) {
     this.#assetName = installerAssetName(options.platform, options.arch)
     this.#status = this.#assetName === undefined ? { phase: 'unsupported' } : { phase: 'idle' }
     this.#fetch = options.fetch ?? fetch
+    this.#netFetch = options.netFetch
+    this.#directFetch = options.directFetch
   }
 
   get status(): DesktopReleaseDownloadStatus { return this.#status }
@@ -208,6 +220,53 @@ export class DesktopReleaseDownloader {
     return { error: await this.options.openPath(this.#readyPath) }
   }
 
+  /**
+   * 智能双通道下载：
+   * - 代理通道（优先）：Electron net.fetch + github.com browser_download_url，开代理时自动走系统代理高速下载
+   * - 直连通道（回退）：原生 fetch + api.github.com API asset URL，无代理时国内直连
+   * 代理通道超时或连接失败后自动回退直连通道
+   */
+  async #fetchSmart(
+    url: string,
+    apiUrl: string | undefined,
+    options: RequestInit,
+    signal: AbortSignal,
+    isBinary = false,
+  ): Promise<Response> {
+    // 通道 1：代理模式，使用 net.fetch（尊重系统代理设置）
+    if (this.#netFetch !== undefined) {
+      const proxyController = new AbortController()
+      const proxyTimeout = setTimeout(() => proxyController.abort(), PROXY_FETCH_TIMEOUT_MS)
+      const onAbort = () => proxyController.abort()
+      signal.addEventListener('abort', onAbort)
+      try {
+        const response = await this.#netFetch(url, { ...options, signal: proxyController.signal })
+        if (response.ok) {
+          console.debug('desktop: release download via proxy channel (net.fetch)')
+          return response
+        }
+        console.debug(`desktop: proxy channel returned HTTP ${response.status}, falling back to direct channel`)
+      } catch (error) {
+        console.debug('desktop: proxy channel failed, falling back to direct channel:', (error as Error).message)
+      } finally {
+        clearTimeout(proxyTimeout)
+        signal.removeEventListener('abort', onAbort)
+      }
+    }
+    // 通道 2：直连模式，使用 API URL（api.github.com 国内可直连）
+    if (!apiUrl) {
+      throw new Error('No API asset URL available for direct download fallback')
+    }
+    const directFetch = this.#directFetch ?? this.#fetch
+    const directHeaders: Record<string, string> = {
+      ...(options.headers as Record<string, string> ?? {}),
+      Accept: isBinary ? 'application/octet-stream' : ((options.headers as Record<string, string>)?.Accept ?? 'application/vnd.github+json'),
+      'User-Agent': 'DeepSeek-Harness-Desktop',
+    }
+    console.debug('desktop: release download via direct channel (api.github.com)')
+    return await directFetch(apiUrl, { ...options, headers: directHeaders, signal })
+  }
+
   async #download(
     version: string,
     tag: string,
@@ -251,7 +310,7 @@ export class DesktopReleaseDownloader {
     let expectedChecksum = installer.sha256
     if (expectedChecksum === undefined && checksums !== undefined) {
       if (checksums.size > MAX_CHECKSUM_BYTES) throw new Error('Release checksum metadata is unexpectedly large.')
-      const checksumResponse = await this.#fetch(checksums.url, { signal })
+      const checksumResponse = await this.#fetchSmart(checksums.url, checksums.apiUrl, { signal }, signal, false)
       if (!checksumResponse.ok) throw new Error(`Release checksums returned HTTP ${checksumResponse.status}`)
       const checksumText = await checksumResponse.text()
       if (Buffer.byteLength(checksumText) > MAX_CHECKSUM_BYTES) throw new Error('Release checksum metadata is unexpectedly large.')
@@ -266,7 +325,7 @@ export class DesktopReleaseDownloader {
     await rm(partialPath, { force: true })
     let completed = false
     try {
-      const response = await this.#fetch(installer.url, { signal })
+      const response = await this.#fetchSmart(installer.url, installer.apiUrl, { signal }, signal, true)
       if (!response.ok || response.body === null) throw new Error(`Release installer returned HTTP ${response.status}`)
       const file = await open(partialPath, 'wx')
       const reader = response.body.getReader()
