@@ -334,7 +334,16 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
     case 'docs': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin#readme'); return
     case 'repository': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin'); return
     case 'feedback': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin/issues'); return
-    case 'reload': mainWindow?.webContents.reload(); return
+    case 'reload': {
+      // 刷新所有相关 webContents：主界面 + 自定义标题栏
+      mainSurface?.renderer.reload()
+      mainSurface?.titlebarRenderer?.reload()
+      // 兼容主窗口 webContents（如果存在）
+      if (mainWindow !== undefined && mainWindow.webContents !== mainSurface?.renderer) {
+        mainWindow.webContents.reload()
+      }
+      return
+    }
     default: throw new Error(`desktop: unhandled menu command ${command}`)
   }
 }
