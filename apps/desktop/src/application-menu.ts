@@ -51,8 +51,27 @@ const zh: typeof en = {
   tray: '系统托盘不可用。可以取消并保留窗口，或完整退出客户端。', cancel: '取消',
   community: '由 FLAQ AI 维护的社区独立发行版，并非 DeepSeek 官方产品。',
 }
+const ru: typeof en = {
+  app: 'Open DSH Desktop', file: 'Файл', edit: 'Правка', view: 'Вид', tools: 'Инструменты', window: 'Окно', help: 'Справка', more: 'Ещё',
+  about: 'Об Open DSH Desktop', settings: 'Настройки…', updates: 'Проверить обновления…', 'new-session': 'Новый диалог',
+  'open-config': 'Открыть файл конфигурации', 'open-web': 'Открыть в браузере', close: 'Закрыть окно', quit: 'Полностью выйти', undo: 'Отменить', redo: 'Повторить', cut: 'Вырезать',
+  copy: 'Копировать', paste: 'Вставить', 'select-all': 'Выбрать всё', 'zoom-in': 'Увеличить', 'zoom-out': 'Уменьшить', 'zoom-reset': 'Реальный размер',
+  fullscreen: 'Во весь экран', 'leave-fullscreen': 'Выйти из полноэкранного режима', market: 'Плагины', 'plugin-restore': 'Восстановление плагинов',
+  diagnostics: 'Диагностика', snapshots: 'Снимки плагинов', 'external-tools': 'Внешние инструменты', phone: 'Доступ с телефона', im: 'IM-боты',
+  'data-home': 'Сменить каталог данных…', restart: 'Быстрый перезапуск', show: 'Показать главное окно', minimize: 'Свернуть', maximize: 'Развернуть',
+  restore: 'Восстановить', docs: 'Документация', repository: 'Репозиторий проекта', feedback: 'Сообщить о проблеме', logs: 'Открыть каталог журналов',
+  devtools: 'Инструменты разработчика', services: 'Службы', hide: 'Скрыть Open DSH Desktop', 'hide-others': 'Скрыть остальные',
+  unhide: 'Показать все', emoji: 'Эмодзи и символы', error: 'Не удалось выполнить действие',
+  unavailable: 'Действие недоступно, пока клиент запускается, отключён или восстанавливается.',
+  busy: 'Идёт операция с плагинами или восстановление. Дождитесь завершения перед перезапуском или выходом.',
+  tray: 'Системный трей недоступен. Отмените, чтобы оставить окно открытым, или полностью выйдите.',
+  cancel: 'Отмена', community: 'Поддерживается FLAQ AI. Независимый общественный дистрибутив, не официальный продукт DeepSeek.',
+}
 /** Resolve native menu copy; unsupported languages fall back to English. @param locale - App locale. @returns Menu dictionary. */
-export function menuCopy(locale: string): typeof en { return locale.toLowerCase().startsWith('zh') ? zh : en }
+export function menuCopy(locale: string): typeof en {
+  const lower = locale.toLowerCase()
+  return lower.startsWith('zh') ? zh : lower.startsWith('ru') ? ru : en
+}
 
 /** Presentation state published by the trusted host. */
 export interface DesktopMenuState {

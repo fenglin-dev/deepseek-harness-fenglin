@@ -39,3 +39,20 @@ export const en = {
   'toolbar.aria': 'Selected text actions',
   'menu.aria': 'Selected text menu',
 } satisfies Record<SelectionActionsKey, string>
+
+/** Russian dictionary checked against the English key source. */
+export const ru = {
+  'action.copy': 'Копировать',
+  'action.ask': 'Спросить в новом диалоге',
+  'action.append': 'Добавить в текущий диалог',
+  'action.restart': 'Быстрый перезапуск',
+  'status.copied': 'Выделенный текст скопирован',
+  'status.added': 'Добавлено в текущий диалог',
+  'status.newConversation': 'Добавлено в черновик нового диалога',
+  'error.copy': 'Не удалось скопировать',
+  'error.action': 'Операция не удалась. Повторите попытку.',
+  'error.restart': 'Не удалось перезапустить. Повторите чуть позже.',
+  'prompt.ask': 'Ответьте на следующий выделенный текст:',
+  'toolbar.aria': 'Действия с выделенным текстом',
+  'menu.aria': 'Меню выделенного текста',
+} satisfies Record<SelectionActionsKey, string>
