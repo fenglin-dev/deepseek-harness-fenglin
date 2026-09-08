@@ -47,6 +47,7 @@ import {
   prepareDiagnosticSettingsDocument,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { provideCmdline, type AppReady } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
@@ -491,10 +492,28 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
       process.stderr.write(`${NAME}: profile dependency health ${JSON.stringify(dependencyHealth)}\n`)
     }
   }
-  const composed = await composeProfile(options.profile, options.patchFiles, safeMode)
+  // Before the first plugin mounts and before anything can issue a request: Node's fetch ignores the
+  // proxy environment on its own, so every profile would otherwise connect directly. Resolving from
+  // the launcher's snapshot — not `process.env` — is what lets a proxy declared in a `.env` layer
+  // work, which the NODE_USE_ENV_PROXY flag cannot do because Node samples the environment at start.
+  const disposeProxy = await installProxyFromEnvironment(
+    options.environment,
+    (message) => { process.stderr.write(`${NAME}: ${message}\n`) },
+  )
+
+  let composed: ComposedProfile
+  try {
+    composed = await composeProfile(options.profile, options.patchFiles, safeMode)
+  } catch (error) {
+    await disposeProxy()
+    throw error
+  }
   const app: { current?: Context } = {}
   const appReady = createAppReady()
-  const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
+  const shutdown = createProcessShutdown(async () => {
+    await app.current?.fiber.dispose()
+    await disposeProxy()
+  })
   const signalShutdown = new AbortController()
   const interrupt = (code: number): void => {
     signalShutdown.abort()

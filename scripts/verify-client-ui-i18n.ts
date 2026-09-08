@@ -37,7 +37,9 @@ const COPY_SUFFIX = /(?:aria|copy|description|empty|heading|label|labels|message
 const IMMUTABLE_LANGUAGE_TOKENS = new Set([
   'B',
   'Function',
+  'GB',
   'K',
+  'KB',
   'M',
   'MB',
   'KB',

@@ -74,6 +74,15 @@ describe('application entrypoints', () => {
     ])
   })
 
+  it('rejects a packaging dispatcher owned by the CLI workspace', () => {
+    const root = fixture()
+    write(root, 'apps/cli/src/runtime-bootstrap.ts', '#!/usr/bin/env node\n')
+
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'apps/cli/src/runtime-bootstrap.ts: executable source has no application/build/test classification',
+    ])
+  })
+
   it('rejects a private Python application carrier outside dsh', () => {
     const root = fixture()
     write(root, 'packages/sdk/rogue-python-runtime/package.json', JSON.stringify({ private: true }))
@@ -106,7 +115,8 @@ describe('application entrypoints', () => {
 
   it('rejects a community Desktop preload that is no longer owned by its build', () => {
     const root = fixture()
-    write(root, 'apps/desktop/package.json', '{"main":"lib/main.js"}\n')
+    write(root, 'apps/desktop/package.json', '{"main":"lib/entry.js"}\n')
+    write(root, 'apps/desktop/src/entry.ts', "await import('./main.js')\n")
     write(root, 'apps/desktop/src/main.ts', '')
     write(root, 'apps/desktop/src/preload.ts', '')
     write(root, 'apps/desktop/src/data-home-preload.ts', '')

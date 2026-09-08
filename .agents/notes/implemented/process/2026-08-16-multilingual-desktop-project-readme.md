@@ -14,7 +14,7 @@ The root README presents Open DeepSeek Harness Desktop as an independent, commun
 
 Every language entry uses the same fifteen-language switcher. The complete README distinguishes implemented desktop behavior from release direction, links detailed behavior to its owning documentation, and keeps platform claims narrow: macOS source execution is exercised, while Windows and Linux installers require packaging and native validation. Provider descriptions state that compatible services are optional, require current compatibility and policy review, and do not imply DeepSeek endorsement.
 
-This decision partially supersedes the root-structure preservation requirement in the [product-first README note](2026-07-22-product-first-root-readme.md). That note continues to own the product-first scope, concise inventory, and one-home-per-detail policy.
+The root README remains product-first, with a concise inventory and one authoritative home per detail, following the current [documentation standard](../../../../docs/AGENTS.md).
 
 ## Alternatives considered
 

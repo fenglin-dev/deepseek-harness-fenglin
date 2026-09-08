@@ -58,7 +58,6 @@ class StubSubprocessRuntime extends SubprocessRuntime {
       readFrom: () => ({ text, nextOffset: Buffer.byteLength(text), lossy: false }),
     })
     return {
-      pid: 42,
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,

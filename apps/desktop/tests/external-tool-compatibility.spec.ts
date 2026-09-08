@@ -84,7 +84,7 @@ describe('external tool compatibility', () => {
       revision: manifestJson.revision + 1,
       tools: {
         ...manifestJson.tools,
-        codex: { ...manifestJson.tools.codex, version: '0.1.2-alpha.6' },
+        codex: { ...manifestJson.tools.codex, version: '0.1.3-alpha.3' },
       },
     })
     const fetchMock = vi.fn<typeof fetch>()
@@ -99,9 +99,9 @@ describe('external tool compatibility', () => {
       fetch: fetchMock,
       verifyBundle: async () => {},
     })
-    await expect(manager.resolve('codex')).resolves.toMatchObject({ version: '0.1.2-alpha.5' })
+    await expect(manager.resolve('codex')).resolves.toMatchObject({ version: '0.1.3-alpha.2' })
     await expect(manager.resolve('codex')).resolves.toMatchObject({
-      version: '0.1.2-alpha.6', revision: manifestJson.revision + 1, source: 'remote',
+      version: '0.1.3-alpha.3', revision: manifestJson.revision + 1, source: 'remote',
     })
   })
 
@@ -141,7 +141,7 @@ describe('external tool compatibility', () => {
   it('parses exact pins and never creates a floating package spec', () => {
     const manifest = parseExternalToolCompatibilityManifest(manifestJson)
     expect(resolveExternalToolCoordinate(manifest, 'codex', 'embedded')).toMatchObject({
-      packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.2-alpha.5',
+      packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.3-alpha.2',
       source: 'embedded',
     })
   })
@@ -163,7 +163,7 @@ describe('external tool compatibility', () => {
     })
 
     await expect(manager.resolve('claude-code')).resolves.toMatchObject({
-      packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.2-alpha.5',
+      packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.3-alpha.2',
       source: 'remote',
     })
     expect(verifyBundle).toHaveBeenCalledOnce()
