@@ -109,6 +109,15 @@
       "installPolicy": "diagnostic",
       "archive": "dsh-diagnostic-lab-loader-export-unavailable-1.0.0.tgz",
       "integrity": "sha512-WyqR0+nwUFI4iTZTsuUyn7QKq5JCGZ/OTUg5/clbd9dbu2kGFzOe6Kqt0qoL/NeFMqbE46/x0v26wsgkn7LbpQ=="
+    },
+    {
+      "seedId": "diagnostic-legacy-session-api",
+      "packageName": "@dsh-diagnostic-lab/legacy-session-api",
+      "version": "1.0.0",
+      "profile": "web",
+      "installPolicy": "diagnostic",
+      "archive": "dsh-diagnostic-lab-legacy-session-api-1.0.0.tgz",
+      "integrity": "sha512-O20M5EU8zP0YhPBaZGK3+BJmGYlF0w1L5Bo6cUt3dgBxSuSH3Gb5dpz9JUwMH7epP0M0NIumYoLVMz4bnjiCQA=="
     }
   ]
 }

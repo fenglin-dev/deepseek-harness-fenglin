@@ -1,0 +1,18 @@
+{
+  "name": "@dsh-diagnostic-lab/legacy-session-api",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": "./index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-session": "*"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

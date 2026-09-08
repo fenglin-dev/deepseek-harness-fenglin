@@ -20,6 +20,7 @@ export type DiagnosticLabScenarioId =
   | 'loader-package-name-mismatch'
   | 'loader-dependency-unavailable'
   | 'loader-export-unavailable'
+  | 'legacy-session-api'
   | 'settings-invalid'
   | 'module-resolution-missing'
   | 'patch-invalid'
@@ -135,7 +136,8 @@ export interface DiagnosticLabManagerOptions {
       | 'dsh-font'
       | '@dsh-diagnostic-lab/scoped-loader-mismatch'
       | '@dsh-diagnostic-lab/loader-dependency-unavailable'
-      | '@dsh-diagnostic-lab/loader-export-unavailable',
+      | '@dsh-diagnostic-lab/loader-export-unavailable'
+      | '@dsh-diagnostic-lab/legacy-session-api',
   ): Promise<void>
   runDoctor(home: string, repair: boolean): Promise<DiagnosticLabDoctorResult>
   /** Run the desktop-owned fake CLI that proves timeout cancellation and rollback. */
@@ -161,6 +163,7 @@ const SCENARIOS: readonly DiagnosticLabScenario[] = [
   { id: 'loader-package-name-mismatch', title: 'Scoped Loader package-name mismatch', description: 'Installs a safe scoped package whose Bundle Patch names a missing unscoped module, then verifies immediate attribution and quarantine.', expectedCode: 'profile.module-resolution', targets: ['isolated', 'active-profile'] },
   { id: 'loader-dependency-unavailable', title: 'Loader dependency unavailable', description: 'Installs a resolvable aggregate Loader whose published entry imports a missing internal Host dependency, then verifies root attribution and quarantine.', expectedCode: 'loader.dependency-unavailable', targets: ['isolated', 'active-profile'] },
   { id: 'loader-export-unavailable', title: 'Loader dependency export unavailable', description: 'Installs a Loader that expects an API export absent from the installed DSH generation, then verifies runtime attribution and quarantine before safe-mode fallback.', expectedCode: 'loader.dependency-unavailable', targets: ['active-profile'] },
+  { id: 'legacy-session-api', title: 'Legacy Session API usage', description: 'Installs an inert offline plugin carrying the reproduced session.events pattern, then verifies advisory attribution without automatic quarantine.', expectedCode: 'profile.session-api-incompatible', targets: ['isolated', 'active-profile'] },
   { id: 'settings-invalid', title: 'Invalid settings document', description: 'Writes a duplicate-key settings.yaml and verifies that diagnostic safe mode skips it without modifying the original document.', expectedCode: 'config.settings-invalid', targets: ['isolated', 'active-profile'] },
   { id: 'client-module-unavailable', title: 'Packaged dsh-font client incompatibility', description: 'Installs the packaged dsh-font 1.1.0 fixture and verifies that the real browser boot path quarantines it without blocking the main UI.', expectedCode: 'profile.module-resolution', targets: ['active-profile'] },
   { id: 'module-resolution-missing', title: 'Missing plugin module', description: 'Attributes a missing module directory to the owning plugin.', expectedCode: 'profile.module-resolution', targets: ['isolated'] },
@@ -204,6 +207,7 @@ const FIXTURES: Record<DiagnosticLabScenarioId, ScenarioFixture> = {
   'loader-package-name-mismatch': { code: 'profile.module-resolution', file: 'profile/scoped-loader-mismatch.json', content: '{"package":"@dsh-diagnostic-lab/scoped-loader-mismatch","version":"1.0.0"}\n', checksum: '891275ddb0053315f3d9ec6f90aa0d7cbee3a5720364d3a8fd10122ff3104967' },
   'loader-dependency-unavailable': { code: 'loader.dependency-unavailable', file: 'profile/loader-dependency-unavailable.json', content: '{"package":"@dsh-diagnostic-lab/loader-dependency-unavailable","version":"1.0.0"}\n', checksum: 'b9251b2ec6e6b2d834acb5b6d4c13b55a9ef6e8a53890012072ccdaf19cea6f0' },
   'loader-export-unavailable': { code: 'loader.dependency-unavailable', file: 'profile/loader-export-unavailable.json', content: '{"package":"@dsh-diagnostic-lab/loader-export-unavailable","version":"1.0.0","missingExport":"installDiagnosticLabMissingSettingsSection"}\n', checksum: '07cfd0d9fb335e2b0c42d65e13c705c63208acfd59b0738503b4218031eb3a37' },
+  'legacy-session-api': { code: 'profile.session-api-incompatible', file: 'profile/legacy-session-api.json', content: '{"package":"@dsh-diagnostic-lab/legacy-session-api","version":"1.0.0","api":"session.events"}\n', checksum: 'c637f89d20491c43a334130c3bddd7461df741f63273fa470b6271e4604d9e9f' },
   'settings-invalid': { code: 'config.settings-invalid', file: 'profile/settings-invalid.json', content: 'diagnostic-lab-duplicate: one\ndiagnostic-lab-duplicate: two\n', checksum: 'af6043d7e12cbf592177d0ca81872a8a0ef09e4cb1d15589e368b906076208a2' },
   'client-module-unavailable': { code: 'profile.module-resolution', file: 'profile/dsh-font.json', content: '{"package":"dsh-font","version":"1.1.0","source":"packaged-diagnostic"}\n', checksum: 'ff3cf467522316802d16c7ad88863be9becc9789b2e61f94b121c44e786ffec7' },
   'module-resolution-missing': { code: 'profile.module-resolution', file: 'profile/missing-module.json', content: '{"module":"@hecoococ/dsh-lab-missing","exists":false}\n', checksum: '089ed0ccd5e318ad94cae5ea48017bc946676bfa6f4a66e041740369fbc2f221', repairedContent: '{"disabled":true}\n' },
@@ -580,6 +584,8 @@ export class DiagnosticLabManager {
         } else if (scenarioId === 'loader-package-name-mismatch'
           || scenarioId === 'loader-dependency-unavailable') {
           await this.#runLoaderPluginScenario(runRoot, scenarioId)
+        } else if (scenarioId === 'legacy-session-api') {
+          await this.#runLegacySessionApiScenario(runRoot)
         } else if (scenarioId === 'startup-operation-timeout') {
           await this.#runStartupTimeoutScenario(runRoot)
         } else {
@@ -648,6 +654,72 @@ export class DiagnosticLabManager {
     }
     await this.#writeReport(runRoot, terminalSnapshot)
     this.#replace(terminalSnapshot)
+  }
+
+  /** Install the inert Session fixture and verify an advisory without mutation or quarantine. */
+  async #runLegacySessionApiScenario(runRoot: string): Promise<void> {
+    const scenarioId = 'legacy-session-api' as const
+    const packageName = '@dsh-diagnostic-lab/legacy-session-api' as const
+    const fixture = FIXTURES[scenarioId]
+    const active = this.#requireActive()
+    const home = active.target === 'active-profile'
+      ? this.#options.activeDshHome
+      : join(runRoot, 'runtime', 'doctor-homes', scenarioId)
+    const scenarioRoot = active.target === 'active-profile'
+      ? join(home, 'profiles', 'web', '.diagnostic-lab', active.runId, scenarioId)
+      : join(runRoot, 'runtime', 'scenarios', scenarioId)
+    const boundary = active.target === 'active-profile'
+      ? join(home, 'profiles', 'web', '.diagnostic-lab')
+      : join(runRoot, 'runtime')
+    assertInside(boundary, scenarioRoot)
+    const fixturePath = join(scenarioRoot, fixture.file)
+    const started = Date.now()
+    let actualCode: string | undefined
+    try {
+      await this.#step(scenarioId, 'baseline')
+      if (existsSync(scenarioRoot)) throw new Error('diagnostic scenario baseline contains stale files')
+      await this.#step(scenarioId, 'inject')
+      await atomicWrite(fixturePath, fixture.content)
+      if (sha256(await readFile(fixturePath)) !== fixture.checksum) {
+        throw new Error('diagnostic fixture integrity check failed')
+      }
+      await this.#options.installDiagnosticPlugin(home, packageName)
+      await this.#step(scenarioId, 'detect')
+      const inspected = await this.#options.runDoctor(home, false)
+      actualCode = inspected.issueCodes.find(code => code === fixture.code)
+      if (actualCode !== fixture.code) throw new Error(`expected ${fixture.code}, received ${actualCode}`)
+      await this.#step(scenarioId, 'repair')
+      if (inspected.status !== 'healthy') throw new Error('advisory Session API warning changed Doctor health')
+      await this.#step(scenarioId, 'verify')
+      const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8')) as {
+        dependencies?: Record<string, unknown>
+        dsh?: { profile?: { bundles?: unknown[] } }
+      }
+      if (manifest.dependencies?.[packageName] === undefined
+        || !manifest.dsh?.profile?.bundles?.includes(packageName)) {
+        throw new Error('advisory Session API warning unexpectedly removed the fixture plugin')
+      }
+      if (await this.#hasQuarantine(home, packageName, 'loader-dependency-unavailable', fixture.code)) {
+        throw new Error('advisory Session API warning unexpectedly quarantined the fixture plugin')
+      }
+      await this.#step(scenarioId, 'retain')
+      this.#appendResult({
+        scenarioId, phase: 'passed', expectedCode: fixture.code, actualCode,
+        repaired: false, retained: true, disposition: 'retained', durationMs: Date.now() - started,
+      })
+    } catch (error) {
+      this.#appendResult({
+        scenarioId,
+        phase: this.#cancelled.has(active.runId) ? 'cancelled' : 'failed',
+        expectedCode: fixture.code,
+        ...(actualCode === undefined ? {} : { actualCode }),
+        repaired: false,
+        retained: existsSync(scenarioRoot),
+        durationMs: Date.now() - started,
+        diagnostic: sanitize(describeUnknown(error), this.#options.activeDshHome),
+      })
+      throw error
+    }
   }
 
   /** Exercise the bounded one-shot supervisor without touching the active Profile. */

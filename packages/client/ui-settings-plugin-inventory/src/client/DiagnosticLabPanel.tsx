@@ -40,6 +40,7 @@ const SCENARIO_KEYS: Record<DiagnosticLabScenarioId, {
   'startup-operation-timeout': { title: 'lab.scenario.startupTimeout.title', body: 'lab.scenario.startupTimeout.body' },
   'loader-dependency-unavailable': { title: 'lab.scenario.loaderDependency.title', body: 'lab.scenario.loaderDependency.body' },
   'loader-export-unavailable': { title: 'lab.scenario.loaderExport.title', body: 'lab.scenario.loaderExport.body' },
+  'legacy-session-api': { title: 'lab.scenario.legacySessionApi.title', body: 'lab.scenario.legacySessionApi.body' },
   'settings-invalid': { title: 'lab.scenario.settingsInvalid.title', body: 'lab.scenario.settingsInvalid.body' },
   'module-resolution-missing': { title: 'lab.scenario.module.title', body: 'lab.scenario.module.body' },
   'patch-invalid': { title: 'lab.scenario.patch.title', body: 'lab.scenario.patch.body' },

@@ -74,6 +74,7 @@ describe('bundled plugin seed', () => {
       ['@dsh-diagnostic-lab/scoped-loader-mismatch', 'diagnostic'],
       ['@dsh-diagnostic-lab/loader-dependency-unavailable', 'diagnostic'],
       ['@dsh-diagnostic-lab/loader-export-unavailable', 'diagnostic'],
+      ['@dsh-diagnostic-lab/legacy-session-api', 'diagnostic'],
     ])
     for (const entry of manifest.plugins.filter(candidate => (
       candidate.installPolicy !== 'diagnostic' && !candidate.registrySpec?.startsWith('github:')
@@ -88,6 +89,8 @@ describe('bundled plugin seed', () => {
     expect(manifest.plugins.find(entry => entry.packageName === '@dsh-diagnostic-lab/loader-dependency-unavailable'))
       .toMatchObject({ version: '1.0.0', installPolicy: 'diagnostic' })
     expect(manifest.plugins.find(entry => entry.packageName === '@dsh-diagnostic-lab/loader-export-unavailable'))
+      .toMatchObject({ version: '1.0.0', installPolicy: 'diagnostic' })
+    expect(manifest.plugins.find(entry => entry.packageName === '@dsh-diagnostic-lab/legacy-session-api'))
       .toMatchObject({ version: '1.0.0', installPolicy: 'diagnostic' })
     expect(manifest.plugins.find(entry => entry.packageName === '@ychris12138/dsh-usage-stats'))
       .toMatchObject({ version: '0.3.2', installPolicy: 'startup' })

@@ -27,8 +27,9 @@ async function bench(): Promise<{
     | 'dsh-font'
     | '@dsh-diagnostic-lab/scoped-loader-mismatch'
     | '@dsh-diagnostic-lab/loader-dependency-unavailable'
-    | '@dsh-diagnostic-lab/loader-export-unavailable') => Promise<void>>
-  runDoctor: Mock<() => Promise<{ status: string; issueCodes: string[]; output: string }>>
+    | '@dsh-diagnostic-lab/loader-export-unavailable'
+    | '@dsh-diagnostic-lab/legacy-session-api') => Promise<void>>
+  runDoctor: Mock<(home: string) => Promise<{ status: string; issueCodes: string[]; output: string }>>
   runStartupTimeoutExercise: Mock<() => Promise<{
     actualCode: 'runtime.profile-check-timeout'
     cancelled: boolean
@@ -51,9 +52,24 @@ async function bench(): Promise<{
       | 'dsh-font'
       | '@dsh-diagnostic-lab/scoped-loader-mismatch'
       | '@dsh-diagnostic-lab/loader-dependency-unavailable'
-      | '@dsh-diagnostic-lab/loader-export-unavailable',
+      | '@dsh-diagnostic-lab/loader-export-unavailable'
+      | '@dsh-diagnostic-lab/legacy-session-api',
   ) => {
     if (packageName === 'dsh-font') return
+    if (packageName === '@dsh-diagnostic-lab/legacy-session-api') {
+      const profile = join(targetHome, 'profiles', 'web')
+      const root = join(profile, 'node_modules', packageName)
+      await mkdir(root, { recursive: true })
+      await writeFile(join(profile, 'package.json'), JSON.stringify({
+        name: 'dsh-profile-web', private: true,
+        dependencies: { [packageName]: '1.0.0' }, dsh: { profile: { bundles: [packageName] } },
+      }))
+      await writeFile(join(root, 'package.json'), JSON.stringify({
+        name: packageName, version: '1.0.0', peerDependencies: { '@deepseek-ai/dsh-session': '*' },
+      }))
+      await writeFile(join(root, 'index.js'), 'for (const event of session.events) void event\n')
+      return
+    }
     await mkdir(join(targetHome, 'profiles', 'web'), { recursive: true })
     await mkdir(join(targetHome, 'quarantine'), { recursive: true })
     await mkdir(join(targetHome, 'profile-health'), { recursive: true })
@@ -84,7 +100,18 @@ async function bench(): Promise<{
       }],
     }))
   })
-  const runDoctor = vi.fn(async () => ({ status: 'healthy', issueCodes: [], output: '{}' }))
+  const runDoctor = vi.fn(async (targetHome: string) => {
+    const manifestPath = join(targetHome, 'profiles', 'web', 'package.json')
+    if (existsSync(manifestPath)) {
+      const manifest = JSON.parse(await readFile(join(targetHome, 'profiles', 'web', 'package.json'), 'utf8')) as {
+        dependencies?: Record<string, unknown>
+      }
+      if (manifest.dependencies?.['@dsh-diagnostic-lab/legacy-session-api'] !== undefined) {
+        return { status: 'healthy', issueCodes: ['profile.session-api-incompatible'], output: '{}' }
+      }
+    }
+    return { status: 'healthy', issueCodes: [], output: '{}' }
+  })
   const runStartupTimeoutExercise = vi.fn(async () => ({
     actualCode: 'runtime.profile-check-timeout' as const,
     cancelled: true,
@@ -135,6 +162,7 @@ describe('DiagnosticLabManager', () => {
     expect(final.completedSteps).toBe(final.totalSteps)
     const directLoaderScenarios = scenarioIds.filter(id => (
       id === 'loader-package-name-mismatch' || id === 'loader-dependency-unavailable'
+      || id === 'legacy-session-api'
     )).length
     const settingsScenarios = scenarioIds.filter(id => id === 'settings-invalid').length
     const startupTimeoutScenarios = scenarioIds.filter(id => id === 'startup-operation-timeout').length
@@ -359,6 +387,27 @@ describe('DiagnosticLabManager', () => {
     expect(existsSync(join(b.home, 'profile-health', 'web.json'))).toBe(false)
   })
 
+  it('retains an inert legacy Session fixture as an advisory without quarantining it', async () => {
+    const b = await bench()
+    const packageName = '@dsh-diagnostic-lab/legacy-session-api'
+    const initial = b.manager.start({ scenarioIds: ['legacy-session-api'], target: 'active-profile' })
+    const active = await waitForTerminal(b.manager, initial.runId)
+
+    expect(active).toMatchObject({ phase: 'active', recovery: 'retained' })
+    expect(active.results).toEqual([expect.objectContaining({
+      scenarioId: 'legacy-session-api',
+      actualCode: 'profile.session-api-incompatible',
+      repaired: false,
+      disposition: 'retained',
+    })])
+    expect(b.installDiagnosticPlugin).toHaveBeenCalledWith(b.home, packageName)
+    expect(existsSync(join(b.home, 'quarantine', 'profile-plugins.json'))).toBe(false)
+
+    await expect(b.manager.restoreAll(initial.runId)).resolves.toMatchObject({ phase: 'restored' })
+    expect(await readFile(join(b.home, 'profiles', 'web', 'package.json'), 'utf8'))
+      .toBe('{"name":"dsh-profile-web","private":true}\n')
+  })
+
   it('retains invalid settings in real safe mode and restores the exact original document', async () => {
     const b = await bench()
     const settingsPath = join(b.home, 'settings.yaml')
@@ -423,7 +472,8 @@ describe('DiagnosticLabManager', () => {
         | 'dsh-font'
         | '@dsh-diagnostic-lab/scoped-loader-mismatch'
         | '@dsh-diagnostic-lab/loader-dependency-unavailable'
-        | '@dsh-diagnostic-lab/loader-export-unavailable',
+        | '@dsh-diagnostic-lab/loader-export-unavailable'
+        | '@dsh-diagnostic-lab/legacy-session-api',
     ) => {
       expect(home).toBe(b.home)
       expect(packageName).toBe('dsh-font')

@@ -1,0 +1,4 @@
+- insert:
+  - id: diagnostic-legacy-session-api
+    name: '@dsh-diagnostic-lab/legacy-session-api'
+    config: {}

@@ -32,6 +32,22 @@ function props(snapshot: PluginInventorySnapshot): PluginDiagnosticsSectionProps
 }
 
 describe('PluginDiagnosticsSection', () => {
+  it('explains a legacy Session API warning without claiming the plugin was quarantined', async () => {
+    render(<PluginDiagnosticsSection {...props({
+      entries: [],
+      dependencyHealth: {
+        lastRepair: null, safeMode: null, quarantined: [],
+        issues: [{
+          diagnosticId: '00000000-0000-4000-8000-000000000016',
+          code: 'profile.session-api-incompatible', source: 'profile', phase: 'preflight', severity: 'warning',
+          attribution: { rootPackage: '@fixture/legacy-session' }, actions: ['open-config', 'export'], evidence: [],
+        }],
+      },
+    } as unknown as PluginInventorySnapshot)} />)
+    expect(await screen.findByText(en['diagnostics.issue.sessionApi'])).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en['health.quarantine.action.findUpdate'] })).toBeNull()
+  })
+
   it('shows declared Harness compatibility before offering a market update', async () => {
     render(<PluginDiagnosticsSection {...props({
       entries: [],

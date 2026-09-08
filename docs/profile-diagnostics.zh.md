@@ -43,6 +43,8 @@
 | `config.settings-invalid` | `settings.yaml` 或 JSON 解析失败，包括带行列位置的 `DUPLICATE_KEY` | 原文保持不动，安全模式改用安装方维护的空设置文件。界面提供打开文件或明确的“备份并重置”；后者先逐字节保留原文件，再重启 Harness。 |
 | `runtime.launch-invalid` | 内置 pnpm 或 Node 缺失、`DSH_PNPM_BIN` 无效、运行时路径错误，或 Harness 在 ready 前退出 | 校验结构化可执行文件与参数数组。包含空格或非 ASCII 字符的路径绝不经过拼接的 shell 命令。 |
 
+直接启用且声明 Session peer 依赖的外部 bundle，如果 JavaScript 遍历 `session.events`，可能产生 `profile.session-api-incompatible`。Doctor 和实时插件清单通过有界、只读的源码检查识别，不执行插件。警告指出根包及包内相对文件，但不能证明接收对象类型或代码实际执行失败；单独出现时不会触发修复、隔离或 Doctor 失败退出码。请查找兼容更新；若对话无法打开，可在插件管理中停用或卸载该插件。运行时 `session.events is not iterable` 错误归入同一诊断码。压缩后的别名、带保护的兼容代码以及其他接口差异仍需运行时证据；扫描未命中不代表兼容性认证。
+
 ## pnpm 规则预防
 
 | 产品诊断码 | 覆盖的 pnpm 规则 |
@@ -78,7 +80,7 @@
 
 安全模式记录进入时间、跳过的 bundle 名称，以及是否跳过用户层。其裸模块解析以安装方维护的 `$DSH_HOME/profiles/node_modules` fallback 为锚点，不再使用活动 Profile 或 CLI 包。主界面的“诊断”页面保持可用，展示根因、证据、风险和受保护操作。修复成功后重新启动正常 Profile。启动最多执行一次普通尝试和一次安全模式尝试；若安装自带的诊断 Profile 也失败，监督器会立即停止，保留原始 Profile incident 作为主证据，并把安全模式失败追加为次级证据。
 
-诊断演练中心为这些规则提供固定场景。`@dsh-diagnostic-lab/loader-dependency-unavailable` 会在隔离 home 与当前 Profile 中验证安装后缺失软件包的归属和隔离。仅限当前 Profile 的 `@dsh-diagnostic-lab/loader-export-unavailable` 会从已安装的 settings Host 导入一个故意不存在的命名导出，恢复真实 Harness，并验证系统在回退安全模式前完成运行时隔离。损坏设置场景写入重复键，等待真实活动 Profile 报告 `config.settings-invalid` 与 `skippedUserSettings: true`，确认原始字节保持不变，并通过**全部恢复**逐字节还原演练前设置。测试包始终属于 `diagnostic` 资源，普通启动绝不会预装。
+诊断演练中心为这些规则提供固定场景。`@dsh-diagnostic-lab/legacy-session-api` 场景可在隔离 home 和当前 Profile 中使用且默认不勾选，用于验证 `profile.session-api-incompatible` 风险提示的归属，不调用旧接口辅助函数，也不隔离测试包。`@dsh-diagnostic-lab/loader-dependency-unavailable` 会在隔离 home 与当前 Profile 中验证安装后缺失软件包的归属和隔离。仅限当前 Profile 的 `@dsh-diagnostic-lab/loader-export-unavailable` 会从已安装的 settings Host 导入一个故意不存在的命名导出，恢复真实 Harness，并验证系统在回退安全模式前完成运行时隔离。损坏设置场景写入重复键，等待真实活动 Profile 报告 `config.settings-invalid` 与 `skippedUserSettings: true`，确认原始字节保持不变，并通过**全部恢复**逐字节还原演练前设置。测试包始终属于 `diagnostic` 资源，普通启动绝不会预装。
 
 ## 导出
 

@@ -40,6 +40,7 @@ export type DiagnosticLabScenarioId =
   | 'startup-operation-timeout'
   | 'loader-dependency-unavailable'
   | 'loader-export-unavailable'
+  | 'legacy-session-api'
   | 'settings-invalid'
   | 'module-resolution-missing'
   | 'patch-invalid'
