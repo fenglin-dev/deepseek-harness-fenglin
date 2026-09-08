@@ -9,6 +9,7 @@ import {
   clearLastProfileRepairReport,
   clearQuarantinedProfilePlugin,
   classifyProfileDiagnostic,
+  inspectProfileLegacySessionApi,
   profileDiagnosticRuleCatalog,
   listQuarantinedProfilePlugins,
   readLastProfileRepairReport,
@@ -415,7 +416,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     }
     const lastRepair = readLastProfileRepairReport(this.profile)
     const currentDiagnostics = readCurrentDiagnostics(this.profile)
-    const issues = [...(currentDiagnostics?.issues ?? [])]
+    const issues = [...(currentDiagnostics?.issues ?? []), ...inspectProfileLegacySessionApi({ binName: 'dsh', profile: this.profile })]
     for (const issue of liveIssues) {
       if (issues.some(candidate => candidate.code === issue.code
         && candidate.attribution?.entryId === issue.attribution?.entryId)) continue

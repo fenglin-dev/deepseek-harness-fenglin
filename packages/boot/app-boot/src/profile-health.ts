@@ -6,6 +6,7 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -378,6 +379,70 @@ export function inspectProfileHostCompatibility(
         : { recommendedHostVersion: declaration.recommendedHostVersion }),
       ...(declaration.previewTag === undefined ? {} : { previewTag: declaration.previewTag }),
     })
+  }
+  return issues
+}
+
+/**
+ * Flag potential legacy Session API use without executing or quarantining external code.
+ * The bounded lexical check is advisory: source text alone cannot establish receiver types.
+ * @param options - Profile identity and optional isolated configuration home.
+ * @returns At most one warning per active external bundle, with package-relative evidence.
+ */
+export function inspectProfileLegacySessionApi(
+  options: Pick<ProfileDependencyOptions, 'binName' | 'profile' | 'home'>,
+): ProfileDiagnostic[] {
+  const dir = resolveProfileDir(options.profile, options.home ?? resolveDshHome())
+  if (!existsSync(join(dir, 'package.json'))) return []
+  const manifest = readProfileManifest(options.binName, dir)
+  const issues: ProfileDiagnostic[] = []
+  const installationOwned = new Set(PROFILE_TEMPLATES[options.profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
+  let totalBytes = 0
+  for (const packageName of new Set(manifest.dsh?.profile?.bundles ?? [])) {
+    if (totalBytes >= 8 * 1024 * 1024) break
+    if (installationOwned.has(packageName) || !PACKAGE_NAME.test(packageName)
+      || manifest.dependencies?.[packageName] === undefined) continue
+    const root = directPackageDir(join(dir, 'package.json'), packageName)
+    if (root === undefined) continue
+    let metadata: PackageManifest
+    try { metadata = readPackageManifest(join(root, 'package.json')) } catch { continue }
+    const peers = metadata.peerDependencies as Record<string, unknown> | undefined
+    if (peers?.['@deepseek-ai/dsh-session'] === undefined) continue
+    const pending = [root]
+    let bytes = 0
+    let entries = 0
+    let found = false
+    while (pending.length > 0 && bytes < 2 * 1024 * 1024 && entries < 256 && !found) {
+      const directory = pending.pop()
+      if (directory === undefined) break
+      // An optional advisory scan must not prevent diagnosis after a concurrent uninstall.
+      let children: string[]
+      try { children = readdirSync(directory) } catch { continue }
+      for (const name of children) {
+        if (++entries > 256) break
+        const path = join(directory, name)
+        let entry: ReturnType<typeof lstatSync>
+        try { entry = lstatSync(path) } catch { continue }
+        if (entry.isDirectory() && !['node_modules', 'vendor', 'tests', '.git'].includes(name)) {
+          pending.push(path)
+        } else if (entry.isFile() && /\.[cm]?js$/u.test(name)) {
+          const size = entry.size
+          if (size > 256 * 1024 || bytes + size > 2 * 1024 * 1024 || totalBytes + size > 8 * 1024 * 1024) continue
+          bytes += size
+          totalBytes += size
+          let source: string
+          try { source = readFileSync(path, 'utf8') } catch { continue }
+          if (!/for\s*\([^)]*\bof\s+(?:\w+\.)?session\.events\s*\)/u.test(source)) continue
+          const issue = classifyProfileDiagnostic({
+            source: 'profile', phase: 'preflight', attribution: { rootPackage: packageName },
+            value: `Possible legacy Session.events API in ${relative(root, path).split(sep).join('/')}. Opening a conversation may fail. Review or update this plugin; if affected, disable or uninstall it. The current Session API uses snapshotEvents(). Static evidence is not proof of a runtime failure.`,
+          })
+          issues.push({ ...issue, severity: 'warning' })
+          found = true
+          break
+        }
+      }
+    }
   }
   return issues
 }

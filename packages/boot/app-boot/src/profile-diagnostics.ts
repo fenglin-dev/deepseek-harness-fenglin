@@ -58,6 +58,7 @@ export type ProfileDiagnosticCode =
   | 'profile.orphaned-bundle'
   | 'profile.bundle-invalid'
   | 'profile.module-resolution'
+  | 'profile.session-api-incompatible'
   | 'profile.session-persistence-migration'
   | 'loader.dependency-unavailable'
   | 'profile.patch-invalid'
@@ -262,6 +263,10 @@ const RULES: readonly DiagnosticRule[] = [
       'not a materialized module',
       'no registered package factory',
     ].join('|'), 'iu'),
+  },
+  {
+    code: 'profile.session-api-incompatible', source: 'profile', severity: 'blocked', actions: ['open-config', 'export'],
+    pattern: /(?:session|agent\.session)\.events is not iterable|legacy Session\.events API/iu,
   },
   {
     code: 'profile.patch-invalid', source: 'profile', severity: 'blocked', actions: ['open-config', 'export'],

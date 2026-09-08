@@ -91,6 +91,24 @@ async function harness(): Promise<{
 }
 
 describe('PluginInventoryGateway', () => {
+  it('reports active bundle Session API risks without starting a mutation process', async () => {
+    const home = temporaryDirectory()
+    vi.stubEnv('DSH_HOME', home)
+    const profile = join(home, 'profiles', 'web')
+    const root = join(profile, 'node_modules', 'fixture-plugin')
+    writeJson(join(profile, 'package.json'), { name: 'fixture', dependencies: { 'fixture-plugin': '1.0.0' },
+      dsh: { profile: { bundles: ['fixture-plugin'] } } })
+    writeJson(join(root, 'package.json'), { name: 'fixture-plugin', version: '1.0.0',
+      peerDependencies: { '@deepseek-ai/dsh-session': '*' } })
+    writeFileSync(join(root, 'index.js'), 'for (const event of session.events) {}')
+    const { inventory, subprocess } = await harness()
+    expect((await inventory.list()).dependencyHealth.issues).toEqual([
+      expect.objectContaining({ code: 'profile.session-api-incompatible', severity: 'warning',
+        attribution: { rootPackage: 'fixture-plugin' } }),
+    ])
+    expect(subprocess.spawns).toEqual([])
+  })
+
   it('publishes one direct list method under the pluginInventory namespace', async () => {
     const { inventory } = await harness()
     expect(inventory.typertRemote).toMatchObject({

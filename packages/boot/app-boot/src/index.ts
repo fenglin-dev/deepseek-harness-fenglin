@@ -61,6 +61,7 @@ export {
   clearLastProfileRepairReport,
   inspectProfileDependencies,
   inspectProfileHostCompatibility,
+  inspectProfileLegacySessionApi,
   inspectOrphanedProfileBundles,
   inspectProfileBundleEntryOwnership,
   inspectUnresolvableProfileBundleEntries,

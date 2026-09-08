@@ -395,6 +395,31 @@ describe('profile plugin package manager', () => {
     }
   })
 
+  it('returns a Session API advisory without a repair-triggering exit or Profile writes', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-doctor-session-api-'))
+    const profile = join(home, 'profiles', 'web')
+    const plugin = join(profile, 'node_modules', 'fixture-plugin')
+    mkdirSync(plugin, { recursive: true })
+    const manifest = JSON.stringify({ name: 'fixture', dependencies: { 'fixture-plugin': '1.0.0' },
+      dsh: { profile: { bundles: ['fixture-plugin'] } } })
+    writeFileSync(join(profile, 'package.json'), manifest)
+    writeFileSync(join(plugin, 'package.json'), JSON.stringify({ name: 'fixture-plugin', version: '1.0.0',
+      peerDependencies: { '@deepseek-ai/dsh-session': '*' }, dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+    writeFileSync(join(plugin, 'cordis.patch.yml'), '[]\n')
+    writeFileSync(join(plugin, 'index.js'), 'for (const event of session.events) {}')
+    vi.stubEnv('DSH_HOME', home)
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', ['doctor'])).toBe(0)
+      expect(JSON.parse(String(stdout.mock.calls.at(-1)?.[0]))).toMatchObject({
+        status: 'healthy', issues: [{ code: 'profile.session-api-incompatible', severity: 'warning' }],
+      })
+      expect(readFileSync(join(profile, 'package.json'), 'utf8')).toBe(manifest)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('persists a guarded client Loader quarantine through the internal doctor command', () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-client-loader-quarantine-'))
     const profileDir = join(home, 'profiles', 'web')

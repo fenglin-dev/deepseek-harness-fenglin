@@ -27,6 +27,7 @@ import {
   initProfile,
   inspectProfileDependencies,
   inspectProfileHostCompatibility,
+  inspectProfileLegacySessionApi,
   inspectOrphanedProfileBundles,
   inspectUnresolvableProfileBundleEntries,
   listProfilePluginSnapshots,
@@ -526,6 +527,7 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[]): num
         ],
       }
     }
+    const apiWarnings = inspectProfileLegacySessionApi({ binName: NAME, profile })
     const normalized = !mutatesProfile
       && (outcome.conflicts.length > 0
         || (outcome.orphanedBundles?.length ?? 0) > 0
@@ -533,7 +535,7 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[]): num
         || (outcome.issues?.length ?? 0) > 0)
       ? { ...outcome, status: 'failed' as const }
       : outcome
-    process.stdout.write(`${JSON.stringify(normalized, undefined, 2)}\n`)
+    process.stdout.write(`${JSON.stringify({ ...normalized, issues: [...(normalized.issues ?? []), ...apiWarnings] }, undefined, 2)}\n`)
     if (!mutatesProfile) return normalized.status === 'healthy' ? 0 : 2
     if (normalized.status === 'repaired') return 10
     if (normalized.status === 'quarantined') return 11
