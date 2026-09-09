@@ -137,10 +137,11 @@ describe('profile plugin package manager', () => {
     const archive = join(root, 'plugin archives', 'market.tgz')
     writeFileSync(entry, 'process.stdout.write(JSON.stringify(process.argv.slice(2)))\n')
     vi.stubEnv('DSH_PNPM_BIN', entry)
+    vi.stubEnv('DSH_HOME', root)
     try {
       expect(runProfilePackageManager(root, ['add', '--save-exact', archive])).toEqual({
         exitCode: 0,
-        diagnostic: JSON.stringify(['add', '--save-exact', archive]),
+        diagnostic: JSON.stringify(['--store-dir', join(root, '.pnpm-store'), 'add', '--save-exact', archive]),
       })
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -283,6 +284,7 @@ describe('profile plugin package manager', () => {
       }
       const pnpm = join(process.cwd(), 'apps', 'desktop', 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
       vi.stubEnv('DSH_PNPM_BIN', pnpm)
+      vi.stubEnv('DSH_HOME', root)
       const args = ['add', `git+file://${source}`, '--reporter=ndjson']
       const blocked = runProfilePackageManager(profile, args)
       expect(blocked.exitCode).toBe(1)

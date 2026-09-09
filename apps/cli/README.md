@@ -22,6 +22,8 @@ The invoking directory is the default workspace root. The `web`, `headless`, `sd
 
 ## App arguments
 
+Profile plugin operations keep the pnpm cache in `$DSH_HOME/.pnpm-store` (default `~/.dsh/.pnpm-store`), including repair and snapshot restore. A local dependency tree using the same store format keeps its installed files and build results while its cache locator is atomically rebound. Shared old caches are not moved or deleted. Different store formats and external virtual stores retain pnpm's compatibility checks. Uncached packages still need their original local archives or network access; changing the cache location does not make an offline snapshot complete.
+
 The launcher parses only its own flags and hands everything after them to the booted profile, where any injected app plugin may parse the shared immutable snapshot ([`dsh-cmdline`](../../packages/boot/cmdline/README.md)). The first token the launcher does not recognize starts the app's arguments:
 
 ```sh

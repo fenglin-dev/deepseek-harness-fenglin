@@ -1,7 +1,10 @@
 /** Host-selected pnpm execution for profile dependency maintenance. */
 
 import { spawnSync } from 'node:child_process'
-import { extname, isAbsolute } from 'node:path'
+import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { existsSync } from 'node:fs'
+import { rebindProfilePnpmStore } from './profile-pnpm-store.ts'
 import type { ProfilePackageManagerResult } from '@deepseek-ai/dsh-app-boot'
 import { packageNetworkDiagnostic } from './package-network-diagnostic.ts'
 
@@ -198,13 +201,33 @@ export function runProfilePackageManager(
   profileDir: string,
   args: readonly string[],
 ): ProfilePackageManagerResult {
-  const invocation = resolvePnpmInvocation(process.env, args)
+  const storeDir = join(resolveDshHome(), '.pnpm-store')
+  const invocation = resolvePnpmInvocation(process.env, ['--store-dir', storeDir, ...args])
+  const inherited = Object.fromEntries(Object.entries(process.env)
+    .filter(([key]) => !/^(?:pnpm|npm)_config_store_dir$/iu.test(key)))
+  const environment = { ...inherited, pnpm_config_store_dir: storeDir, npm_config_store_dir: storeDir }
+  if (existsSync(join(profileDir, 'node_modules', '.modules.yaml'))) {
+    const probe = resolvePnpmInvocation(environment, ['--store-dir', storeDir, 'store', 'path', '--silent'])
+    const result = spawnSync(probe.command, probe.args, {
+      cwd: profileDir, env: environment, encoding: 'utf8', maxBuffer: 64 * 1024,
+      timeout: 15_000, shell: probe.shell,
+    })
+    if (result.error !== undefined || result.status !== 0) {
+      return { exitCode: result.status || 1, diagnostic: 'dsh: could not resolve the configuration-local pnpm store; existing dependencies were preserved' }
+    }
+    const versionedStore = result.stdout.trim()
+    if (resolve(dirname(versionedStore)) !== resolve(storeDir)) {
+      return { exitCode: 1, diagnostic: 'dsh: pnpm resolved a store outside the configuration directory; existing dependencies were preserved' }
+    }
+    rebindProfilePnpmStore(profileDir, versionedStore)
+  }
   const recoveryDiagnostics: string[] = []
   let completedRetries = 0
   while (true) {
     const startedAt = performance.now()
     const result = spawnSync(invocation.command, invocation.args, {
       cwd: profileDir,
+      env: environment,
       encoding: 'utf8',
       maxBuffer: 1024 * 1024,
       shell: invocation.shell,
