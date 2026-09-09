@@ -180,7 +180,12 @@
     # webserver under /api; browser half is the fetch/SSE client.
     - id: connection
       name: '@deepseek-ai/dsh-client-connection'
-      inject: [webRuntime]
+      # Connection keeps its service carrier-neutral, but this Web composition
+      # must expose the physical Web carrier to its own late/dedicated routes.
+      # Without this explicit Loader edge, third-party channels such as
+      # /dsh-pocket remain reserved in memory while POST falls through to the
+      # static server and returns 405.
+      inject: [webRuntime, webServer]
       config:
         # LAN literals derived from the active bind plus --trusted-host extras.
         # A deployment adding authorities keeps this expression and concatenates

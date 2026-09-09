@@ -14,7 +14,7 @@ The integration target is `dsh-v0.1.5-alpha.1` at `5dda764ed3aa172535a7967b06ff9
 
 Community Desktop retains the loopback `dsh web` launcher, shared Profile, browser authentication, custom desktop bridge, and GitHub installer downloader. Upstream's standalone desktop update coordinator and cloud release scripts are not community release entry points. The official right Sidebar and V3 migration chain remain upstream-owned.
 
-Dedicated Connection RPC registrations reserve their channel names in the calling plugin's effect. Their physical routes use a child context explicitly injecting `webServer`; consumers need only inject `connection`. Disposing the caller removes the route and reservation. Missing Web transport leaves a pending registration rather than forcing the neutral Connection service to depend on HTTP. Existing authentication and Host/Origin checks still protect every dedicated route.
+Dedicated Connection RPC registrations reserve their channel names in the calling plugin's effect. Their physical routes use a child context explicitly injecting `webServer`; the Web Profile therefore injects both `webRuntime` and `webServer` into Connection, while consumers need only inject `connection`. Disposing the caller removes the route and reservation. Missing Web transport leaves a pending registration rather than forcing the neutral Connection service to depend on HTTP. Existing authentication and Host/Origin checks still protect every dedicated route.
 
 Diagnostic Profile readiness proves only that the installation-owned recovery interface runs. It neither creates an active-Profile bootable snapshot nor commits a pending snapshot restore. A restore that reaches only diagnostic mode follows the existing failed-start rollback path.
 

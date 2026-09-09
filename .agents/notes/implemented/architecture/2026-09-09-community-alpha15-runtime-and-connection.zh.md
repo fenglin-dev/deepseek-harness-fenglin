@@ -14,7 +14,7 @@ Status: implemented
 
 社区桌面保留回环 `dsh web` 启动器、共享 Profile、浏览器认证、自定义桌面桥接和 GitHub 安装包下载器。上游独立桌面的更新协调器和云发布脚本不作为社区发布入口。官方右侧 Sidebar 与 V3 迁移链继续由上游拥有。
 
-独立 Connection RPC 注册在调用插件的 effect 中保留通道名。物理路由使用显式注入 `webServer` 的子上下文；消费者只需注入 `connection`。释放调用方会撤回路由和通道名。缺少 Web 载体时保留待挂载注册，而不是强制中立的 Connection 服务依赖 HTTP。现有认证与 Host/Origin 校验继续保护每条独立路由。
+独立 Connection RPC 注册在调用插件的 effect 中保留通道名。物理路由使用显式注入 `webServer` 的子上下文；因此 Web Profile 会同时向 Connection 注入 `webRuntime` 与 `webServer`，而消费者只需注入 `connection`。释放调用方会撤回路由和通道名。缺少 Web 载体时保留待挂载注册，而不是强制中立的 Connection 服务依赖 HTTP。现有认证与 Host/Origin 校验继续保护每条独立路由。
 
 诊断 Profile 就绪只证明安装方拥有的恢复界面能够运行。它既不创建活动 Profile 的可启动快照，也不提交待确认的快照恢复。仅进入诊断模式的恢复操作走现有启动失败回滚流程。
 
