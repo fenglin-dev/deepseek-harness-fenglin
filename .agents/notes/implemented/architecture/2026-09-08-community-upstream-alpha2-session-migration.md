@@ -28,6 +28,8 @@ The embedded external-tool manifest and Web installation fallback pin both offic
 
 **Repair arbitrary damaged records or skip unknown events.** Rejected because this could change tool relationships or silently lose recoverable content. The narrowly recognized failure remains distinct from successful tool execution.
 
+Historical packed tool deltas may have empty string IDs or names. The physical reader preserves these strings, and the v1-to-v2 edge expands only these runs into raw timed chunks because v2 compact tool runs require a complete identity. A proven failed-call repair also aligns the matching empty final stream block with the repaired message; earlier deltas, arguments and timestamps remain unchanged. Different content or a missing final block refuses this alignment. Non-string IDs, sequence overlaps and missing tool results remain errors. Regression tests cover both source versions, identity alignment and v2 reopening.
+
 ## Consequences
 
 Upgraded sessions use v2 storage and must not be assumed readable by the previous desktop release. Plugin snapshots restore deployment state, not session data. Verification uses synthetic temporary sessions, never users' live configuration. The upstream process-cleanup changes do not establish that Windows out-of-workspace deletion is prevented.

@@ -234,7 +234,6 @@ function decodePackedRun(
   const step = sessionFormatCount(data['step'], `${label} step`)
   const chunkIndex = sessionFormatCount(data['index'], `${label} index`)
   if (isTool && (typeof data['id'] !== 'string'
-    || data['id'].length === 0
     || (data['name'] !== undefined && typeof data['name'] !== 'string'))) {
     throw new SessionFormatError(`${label} id and optional name must be strings`)
   }

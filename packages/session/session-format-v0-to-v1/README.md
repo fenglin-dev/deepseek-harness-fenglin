@@ -48,6 +48,8 @@ The bounded historical normalizers convert `steering/message` to `user/message`,
 
 -----
 
+The physical reader accepts empty string identities in tool-call deltas; a delta is not a completed tool call. Non-string identities and malformed packed arrays still fail validation. Completed calls and their results retain strict relationship checks.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 

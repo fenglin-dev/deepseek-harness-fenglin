@@ -86,6 +86,31 @@ function legacyEmptyToolCallLog(): SessionFormatEvent[] {
 }
 
 describe('Community Desktop historical migrations', () => {
+  it.each([0, 1])('preserves empty packed tool identities from v%i as raw v2 deltas', (version) => {
+    for (const identity of [{ id: '', name: '' }, { id: '', name: 'read' }, { id: 'call', name: '' }]) {
+      const rows = [
+        { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+        { type: 'step/start', seq: 1, time: 2, data: { turn: 1, step: 1 } },
+        { type: 'tool-call-chunks', seq0: 2, time0: 3,
+          data: { turn: 1, step: 1, index: 0, ...identity, dt: [2], args: ['{', '}'] } },
+        { type: 'step/end', seq: 4, time: 6, data: { turn: 1, step: 1 } },
+        { type: 'turn/end', seq: 5, time: 7, data: { turn: 1, reason: { kind: 'completed' } } },
+      ]
+      const original = JSON.stringify(rows)
+      const restore = catalog.createRestore({ type: 'session', version, id: 'empty-deltas', createdAt: 1, delegationDepth: 0 }, { recovery: 'strict', validation: 'current' })
+      for (const row of rows) restore.decodeRow(row)
+      const migrated = restore.finish()
+      expect(migrated.events[2]?.data).toEqual({ turn: 1, step: 1, stream: [
+        { type: 'chunk', time: 3, chunk: { type: 'tool-call-delta', index: 0, ...identity, argumentsDelta: '{' } },
+        { type: 'chunk', time: 5, chunk: { type: 'tool-call-delta', index: 0, ...identity, argumentsDelta: '}' } },
+      ] })
+      expect(migrated.events.filter(e => e.type === 'assistant/message' || e.type === 'tool/result')).toHaveLength(0)
+      const reopen = catalog.createRestore(releasedV2SessionFormatCodec.encodeHeader(migrated.header, migrated.inheritedEventCount), { recovery: 'strict', validation: 'current' })
+      for (const row of migrated.events) reopen.decodeRow(row)
+      expect(reopen.finish()).toEqual(migrated)
+      expect(JSON.stringify(rows)).toBe(original)
+    }
+  })
   it.each([0, 1])('migrates failed empty tool calls from v%i and reopens v2 without changing the source', (version) => {
     const rows = legacyEmptyToolCallLog()
     const original = JSON.stringify(rows)

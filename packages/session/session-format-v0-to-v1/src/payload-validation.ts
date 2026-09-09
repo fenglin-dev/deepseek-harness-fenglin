@@ -729,7 +729,7 @@ function streamChunkValue(value: SessionFormatJsonValue | undefined, label: stri
     case 'tool-call-delta':
       assertReleasedV0Keys(chunk, ['type', 'index', 'id', 'argumentsDelta'], ['name'], label)
       countValue(chunk['index'], `${label} index`)
-      nonEmptyString(chunk['id'], `${label} id`)
+      stringValue(chunk['id'], `${label} id`)
       if (chunk['name'] !== undefined) stringValue(chunk['name'], `${label} name`)
       stringValue(chunk['argumentsDelta'], `${label} argumentsDelta`)
       return

@@ -1,5 +1,5 @@
 import { AssistantStreamAccumulator } from '@deepseek-ai/dsh-llm'
-import type { AssistantStreamRecord } from '@deepseek-ai/dsh-llm'
+import type { AssistantStreamRecord, ContentBlock } from '@deepseek-ai/dsh-llm'
 import {
   SessionFormatUnsupportedMigrationError,
   defineSessionFormatMigration,
@@ -22,6 +22,7 @@ import {
   isReleasedAssistantChunkRun,
 } from '@deepseek-ai/dsh-session-format-v0-to-v1'
 import { assertReleasedV2Header } from './validation.ts'
+import { repairLegacyToolStream } from './legacy-tool-stream.ts'
 
 const CHUNK_EVENT_REQUIRED = ['type', 'seq', 'time', 'data'] as const
 const CHUNK_EVENT_OPTIONAL = ['ignorable', 'sourceEventSeqs', 'surfaceOp'] as const
@@ -210,7 +211,11 @@ function transformReleasedRun(
   run: SessionFormatEventRun,
   context: SessionFormatMigrationContext,
 ): void {
-  if (!isReleasedAssistantChunkRun(run)) {
+  // Released writers packed empty identity deltas; v2 retains these as raw
+  // chunks, since a packed v2 tool run requires a complete identity.
+  if (!isReleasedAssistantChunkRun(run)
+    || (run.stream['type'] === 'tool-call-chunks'
+      && (run.stream['id'] === '' || run.stream['name'] === ''))) {
     for (const event of run.expand()) transformReleasedEvent(state, event, context)
     return
   }
@@ -315,7 +320,7 @@ function transformMessage(
   assertAttemptCut(state, pending.group, event.seq)
   pending.group.terminal = true
   flushBuffered(state, pending, context)
-  emitSource(state, messageEvent(event, pending.group), context)
+  emitSource(state, messageEvent(event, pending.group, state.sourceHeader.id), context)
   state.pending = undefined
 }
 
@@ -564,12 +569,18 @@ function streamOf(group: AttemptGroup) {
   return group.stream.map(({ record }) => record) as unknown as SessionFormatJsonValue
 }
 
-function messageEvent(source: SessionFormatEvent, group: AttemptGroup): SessionFormatEvent {
+function messageEvent(source: SessionFormatEvent, group: AttemptGroup, sessionId?: string): SessionFormatEvent {
   const data = record(source.data)
+  const stream = streamOf(group)
+  const repaired = sessionId === undefined ? stream : repairLegacyToolStream(
+    stream as unknown as AssistantStreamRecord[],
+    record(data['message'])['content'] as unknown as ContentBlock[],
+    sessionId,
+  ) as unknown as SessionFormatJsonValue
   const { sourceEventSeqs: _sourceEventSeqs, ...event } = source
   return {
     ...event,
-    data: { ...data, stream: streamOf(group) },
+    data: { ...data, stream: repaired },
   }
 }
 

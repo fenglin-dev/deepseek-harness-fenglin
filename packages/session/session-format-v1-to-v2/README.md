@@ -53,6 +53,8 @@ The v2 physical header requires `isSeeded` and does not store a numeric cut. The
 
 -----
 
+Packed tool-call deltas with an empty ID or name become raw timed v2 chunks, retaining every argument fragment and timestamp. For a proven failed-call identity repair, the matching empty final stream block receives the same identity; earlier deltas remain unchanged. Mismatched content refuses migration. The migration does not invent a tool identity or result from an incomplete stream.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
