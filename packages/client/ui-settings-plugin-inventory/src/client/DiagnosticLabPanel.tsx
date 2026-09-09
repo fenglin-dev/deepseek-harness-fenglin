@@ -38,6 +38,7 @@ const SCENARIO_KEYS: Record<DiagnosticLabScenarioId, {
   'client-module-unavailable': { title: 'lab.scenario.clientModule.title', body: 'lab.scenario.clientModule.body' },
   'loader-package-name-mismatch': { title: 'lab.scenario.loaderPackageNameMismatch.title', body: 'lab.scenario.loaderPackageNameMismatch.body' },
   'startup-operation-timeout': { title: 'lab.scenario.startupTimeout.title', body: 'lab.scenario.startupTimeout.body' },
+  'plugin-transaction-interrupted': { title: 'lab.scenario.transactionInterrupted.title', body: 'lab.scenario.transactionInterrupted.body' },
   'loader-dependency-unavailable': { title: 'lab.scenario.loaderDependency.title', body: 'lab.scenario.loaderDependency.body' },
   'loader-export-unavailable': { title: 'lab.scenario.loaderExport.title', body: 'lab.scenario.loaderExport.body' },
   'legacy-session-api': { title: 'lab.scenario.legacySessionApi.title', body: 'lab.scenario.legacySessionApi.body' },

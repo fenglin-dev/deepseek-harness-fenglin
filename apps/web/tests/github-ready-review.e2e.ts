@@ -139,9 +139,22 @@ describe.skipIf(MODE === 'record')('web e2e: GitHub ready-for-review', () => {
         head: { ref: 'fix-session-replay', sha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
       },
     }
-    expect((await send(webhookOrigin, 'ready', payload)).status).toBe(202)
-    await vi.waitFor(() => { expect(scaffold.ctx.agents.list()).toHaveLength(before + 1) })
-    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const completed = Promise.withResolvers<undefined>()
+    let reviewSession: string | undefined
+    const off = scaffold.ctx.on('session/event', (session, event) => {
+      if (event.type === 'user/message' && event.data.source.kind === 'webhook'
+        && event.data.source.provider === 'github' && event.data.source.source === 'primary-github'
+        && event.data.source.deliveryId === 'ready' && event.data.source.ruleId === 'review-pr-when-ready') reviewSession = session.id
+      if (event.type === 'turn/end' && session.id === reviewSession) completed.resolve(undefined)
+    })
+    try {
+      expect((await send(webhookOrigin, 'ready', payload)).status).toBe(202)
+      await completed.promise
+    } finally {
+      off()
+    }
+    expect(scaffold.ctx.agents.list()).toHaveLength(before + 1)
+    expect(adapter.requests).toHaveLength(1)
 
     const agent = scaffold.ctx.agents.list().find(candidate => candidate.session.header.cwd === scaffold.workspaceCwd)
     expect(agent).toBeDefined()

@@ -26,6 +26,7 @@ import type {
 import type { CommandContribution, CommandDecoration, CommandUiContract } from './contract.ts'
 import type { CommandDescriptor } from './directory.ts'
 import { CommandDirectory } from './directory.ts'
+import { en, type CommandKey } from './locales.ts'
 import { PopupSelectController } from './popup.ts'
 import type { TokenSegment } from './popup.ts'
 
@@ -57,6 +58,16 @@ interface LiveState {
   readonly decorations: Map<string, CommandDecoration>
   readonly popups: Map<SessionId, PopupSelectController<ClientSessionContext>>
 }
+
+/** Locale keys for the canonical first-party Host command descriptions. */
+const HOST_DESCRIPTION_KEYS = new Map<string, CommandKey>([
+  ['compact', 'description.compact'],
+  ['export', 'description.export'],
+  ['feedback', 'description.feedback'],
+  ['goal', 'description.goal'],
+  ['permission', 'description.permission'],
+  ['plan', 'description.plan'],
+])
 
 /** Command surface: session-keyed directory + '/' source + contribution registry + per-session popups. */
 export class CommandUiRuntime extends Service implements CommandUiContract {
@@ -192,19 +203,29 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     const seen = new Set<string>()
     for (const c of list) {
       seen.add(c.name)
-      rows.push({ name: c.name, description: c.description, ...(c.input !== undefined ? { hint: c.input.hint } : {}) })
+      rows.push({
+        name: c.name,
+        description: this.hostDescription(c),
+        ...(c.input !== undefined ? { hint: c.input.hint } : {}),
+      })
     }
     for (const contribution of this.live.contributions.values()) {
       if (!contribution.available(session)) continue
       if (seen.has(contribution.name)) {
         throw new Error(`ui-commands: contribution /${contribution.name} collides with a host command`)
       }
-      rows.push({ name: contribution.name, description: contribution.description })
+      rows.push({ name: contribution.name, description: contribution.description() })
     }
     return rankByName(
       rows.filter(c => req.position === 'leading' || c.hint === undefined),
       req.query,
     )
+  }
+
+  /** Translate exact built-in Host copy while preserving scoped or third-party descriptors verbatim. */
+  private hostDescription(command: CommandDescriptor): string {
+    const key = HOST_DESCRIPTION_KEYS.get(command.name)
+    return key !== undefined && command.description === en[key] ? this.t(key) : command.description
   }
 
   /** Decision table, menu column: contribution/decorated-host → popup; host input → claim; host bare → detached execute. */

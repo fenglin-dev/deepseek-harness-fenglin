@@ -8,6 +8,8 @@
   - button "Session log":
     - text: Session log
     - img
+  - button "Open the sidebar":
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -463,7 +465,7 @@
 - text: 7/25 {{clock}}
 - button "Back to bottom":
   - img
-- textbox "Message or run a task... / commands, @ files or sessions"
+- textbox "Message or run a task, / commands, @ files or sessions"
 - button "Commands":
   - img
 - button "Add attachment":
@@ -473,4 +475,6 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: 28 turns · 28 steps LLM {{duration}}
+- button "28 turns 28 steps":
+  - img
+  - text: 28 turns 28 steps

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Clients and settings pages can show what is currently composed in the host: calling `pluginInventory/list` returns the current non-group Loader entries in Loader order — entry id, module specifier, effective enablement, and root Fiber phase (`pending`, `loading`, `active`, `failed`, or `unloading`, or `null` when an entry has no live root Fiber). When an agent-preset roster is composed, the snapshot also carries one group per preset — id, trust, display name, default marking, health, and flattened composition rows — because model-facing plugins run inside those compositions. The inventory is point-in-time and uncached. The same restricted Remote service separately projects durable Profile diagnostics and exposes fixed doctor, quarantine, recovery, uninstall, and export operations without accepting arbitrary commands or paths. Client packages consume the Remote through the explicit [`api-remotes`](../../api/remotes/README.md) assembly rather than importing the Host implementation.
+Clients can call `pluginInventory/list` to inspect current Loader entries and agent-preset compositions without changing their configuration. Each response is an uncached, point-in-time snapshot of enablement, provenance, and runtime health. The same restricted Remote separately exposes durable Profile diagnostics and fixed doctor, quarantine, recovery, uninstall, and export operations; callers cannot submit arbitrary commands or paths. Client packages consume it through the explicit `api-remotes` assembly.
 
 ## Table of Contents
 

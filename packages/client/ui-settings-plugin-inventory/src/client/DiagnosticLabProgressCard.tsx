@@ -20,6 +20,7 @@ const SCENARIO_TITLES: Record<DiagnosticLabScenarioId, PluginInventoryLocaleKey>
   'client-module-unavailable': 'lab.scenario.clientModule.title',
   'loader-package-name-mismatch': 'lab.scenario.loaderPackageNameMismatch.title',
   'startup-operation-timeout': 'lab.scenario.startupTimeout.title',
+  'plugin-transaction-interrupted': 'lab.scenario.transactionInterrupted.title',
   'loader-dependency-unavailable': 'lab.scenario.loaderDependency.title',
   'loader-export-unavailable': 'lab.scenario.loaderExport.title',
   'legacy-session-api': 'lab.scenario.legacySessionApi.title',

@@ -18,6 +18,7 @@ import {
   initProfile,
   loadDiagnosticProfile,
   loadProfile,
+  loadProfileDirectory,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   readProfileManifest,
@@ -177,6 +178,16 @@ describe('loadProfile', () => {
     const profile = loadDiagnosticProfile('t', 'web', anchor, home)
     expect(profile.layers.map(layer => layer.packageName)).toEqual(templates)
     expect(profile.patches).toEqual([])
+  })
+
+  it('loads an explicitly owned profile directory outside CLI discovery', () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const dir = join(tmp(), 'managed', 'desktop')
+    initProfile(dir, ['bundle-a'])
+    const profile = loadProfileDirectory('managed app', dir, anchor)
+    expect(profile.dir).toBe(dir)
+    expect(profile.name).toBe('desktop')
+    expect(profile.layers.map(layer => layer.packageName)).toEqual(['bundle-a'])
   })
 
   it('resolves each dsh.profile.bundles entry to its patch layer in order, plus the user layer', () => {

@@ -81,6 +81,9 @@ class FakeFs extends FileSystem {
     }
     return bytes
   }
+  override async readByteRange(target: FsTarget, range: { offset: number; length: number }): Promise<Uint8Array> {
+    return new TextEncoder().encode(this.files.get(target.targetKey) ?? '').subarray(range.offset, range.offset + range.length)
+  }
   override async listDir(_target: FsTarget): Promise<FsDirEntry[]> {
     return []
   }

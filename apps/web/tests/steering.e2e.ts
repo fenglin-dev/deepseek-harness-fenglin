@@ -19,7 +19,7 @@ import {
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/steering', import.meta.url))
-const FIXTURE = join(SNAPSHOT_DIR, 'session.v2.jsonl')
+const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 // Two goldens pin the transient Host projection and its durable handoff: the
 // mid-turn state renders accepted steering from the Session control queue while the
 // question blocks admission, then the settled state renders the same message
@@ -186,7 +186,7 @@ describe('web e2e: mid-turn steering lands durably and visibly', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.v2.jsonl', 'mid-steer.expected.md', 'settled.expected.md', 'settled-expanded.expected.md',
+      'session.v3.jsonl', 'mid-steer.expected.md', 'settled.expected.md', 'settled-expanded.expected.md',
     ])
   })
 })

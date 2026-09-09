@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tool-bash-persistent` gives the agent a `bash` tool whose shell state persists across calls for the owning agent: cwd, exported variables, functions, and background jobs survive between commands. Each agent gets its own shell backed by an owner-scoped PTY session from the terminal service, and commands for the same agent run one at a time. Configuration selects the PTY backend and the wall-clock limit for one command; a timeout or an explicit `exit` closes the shell, and the next call starts fresh. It complements the one-shot `dsh-tool-bash` tool — choose it when work needs cross-call state. Mount it together with a terminal backend such as `dsh-terminal-bash` and the `ctx.terminals` service.
+This package gives an agent a `bash` tool whose cwd, exported variables, functions, and background jobs persist across calls. Each agent receives an isolated shell, and its commands run sequentially. Choose it for workflows that depend on cross-call state; use `dsh-tool-bash` when every command should start clean. Configure the PTY backend and per-command timeout; `exit`, timeout, or cancellation resets the shell, while interactive commands that wait for stdin may run until timeout.
 
 ## Table of Contents
 

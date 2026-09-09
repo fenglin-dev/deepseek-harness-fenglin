@@ -1,9 +1,31 @@
 import { describe, expect, it } from 'vitest'
 import {
-  abbreviateHomePath, resolveWorkspacePath, workspaceTitleOf,
+  abbreviateHomePath, fileAddressFor, isAbsoluteWorkspacePath, resolveWorkspacePath, workspaceTitleOf,
 } from '@deepseek-ai/dsh-util-workspace-path'
 
 describe('Workspace path helpers', () => {
+  it('addresses a relative or in-workspace path by session and any other absolute path by itself', () => {
+    expect(fileAddressFor('s', '/w', 'src/a.ts')).toBe('dsh-resource://file/session/s/src/a.ts')
+    expect(fileAddressFor('s', undefined, 'src/a.ts')).toBe('dsh-resource://file/session/s/src/a.ts')
+    expect(fileAddressFor('s', '/w/', '/w/src/a.ts')).toBe('dsh-resource://file/session/s/src/a.ts')
+    expect(fileAddressFor('s', '/w', '/w')).toBe('dsh-resource://file/session/s/')
+    expect(fileAddressFor('s', '/w', '/work/a.ts')).toBe('dsh-resource://file/absolute/work/a.ts')
+    expect(fileAddressFor('s', undefined, '/etc/hosts')).toBe('dsh-resource://file/absolute/etc/hosts')
+    expect(fileAddressFor('s', 'C:\\w', 'C:\\w\\x.ts')).toBe('dsh-resource://file/session/s/x.ts')
+    expect(fileAddressFor('s', 'C:\\w', 'D:\\x.ts')).toBe('dsh-resource://file/absolute/D:/x.ts')
+    expect(fileAddressFor('s', undefined, '\\\\server\\share\\x.ts')).toBe('dsh-resource://file/absolute//server/share/x.ts')
+    expect(fileAddressFor('s', '\\\\server\\share', '\\\\server\\share\\x.ts')).toBe('dsh-resource://file/session/s/x.ts')
+  })
+
+  it('classifies POSIX, Windows drive, and UNC paths as absolute and everything else as relative', () => {
+    expect(isAbsoluteWorkspacePath('/a/b')).toBe(true)
+    expect(isAbsoluteWorkspacePath('C:\\x\\a.ts')).toBe(true)
+    expect(isAbsoluteWorkspacePath('C:/x/a.ts')).toBe(true)
+    expect(isAbsoluteWorkspacePath('\\\\server\\share')).toBe(true)
+    expect(isAbsoluteWorkspacePath('src/a.ts')).toBe(false)
+    expect(isAbsoluteWorkspacePath('')).toBe(false)
+  })
+
   it('resolves relative paths without changing absolute paths', () => {
     expect(resolveWorkspacePath('/w', 'src/a.ts')).toBe('/w/src/a.ts')
     expect(resolveWorkspacePath('/w/', '/abs/a.ts')).toBe('/abs/a.ts')

@@ -21,7 +21,7 @@ import {
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/queued-image', import.meta.url))
-const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/live-interactions/session.v2.jsonl', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/live-interactions/session.v3.jsonl', import.meta.url))
 const PNG = fileURLToPath(new URL('../../../snapshots/session/read-image/workspace/red.png', import.meta.url))
 const QUEUED_EXPECTED = join(SNAPSHOT_DIR, 'queued.expected.md')
 const DELIVERED_EXPECTED = join(SNAPSHOT_DIR, 'delivered.expected.md')
@@ -100,12 +100,13 @@ describe('web e2e: queued image submission', () => {
     await input.fill(QUEUED_TEXT)
     await input.press('Enter')
 
-    // The queued row renders the durable thumbnail beside the text preview.
-    const dockThumb = page.locator('[data-queue-dock] img[alt="Queued message image"]')
+    // Admission replaces the local preview; the durable row loads its own thumbnail.
+    await page.getByRole('button', { name: 'Remove queued message', disabled: false }).waitFor({ timeout: 15_000 })
+    const dockThumb = page.locator('[data-queue-dock] li:not([data-submission-echo]) img[alt="Queued message image"]')
     await dockThumb.waitFor({ timeout: 15_000 })
     await expect.poll(() => dockThumb.getAttribute('src')).toMatch(/^blob:/)
+    await expect.poll(() => dockThumb.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true)
     await page.getByText(QUEUED_TEXT, { exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Remove queued message', disabled: false }).waitFor({ timeout: 15_000 })
     const queuedSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(QUEUED_EXPECTED, queuedSnapshot, MODE)
 
@@ -136,6 +137,14 @@ describe('web e2e: queued image submission', () => {
     ).toBe(0)
     const chatImage = page.locator('[class*="userRow"] img')
     await chatImage.first().waitFor({ timeout: 15_000 })
+    // Host persistence precedes delivery to the browser; require the waking turn's settled tail.
+    await page.locator('[data-turn-tail="3"]')
+      .getByRole('button', { name: 'Branch into a new conversation', exact: true })
+      .waitFor({ timeout: 15_000 })
+    await expect.poll(
+      () => page.getByRole('button', { name: /^3 turns 3 steps/ }).count(),
+      { timeout: 15_000 },
+    ).toBe(1)
     const deliveredSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(DELIVERED_EXPECTED, deliveredSnapshot, MODE)
 

@@ -16,9 +16,9 @@ Linux pull request 运行必需的 `node 24 / benchmarks` job，执行 `pnpm run
 
 必需性能 gate 位于顶层 `benchmarks/`，按被测用户路径而非 package 归属组织。Host 文件使用 `*.bench.ts`，Client 面文件使用 `*.bench.client.ts`，场景专属 worker 与 fixture 留在对应 benchmark 旁且不带 benchmark 后缀。包内 `.perf.ts` 文件仍是非门禁诊断；`scripts/` 负责编排而不承载 benchmark case。
 
-Session benchmark 使用固定参数合成 released-v0 输入：200 轮，每轮 500 个 text delta 与 125 个 reasoning delta，共 127,400 个逻辑事件。输入使用 Zstandard，并固定 logical rows 的分组与 frame 拆分，使每次运行处理相同的事件、字节与 frame 分布。fixture 直接构造不可变的 released-v0 physical rows，不依赖当前 runtime 的历史 encoder；压缩以及所有被测读取和 migration 入口仍使用生产代码。输入在计时前写入每个样本独占的临时目录；benchmark 不使用录制的 Session。
+Session benchmark 使用固定参数合成 released-v0 输入：200 轮，每轮 500 个 text delta 与 125 个 reasoning delta，共 127,400 个逻辑事件。输入使用 Zstandard，并固定 logical rows 的分组与 frame 拆分，使每次运行处理相同的事件、字节与 frame 分布。每个合成 turn 先开始 step，再追加 user surface 输入，使 V2-to-V3 migration 能预留受保护的 system head 而不重排历史。fixture 直接构造 released-v0 physical rows，不依赖当前 runtime 的历史 encoder；压缩以及所有被测读取和 migration 入口仍使用生产代码。输入在计时前写入每个样本独占的临时目录；benchmark 不使用录制的 Session。
 
-每个 Session endpoint 都针对用户生命周期中的两个时点运行。`first-open` 最初只有 released V0 generation，包含 migration；只读消费者不发布后继文件，可写 Agent resume 才会发布。测试准备阶段在计时外通过同一套生产 migration 生成一次 `post-upgrade-reopen`，再把未改动的 V0 前代和已发布的 V2 后继一起复制到每个样本目录。Reopen 样本使用全新进程，因此测量用户升级完成后的磁盘再次打开，不包含 migration 或进程内 cache。
+每个 Session endpoint 都针对用户生命周期中的两个时点运行。`first-open` 最初只有 released V0 generation，包含 migration；只读消费者不发布后继文件，可写 Agent resume 才会发布。测试准备阶段在计时外通过同一套生产 migration 生成一次 `post-upgrade-reopen`，再把未改动的 V0 前代和已发布的当前 generation 后继一起复制到每个样本目录。Reopen 样本使用全新进程，因此测量用户升级完成后的磁盘再次打开，不包含 migration 或进程内 cache。
 
 每个 access kind 与 endpoint 的样本都在全新、已编译的 Node 子进程中运行。模块加载、Host 服务初始化和 fixture 准备在测量开始前完成；测量进程不执行额外的预热解析。正常堆模式运行五个独立样本，报告全部样本及最小值、中位数和最大值，并以中位数执行各访问状态独立的固定预算。另一个子进程使用固定 128 MB old-space 上限运行同一路径，只判断能否完成；低堆限制引起的额外 GC 不进入正常时间基线。
 
@@ -35,7 +35,7 @@ Session benchmark 使用固定参数合成 released-v0 输入：200 轮，每轮
 
 正常堆模式在 Host 初始化完成且 Session 尚未访问时执行固定的两轮显式 GC，记录起点内存；操作计时结束后，在该场景要求的长期对象仍明确可达时再次执行同样的 GC，再记录终点内存。Agent resume 场景在终点保留 Agent、Session、完整 events 与正常服务 cache，它的 `heapUsed` 增量是常驻 Session 内存预算的主指标。每个场景同时报告 `external`、`arrayBuffers`、GC 后 RSS 和 `process.resourceUsage().maxRSS`；128 MB 模式继续防止瞬时分配峰值被终点 GC 隐藏。显式 GC 时间不计入操作时间。
 
-性能 gate 不重复功能测试的内容断言，只要求目标调用完成并到达对应的可观察终点。Client fold benchmark 继续使用真实 `ConversationNodeAssembler` 与全部 Chat Definition，要求大窗口的绝对时间和相对小窗口的缩放比均低于固定预算。
+一个不计时的小型 fixture 前置用例验证当前 migration、消息保留、V0 字节不变及后继再次打开。Worker 失败时保留 stderr 首尾各十行或致命堆错误，使准备阶段拒绝与预算超限可区分。计时性能用例不重复功能测试的内容断言，只要求目标调用完成并到达对应的可观察终点。Client fold benchmark 继续使用真实 `ConversationNodeAssembler` 与全部 Chat Definition，要求大窗口的绝对时间和相对小窗口的缩放比均低于固定预算。
 
 预算按各测量终点分别校准。两次 Node 24.19 x64 CI 运行的中位数最大相差 5.2%；其 CPU 密集型壁钟时间是 Node 24.18 arm64 参考运行的 1.95–2.06 倍。除当前 generation `open` 外，源码常量记录参考机器上的预期耗时；`ciTimeBudget()` 将其乘以实测的 2 倍 CI 时间系数和 1.25 倍波动余量。当前 generation `open` 使用标准运行器直接测得的 50 ms 预期值，仅乘以 1.25 倍余量，向上取整得到 63 ms 预算。GC 后增量堆与 Client fold 缩放预算不属于壁钟时间，因此只使用 1.25 倍余量。128 MB 完成性检查仍是独立的瞬时分配限制。由此得到的 first-open 时间上限、受限堆检查与 Client fold 上限都会拒绝已知退化。栈前参考提交固定为 `0d7ea53743e273930a31e9e2b6ca682f21dd4ca5`，只用于校准和评审预算；CI 不 checkout 或执行历史仓库。预算是源码中的受评审常量，不由环境变量覆盖。
 

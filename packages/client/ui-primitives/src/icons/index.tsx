@@ -787,6 +787,17 @@ export const IconClockOutline16 = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** Thin-stroke gauge: dial arc open at the bottom, filled hub, square-cut needle to the upper right.
+ * The dial center sits at y=8.75, not 8: the bottom opening leaves the glyph top-heavy, and the
+ * 0.75 drop optically centers the drawn extent in the 16 box. */
+export const IconGaugeOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M3.49 13.26A6.375 6.375 0 1 1 12.51 13.26" stroke="currentColor" strokeWidth="1.25" />
+    <path d="M8 8.75L11.4 5.35" stroke="currentColor" strokeWidth="1.25" />
+    <circle cx="8" cy="8.75" r="1.55" fill="currentColor" />
+  </svg>
+)
+
 /** ic_send_outline_14 (figma extract): thin-stroke upward send arrow. */
 export const IconSendOutline14 = ({ size = 14, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">

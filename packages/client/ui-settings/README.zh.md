@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-ui-settings` 是 dsh Web 客户端每个偏好设置界面都依赖的底座：功能插件绑定一个命名空间，即可在宿主设置文档中存储或编辑自己的偏好设置行，而无需重新实现传输层或 schema 处理。`ctx.settingsScope` 从共享文档镜像派生按命名空间的 scope，并以 revision 设栅，因此来自另一界面的并发写入会被拒绝，而不是被静默覆盖；`ctx.settingsSchema` 同步重建并校验 schema、编辑不可变路径。它声明设置界面所填充的 slot 类型——`settings.trigger`/`settings.header`/`settings.close`（界面框架）、`settings.action`（有序标题栏操作）、`settings.section`（每项功能一页）、`settings.plugins.tab` 与 `settings.onboarding`——而自身不渲染任何内容。`ctx.settingsNavigation.open()` 允许无关功能打开一个已贡献分区并选择性指定子分区，而无需导入设置外壳。由于本包不依赖任何 `ui-*` 呈现包，任何持有偏好设置的功能都能够到它；设置外壳本身位于 ui-settings-general。
+Web 客户端功能通过本包获得基于 Host 设置文档的命名空间偏好、schema 校验、原子的多字段更新以及防止覆盖并发修改的保护。本包声明设置外框、页面、顶部操作、插件标签页和引导扩展点，但不渲染界面。`ctx.settingsNavigation.open()` 无需导入展示外壳即可打开贡献的分区及可选子分区，让其他功能可以直接链接到对应设置。
 
 ## 目录
 

@@ -285,6 +285,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       'conversation.session.header.lineage': { kind: 'single', scope: 'session' },
       'conversation.session.header.actions': { kind: 'list', scope: 'session' },
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+      'conversation.session.header.corner': { kind: 'single', scope: 'session' },
     },
     store: conversationStore,
     inject: (sessionId: SessionId, actions: BoundActions<typeof conversationStore>): ConversationSessionHeaderInjected => ({
@@ -317,12 +318,11 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           removeAttachment: undefined,
           resolveDraftAttachments: undefined,
           retryFileUpload: undefined,
-          resolveSubmitMode: (running, gesture, steeringAvailable) =>
-            submissionPolicy.resolve(running, gesture, steeringAvailable),
           toggleCommandMenu: undefined,
           stop: undefined,
           command: undefined,
           hooks: {
+            busyEnter: submissionPolicy.busyEnter,
             fileUploads: ABSENT_FILE_UPLOADS,
             notices: ABSENT_NOTICES,
             lexicon: ABSENT_LEXICON,
@@ -355,8 +355,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         retryFileUpload: (id) => {
           if (sessions.binding(sessionId) !== undefined) conversation.retryFileUpload(sessionId, id)
         },
-        resolveSubmitMode: (running, gesture, steeringAvailable) =>
-          submissionPolicy.resolve(running, gesture, steeringAvailable),
         toggleCommandMenu: inputTriggers === undefined
           ? undefined
           : (selection) => {
@@ -382,6 +380,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           return result.ok && result.value.matched
         },
         hooks: {
+          busyEnter: submissionPolicy.busyEnter,
           fileUploads: conversation.fileUploads,
           notices: shell.notices,
           lexicon: shell.lexicon,

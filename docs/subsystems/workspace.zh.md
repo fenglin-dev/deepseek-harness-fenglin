@@ -242,6 +242,68 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 
 Source: [`packages/api/workspace-controller/src/index.ts`](../../packages/api/workspace-controller/src/index.ts)
 
+<a id="ctxworkspacefiles--workspacefiles"></a>
+
+### `ctx.workspaceFiles` — `WorkspaceFiles`
+
+Host Remote service over the composed filesystem, confined to one workspace.
+
+```ts cordis-catalog
+/**
+ * Read one page of lines from a UTF-8 text file inside the Agent's workspace.
+ * @param agent - target Agent resolved from the Session identity on the wire.
+ * @param path - workspace path, absolute or relative to the workspace root.
+ * @param range - the line window; omitted fields take the page defaults.
+ * @param signal - caller cancellation.
+ * @returns the page, the file's version at the stat before it, and whether it reaches the last line.
+ */
+@Remote async read(agent: Agent, path: string, range: WorkspaceFileRange, signal: AbortSignal): Promise<WorkspaceFileText>
+
+/**
+ * Read one byte window of a regular file inside the Agent's workspace: raw
+ * bytes, no text decoding and no binary rejection.
+ * @param agent - target Agent resolved from the Session identity on the wire.
+ * @param path - workspace path, absolute or relative to the workspace root.
+ * @param range - the byte window; omitted fields take the window defaults.
+ * @param signal - caller cancellation.
+ * @returns the window in base64, the file's version and size at the stat before it, and whether it reaches the last byte.
+ */
+@Remote async readBytes(agent: Agent, path: string, range: WorkspaceByteRange, signal: AbortSignal): Promise<WorkspaceFileBytes>
+
+/**
+ * Report one regular file's identity, version, and size without its content.
+ * @param agent - target Agent resolved from the Session identity on the wire.
+ * @param path - workspace path, absolute or relative to the workspace root.
+ * @param signal - caller cancellation.
+ * @returns the file's absolute path, current version, and byte size.
+ */
+@Remote async stat(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceFileStat>
+
+/**
+ * List the direct children of one directory inside the Agent's workspace.
+ * @param agent - target Agent resolved from the Session identity on the wire.
+ * @param path - workspace path, absolute or relative to the workspace root.
+ * @param signal - caller cancellation.
+ * @returns the directory's children in the backend's stable name order, bounded by the entry cap.
+ */
+@Remote async list(agent: Agent, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>
+
+/**
+ * Stream every `fs/observed` observation of a file inside the Agent's
+ * workspace. Only Agent filesystem operations report here; the OS is not
+ * watched.
+ * @param agent - target Agent resolved from the Session identity on the wire.
+ * @param signal - generation cancellation.
+ * @returns `ready` once the Host observation queue is active and the workspace
+ *   root is resolved, then queued and live observations in emission order.
+ */
+@Remote({ mode: 'stream' }) changes(agent: Agent, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>
+```
+
+Types: [Agent](core.zh.md)
+
+Source: [`packages/api/workspace-files/src/index.ts`](../../packages/api/workspace-files/src/index.ts)
+
 <a id="ctxworkspaceregistry--workspaceregistry"></a>
 
 ### `ctx.workspaceRegistry` — `WorkspaceRegistry`

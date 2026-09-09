@@ -45,7 +45,7 @@ class ReleasedV0ToV1Stage implements SessionFormatMigrationStage {
   constructor(private readonly input: SessionFormatMigrationStageInput) {
     this.emptyTools = new LegacyEmptyTools(input.sourceHeader.id)
     assertHeaderVersion(input.sourceHeader, 0)
-    this.headerInheritedEventCount = input.sourceInheritedEventCount
+    this.headerInheritedEventCount = sessionFormatCount(input.sourceInheritedEventCount, 'format v0 inherited event count')
   }
 
   transformEvent(
@@ -73,7 +73,7 @@ class ReleasedV0ToV1Stage implements SessionFormatMigrationStage {
 
   finish(_context: SessionFormatMigrationContext): number {
     this.emptyTools.finish()
-    return this.input.sourceInheritedEventCount
+    return this.headerInheritedEventCount
   }
 }
 
@@ -131,7 +131,7 @@ function assertSourceDeliveryMarker(
   const data = releasedV0Record(event.data, `${event.type} ${event.seq} data`)
   const acceptedVersion = data['sessionFormatVersion'] ?? 0
   const inherited = input.sourceHeader.parentSession !== undefined
-    && event.seq < input.sourceInheritedEventCount
+    && event.seq < sessionFormatCount(input.sourceInheritedEventCount, 'format v0 inherited event count')
   if (acceptedVersion === 0 && !inherited && data['sessionId'] !== input.sourceHeader.id) {
     throw new SessionFormatError('current-generation delivery marker names the wrong Session')
   }

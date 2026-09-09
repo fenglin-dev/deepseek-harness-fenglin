@@ -349,6 +349,12 @@ function profileCommandEnvironment(environment: NodeJS.ProcessEnv = process.env)
   if (environment.DSH_PNPM_BIN !== undefined && environment.DSH_PNPM_BIN.trim() !== '') {
     forwarded.DSH_PNPM_BIN = environment.DSH_PNPM_BIN
   }
+  if (environment.DSH_DESKTOP_MUTATION_OWNER_PID !== undefined) {
+    forwarded.DSH_DESKTOP_MUTATION_OWNER_PID = environment.DSH_DESKTOP_MUTATION_OWNER_PID
+  }
+  for (const name of ['DSH_DESKTOP_APPLICATION_VERSION', 'DSH_DESKTOP_PNPM_VERSION'] as const) {
+    if (environment[name] !== undefined) forwarded[name] = environment[name]
+  }
   if (environment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR !== undefined
     && environment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR.trim() !== '') {
     forwarded.DSH_DESKTOP_BUNDLED_PLUGINS_DIR = environment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR
@@ -817,14 +823,18 @@ export class PluginInventoryGateway extends TypertRemoteService {
       const launcher = dshLauncherArgv()
       const outputs: string[] = []
       let exitCode: number | null = 1
-      for (const [index, step] of job.steps.entries()) {
+      const environment = profileCommandEnvironment()
+      const staged = environment.DSH_DESKTOP_MUTATION_OWNER_PID !== undefined
+      const steps: InstallJob['steps'] = staged && job.steps.length > 1
+        ? [{ args: ['batch', JSON.stringify(job.steps)] }] : job.steps
+      for (const [index, step] of steps.entries()) {
         const handle = this.ctx.subprocess.spawn({
           argv: [
             ...launcher,
             'plugin', '--profile', job.snapshot.profile, ...step.args,
           ],
           cwd: process.cwd(),
-          env: profileCommandEnvironment(),
+          env: environment,
           stdio: {
             stdin: 'ignore',
             stdout: { maxBytes: this.outputMaxBytes },
@@ -837,7 +847,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
         const stdout = handle.collected.stdout?.readFrom(0).text.trim() ?? ''
         const stderr = handle.collected.stderr?.readFrom(0).text.trim() ?? ''
         outputs.push(...[stdout, stderr].filter(value => value !== ''))
-        const accepted = step.acceptedExitCodes ?? (index + 1 < job.steps.length ? [0] : undefined)
+        const accepted = step.acceptedExitCodes ?? (index + 1 < steps.length ? [0] : undefined)
         if (accepted !== undefined && !accepted.includes(exitCode ?? -1)) break
       }
       const diagnostic = outputs.join('\n')
@@ -858,7 +868,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
         exitCode,
         ...(diagnostic !== '' && (exitCode !== 0 || repair !== undefined) ? { diagnostic } : {}),
       }
-      if (job.quarantineId !== undefined && (phase === 'succeeded' || phase === 'repaired')) {
+      if (!staged && job.quarantineId !== undefined && (phase === 'succeeded' || phase === 'repaired')) {
         clearQuarantinedProfilePlugin(job.quarantineId)
       }
     } catch (error) {
@@ -900,6 +910,9 @@ export class PluginInventoryGateway extends TypertRemoteService {
     await this.runInstall(job)
     if (job.snapshot.phase !== 'quarantined') {
       return { packageName: request.packageName, status: 'failed', restartScheduled: false }
+    }
+    if (process.env.DSH_DESKTOP_MUTATION_OWNER_PID !== undefined) {
+      return { packageName: request.packageName, status: 'quarantined', restartScheduled: true }
     }
     const exit = this.ctx.get('appExit') as ((code: number) => void) | undefined
     if (exit === undefined) {

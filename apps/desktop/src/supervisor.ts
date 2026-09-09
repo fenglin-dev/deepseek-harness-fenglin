@@ -57,6 +57,11 @@ export class HarnessSupervisor {
     this.#primaryStartupFailure = options.initialSafeModeReason
   }
 
+  /** Whether readiness belongs to the installation-owned diagnostic Profile, not the active Profile. */
+  get isDiagnosticMode(): boolean {
+    return this.#safeMode
+  }
+
   #reportStartupFailure(message: string, logLine: string): void {
     const notify = (): void => {
       this.#options.onState('failed')

@@ -1,0 +1,38 @@
+/*
+ * Sits in the conversation header's corner seat, level with the Session log
+ * control, so it takes that row's 32px height and the same hover fill; square
+ * with the header's corner radius rather than a pill, because it is an icon
+ * button, not a labelled one. The placeholder is the same box with nothing in
+ * it, so the seat's width holds while the panel is shown.
+ */
+.placeholder {
+  display: inline-block;
+  flex: none;
+  width: 32px;
+  height: 32px;
+}
+
+.button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.button:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The left sidebar's panel icon, mirrored: the divider moves to the right side. */
+.icon {
+  transform: scaleX(-1);
+}

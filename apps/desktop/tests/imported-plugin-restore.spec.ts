@@ -179,6 +179,29 @@ describe('imported plugin restore', () => {
     expect((await readImportedPluginRestorePlan(root))?.entries[2]?.diagnostic).toContain('registry unavailable')
   })
 
+  it('does not report a restored plugin when managed activation rolls back', async () => {
+    const root = await fixture()
+    await mkdir(join(root, 'profiles', 'web'), { recursive: true })
+    await writeFile(join(root, 'profiles', 'web', 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+    const base = await extractImportedPluginRestorePlan(root)
+    await writeImportedPluginRestorePlan(root, {
+      ...base,
+      entries: [{ restoreId: 'managed', packageName: 'plugin', packageSpec: 'plugin@1', declaredSpec: '1', category: 'plugin', defaultSelected: true, recoverable: true, state: 'pending' }],
+    })
+    const withMutation = vi.fn(async (operation: () => Promise<unknown>) => {
+      await operation()
+      throw new Error('candidate startup rolled back')
+    })
+    const manager = new ImportedPluginRestoreManager({
+      dshHome: root, providedDependencies: {}, install: async () => '', withMutation,
+    })
+    await manager.prepare()
+    await manager.start(['managed'])
+    await vi.waitFor(() => { expect(manager.snapshot()?.active).toBe(false) })
+    expect(withMutation).toHaveBeenCalledOnce()
+    expect(manager.snapshot()?.entries[0]).toMatchObject({ state: 'failed', diagnostic: 'candidate startup rolled back' })
+  })
+
   it('checks at most three sources concurrently and blocks only confirmed unavailable sources', async () => {
     const root = await fixture()
     await mkdir(join(root, 'profiles', 'web'), { recursive: true })

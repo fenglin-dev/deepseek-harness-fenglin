@@ -5,8 +5,8 @@
  * the per-session active view dissolved into ui-conversation's session store
  * (its only consumer). What remains here is the contract other plugins'
  * apply worlds reach for panel transitions (sidebar toggle from ui-sidebar,
- * details open/close from ui-conversation) — writes stay inside the store's
- * declared action set, delivered as the registration's bound actions.
+ * right-panel show/hide from ui-sidebar-right) — writes stay inside the
+ * store's declared action set, delivered as the registration's bound actions.
  */
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { createLayoutStore } from './stores.ts'
@@ -23,10 +23,16 @@ export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
 export interface ILayout {
   /** Toggle the sidebar panel (closed ⟷ contract default width). */
   toggleSidebar(): void
-  /** Open the details panel (no-op when already open). */
-  openDetails(): void
-  /** Close the details panel. */
-  closeDetails(): void
+  /**
+   * Report the right panel's presentation without changing its expanded state.
+   * @param track - whether the normal panel width reserves a grid track,
+   *   including beneath a fullscreen overlay.
+   * @param fullscreen - whether the panel covers the frame and hides its outer
+   *   resize handle; independent of the underlying grid track.
+   */
+  openRightbar(track: boolean, fullscreen: boolean): void
+  /** Report the right panel as hidden: no track, no handle. */
+  closeRightbar(): void
 }
 
 /** Cross-plugin panel-action face (ctx.layout). */
@@ -49,14 +55,14 @@ export class LayoutController implements ILayout {
     this.#require().toggleSidebar()
   }
 
-  /** Open the details panel (no-op when already open). */
-  openDetails(): void {
-    this.#require().openDetails()
+  /** Report the right panel's track and fullscreen presentation. */
+  openRightbar(track: boolean, fullscreen: boolean): void {
+    this.#require().openRightbar(track, fullscreen)
   }
 
-  /** Close the details panel. */
-  closeDetails(): void {
-    this.#require().closeDetails()
+  /** Report the right panel as hidden: no track, no handle. */
+  closeRightbar(): void {
+    this.#require().closeRightbar()
   }
 
   #require(): PanelActions {

@@ -64,15 +64,19 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'conversation': { kind: 'single'; scope: 'session-maybe'; owner: ConvOwnerProps }
     /**
-     * The right details column, shown when the layout opens it. OCCUPIED by
-     * ui-conversation's DetailsPanel, which declares the tool-details seat
-     * inside it — registering here replaces the column and takes that seat
-     * with it. Absent an occupant the column renders nothing.
+     * The right column: a track the centre makes room for, or nothing. OCCUPIED
+     * by the right Sidebar, which uses the resolved column width in normal
+     * mode and covers the viewport in fullscreen, retaining the wide-screen
+     * column reservation underneath.
      *
-     * No owner props: the framework injects the session id and hooks for the
-     * `session` scope, and `ctx.layout` owns whether the column is open.
+     * Whether the panel is shown, and whether it takes a track, is the
+     * occupant's own recorded business — it reports the composition of its
+     * expanded and presentation state through `ctx.layout`, and the frame sizes
+     * the track and places the resize handle from that. The expand control is
+     * not this column's: it is a button in the conversation header. With no
+     * current session nothing is mounted here.
      */
-    'details': { kind: 'single'; scope: 'session'; owner: DetailsOwnerProps }
+    'rightbar': { kind: 'single'; scope: 'session'; owner: RightbarOwnerProps }
     /**
      * Frame-wide floating layer, above every column and outside their scroll
      * containers. Deliberately generic and unowned by any feature: a badge, a
@@ -104,8 +108,18 @@ export interface SidebarOwnerProps {
 /** Conversation owner share: business state and actions belong to the registrant. */
 export interface ConvOwnerProps {}
 
-/** Details owner share: empty — sessionId arrives as a framework-standard prop. */
-export interface DetailsOwnerProps {}
+/** Right column owner share: resolved normal geometry and opening eligibility. */
+export interface RightbarOwnerProps {
+  /** Resolved normal panel width in px, not the saved preference; zero if it cannot fit. */
+  width: number
+  /** Current frame width in px. */
+  viewportWidth: number
+  /**
+   * Whether a normal right panel can retain 300px beside a 400px center.
+   * Before a narrow opening, includes the space from collapsing the left sidebar.
+   */
+  canShow: boolean
+}
 
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
 export const inject = ['slots', 'theme', 'locale']
@@ -126,7 +140,7 @@ export function apply(ctx: ClientContext): void {
       children: {
         'sidebar': { kind: 'single', scope: 'root' },
         'conversation': { kind: 'single', scope: 'session-maybe' },
-        'details': { kind: 'single', scope: 'session' },
+        'rightbar': { kind: 'single', scope: 'session' },
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per

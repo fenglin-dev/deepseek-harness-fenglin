@@ -128,6 +128,7 @@ async function bench(): Promise<{
     installDiagnosticPlugin,
     runDoctor,
     runStartupTimeoutExercise,
+    runTransactionInterruptionExercise: async () => ({ interrupted: true, recovered: true }),
     productionDoctorFixtures: false,
     onSnapshot: (snapshot) => { snapshots.push(snapshot) },
   })
@@ -166,8 +167,9 @@ describe('DiagnosticLabManager', () => {
     )).length
     const settingsScenarios = scenarioIds.filter(id => id === 'settings-invalid').length
     const startupTimeoutScenarios = scenarioIds.filter(id => id === 'startup-operation-timeout').length
+    const transactionScenarios = scenarioIds.filter(id => id === 'plugin-transaction-interrupted').length
     expect(b.runDoctor).toHaveBeenCalledTimes(
-      (scenarioIds.length - directLoaderScenarios - settingsScenarios - startupTimeoutScenarios) * 4
+      (scenarioIds.length - directLoaderScenarios - settingsScenarios - startupTimeoutScenarios - transactionScenarios) * 4
       + directLoaderScenarios,
     )
     expect(b.runStartupTimeoutExercise).toHaveBeenCalledTimes(startupTimeoutScenarios)

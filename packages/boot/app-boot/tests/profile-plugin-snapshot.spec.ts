@@ -75,7 +75,9 @@ describe('Profile plugin snapshots', () => {
     }
   })
 
-  it.each(['', '{', 'null', '{"pid":0}', '{"pid":"123"}'])('preserves an uncertain owner: %j', (source) => {
+  it.each(['', '{', 'null', '{"pid":0}', '{"pid":"123"}',
+    '{"pid":2147483647,"token":42}', '{"pid":2147483647,"operationKind":false}',
+  ])('preserves an uncertain owner: %j', (source) => {
     const { home } = fixture()
     const root = join(home, 'plugin-snapshots', 'v1')
     const lock = join(root, '.profile-plugin-mutation.web.lock')
@@ -274,6 +276,22 @@ describe('Profile plugin snapshots', () => {
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
+  })
+
+  it('retains the previous successful startup as an automatic rollback point after a changed startup', () => {
+    const { home, profileDir } = fixture()
+    try {
+      const old = createProfilePluginSnapshot({ home, profile: 'web', kind: 'bootable', trigger: 'successful-startup' })
+      const automatic = createProfilePluginSnapshot({ home, profile: 'web', kind: 'automatic', trigger: 'plugin-update' })
+      expect(automatic.snapshotId).toBe(old.snapshotId)
+      writeFileSync(join(profileDir, 'package.json'), '{"dependencies":{"alpha":"2.0.0"}}')
+      const current = createProfilePluginSnapshot({ home, profile: 'web', kind: 'bootable', trigger: 'successful-startup' })
+      expect(listProfilePluginSnapshots({ home, profile: 'web' })).toEqual(expect.arrayContaining([
+        expect.objectContaining({ snapshotId: old.snapshotId, kind: 'automatic' }),
+        expect.objectContaining({ snapshotId: current.snapshotId, kind: 'bootable' }),
+      ]))
+      expect(readFileSync(join(home, 'plugin-snapshots', 'v1', old.snapshotId, 'files', 'profiles', 'web', 'package.json'), 'utf8')).toContain('1.0.0')
+    } finally { rmSync(home, { recursive: true, force: true }) }
   })
 
   it('does not deduplicate against an identical snapshot with a damaged payload', () => {

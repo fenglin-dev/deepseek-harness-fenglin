@@ -1,12 +1,12 @@
 // Web e2e scenario: the single-line produced-files summary a finished turn
 // ends with. Cold-seeds ten writes (zero model calls), then verifies the real
-// assembled lane adapts from a coarse width budget and keeps a capability-gated folder handoff.
-// The folder request is intercepted so one real browser click can exercise
-// the full client carrier without launching a native application in CI.
+// assembled lane adapts from a coarse width budget and offers no folder
+// handoff: chips open in the right Sidebar's text preview, which has no
+// directory form, so the row shows nothing rather than a dead button.
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-title'
@@ -152,23 +152,10 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     expect(await chips.nth(1).innerText()).toBe('index.html')
     expect(await chips.nth(4).innerText()).toBe('app.ts')
     await expect.poll(() => row.getByText('+ 5 files', { exact: true }).isVisible()).toBe(true)
-    const showFolder = page.getByRole('button', { name: 'Show in folder', exact: true })
-    expect(await showFolder.count()).toBe(1)
+    // Chips open in the right Sidebar's text preview, and a directory is not
+    // something that preview can show, so the row offers no folder action.
+    expect(await page.getByRole('button', { name: /folder/i }).count()).toBe(0)
     expect(await page.getByText('Produced', { exact: true }).count()).toBe(1)
-
-    const openPath = vi.spyOn(scaffold.ctx.sessionController, 'openWorkspacePath')
-      .mockResolvedValue({ opened: true })
-    try {
-      const [response] = await Promise.all([
-        page.waitForResponse(response => new URL(response.url()).pathname === '/api/session/openWorkspacePath'),
-        showFolder.click({ clickCount: 1 }),
-      ])
-      expect(response.status()).toBe(200)
-      expect(openPath).toHaveBeenCalledTimes(1)
-      expect(openPath.mock.calls[0]![0]).toMatchObject({ path: `${scaffold.workspaceCwd}/.` })
-    } finally {
-      openPath.mockRestore()
-    }
 
     const tops = await row.locator(':scope > *:visible').evaluateAll(elements =>
       elements.map(element => element.getBoundingClientRect().top))

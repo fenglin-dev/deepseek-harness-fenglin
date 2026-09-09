@@ -1,0 +1,128 @@
+.root {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0 8px;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: 1.5;
+}
+
+.header {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 10px;
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 500;
+}
+
+.level {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Every nested level indents by one step; the root level sits under the header. */
+.level .level {
+  padding-left: 14px;
+}
+
+.item {
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 3px 10px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.icon {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The document glyph is drawn 24×28; it rides the row at icon height. */
+.fileIcon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 16px;
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Neither a file nor a directory: shown so the directory is reported whole,
+   greyed so nobody tries to open it. */
+.other {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+.other:hover {
+  background: transparent;
+}
+
+.note {
+  margin: 0;
+  padding: 3px 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.status {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 10px;
+}
+
+.statusLine {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: 1.6;
+}
+
+/* The header's reload control, pushed to the row's right edge. */
+.tool {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tool:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}

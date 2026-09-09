@@ -39,6 +39,7 @@ interface BenchOptions {
   /** Scripted catalog per list payload; default serves the fixed catalogs by session. */
   commands?: (payload: { sessionId: SessionId }) => Promise<{ commands: CommandDescriptor[] }>
   execute?: (payload: { sessionId: SessionId; line: string }) => Promise<ExecuteValue>
+  translate?: (namespace: string, key: string, params?: Record<string, unknown>) => string
   addressed?: SessionId
 }
 
@@ -98,7 +99,8 @@ async function bench(opts: BenchOptions = {}) {
   // Deterministic key-echo translator: notice assertions read `key{json}`.
   ctx.provide('locale', {
     bind: (ns: string) => (key: string, params?: Record<string, unknown>) =>
-      `${ns}:${key}${params === undefined ? '' : JSON.stringify(params)}`,
+      opts.translate?.(ns, key, params)
+      ?? `${ns}:${key}${params === undefined ? '' : JSON.stringify(params)}`,
   })
   // Real scope tags behind a fake sessions face.
   const scopes = new Map<SessionId, { ctx: Context; fiber: { dispose(): Promise<void> } }>()
@@ -164,7 +166,7 @@ const themeUi = (over: Partial<CommandUiSpec> = {}): CommandUiSpec => ({
 
 const themeContribution = (over: Partial<CommandContribution> = {}): CommandContribution => ({
   name: 'theme',
-  description: 'client popup kind',
+  description: () => 'client popup kind',
   available: () => true,
   ui: themeUi(),
   ...over,
@@ -249,6 +251,35 @@ describe('candidates', () => {
     command.register(themeContribution())
     const names = (await source.candidates(proj('s1'), req('tm'))).map(c => c.name)
     expect(names).toEqual(['theme'])
+  })
+
+  it('localizes canonical built-in and contribution descriptions on every candidate request', async () => {
+    let locale = 'zh'
+    const commands: CommandDescriptor[] = [
+      { name: 'compact', description: 'Compact older conversation history' },
+      { name: 'goal', description: 'scoped goal override' },
+      { name: 'custom', description: 'plugin-authored copy' },
+    ]
+    const { command, source } = await bench({
+      commands: () => Promise.resolve({ commands }),
+      translate: (namespace, key) => `${locale}:${namespace}:${key}`,
+    })
+    command.register(themeContribution({ description: () => `${locale}:theme` }))
+
+    await expect(source.candidates(proj('s1'), req(''))).resolves.toEqual([
+      { name: 'compact', description: 'zh:command:description.compact' },
+      { name: 'goal', description: 'scoped goal override' },
+      { name: 'custom', description: 'plugin-authored copy' },
+      { name: 'theme', description: 'zh:theme' },
+    ])
+
+    locale = 'en'
+    await expect(source.candidates(proj('s1'), req(''))).resolves.toEqual([
+      { name: 'compact', description: 'en:command:description.compact' },
+      { name: 'goal', description: 'scoped goal override' },
+      { name: 'custom', description: 'plugin-authored copy' },
+      { name: 'theme', description: 'en:theme' },
+    ])
   })
 
   it('a contribution/host name collision fails loud', async () => {

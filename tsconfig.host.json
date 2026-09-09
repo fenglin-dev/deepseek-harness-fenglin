@@ -19,6 +19,7 @@
     "apps/web/tests/startup-rpc-budget.e2e.ts",
     "apps/web/tests/minimal-preset.snapshot.ts",
     "apps/web/tests/message-feedback-protocol.snapshot.ts",
+    "apps/web/tests/preset-migration.snapshot.ts",
     "apps/web/tests/live-interactions.e2e.ts",
     "apps/web/tests/question-composer.e2e.ts",
     "apps/web/tests/approval-composer.e2e.ts",
@@ -53,6 +54,7 @@
     "apps/web/tests/web-search-round.e2e.ts",
     "apps/web/tests/file-upload-round.e2e.ts",
     "apps/web/tests/message-actions.e2e.ts",
+    "apps/web/tests/open-in-app-ssh.e2e.ts",
     "apps/web/tests/message-feedback.e2e.ts",
     "apps/web/tests/message-feedback-layout.e2e.ts",
     "apps/web/tests/markdown-images.e2e.ts",
@@ -89,6 +91,7 @@
     "apps/web/tests/turn-tail-actions.e2e.ts",
     "apps/web/tests/goal-multi-turn-actions.e2e.ts",
     "apps/web/tests/agent-team-panel.e2e.ts",
+    "apps/web/tests/sidebar-right.e2e.ts",
     "apps/web/tests/chat-scroll-fixture.ts",
     "apps/web/tests/chat-scroll-contract.e2e.ts",
     "apps/web/tests/chat-long-interactions.e2e.ts",
@@ -99,6 +102,10 @@
     "apps/web/tests/workflow-run.e2e.ts",
     "apps/web/stress-tests/reasoning-chunks.stress.ts",
     "apps/cli/tests/**/*.ts",
+    "apps/desktop/src/**/*.ts",
+    "apps/desktop/scripts/**/*.ts",
+    "apps/desktop/tests/**/*.ts",
+    "packages/client/ui-settings-plugin-inventory/src/client/external-tool-compatibility-bridge.ts",
     "benchmarks/**/*.ts",
     "packages/*/*/tests/**/*.ts",
     "scripts/**/*.ts",
@@ -110,7 +117,6 @@
   // suffixes are mutually exclusive, so each aggregate excludes the other's
   // and the package test glob above needs no per-file entry.
   "exclude": [
-    "packages/client/*/src/**",
     "benchmarks/**/*.client.ts",
     "benchmarks/**/*.client.tsx",
     "packages/*/*/tests/**/*.client.ts",
@@ -160,6 +166,7 @@
     { "path": "./packages/api/gateway/tsconfig.host.json" },
     { "path": "./packages/api/remotes/tsconfig.host.json" },
     { "path": "./packages/api/session-controller/tsconfig.host.json" },
+    { "path": "./packages/api/workspace-files/tsconfig.host.json" },
     { "path": "./packages/api/settings-controller" },
     { "path": "./packages/api/workspace-controller/tsconfig.host.json" },
     { "path": "./packages/typert/loader" },
@@ -167,6 +174,7 @@
     { "path": "./packages/session/session-format" },
     { "path": "./packages/session/session-format-v0-to-v1" },
     { "path": "./packages/session/session-format-v1-to-v2" },
+    { "path": "./packages/session/session-format-v2-to-v3" },
     { "path": "./packages/session/session-format-catalog" },
     { "path": "./packages/session/session-checkpoint-policy" },
     { "path": "./packages/session/session-log-deepseek" },
@@ -246,7 +254,7 @@
     { "path": "./packages/shell/pwsh-local" },
     { "path": "./packages/shell/pwsh-sandbox" },
     { "path": "./packages/shell/tool-pwsh" },
-    { "path": "./native/landlock-run/packages/entry" },
+    { "path": "./native/system/packages/entry" },
     { "path": "./packages/sandbox/sandbox" },
     { "path": "./packages/sandbox/sandbox-local" },
     { "path": "./packages/sandbox/sandbox-policy" },
@@ -342,6 +350,7 @@
     { "path": "./packages/lsp/lsp" },
     { "path": "./packages/lsp/lsp-stdio" },
     { "path": "./packages/lsp/tool-lsp" },
-    { "path": "./apps/cli" }
+    { "path": "./apps/cli" },
+    { "path": "./apps/desktop-host" }
   ]
 }

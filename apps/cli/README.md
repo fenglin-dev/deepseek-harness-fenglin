@@ -9,6 +9,7 @@ The `dsh` command is the sole supported Node application launcher: profiles are 
 | Command | Purpose |
 |---|---|
 | `dsh --profile <name>` | Boot the named profile under `$DSH_HOME/profiles/<name>`. |
+| `dsh --profile <name> --from-default-profile <template>` | Create a new custom profile from a shipped template, then boot it. |
 | `dsh --profile acp` | Serve automation clients over ACP stdio until disconnect. |
 | `dsh --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
 | `dsh --profile sdk` | Serve SDK clients over JSON-RPC stdio until shutdown or disconnect. |
@@ -18,11 +19,15 @@ The `dsh` command is the sole supported Node application launcher: profiles are 
 | `dsh plugin --profile <name> approve-build <package-name>` | Allow one reviewed registry dependency lifecycle script without overriding an explicit denial. |
 | `dsh plugin --profile <name> doctor [--repair]` | Inspect shared Host dependency identity, or repair and quarantine conflicts. |
 
-The invoking directory is the default workspace root. The `web`, `headless`, `sdk`, `sdk-minimal`, and `acp` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.
+The invoking directory is the default workspace root. The `web`, `headless`, `sdk`, `sdk-minimal`, and `acp` profiles auto-initialize on first use from shipped templates. Create another profile at an unused, non-shipped name with `--from-default-profile`, or initialize a base-backed profile through `dsh plugin`. The `desktop` name is reserved for the Electron-owned profile, so the CLI rejects boot, config-dump, and plugin-management requests for it.
 
-## App arguments
+## Plugin changes
+
+When hosted by Community Desktop, mutating plugin commands verify a same-disk candidate and hand activation to the desktop process. `batch` keeps build approval and retry in one transaction; `transaction status`, `activate`, `commit`, and `rollback` operate only on validated journal IDs and managed plugin state. The caller holds the existing Profile lock, and pnpm registers its worker PID before running package code. Standalone CLI commands retain their ordinary synchronous behavior. See [Desktop](../desktop/README.md#plugin-changes) for readiness and rollback behavior.
 
 Profile plugin operations keep the pnpm cache in `$DSH_HOME/.pnpm-store` (default `~/.dsh/.pnpm-store`), including repair and snapshot restore. A local dependency tree using the same store format keeps its installed files and build results while its cache locator is atomically rebound. Shared old caches are not moved or deleted. Different store formats and external virtual stores retain pnpm's compatibility checks. Uncached packages still need their original local archives or network access; changing the cache location does not make an offline snapshot complete.
+
+## App arguments
 
 The launcher parses only its own flags and hands everything after them to the booted profile, where any injected app plugin may parse the shared immutable snapshot ([`dsh-cmdline`](../../packages/boot/cmdline/README.md)). The first token the launcher does not recognize starts the app's arguments:
 

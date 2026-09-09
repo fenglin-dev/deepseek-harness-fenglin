@@ -6,7 +6,7 @@
 // content-addressed store makes the saved path identical across record and
 // replay once the workspace cwd is tokenized, so the recorded read arguments
 // replay verbatim against a freshly re-uploaded object.
-// Record: DSH_SNAPSHOT=record rewrites session.v2.jsonl, then a keyless
+// Record: DSH_SNAPSHOT=record rewrites session.v3.jsonl, then a keyless
 // DSH_SNAPSHOT=refresh regenerates ui.expected.md.
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -21,7 +21,7 @@ import {
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/file-upload-round', import.meta.url))
-const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/session.v2.jsonl', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/session.v3.jsonl', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/ui.expected.md', import.meta.url))
 const TRAJECTORY_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/trajectory.expected.md', import.meta.url))
 const OVERRIDE = fileURLToPath(new URL('../../../snapshots/web/file-upload-round/replay.override.json', import.meta.url))
@@ -277,7 +277,7 @@ describe('web e2e: generic file upload through the real assembly', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.v2.jsonl', 'replay.override.json', 'ui.expected.md', 'trajectory.expected.md',
+      'session.v3.jsonl', 'replay.override.json', 'ui.expected.md', 'trajectory.expected.md',
     ])
   })
 })

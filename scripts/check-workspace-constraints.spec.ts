@@ -102,7 +102,7 @@ describe('dsh family version coherence', () => {
   it('leaves other sequences to their own version lines', () => {
     expect(checkDshFamilyVersion({ name: '@deepseek-ai/cordis', version: '4.0.1' }, '0.1.2-rc.1')).toBeUndefined()
     expect(checkDshFamilyVersion(
-      { name: '@deepseek-ai/node-addon-landlock-run', version: '0.1.1' },
+      { name: '@deepseek-ai/node-addon-system', version: '0.1.1' },
       '0.1.2-rc.1',
     )).toBeUndefined()
     expect(checkDshFamilyVersion({ version: '0.1.2-alpha.5' }, '0.1.2-rc.1')).toBeUndefined()

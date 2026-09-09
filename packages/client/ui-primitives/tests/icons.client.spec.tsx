@@ -18,7 +18,7 @@ const iconNames = Object.keys(icons)
 
 describe('ic_ds_ icon set', () => {
   it('exports the full icon set, including the shared reorder handle', () => {
-    expect(iconNames.length).toBe(75)
+    expect(iconNames.length).toBe(76)
     expect(iconNames).toEqual(expect.arrayContaining(['IconReorderOutline16', 'IconGoalOutline16']))
   })
 

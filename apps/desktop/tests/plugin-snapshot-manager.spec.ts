@@ -26,7 +26,7 @@ function target(): PluginSnapshotSummary {
 
 function fixture(options: { offlineFails?: boolean; journalPath?: string } = {}) {
   const events: PluginSnapshotRestoreSnapshot[] = []
-  const restoreFiles = vi.fn(async () => {})
+  const restoreFiles = vi.fn<(snapshotId: string) => Promise<void>>(async () => {})
   const installProfile = vi.fn(async (offline: boolean) => {
     if (offline && options.offlineFails === true && installProfile.mock.calls.length === 1) {
       throw new Error('ERR_PNPM_NO_OFFLINE_TARBALL')

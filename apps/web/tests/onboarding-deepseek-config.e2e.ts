@@ -222,6 +222,10 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await settings.getByLabel('上下文窗口 3').fill('131072')
     await settings.getByLabel('最大输出 token 数 3').fill('64K')
 
+    await expect.poll(
+      () => settings.getByLabel('API 密钥', { exact: true }).getAttribute('placeholder'),
+      { timeout: 10_000 },
+    ).toBe('已配置——输入新值可替换')
     const modelEditor = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MODELS_EXPECTED, modelEditor, MODE)
     await settings.getByRole('button', { name: '保存', exact: true }).click()

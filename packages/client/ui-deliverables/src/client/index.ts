@@ -9,7 +9,6 @@
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -38,32 +37,6 @@ export const inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.se
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  const workspacePathOpen = createSnapshotStore<boolean | undefined>(undefined)
-  let requestedWorkspacePathOpen = false
-  let capabilityRevision = 0
-  let pendingCapability: Promise<void> | undefined
-  const loadWorkspacePathOpen = (): void => {
-    if (pendingCapability !== undefined) return
-    const revision = capabilityRevision
-    const pending = ctx.remote.session.canOpenWorkspacePath()
-      .then((result) => {
-        if (revision === capabilityRevision) workspacePathOpen.set(result.ok && result.value)
-      })
-      .finally(() => {
-        if (pendingCapability === pending) pendingCapability = undefined
-      })
-    pendingCapability = pending
-  }
-  const ensureWorkspacePathOpen = (): void => {
-    requestedWorkspacePathOpen = true
-    if (workspacePathOpen.getSnapshot() === undefined) loadWorkspacePathOpen()
-  }
-  ctx.on('connection/reset', () => {
-    capabilityRevision++
-    pendingCapability = undefined
-    workspacePathOpen.set(undefined)
-    if (requestedWorkspacePathOpen) loadWorkspacePathOpen()
-  })
   ctx.uiConversation.events.register(deliverablesDefinition)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-deliverables: dictionaries')
   ctx.slots.inject(
@@ -72,11 +45,6 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.chat.turnTail',
       select: selectProducedFiles,
       locale: NS,
-      inject: () => ({
-        isLoopback: ctx.remote.$host.isLoopback,
-        ensureWorkspacePathOpen,
-        hooks: { workspacePathOpen },
-      }),
     }, ProducedFiles),
   )
   // The prose side of the same vocabulary: the chat view reaches this face

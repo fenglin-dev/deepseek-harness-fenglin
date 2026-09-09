@@ -1,0 +1,79 @@
+/* The guide body's own sheet: its domain owns these rules, so the shell's
+   stylesheet does not carry them. Tokens only. */
+.guide {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  padding-top: 24px;
+  text-align: center;
+}
+
+.guideTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsh-content-font-size, 14px);
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.guideBody {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: 1.6;
+}
+
+/* Entry boxes: as many per row as the pane's width allows. */
+.entries {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-width: 480px;
+  margin-top: 16px;
+}
+
+.entry {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.entry:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.entryIcon {
+  display: flex;
+  flex: none;
+  margin-top: 1px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.entryText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.entryTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: 1.4;
+}
+
+.entryDescription {
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: 1.4;
+}

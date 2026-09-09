@@ -14,6 +14,15 @@ function home() {
   return { root, lock: join(directory, '.profile-plugin-mutation.web.lock') }
 }
 describe('read-only plugin mutation guard', () => {
+  it('blocks an orphan pnpm worker and malformed worker ownership without deleting the lock', () => {
+    const b = home()
+    writeFileSync(b.lock, JSON.stringify({ pid: 99999999, workerPid: process.pid }))
+    expect(inspectProfileMutationLock(b.root)).toMatchObject({ active: true, state: 'live', workerPid: process.pid })
+    for (const workerPid of [0, '123', -1]) {
+      writeFileSync(b.lock, JSON.stringify({ pid: 99999999, workerPid }))
+      expect(inspectProfileMutationLock(b.root)).toMatchObject({ active: true, state: 'malformed' })
+    }
+  })
   it('blocks quit and restart for an external plugin lease until its owner releases it', async () => {
     const b = home()
     const source = JSON.stringify({ pid: process.pid, operationKind: 'profile-mutation' })

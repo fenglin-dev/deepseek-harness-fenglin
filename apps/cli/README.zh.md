@@ -9,6 +9,7 @@
 | 命令 | 用途 |
 |---|---|
 | `dsh --profile <name>` | 启动位于 `$DSH_HOME/profiles/<name>` 的指定 profile。 |
+| `dsh --profile <name> --from-default-profile <template>` | 从随附模板创建新的自定义 profile，然后启动它。 |
 | `dsh --profile acp` | 通过 ACP stdio 为自动化 client 提供服务，直至断开连接。 |
 | `dsh --profile headless "job"` | 运行一个全新的持久化会话，打印最终答案并退出。 |
 | `dsh --profile sdk` | 通过 JSON-RPC stdio 为 SDK client 提供服务，直至关闭或断开连接。 |
@@ -18,11 +19,15 @@
 | `dsh plugin --profile <name> approve-build <package-name>` | 允许一个已审核的 registry 依赖运行生命周期脚本，但不覆盖显式拒绝。 |
 | `dsh plugin --profile <name> doctor [--repair]` | 检查共享 Host 依赖身份，或修复并隔离冲突。 |
 
-运行命令时所在的目录将作为默认 workspace 根目录。`web`、`headless`、`sdk`、`sdk-minimal` 和 `acp` profile 在首次使用时会从随附模板自动初始化；其他任何 profile 都必须通过 `dsh plugin` 创建。
+运行命令时所在的目录将作为默认 workspace 根目录。`web`、`headless`、`sdk`、`sdk-minimal` 和 `acp` profile 在首次使用时会从随附模板自动初始化。使用 `--from-default-profile` 可以基于这些模板之一，在尚未使用的非内置名称处创建其他 profile；通过 `dsh plugin` 则可以初始化一个以 base 为基础的 profile。`desktop` 名称保留给 Electron 持有的 profile，因此 CLI 会拒绝针对它的启动、配置 dump 和插件管理请求。
 
-## 应用参数
+## 插件变更
+
+由社区桌面托管时，修改插件的命令会验证同磁盘候选状态，再将激活工作交给桌面进程。`batch` 将构建授权与重试保留在同一个事务中；`transaction status`、`activate`、`commit` 和 `rollback` 只操作经过校验的日志 ID 与插件受管状态。调用方持有现有 Profile 锁，pnpm 在执行软件包代码前登记工作进程 PID。独立 CLI 命令保留普通同步行为。就绪与回滚行为见[桌面说明](../desktop/README.zh.md#plugin-changes)。
 
 Profile 插件操作将 pnpm 缓存保存在 `$DSH_HOME/.pnpm-store`（默认 `~/.dsh/.pnpm-store`），修复和快照恢复也使用该位置。使用相同 store 格式的本地依赖树保留已安装文件和构建结果，只原子更新缓存位置记录。共享旧缓存不会被移动或删除。不同 store 格式与外置虚拟依赖目录仍由 pnpm 执行兼容性检查。未缓存的包仍需要原始本地归档或联网获取；更改缓存位置不会让离线快照自动变得完整。
+
+## 应用参数
 
 启动器只解析自身的 flag，并将其后的所有内容交给已启动的 profile；注入该 profile 的任意应用插件都可以解析这份共享的不可变快照（[`dsh-cmdline`](../../packages/boot/cmdline/README.zh.md)）。启动器无法识别的第一个 token 标志着应用参数的开始：
 

@@ -276,8 +276,10 @@ describe('bounded icon image protocol', () => {
     expect(bytes.readUInt16LE(2)).toBe(1)
     expect(bytes.readUInt16LE(4)).toBe(sizes.length)
     for (let i = 0; i < sizes.length; i++) {
-      expect(bytes[6 + i * 16]).toBe(sizes[i] % 256)
-      expect(bytes[6 + i * 16 + 1]).toBe(sizes[i] % 256)
+      const size = sizes[i]
+      if (size === undefined) throw new Error('missing ICO fixture size')
+      expect(bytes[6 + i * 16]).toBe(size % 256)
+      expect(bytes[6 + i * 16 + 1]).toBe(size % 256)
       const offset = bytes.readUInt32LE(6 + i * 16 + 12)
       expect(bytes.subarray(offset, offset + 8).toString('hex')).toBe('89504e470d0a1a0a')
     }

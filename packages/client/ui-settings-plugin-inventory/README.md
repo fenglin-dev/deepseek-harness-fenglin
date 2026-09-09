@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-settings-plugin-inventory` provides the client surfaces for plugin inventory, diagnostics, imported-plugin recovery, external tools, and Plugin Market discovery. The **Plugin list** tab lazily calls `ctx.remote.pluginInventory.list()` and renders two collapsible groups: agent-preset compositions first and the global Loader plane second. It exposes preset provenance, conditional gates, failures-first global rows, preset-provided global entries, and search across both scopes without mutating their enablement. Its new-session **Explore plugins** control composes four recommended or category-specific entries from the installed market, shows market-owned popularity and current Profile state, and offers guarded direct installation plus a deep link into the complete market. The package keeps no duplicate full catalog or fallback statistics. Loading, empty, no-match, and generic failure states stay local to the mounted component; without a roster the tab renders the global plane alone, expanded.
+Web users can inspect agent-preset compositions and the global plugin inventory, including enablement, provenance, failures, and search across both scopes. The package also presents diagnostics, imported-plugin recovery, external tools, and Plugin Market discovery. Its new-session Explore plugins control uses market-owned recommendations and Profile state for guarded installation and links to the full market, without maintaining a duplicate catalog or fallback statistics. Loading, empty, failure, and retry states remain local to each mounted surface.
 
 ## Table of Contents
 

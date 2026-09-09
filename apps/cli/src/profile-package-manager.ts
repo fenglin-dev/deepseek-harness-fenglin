@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs'
 import { rebindProfilePnpmStore } from './profile-pnpm-store.ts'
 import type { ProfilePackageManagerResult } from '@deepseek-ai/dsh-app-boot'
 import { packageNetworkDiagnostic } from './package-network-diagnostic.ts'
+import { profilePackageManagerLeaseEnvironment } from './profile-package-manager-lease.ts'
 
 const NAME = 'dsh'
 const WINDOWS_PNPM_RENAME_RETRY_DELAYS_MS = [500, 1_500, 3_000] as const
@@ -201,11 +202,14 @@ export function runProfilePackageManager(
   profileDir: string,
   args: readonly string[],
 ): ProfilePackageManagerResult {
-  const storeDir = join(resolveDshHome(), '.pnpm-store')
+  const tracked = profilePackageManagerLeaseEnvironment(profileDir, process.env)
+  const storeDir = tracked.pnpm_config_store_dir ?? join(resolveDshHome(), '.pnpm-store')
   const invocation = resolvePnpmInvocation(process.env, ['--store-dir', storeDir, ...args])
-  const inherited = Object.fromEntries(Object.entries(process.env)
+  const inherited = Object.fromEntries(Object.entries(tracked)
     .filter(([key]) => !/^(?:pnpm|npm)_config_store_dir$/iu.test(key)))
-  const environment = { ...inherited, pnpm_config_store_dir: storeDir, npm_config_store_dir: storeDir }
+  const environment = {
+    ...inherited, pnpm_config_store_dir: storeDir, npm_config_store_dir: storeDir,
+  }
   if (existsSync(join(profileDir, 'node_modules', '.modules.yaml'))) {
     const probe = resolvePnpmInvocation(environment, ['--store-dir', storeDir, 'store', 'path', '--silent'])
     const result = spawnSync(probe.command, probe.args, {

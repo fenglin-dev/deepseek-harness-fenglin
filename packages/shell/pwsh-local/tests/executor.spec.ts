@@ -13,7 +13,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { afterAll, afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, onTestFinished } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { PwshLocalExecutor, ENCODING_PREAMBLE, candidatePwshPaths, resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
@@ -30,8 +30,14 @@ afterAll(() => {
 
 /** Per-test temp dirs, removed after each test. */
 const tempDirs: string[] = []
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+const contexts: Context[] = []
+afterEach(async () => {
+  const ownedContexts = contexts.splice(0)
+  const directories = tempDirs.splice(0)
+  const results = await Promise.allSettled(ownedContexts.map(ctx => ctx.fiber.dispose()))
+  for (const dir of directories) rmSync(dir, { recursive: true, force: true })
+  const failures: unknown[] = results.flatMap((result): unknown[] => result.status === 'rejected' ? [result.reason] : [])
+  if (failures.length > 0) throw new AggregateError(failures, 'PowerShell fixture cleanup failed')
 })
 
 // The probe follows the executor's own resolution (Program Files installs on
@@ -51,6 +57,7 @@ function samePath(actual: string, expected: string): boolean {
 
 async function setup(config: ConstructorParameters<typeof PwshLocalExecutor>[1] = {}) {
   const ctx = new Context()
+  contexts.push(ctx)
   await ctx.plugin(LocalSubprocessRuntime)
   ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
   // A short kill grace via the REAL config path, so escalation tests stay fast.
@@ -64,15 +71,13 @@ async function setup(config: ConstructorParameters<typeof PwshLocalExecutor>[1] 
  * `expected`; returns the accumulation (reads never re-deliver, so the caller
  * gets everything produced up to the match).
  */
-async function readUntil(proc: ShellProcess, expected: string, timeoutMs = 5_000): Promise<string> {
-  const deadline = Date.now() + timeoutMs
+async function readUntil(proc: ShellProcess, expected: string, timeoutMs: number): Promise<string> {
   let all = ''
-  while (Date.now() < deadline) {
+  await expect.poll(() => {
     all += proc.readOutput().delta
-    if (lf(all).includes(expected)) return lf(all)
-    await new Promise(resolve => setTimeout(resolve, 20))
-  }
-  throw new Error(`process output did not include ${JSON.stringify(expected)}; accumulated ${JSON.stringify(lf(all))}`)
+    return lf(all)
+  }, { timeout: timeoutMs }).toContain(expected)
+  return lf(all)
 }
 
 describe('resolvePwshPath and candidatePwshPaths (pure, every platform)', () => {
@@ -414,7 +419,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
     expect(proc.exitCode).toBe(0)
   })
 
-  it('threads stdin and extra env into a background process', async () => {
+  it('threads stdin and extra env into a background process', async ({ task }) => {
     const { bash } = await setup()
     const proc = bash.start(bash.resolve({
       command: '$s = ([Console]::In.ReadToEnd()).TrimEnd(); Write-Output $s; Write-Output "[$env:BG_VAR][$env:DSH_BG_VAR]"',
@@ -422,19 +427,35 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
       env: { BG_VAR: 'bg-env' },
       dshEnv: { DSH_BG_VAR: 'bg-dsh-env' },
     }))
-    const partialOutput = await readUntil(proc, '[bg-env][bg-dsh-env]')
+    const partialOutput = await readUntil(proc, '[bg-env][bg-dsh-env]', task.timeout)
     await proc.done
+    expect(proc.status).toBe('completed')
     const output = partialOutput + lf(proc.readOutput().delta)
     expect(output).toBe('bg-stdin\n[bg-env][bg-dsh-env]\n')
     expect(proc.exitCode).toBe(0)
   })
 
-  it('readOutput is consuming: increments are never re-delivered, and reads stay valid after exit', async () => {
-    const { bash } = await setup()
-    const proc = bash.start(bash.resolve({ command: 'Write-Output first; Start-Sleep -Seconds 1; Write-Output second' }))
-    const first = await readUntil(proc, 'first\n')
+  it('readOutput is consuming: increments are never re-delivered, and reads stay valid after exit', async ({ task }) => {
+    const { ctx, bash } = await setup()
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwsh-read-'))
+    onTestFinished(async () => {
+      await ctx.fiber.dispose()
+      rmSync(dir, { recursive: true, force: true })
+    })
+    const releasePath = join(dir, 'release')
+    // The second write cannot race the host's first consuming read.
+    const proc = bash.start(bash.resolve({
+      command: 'Write-Output first; [Console]::Out.Flush(); while (-not [System.IO.File]::Exists($env:DSH_PWSH_RELEASE)) { Start-Sleep -Milliseconds 20 }; Write-Output second',
+      env: { DSH_PWSH_RELEASE: releasePath },
+    }))
+    const first = await readUntil(proc, 'first\n', task.timeout)
     expect(lf(first)).toBe('first\n')
+    expect(proc.status).toBe('running')
+    expect(proc.readOutput().delta).toBe('')
+    writeFileSync(releasePath, '')
     await proc.done
+    expect(proc.status).toBe('completed')
+    expect(proc.exitCode).toBe(0)
     // Read-after-exit returns the remaining buffered output — once.
     const second = proc.readOutput()
     expect(lf(second.delta)).toBe('second\n')
@@ -530,7 +551,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
 })
 
 describe.skipIf(!hasPwsh)('process lifecycle ownership (the subprocess service, not the executor)', () => {
-  it('a background process survives executor-fiber disposal and dies with the subprocess service', async () => {
+  it('a background process survives executor-fiber disposal and dies with the subprocess service', async ({ task }) => {
     const ctx = new Context()
     const managerFiber = await ctx.plugin(LocalSubprocessRuntime)
     ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
@@ -540,7 +561,7 @@ describe.skipIf(!hasPwsh)('process lifecycle ownership (the subprocess service, 
     // The child prints its own pid so the test can probe liveness through the
     // public read surface alone.
     const proc = bash.start(bash.resolve({ command: 'Write-Output $PID; Start-Sleep -Seconds 60' }))
-    const pid = Number((await readUntil(proc, '\n')).trim())
+    const pid = Number((await readUntil(proc, '\n', task.timeout)).trim())
     expect(Number.isInteger(pid) && pid > 0).toBe(true)
 
     // Executor reload/disposal leaves background work running — the

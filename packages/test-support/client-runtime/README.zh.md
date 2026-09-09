@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-client-test-runtime` 让浏览器功能测试拥有真实的 jsdom 测试台：它把 Cordis 上下文、渲染器拥有的 slot 注册表与生产 `UiSession` 适配器组装在带类型的 Session 和 Workspace Controller 替身周围。默认文件上传替身可满足声明该服务的功能；测试若没有替换它却发起上传，就会明确失败。功能套件无需复制生产渲染器或适配器逻辑，即可检验声明、注册、作用域、store、注入、渲染、更新与销毁。套件通过带类型 fixture 发布 Session 生命周期状态、Workspace 状态、projection 值与 Conversation 事件，再使用局部 DOM 快照根、限定范围的 Testing Library 查询与自明的服务缺失检查。它不属于产品插件图（无 `dsh.client`）；feature 包仅以 `devDependencies` 依赖之。
+`dsh-client-test-runtime` 让浏览器功能测试在 jsdom 中检验生产 slot、store、渲染、更新与销毁行为，而无需重实现 UI 运行时。测试作者可以发布带类型的 Session、Workspace、projection 与 Conversation fixture，查询 slot 局部 DOM 根，并脚本化 Remote 应答或失败。缺失服务、未打桩的会话行为与意外文件上传都会在调用点失败，销毁则保持幂等。仅限仓内、面向浏览器的 Vitest 套件通过 `devDependencies` 使用本包；它不是产品插件或通用 Node 测试框架。
 
 ## 目录
 

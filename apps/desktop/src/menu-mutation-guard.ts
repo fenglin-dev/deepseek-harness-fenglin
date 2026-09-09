@@ -7,6 +7,7 @@ export interface ProfileMutationLockStatus {
   readonly state: 'dead' | 'live' | 'malformed' | 'missing' | 'unreadable'
   readonly lockPath: string
   readonly pid?: number
+  readonly workerPid?: number
   readonly parentPid?: number
   readonly operationKind?: string
   readonly createdAt?: string
@@ -29,26 +30,38 @@ export function inspectProfileMutationLock(home: string): ProfileMutationLockSta
   }
   const candidate = owner as {
     pid: number
+    workerPid?: unknown
+    token?: unknown
     parentPid?: unknown
     operationKind?: unknown
     createdAt?: unknown
   }
+  if ((candidate.workerPid !== undefined && (typeof candidate.workerPid !== 'number'
+    || !Number.isSafeInteger(candidate.workerPid) || candidate.workerPid <= 0))
+    || (candidate.token !== undefined && typeof candidate.token !== 'string')
+    || (candidate.operationKind !== undefined && typeof candidate.operationKind !== 'string')) {
+    return { active: true, state: 'malformed', lockPath }
+  }
   const metadata = {
     pid: candidate.pid,
+    ...(typeof candidate.workerPid === 'number' ? { workerPid: candidate.workerPid } : {}),
     ...(typeof candidate.parentPid === 'number' && Number.isSafeInteger(candidate.parentPid)
       ? { parentPid: candidate.parentPid } : {}),
     ...(typeof candidate.operationKind === 'string'
       ? { operationKind: candidate.operationKind.slice(0, 80) } : {}),
     ...(typeof candidate.createdAt === 'string' ? { createdAt: candidate.createdAt.slice(0, 64) } : {}),
   }
-  try {
-    process.kill(candidate.pid, 0)
-    return { active: true, state: 'live', lockPath, ...metadata }
-  } catch (error) {
-    return error instanceof Error && 'code' in error && error.code === 'ESRCH'
-      ? { active: false, state: 'dead', lockPath, ...metadata }
-      : { active: true, state: 'unreadable', lockPath, ...metadata }
+  for (const pid of [candidate.pid, ...(typeof candidate.workerPid === 'number' ? [candidate.workerPid] : [])]) {
+    try {
+      process.kill(pid, 0)
+      return { active: true, state: 'live', lockPath, ...metadata }
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) {
+        return { active: true, state: 'unreadable', lockPath, ...metadata }
+      }
+    }
   }
+  return { active: false, state: 'dead', lockPath, ...metadata }
 }
 
 /** Detect a live or unreadable Profile mutation lease. @param home - Active Harness home. @returns True when exit must wait. */

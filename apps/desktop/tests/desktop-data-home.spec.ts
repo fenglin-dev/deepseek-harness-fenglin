@@ -230,7 +230,9 @@ describe('desktop data home', () => {
     const setup = desktopDataHomeSetup('imported', custom, source)
 
     expect(resolveRecordedDesktopDataHome(layout, setup)).toBe(custom)
-    expect(resolveRecordedDesktopDataHome(layout, { ...setup, source: undefined })).toBeUndefined()
+    const withoutSource = { ...setup }
+    delete withoutSource.source
+    expect(resolveRecordedDesktopDataHome(layout, withoutSource)).toBeUndefined()
   })
 
   it('reports built-in, custom, and externally managed data homes', async () => {

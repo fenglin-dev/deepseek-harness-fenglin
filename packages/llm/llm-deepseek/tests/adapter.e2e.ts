@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
-import LlmRuntime, { createUserMessage, ToolCallId, ReasoningEffortId, createMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, ToolCallId, ReasoningEffortId, createMessage, createSystemMessage } from '@deepseek-ai/dsh-llm'
 import type { Message, ToolSchema } from '@deepseek-ai/dsh-llm'
 import AttachmentStore, { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type {
@@ -25,6 +25,7 @@ import * as PluginPackageInventoryDeepSeek from '@deepseek-ai/dsh-plugin-package
 import * as SessionLogDeepSeek from '@deepseek-ai/dsh-session-log-deepseek'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import type { Config } from '@deepseek-ai/dsh-llm-deepseek'
+import type { WireMessage, WireRequest } from '../src/types.ts'
 import { assemble, type AssembledResult } from './assemble.ts'
 
 /**
@@ -37,6 +38,8 @@ import { assemble, type AssembledResult } from './assemble.ts'
 const FLASH = 'deepseek-v4-flash'
 const VISION = 'deepseek-v4-flash-vision-exp'
 const VISION_E2E_ENABLED = process.env.DEEPSEEK_VISION_E2E === '1'
+/** A model whose endpoint reads the latest `system` message at any position; unset skips the in-history smoke. */
+const IN_HISTORY_MODEL = process.env.DEEPSEEK_IN_HISTORY_MODEL
 const TEST_PNG = Uint8Array.from(readFileSync(
   new URL('../../llm-pi-ai/tests/fixtures/qr-code.png', import.meta.url),
 ))
@@ -315,6 +318,98 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('llm-deepseek e2e (real API)', ()
         `DeepSeek Flash tool-result turn finished as ${JSON.stringify(second.finish)}`,
       ).toBe('stop')
       expect(textOf(second).toLowerCase()).toMatch(/sunny|22/)
+    },
+  )
+
+  it.skipIf(IN_HISTORY_MODEL === undefined)(
+    'an in-history model follows a mid-history system message and keeps the cached prefix',
+    async () => {
+      const model = IN_HISTORY_MODEL as string
+      const ctx = await harness(model, {
+        thinking: 'disabled',
+        models: [{ id: model, systemPromptUpdate: 'in-history' }],
+      })
+      await expect(ctx.llm.resolveModelInfo('deepseek-official', model))
+        .resolves.toMatchObject({ systemPromptUpdate: 'in-history' })
+      const system = (text: string) => createSystemMessage(text, 'test')
+      // A nonce before the padding isolates the provider cache across runs and retries.
+      const nonce = randomBytes(16).toString('hex')
+      const padding = Array.from({ length: 40 }, (_, index) => `Rule ${String(index + 1)}: keep every answer short and factual.`).join('\n')
+      // Both update strategies use identical prompt bytes, with the changed instruction near the head.
+      const prompt = (word: string) => `Test ${nonce}. When the user says ping, reply with exactly the word: ${word}\n${padding}`
+      const initial = prompt('pong')
+      const latest = prompt('banana')
+      const history = [system(initial), ...ask('ping')]
+      const wireRequests: WireMessage[][] = []
+      const nativeFetch = globalThis.fetch
+      const observedFetch: typeof fetch = async (input, init) => {
+        if (init?.method !== 'POST' || typeof init.body !== 'string') return nativeFetch(input, init)
+        const body = JSON.parse(init.body) as WireRequest
+        if (body.model === model) {
+          wireRequests.push(body.messages)
+          if (wireRequests.length === 1) {
+            expect(body.messages).toEqual([
+              { role: 'system', content: initial }, { role: 'user', content: 'ping' },
+            ])
+          } else if (wireRequests.length === 2) {
+            expect(JSON.stringify(body.messages)).toBe(JSON.stringify(wireRequests[0]))
+          } else if (wireRequests.length === 3) {
+            expect(JSON.stringify(body.messages.slice(0, history.length)))
+              .toBe(JSON.stringify(wireRequests[0]))
+            expect(body.messages[3]).toEqual({ role: 'system', content: latest })
+          } else if (wireRequests.length === 4) {
+            expect(body.messages[0]).toEqual(wireRequests[2]![3])
+            expect(body.messages.slice(1)).toEqual([
+              wireRequests[2]![1], wireRequests[2]![2], wireRequests[2]![4],
+            ])
+          }
+        }
+        return nativeFetch(input, init)
+      }
+      vi.stubGlobal('fetch', observedFetch)
+      try {
+        const first = await assemble(ctx, { model, messages: history, maxTokens: 50 })
+        expect(first.finish.kind).toBe('stop')
+        expect(textOf(first).trim()).toBe('pong')
+        const initialTokens = first.usage?.inputTokens ?? 0
+        expect(initialTokens).toBeGreaterThan(0)
+
+        // Measure reusable tokens rather than assuming a provider cache-block size.
+        const warm = await assemble(ctx, { model, messages: history, maxTokens: 50 })
+        expect(warm.finish.kind).toBe('stop')
+        expect(textOf(warm).trim()).toBe('pong')
+        const reusableTokens = warm.usage?.cacheReadTokens ?? 0
+        expect(reusableTokens).toBeLessThanOrEqual(initialTokens)
+        expect(reusableTokens).toBeGreaterThan(0)
+        const assistant = createMessage({
+          role: 'assistant', content: first.message.content, source: { kind: 'plugin', plugin: 'test' },
+        })
+
+        const updated = await assemble(ctx, {
+          model,
+          messages: [...history, assistant, system(latest), ...ask('ping')],
+          maxTokens: 50,
+        })
+        expect(updated.finish.kind).toBe('stop')
+        expect(textOf(updated).trim()).toBe('banana')
+
+        const replaced = await assemble(ctx, {
+          model,
+          messages: [system(latest), ...ask('ping'), assistant, ...ask('ping')],
+          maxTokens: 50,
+        })
+        expect(replaced.finish.kind).toBe('stop')
+        expect(textOf(replaced).trim()).toBe('banana')
+        expect(wireRequests).toHaveLength(4)
+
+        const cached = updated.usage?.cacheReadTokens ?? 0
+        expect(replaced.usage?.cacheReadTokens).toBeDefined()
+        const baselineCached = replaced.usage?.cacheReadTokens ?? 0
+        expect(cached).toBeGreaterThanOrEqual(reusableTokens)
+        expect(cached).toBeGreaterThan(baselineCached)
+      } finally {
+        vi.stubGlobal('fetch', nativeFetch)
+      }
     },
   )
 

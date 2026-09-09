@@ -58,6 +58,12 @@ import {
 import { INSTALL_ANCHOR } from './install-anchor.ts'
 import { resolveDesktopBundledPluginArgs } from './desktop-bundled-plugin.ts'
 import { runProfilePackageManager } from './profile-package-manager.ts'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import {
+  activateProfilePluginTransaction, prepareProfilePluginTransaction, profilePluginCandidateHome,
+  readProfilePluginTransaction, readyProfilePluginTransaction, settleProfilePluginTransaction,
+  createProfileTransactionInterruptionExercise,
+} from './profile-plugin-transaction.ts'
 
 export { resolvePnpmCommand } from './profile-package-manager.ts'
 
@@ -82,7 +88,7 @@ function snapshotRuntimeMetadata(): { readonly applicationVersion?: string; read
 function withSnapshotMutation<T>(profile: string, operation: () => T): T {
   const leaseToken = process.env.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
   if (leaseToken !== undefined) {
-    assertProfilePluginMutationLease({ profile, token: leaseToken })
+    assertProfilePluginMutationLease({ profile, token: leaseToken, home: process.env.DSH_PLUGIN_TRANSACTION_ORIGIN ?? resolveDshHome() })
     return operation()
   }
   const release = acquireProfilePluginMutationLock({ profile, waitMs: 30_000 })
@@ -237,11 +243,45 @@ function verifyRegistryPackageInstall(profileDir: string, packageName: string): 
  * @param args - pnpm arguments with relative path specs anchored to the invoking directory.
  * @returns the pnpm exit code.
  */
-function runPluginWithoutSnapshot(profile: string, args: readonly string[]): number {
+function runPluginWithoutSnapshot(profile: string, args: readonly string[], quiet = false): number {
+  if (args[0] === 'batch') {
+    if (args.length !== 2 || args[1] === undefined || args[1].length > 64 * 1024) throw new Error('dsh: invalid plugin mutation batch')
+    const steps: unknown = JSON.parse(args[1])
+    if (!Array.isArray(steps) || steps.length === 0 || steps.length > 8) throw new Error('dsh: invalid plugin mutation batch')
+    let result = 0
+    for (const value of steps) {
+      if (value === null || typeof value !== 'object') throw new Error('dsh: invalid plugin mutation batch step')
+      const step = value as { args?: unknown; acceptedExitCodes?: unknown }
+      if (!Array.isArray(step.args) || step.args.length === 0 || step.args.length > 16
+        || !step.args.every(arg => typeof arg === 'string' && arg.length <= 8192 && !arg.includes('\0'))
+        || typeof step.args[0] !== 'string'
+        || !['add', 'remove', 'install', 'update', 'approve-build', 'approve-build-key', 'doctor'].includes(step.args[0])
+        || (step.acceptedExitCodes !== undefined && (!Array.isArray(step.acceptedExitCodes)
+          || !step.acceptedExitCodes.every((code: unknown) => typeof code === 'number' && [0, 10, 11].includes(code))))) {
+        throw new Error('dsh: invalid plugin mutation batch step')
+      }
+      result = runPluginWithoutSnapshot(profile, step.args as string[])
+      const accepted = step.acceptedExitCodes as number[] | undefined
+      if (!(accepted ?? [0, 10, 11]).includes(result)) return result
+    }
+    return result
+  }
   const dir = resolveProfileDir(profile)
   if (args[0] === 'snapshot') {
     const command = args[1]
     try {
+      if (command === 'materialize') {
+        const flags = args.slice(2)
+        if (!flags.every(flag => ['--offline', '--frozen-lockfile', '--ignore-scripts', '--force'].includes(flag))) {
+          throw new Error('dsh: invalid snapshot materialization flags')
+        }
+        return withSnapshotMutation(profile, () => {
+          const result = runProfilePackageManager(resolveProfileDir(profile), ['install', ...flags])
+          if (result.diagnostic !== undefined) process.stderr.write(`${result.diagnostic}\n`)
+          writeSnapshotJson({ installed: result.exitCode === 0 })
+          return result.exitCode ?? 1
+        })
+      }
       if (command === 'list' && args.length === 2) {
         writeSnapshotJson(listProfilePluginSnapshots({ profile }))
         return 0
@@ -535,7 +575,7 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[]): num
         || (outcome.issues?.length ?? 0) > 0)
       ? { ...outcome, status: 'failed' as const }
       : outcome
-    process.stdout.write(`${JSON.stringify({ ...normalized, issues: [...(normalized.issues ?? []), ...apiWarnings] }, undefined, 2)}\n`)
+    if (!quiet) process.stdout.write(`${JSON.stringify({ ...normalized, issues: [...(normalized.issues ?? []), ...apiWarnings] }, undefined, 2)}\n`)
     if (!mutatesProfile) return normalized.status === 'healthy' ? 0 : 2
     if (normalized.status === 'repaired') return 10
     if (normalized.status === 'quarantined') return 11
@@ -649,9 +689,65 @@ function pluginInvocationMutates(args: readonly string[]): boolean {
  * @returns Process exit code.
  */
 export function runPlugin(profile: string, args: readonly string[]): number {
+  if (args[0] === 'transaction') {
+    const home = resolveDshHome()
+    if (args.length === 2 && args[1] === 'prepare') {
+      const ownerPid = Number(process.env.DSH_DESKTOP_MUTATION_OWNER_PID)
+      if (!Number.isSafeInteger(ownerPid) || ownerPid <= 0) throw new Error('dsh: invalid desktop mutation owner')
+      process.kill(ownerPid, 0)
+      const release = acquireProfilePluginMutationLock({ home, profile, waitMs: 5_000 })
+      let handedOff = false
+      let automatic: ReturnType<typeof createProfilePluginSnapshot> | undefined
+      try {
+        if (process.env.DSH_PLUGIN_SNAPSHOT_BATCH !== '1') automatic = createProfilePluginSnapshot({
+          home, profile, kind: 'automatic', trigger: pluginMutationTrigger(['install']), ...snapshotRuntimeMetadata(),
+        })
+        const record = prepareProfilePluginTransaction(home, profile, ownerPid)
+        beginProfilePluginMutationLease({ home, profile, ownerPid, token: record.id })
+        handedOff = true
+        writeSnapshotJson({ id: record.id })
+        return 0
+      } finally {
+        if (!handedOff) {
+          try {
+            const record = readProfilePluginTransaction(home, profile)
+            if (record?.producerPid === ownerPid) settleProfilePluginTransaction(home, profile, record.id, false)
+            if (automatic !== undefined) finalizeProfilePluginSnapshot({
+              home, profile, snapshotId: automatic.snapshotId, preserveIfUnchanged: automatic.deduplicated === true,
+            })
+          } finally { release() }
+        }
+      }
+    }
+    if (args.length === 2 && args[1] === 'exercise' && process.env.DSH_DIAGNOSTIC_LAB === '1' && profile === 'web') {
+      return withSnapshotMutation(profile, () => {
+        writeSnapshotJson({ id: createProfileTransactionInterruptionExercise(home) })
+        return 0
+      })
+    }
+    if (args.length === 2 && args[1] === 'status') {
+      writeSnapshotJson(readProfilePluginTransaction(home, profile) ?? null)
+      return 0
+    }
+    const id = args[2]
+    if (args.length !== 3 || id === undefined || !['ready', 'activate', 'commit', 'rollback'].includes(args[1] ?? '')) {
+      throw new Error('dsh: invalid plugin transaction command')
+    }
+    return withSnapshotMutation(profile, () => {
+      if (args[1] === 'ready') readyProfilePluginTransaction(home, profile, id)
+      else if (args[1] === 'activate') activateProfilePluginTransaction(home, profile, id)
+      else settleProfilePluginTransaction(home, profile, id, args[1] === 'commit')
+      writeSnapshotJson({ settled: true })
+      return 0
+    })
+  }
   const leaseToken = process.env.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+  if (pluginInvocationMutates(args) && process.env.DSH_DESKTOP_MUTATION_OWNER_PID !== undefined
+    && leaseToken === undefined && process.env.DSH_PLUGIN_SNAPSHOT_BATCH !== '1') {
+    return runDesktopStagedPluginMutation(profile, args)
+  }
   if (leaseToken !== undefined && pluginInvocationMutates(args)) {
-    assertProfilePluginMutationLease({ profile, token: leaseToken })
+    assertProfilePluginMutationLease({ profile, token: leaseToken, home: process.env.DSH_PLUGIN_TRANSACTION_ORIGIN ?? resolveDshHome() })
     return runPluginWithoutSnapshot(profile, args)
   }
   if (!pluginInvocationMutates(args) || process.env.DSH_PLUGIN_SNAPSHOT_BATCH === '1') {
@@ -662,4 +758,56 @@ export function runPlugin(profile: string, args: readonly string[]): number {
     trigger: pluginMutationTrigger(args),
     ...snapshotRuntimeMetadata(),
   }, () => runPluginWithoutSnapshot(profile, args))
+}
+
+function runDesktopStagedPluginMutation(profile: string, args: readonly string[]): number {
+  const home = resolveDshHome()
+  const ownerPid = Number(process.env.DSH_DESKTOP_MUTATION_OWNER_PID)
+  if (!Number.isSafeInteger(ownerPid) || ownerPid <= 0) throw new Error('dsh: invalid desktop mutation owner')
+  process.kill(ownerPid, 0)
+  const release = acquireProfilePluginMutationLock({ home, profile, waitMs: 30_000 })
+  let transactionId: string | undefined
+  let handedOff = false
+  let automatic: ReturnType<typeof createProfilePluginSnapshot> | undefined
+  const previous = {
+    home: process.env.DSH_HOME,
+    origin: process.env.DSH_PLUGIN_TRANSACTION_ORIGIN,
+    owner: process.env.DSH_DESKTOP_MUTATION_OWNER_PID,
+  }
+  try {
+    automatic = createProfilePluginSnapshot({ home, profile, kind: 'automatic', trigger: pluginMutationTrigger(args), ...snapshotRuntimeMetadata() })
+    const transaction = prepareProfilePluginTransaction(home, profile)
+    transactionId = transaction.id
+    process.env.DSH_HOME = profilePluginCandidateHome(home, profile, transaction.id)
+    process.env.DSH_PLUGIN_TRANSACTION_ORIGIN = home
+    delete process.env.DSH_DESKTOP_MUTATION_OWNER_PID
+    const result = runPluginWithoutSnapshot(profile, args)
+    if (![0, 10, 11].includes(result)) return result
+    if (runPluginWithoutSnapshot(profile, ['doctor'], true) !== 0) return 1
+    readyProfilePluginTransaction(home, profile, transaction.id)
+    beginProfilePluginMutationLease({ home, profile, ownerPid, token: transaction.id })
+    handedOff = true
+    process.stderr.write('dsh: plugin candidate verified; waiting for desktop activation and restart\n')
+    return result
+  } finally {
+    if (previous.home === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previous.home
+    if (previous.origin === undefined) delete process.env.DSH_PLUGIN_TRANSACTION_ORIGIN
+    else process.env.DSH_PLUGIN_TRANSACTION_ORIGIN = previous.origin
+    if (previous.owner === undefined) delete process.env.DSH_DESKTOP_MUTATION_OWNER_PID
+    else process.env.DSH_DESKTOP_MUTATION_OWNER_PID = previous.owner
+    if (!handedOff) {
+      try {
+        // Preparation can fail after publishing its journal but before returning its ID.
+        const pending = readProfilePluginTransaction(home, profile)
+        const failedId = transactionId ?? (pending?.producerPid === process.pid ? pending.id : undefined)
+        if (failedId !== undefined) {
+          settleProfilePluginTransaction(home, profile, failedId, false)
+        }
+        if (automatic !== undefined) finalizeProfilePluginSnapshot({
+          home, profile, snapshotId: automatic.snapshotId, preserveIfUnchanged: automatic.deduplicated === true,
+        })
+      } finally { release() }
+    }
+  }
 }

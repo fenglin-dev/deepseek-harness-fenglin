@@ -1,5 +1,5 @@
 ---
-description: "Browser Chat target that renders Session conversation nodes, details, historical images, actions, localization, and scroll state."
+description: "Browser Chat target that renders Session conversation nodes, historical images, actions, localization, and scroll state."
 kind: "package-reference"
 ---
 # @deepseek-ai/dsh-client-ui-chat
@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The browser Chat target for Conversation assembly. It registers Chat event definitions and snapshot construction, supplies `useChat`, renders transcript nodes and details, and owns Chat-specific stores, actions, localization, and scroll restoration; historical image URLs resolve through the Conversation-owned per-session cache (`ctx.uiConversation.imageUrl`). Its Assistant and Turn Tail definitions fold packed historical Assistant runs without expanding their members. Steering classification retains only next-step Inbox IDs through persistent splice state; next-turn splices create no Chat Context. Local submission echoes (`SessionSnapshot.pendingSubmissions`) retain the surface selected when the submit begins: transcript echoes render at the flow tail, steering echoes render with the pending-steering marker, and queued echoes stay out of Chat. Each echo is hidden per render once a user/steering node or queue occurrence carries its prompt `rpcId`, so the handoff is atomic.
+Use this package to render a browser chat from recorded Session conversations, including historical images, localized actions, and restored scroll position. Compact display folds completed-turn process rows while keeping the final answer and independently useful context visible; packed historical Assistant runs remain collapsed. Local transcript and steering submissions appear immediately, remain in their original surface, and disappear atomically when authoritative Session records arrive, while queued submissions stay outside Chat. The package does not assemble or modify model requests.
 
 ## Table of Contents
 
@@ -25,9 +25,7 @@ The browser Chat target for Conversation assembly. It registers Chat event defin
 <a id="system-prompt-row"></a>
 ## System prompt row
 
-Chat shows a collapsed `System prompt` row for a non-empty initial request, explicit message-series start, real system-field change, or non-initial request whose preceding header is outside the loaded history window. Once that predecessor is available, an unchanged resume does not repeat the row; same-series config-only or tool-only changes, tool steps, and retries also create no repetition. The row appears before that request's user messages, matching the provider envelope, and expands to the exact model-visible text with its original line breaks. A header without a system prompt creates no row.
-
------
+Each nonempty appended `system/message` owns a collapsed prompt row, including a complete prompt at the start of a headerless window; the same-step header does not duplicate it. Chat also shows a collapsed `System prompt` row for a non-empty initial request, explicit message-series start, or `system/message` surface node replacement whose text differs, reading the last nonempty surviving system node in surface order at the `request/header`; a non-initial request whose preceding header is outside the loaded history window also shows one. A resume repeats the row even when its system text is unchanged, including after pagination supplies the preceding header and system node; same-series config-only or tool-only changes, tool steps, and retries create no repetition, and a `system/message` event is never rendered as a transcript message. The row appears before that request's user messages, matching the provider envelope, and expands to the exact model-visible text with its original line breaks. A request whose system node is empty or outside the loaded window creates no row until the page holding the node arrives.
 
 <a id="turn-token-usage"></a>
 ## Turn token usage

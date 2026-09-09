@@ -24,6 +24,7 @@ import {
 import { createProcessDeepSeekHarness, finalResponse, normalizeInput } from '../src/api.ts'
 import { createProcessHarnessClient } from '../src/client.ts'
 import type { RuntimeProcessOptions } from '../src/launch.ts'
+import { nativeLaunchProbe } from './native-launch-probe.ts'
 
 const fakeRuntime = fileURLToPath(new URL('./fake-runtime.ts', import.meta.url))
 
@@ -304,10 +305,12 @@ describe('DeepSeekHarness', () => {
     await expect(captured.run('after')).rejects.toThrow(TransportClosedError)
   })
 
-  it('constructs the public dsh-backed client lazily', async () => {
-    const harness = new DeepSeekHarness()
-    expect(harness.client).toBeInstanceOf(HarnessClient)
-    await harness.close()
+  it('constructs the public dsh-backed client lazily', () => {
+    nativeLaunchProbe(`
+      const harness = new sdk.DeepSeekHarness();
+      assert.ok(harness.client instanceof sdk.HarnessClient);
+      await harness.close();
+    `)
   })
 })
 
