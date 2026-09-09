@@ -249,6 +249,49 @@ describe('PluginInventoryGateway', () => {
     })
   })
 
+  it('does not project obsolete quarantine actions for a restored active plugin', async () => {
+    const home = temporaryDirectory()
+    vi.stubEnv('DSH_HOME', home)
+    const profileDir = join(home, 'profiles', 'web')
+    writeJson(join(profileDir, 'package.json'), {
+      name: 'dsh-profile-web',
+      dependencies: { 'fixture-plugin': '1.2.3' },
+      dsh: { profile: { bundles: ['fixture-plugin'] } },
+    })
+    writeJson(join(profileDir, 'node_modules', 'fixture-plugin', 'package.json'), {
+      name: 'fixture-plugin',
+      version: '1.2.3',
+    })
+    const quarantinePath = join(home, 'quarantine', 'profile-plugins.json')
+    writeJson(quarantinePath, {
+      schema: 1,
+      plugins: [{
+        quarantineId: '00000000-0000-4000-8000-000000000017',
+        profile: 'web',
+        packageName: 'fixture-plugin',
+        packageSpec: 'fixture-plugin',
+        installedVersion: '1.2.3',
+        bundleIndex: 0,
+        quarantinedAt: '2026-09-08T12:00:00.000Z',
+        reason: 'orphaned-bundle',
+        conflicts: [],
+      }],
+    })
+    const { ctx, inventory } = await harness()
+    ctx.loader.builtins['fixture-plugin'] = activePlugin
+    const activeId = await ctx.loader.create({ name: 'cordis:fixture-plugin' })
+    const activeEntry = ctx.loader.entries().find(entry => entry.id === activeId)
+    if (activeEntry === undefined) throw new Error('fixture Loader entry was not created')
+    Object.defineProperty(activeEntry.options, 'name', { value: 'fixture-plugin' })
+
+    await expect(inventory.list()).resolves.toMatchObject({
+      dependencyHealth: { quarantined: [] },
+    })
+    expect((JSON.parse(readFileSync(quarantinePath, 'utf8')) as { plugins: unknown[] }).plugins).toEqual([])
+    expect(readFileSync(join(profileDir, 'node_modules', 'fixture-plugin', 'package.json'), 'utf8'))
+      .toContain('fixture-plugin')
+  })
+
   it('runs the core doctor in read-only and repair modes with structured phases', async () => {
     const { inventory, subprocess } = await harness()
     subprocess.stdout = JSON.stringify({

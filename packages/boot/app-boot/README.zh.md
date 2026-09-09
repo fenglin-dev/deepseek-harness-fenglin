@@ -51,7 +51,7 @@ Profile 与 bundle 的声明类型从 [`@deepseek-ai/dsh-package-manifest`](../.
 
 profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`headless`、`acp`、`sdk` 与 `sdk-minimal` 从同一 launcher 启动不同组合。profile 位于 `$DSH_HOME/profiles/<name>`，由可安装 bundle、自身 `cordis.patch.yml` 与 `patchReload: live | startup` 组成；自定义 profile 省略 reload 策略时保留历史 `live` 默认值。随产品交付的 `web` 模板实时重载，其他随附模板只在启动时应用 patch。`sdk-minimal` 只列出自身的独立 bundle，其他模板保留 base 加模式 bundle 的栈。`dsh plugin` 创建自定义 profile；缺失 bundle 或未声明 patch 的 bundle 会让启动明确失败。
 
-Profile 预检会在组合前收敛依赖身份与隔离状态。如果旧版或中断的卸载已经删除停用插件及其持久隔离记录，却留下 lockfile、修复报告或诊断引用，检查会报告 `profile.quarantine-removal-residue`；修复只移除这些陈旧引用和不完整的软件包目录，不会再次隔离已经消失的插件。
+Profile 预检会在组合前收敛依赖身份与隔离状态。如果旧版或中断的卸载已经删除停用插件及其持久隔离记录，却留下 lockfile、修复报告或诊断引用，检查会报告 `profile.quarantine-removal-residue`；修复只移除这些陈旧引用和不完整的软件包目录，不会再次隔离已经消失的插件。后续成功安装若同时恢复依赖、有序 Bundle 与软件包清单，并且当前 Loader 证明该软件包根处于活动状态，Host 清单会删除过期隔离元数据，而不会删除活动软件包。
 
 执行活动外部 bundle 之前，预检还会读取插件包根目录中固定的 `compatibility.json`。有效的 schema-v1 文档通过 `supportedHosts` 列出精确支持的 Harness 版本；如果列表排除了当前 Harness，插件会以 `incompatible-host-version` 隔离，诊断页在提供市场更新查找前展示当前版本、支持版本与可选推荐版本。声明缺失、损坏、超限、使用符号链接或 schema 未知时均保持“未知”，不会阻止激活；宽泛的 `peerDependencies` 不会被当成兼容性证据。
 

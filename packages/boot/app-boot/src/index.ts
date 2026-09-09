@@ -69,6 +69,7 @@ export {
   listQuarantinedProfilePlugins,
   PROFILE_QUARANTINE_SCHEMA,
   quarantineProfilePluginAfterLoadFailure,
+  reconcileRestoredQuarantinedProfilePlugins,
   repairProfileDependencies,
   retryQuarantinedProfilePlugin,
   readLastProfileRepairReport,

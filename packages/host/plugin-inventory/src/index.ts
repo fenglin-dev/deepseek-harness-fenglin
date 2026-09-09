@@ -12,6 +12,7 @@ import {
   inspectProfileLegacySessionApi,
   profileDiagnosticRuleCatalog,
   listQuarantinedProfilePlugins,
+  reconcileRestoredQuarantinedProfilePlugins,
   readLastProfileRepairReport,
   readProfileDiagnosticReport,
   uninstallQuarantinedProfilePlugin,
@@ -403,7 +404,9 @@ export class PluginInventoryGateway extends TypertRemoteService {
   async list(): Promise<PluginInventorySnapshot> {
     const entries: PluginInventoryEntry[] = []
     const liveIssues: ProfileDiagnostic[] = []
+    const activePackageNames = new Set<string>()
     for (const entry of this.ctx.loader.entries()) {
+      if (entry.fiber?.state === FIBER_STATE.ACTIVE) activePackageNames.add(entry.options.name)
       if (entry.options.group) continue
       entries.push({
         entryId: pluginEntryId(entry.id),
@@ -414,6 +417,10 @@ export class PluginInventoryGateway extends TypertRemoteService {
       const liveIssue = liveLoaderDiagnostic(entry)
       if (liveIssue !== undefined) liveIssues.push(liveIssue)
     }
+    reconcileRestoredQuarantinedProfilePlugins(
+      { binName: 'dsh', profile: this.profile },
+      activePackageNames,
+    )
     const lastRepair = readLastProfileRepairReport(this.profile)
     const currentDiagnostics = readCurrentDiagnostics(this.profile)
     const issues = [...(currentDiagnostics?.issues ?? []), ...inspectProfileLegacySessionApi({ binName: 'dsh', profile: this.profile })]

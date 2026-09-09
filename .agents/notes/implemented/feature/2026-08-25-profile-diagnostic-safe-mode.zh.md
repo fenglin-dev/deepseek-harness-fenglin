@@ -24,7 +24,7 @@ Profile 软件包安装与 Cordis 启动可能在不同层失败，但普通子�
 
 桌面启动通过 `DSH_PROFILE_SAFE_MODE_ON_FAILURE=1` 明确选择安全模式恢复。正常 Profile 的确定性故障会写入 incident，并输出一条稳定 stderr 标记。监督器立即使用 `DSH_PROFILE_SAFE_MODE=1` 重启一次；CLI 随后只组合安装自带模板 bundle，忽略 Profile manifest、外部 bundle 和用户 patch 层，并把 settings provider 指向安装方维护的空文档且关闭监听。裸模块从安装方维护的 `$DSH_HOME/profiles/node_modules` fallback 开始解析；开发版使用受控 symlink，安装版使用只包含安装依赖闭包的模块代理。安全模式记录已跳过用户设置，并提供普通诊断 UI。启动被限制为一次普通尝试和一次安全模式尝试；安全模式自身失败时监督器立即停止，保留原始 incident 为主证据，并把安全模式错误追加为次级证据。
 
-Host 清单把持久 incident 与实时失败或未解析 Loader entry 合并，并通过生成的 Remote 方法提供精确授权、修复、隔离、恢复、卸载和导出操作。卸载已停用的隔离插件时，系统先清理该插件的陈旧 lockfile importer 与软件包残留，再只从修复报告和当前诊断报告中移除属于它的状态，最后删除持久隔离记录；其他 incident 保持不变。预检还会识别插件已停用且物理安装消失、持久隔离记录也已删除、但上述派生记录仍然存在的状态，以 `profile.quarantine-removal-residue` 报告并安全收敛元数据，不会重新隔离已经移除的插件。浏览器只显示当前 incident。完整双语规则总表位于 [`docs/profile-diagnostics.zh.md`](../../../../docs/profile-diagnostics.zh.md)，导出内容包括机器可读规则清单与版本、脱敏 incident、运行时事实、隔离记录和 Loader 摘要。
+Host 清单把持久 incident 与实时失败或未解析 Loader entry 合并，并通过生成的 Remote 方法提供精确授权、修复、隔离、恢复、卸载和导出操作。卸载已停用的隔离插件时，系统先清理该插件的陈旧 lockfile importer 与软件包残留，再只从修复报告和当前诊断报告中移除属于它的状态，最后删除持久隔离记录；其他 incident 保持不变。只有当前 Loader 把软件包根标记为活动状态，并且直接依赖、有序 Bundle 条目与已安装软件包清单同时存在时，系统才把插件视为已经恢复；清单收敛随后删除其过期隔离记录和对应诊断元数据，不删除活动软件包，之后若要卸载仍必须走受控包管理操作。预检还会识别插件已停用且物理安装消失、持久隔离记录也已删除、但上述派生记录仍然存在的状态，以 `profile.quarantine-removal-residue` 报告并安全收敛元数据，不会重新隔离已经移除的插件。浏览器只显示当前 incident。完整双语规则总表位于 [`docs/profile-diagnostics.zh.md`](../../../../docs/profile-diagnostics.zh.md)，导出内容包括机器可读规则清单与版本、脱敏 incident、运行时事实、隔离记录和 Loader 摘要。
 
 插件 CLI 和普通 Profile 启动都会先准备模块回退映射，再运行诊断。即使是全新的数据目录，也必须在静态导入预检前使安装目录的依赖闭包可见；否则，可用的内置服务会被误判为缺失的第三方依赖，并导致使用它的插件被隔离。准备过程复用现有带锁的回退映射写入器，不会向 Profile 安装另一代 Host。
 

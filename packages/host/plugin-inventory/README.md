@@ -37,7 +37,7 @@ With a roster composed, `agentPresets` carries one group per preset in roster or
 
 ### What you can and cannot do with it
 
-The Loader inventory is a snapshot for display and diagnostics: a client can render the roster, flag failed entries, and detect changes by comparing snapshots. It cannot directly enable or disable arbitrary Loader entries, and it carries no Loader history — a fiber that already failed and was removed is absent. Separate guarded methods run the product CLI for fixed Profile operations. A quarantine-removal residue repair receives only the current Profile and server-owned diagnostic identity, then removes stale metadata for a plugin that is already inactive and absent; it cannot select another package or reinstall code.
+The Loader inventory is a snapshot for display and diagnostics: a client can render the roster, flag failed entries, and detect changes by comparing snapshots. It cannot directly enable or disable arbitrary Loader entries, and it carries no Loader history — a fiber that already failed and was removed is absent. Before projecting quarantine actions, the Host removes an obsolete quarantine record only when the current Loader marks the package root active and the Profile dependency, ordered Bundle, and installed package manifest all prove that the plugin has been restored; it leaves the active plugin installed so later removal still uses the guarded package-manager operation. Separate guarded methods run the product CLI for fixed Profile operations. A quarantine-removal residue repair receives only the current Profile and server-owned diagnostic identity, then removes stale metadata for a plugin that is already inactive and absent; it cannot select another package or reinstall code.
 
 -----
 

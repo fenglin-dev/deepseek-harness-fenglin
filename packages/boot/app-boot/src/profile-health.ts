@@ -970,6 +970,45 @@ export function clearQuarantinedProfilePlugin(
   return true
 }
 
+/**
+ * Remove stale quarantine metadata after a plugin is fully restored to its Profile.
+ * @param options - Profile identity and optional Harness home.
+ * @param activePackageNames - package roots proven active by the current Loader.
+ * @returns package names whose obsolete quarantine records were removed.
+ */
+export function reconcileRestoredQuarantinedProfilePlugins(
+  options: Pick<ProfileDependencyOptions, 'binName' | 'profile' | 'home'>,
+  activePackageNames: ReadonlySet<string>,
+): string[] {
+  const home = options.home ?? resolveDshHome()
+  const state = readQuarantineFile(home)
+  if (!state.plugins.some(record => record.profile === options.profile)) return []
+  const profileDir = resolveProfileDir(options.profile, home)
+  let manifest: ProfileManifest
+  try {
+    manifest = readProfileManifest(options.binName, profileDir)
+  } catch {
+    // Reconciliation is optional: unreadable Profile state cannot prove restoration.
+    return []
+  }
+  const restored = state.plugins.filter(record => (
+    record.profile === options.profile
+    && activePackageNames.has(record.packageName)
+    && manifest.dependencies?.[record.packageName] !== undefined
+    && manifest.dsh?.profile?.bundles?.includes(record.packageName) === true
+    && existsSync(join(profilePackageDirectory(profileDir, record.packageName), 'package.json'))
+  ))
+  if (restored.length === 0) return []
+
+  for (const record of restored) reconcileRemovedQuarantineReports(record, home)
+  const restoredIds = new Set(restored.map(record => record.quarantineId))
+  atomicWrite(quarantineFilePath(home), `${JSON.stringify({
+    ...state,
+    plugins: state.plugins.filter(record => !restoredIds.has(record.quarantineId)),
+  }, undefined, 2)}\n`)
+  return restored.map(record => record.packageName)
+}
+
 function issueBelongsToPlugin(issue: ProfileDiagnostic, packageName: string): boolean {
   return issue.attribution?.rootPackage === packageName
     || (issue.attribution?.rootPackage === undefined && issue.attribution?.moduleName === packageName)

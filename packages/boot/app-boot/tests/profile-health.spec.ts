@@ -22,6 +22,7 @@ import {
   listQuarantinedProfilePlugins,
   inspectQuarantineRemovalResidue,
   quarantineProfilePluginAfterLoadFailure,
+  reconcileRestoredQuarantinedProfilePlugins,
   readLastProfileRepairReport,
   readProfileDiagnosticReport,
   readProfileManifest,
@@ -1504,5 +1505,40 @@ describe('profile shared Host dependency repair', () => {
     expect(listQuarantinedProfilePlugins(home)).toEqual([expect.objectContaining({
       quarantineId: quarantined.quarantineId,
     })])
+  })
+
+  it('reconciles stale quarantine metadata after a plugin is fully restored', () => {
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir, pluginDir } = stageProfile(home, {})
+    const quarantined = stageQuarantineRecord(home)
+    writeProfileManifest(profileDir, {
+      name: 'dsh-profile-web',
+      dependencies: { 'fixture-plugin': '^2.3.0' },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'fixture-plugin'] } },
+    })
+    writeManifest(join(home, 'profile-health', 'web.json'), {
+      schema: 'dsh/profile-dependency-repair/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      status: 'quarantined',
+      conflicts: [],
+      quarantined: [quarantined],
+      issues: [],
+    })
+
+    expect(reconcileRestoredQuarantinedProfilePlugins(
+      { binName: 'test', profile: 'web', home },
+      new Set(),
+    )).toEqual([])
+    expect(listQuarantinedProfilePlugins(home)).toHaveLength(1)
+    expect(reconcileRestoredQuarantinedProfilePlugins(
+      { binName: 'test', profile: 'web', home },
+      new Set(['fixture-plugin']),
+    )).toEqual(['fixture-plugin'])
+    expect(existsSync(pluginDir)).toBe(true)
+    expect(readProfileManifest('test', profileDir).dependencies?.['fixture-plugin']).toBe('^2.3.0')
+    expect(readProfileManifest('test', profileDir).dsh?.profile?.bundles).toContain('fixture-plugin')
+    expect(listQuarantinedProfilePlugins(home)).toEqual([])
+    expect(readLastProfileRepairReport('web', home)).toBeUndefined()
   })
 })
