@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### 注册词典
 
-用已合并进 `LocaleNamespaceMap` 的命名空间调用 `ctx.locale.register(ns, { zh, en })`；编译器会对照该命名空间的类型化键并集检查每个键，并要求两个内置 locale 齐全。消费方通过 `ctx.locale.bind(ns)` 或框架注入的 `t` 席位翻译。UI 已挂载后再注册的词典无需重新挂载即可生效。
+用已合并进 `LocaleNamespaceMap` 的命名空间调用 `ctx.locale.register(ns, { zh, en })`；编译器会对照该命名空间的类型化键并集检查每个键，并要求两个内置 locale 齐全。同一个 typed 调用也可以带上完整的额外词典，例如 `{ zh, en, ru }`；独立语言包仍可使用逐 locale 重载。消费方通过 `ctx.locale.bind(ns)` 或框架注入的 `t` 席位翻译。UI 已挂载后再注册的词典无需重新挂载即可生效。
 
 ### 注册语言包
 
@@ -83,7 +83,7 @@ Host 通过 settings 服务为 loopback 页面持久化偏好。Client 会刻意
 
 ### 词典查找
 
-带类型的对象形式要求两个内置 locale 都有完整字典；逐 locale 形式允许语言包独立注册每个命名空间。逐键查找会先在请求命名空间中沿生效语言声明的 fallback 链查找，再在 `common` 中重复该链，最后显示键本身。绑定的翻译函数按命名空间保持稳定身份，因此可以挂在 inject 表面上而不破坏 memoization。
+带类型的对象形式要求两个内置 locale 都有完整字典，并对同一对象中提供的每个额外词典进行完整类型检查；逐 locale 形式允许独立发布的语言包分别注册每个命名空间。逐键查找会先在请求命名空间中沿生效语言声明的 fallback 链查找，再在 `common` 中重复该链，最后显示键本身。绑定的翻译函数按命名空间保持稳定身份，因此可以挂在 inject 表面上而不破坏 memoization。
 
 ### 源码地图
 

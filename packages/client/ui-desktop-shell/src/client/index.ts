@@ -13,6 +13,7 @@ import { DesktopUpdateBadge } from './DesktopUpdateBadge.tsx'
 import { readDesktopBridge } from './bridge.ts'
 import { captureDesktopReturnTarget, requestDesktopReturn } from './browser-return.ts'
 import { DesktopShellController } from './controller.ts'
+import { registerDesktopLanguages } from './community-locales.ts'
 import { navigateDesktopMenu } from './menu-navigation.ts'
 import { en, ru, zh, type DesktopShellKey } from './locales.ts'
 
@@ -29,6 +30,7 @@ const NS = 'desktop-shell'
 export const inject = ['slots', 'locale', 'connection']
 
 export function apply(ctx: Context): void {
+  ctx.effect(() => registerDesktopLanguages(ctx), 'ui-desktop-shell: community languages')
   const bridge = readDesktopBridge()
   if (bridge === null) {
     const target = captureDesktopReturnTarget()

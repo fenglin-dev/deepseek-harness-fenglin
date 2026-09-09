@@ -2,6 +2,7 @@
 
 import { ipcRenderer } from 'electron'
 import type { menuCopy } from './application-menu.ts'
+import { desktopDictionary } from './desktop-locale.ts'
 
 window.addEventListener('DOMContentLoaded', () => {
   const title = document.querySelector<HTMLElement>('#dsh-desktop-titlebar-title')
@@ -12,10 +13,11 @@ window.addEventListener('DOMContentLoaded', () => {
     throw new Error('desktop: custom title bar markup is incomplete')
   }
 
-  const chinese = navigator.language.toLowerCase().startsWith('zh')
-  const labels = chinese
-    ? { minimize: '最小化', maximize: '最大化', restore: '还原', close: '关闭' }
-    : { minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', close: 'Close' }
+  const labels = desktopDictionary(navigator.languages, {
+    zh: { minimize: '最小化', maximize: '最大化', restore: '还原', close: '关闭' },
+    en: { minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore', close: 'Close' },
+    ru: { minimize: 'Свернуть', maximize: 'Развернуть', restore: 'Восстановить', close: 'Закрыть' },
+  })
   minimize.ariaLabel = labels.minimize
   maximize.ariaLabel = labels.maximize
   close.ariaLabel = labels.close

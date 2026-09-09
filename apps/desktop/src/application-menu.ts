@@ -1,5 +1,6 @@
 /** Shared native application commands and platform-specific menu presentation. */
 import type { MenuItemConstructorOptions } from 'electron'
+import { desktopDictionary } from './desktop-locale.ts'
 
 /** Fixed commands accepted by the desktop host; never executable renderer input. */
 export const DESKTOP_COMMANDS = [
@@ -69,8 +70,7 @@ const ru: typeof en = {
 }
 /** Resolve native menu copy; unsupported languages fall back to English. @param locale - App locale. @returns Menu dictionary. */
 export function menuCopy(locale: string): typeof en {
-  const lower = locale.toLowerCase()
-  return lower.startsWith('zh') ? zh : lower.startsWith('ru') ? ru : en
+  return desktopDictionary(locale, { zh, en, ru })
 }
 
 /** Presentation state published by the trusted host. */

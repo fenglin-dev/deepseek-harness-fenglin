@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { OPEN_IN_APP_ICON_PREFIX } from '@deepseek-ai/dsh-host-open-in-app/shared'
 import { OpenInAppController } from './controller.ts'
 import { OpenInAppAction, type OpenInAppActionInjected } from './OpenInAppAction.tsx'
-import { en, NS, ru, zh, type OpenInAppKey } from './locales.ts'
+import { de, en, es, fr, ja, ko, NS, ptBR, ru, zh, type OpenInAppKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -34,7 +34,7 @@ export const inject = ['sessions', 'slots', 'locale']
 export function apply(ctx: ClientContext): void {
   const controller = new OpenInAppController()
   void controller.load()
-  ctx.effect(() => ctx.locale.register(NS, { zh, en, ru }), 'open-in-app: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, ko, es, fr, de, 'pt-BR': ptBR, ru }), 'open-in-app: dictionaries')
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
     id: 'open-in-app',

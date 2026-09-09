@@ -1,6 +1,12 @@
 /** Sandboxed interaction controller for the first-run data-home chooser. */
 
 import { ipcRenderer } from 'electron'
+import {
+  DESKTOP_LOCALES,
+  desktopDictionary,
+  resolveDesktopLocale,
+  type DesktopLocaleId,
+} from './desktop-locale.ts'
 
 type DataHomeMode = 'imported' | 'reused' | 'fresh'
 
@@ -143,6 +149,12 @@ const details: Record<'zh' | 'en', Record<DataHomeMode, DetailCopy>> = {
   },
 }
 
+const copyFor = (locale: DesktopLocaleId): typeof en => desktopDictionary(locale, { zh, en })
+const detailsFor = (locale: DesktopLocaleId): Record<DataHomeMode, DetailCopy> => desktopDictionary(locale, {
+  zh: details.zh,
+  en: details.en,
+})
+
 function required(selector: string): HTMLElement {
   const element = document.querySelector<HTMLElement>(selector)
   if (element === null) throw new Error(`desktop: data-home chooser is missing ${selector}`)
@@ -150,7 +162,8 @@ function required(selector: string): HTMLElement {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  let language: 'zh' | 'en' = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+  const startupLocale = new URLSearchParams(window.location.search).get('locale')
+  let language = resolveDesktopLocale(startupLocale ?? navigator.languages)
   const help = required('#help') as HTMLButtonElement
   const close = required('#close-comparison') as HTMLButtonElement
   const choicesGroup = required('#choices')
@@ -166,7 +179,21 @@ window.addEventListener('DOMContentLoaded', () => {
   const languageTrigger = required('#language-trigger') as HTMLButtonElement
   const languageMenu = required('#language-menu')
   const languageCurrent = required('#language-current')
-  const languageOptions = [...document.querySelectorAll<HTMLButtonElement>('.language-option')]
+  const languageOptions = DESKTOP_LOCALES.map(({ id, label }) => {
+    const option = document.createElement('button')
+    option.className = 'language-option'
+    option.type = 'button'
+    option.role = 'option'
+    option.dataset.language = id
+    const name = document.createElement('span')
+    name.textContent = label
+    const code = document.createElement('span')
+    code.className = 'language-code'
+    code.textContent = id.toUpperCase()
+    option.append(name, code)
+    return option
+  })
+  languageMenu.replaceChildren(...languageOptions)
   const developmentTools = required('#development-tools')
   const simulateMissingSourceButton = required('#simulate-missing-source') as HTMLButtonElement
 
@@ -215,7 +242,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const displayedSourceState = (): 'valid' | 'missing' | 'unreadable' => simulateMissingSource ? 'missing' : sourceState
 
   const renderSource = (): void => {
-    const copy = language === 'zh' ? zh : en
+    const copy = copyFor(language)
     const visibleSource = displayedSource()
     const visibleSourceState = displayedSourceState()
     sourcePanel.dataset.status = visibleSourceState
@@ -247,7 +274,7 @@ window.addEventListener('DOMContentLoaded', () => {
     : customTarget?.path
 
   const renderDestination = (): void => {
-    const copy = language === 'zh' ? zh : en
+    const copy = copyFor(language)
     targetChoicesGroup.ariaLabel = copy.targetGroupLabel
     defaultTargetPath.textContent = builtInTarget
     defaultTargetPath.hidden = builtInTarget.length === 0
@@ -267,13 +294,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
   const renderStep = (): void => {
     const destinationVisible = step === 'destination' && selected !== 'reused'
-    risk.hidden = details[language][selected].risk === undefined
+    risk.hidden = detailsFor(language)[selected].risk === undefined
     backButton.hidden = !destinationVisible
     detailStage.dataset.step = destinationVisible ? 'destination' : 'details'
     destinationPanel.ariaHidden = String(!destinationVisible)
     destinationPanel.inert = !destinationVisible
     if (destinationVisible) {
-      const copy = language === 'zh' ? zh : en
+      const copy = copyFor(language)
       destinationSummary.textContent = copy.destinationSummary
       renderDestination()
     } else {
@@ -282,10 +309,10 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   const renderCopy = (): void => {
-    const copy = language === 'zh' ? zh : en
-    document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'
+    const copy = copyFor(language)
+    document.documentElement.lang = language
     document.title = copy.windowTitle
-    languageCurrent.textContent = language === 'zh' ? '中文' : 'English'
+    languageCurrent.textContent = DESKTOP_LOCALES.find(locale => locale.id === language)?.label ?? 'English'
     languageTrigger.ariaLabel = `${copy.languageLabel}: ${languageCurrent.textContent}`
     languageMenu.ariaLabel = copy.languageLabel
     for (const option of languageOptions) option.ariaSelected = String(option.dataset.language === language)
@@ -304,7 +331,7 @@ window.addEventListener('DOMContentLoaded', () => {
     selected = mode
     for (const choice of choices) choice.ariaChecked = String(choice.dataset.mode === mode)
     detailPanel.dataset.mode = mode
-    const detail = details[language][mode]
+    const detail = detailsFor(language)[mode]
     detailTitle.textContent = detail.title
     risk.textContent = detail.risk ?? ''
     risk.hidden = detail.risk === undefined
@@ -458,7 +485,7 @@ window.addEventListener('DOMContentLoaded', () => {
     languageTrigger.ariaExpanded = 'true'
     languageOptions.find(option => option.dataset.language === language)?.focus()
   }
-  const changeLanguage = (nextLanguage: 'zh' | 'en'): void => {
+  const changeLanguage = (nextLanguage: DesktopLocaleId): void => {
     language = nextLanguage
     renderCopy()
     select(selected)
@@ -474,7 +501,7 @@ window.addEventListener('DOMContentLoaded', () => {
     openLanguageMenu()
   })
   for (const option of languageOptions) {
-    option.addEventListener('click', () => { changeLanguage(option.dataset.language === 'en' ? 'en' : 'zh') })
+    option.addEventListener('click', () => { changeLanguage(resolveDesktopLocale(option.dataset.language ?? 'en')) })
   }
   document.addEventListener('click', (event) => {
     if (!languageMenu.hidden && event.target instanceof Node && !languagePicker.contains(event.target)) closeLanguageMenu()

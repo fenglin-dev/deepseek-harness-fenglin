@@ -81,3 +81,45 @@ export const ru: Record<OpenInAppKey, string> = {
   'app.filemanager': 'Файлы',
   'app.terminal': 'Терминал',
 }
+
+/** Japanese dictionary. */
+export const ja: Record<OpenInAppKey, string> = {
+  'open.title': '{app} でワークスペースを開く', 'open.tooltip': 'ローカルで開く', 'open.error': '開けませんでした',
+  'menu.toggle': '開くアプリを選択', 'menu.aria': 'アプリで開く', ...PRODUCT_NAMES,
+  'app.finder': 'Finder', 'app.explorer': 'エクスプローラー', 'app.filemanager': 'ファイル', 'app.terminal': 'ターミナル',
+}
+
+/** Korean dictionary. */
+export const ko: Record<OpenInAppKey, string> = {
+  'open.title': '{app}에서 작업 공간 열기', 'open.tooltip': '로컬에서 열기', 'open.error': '열지 못했습니다',
+  'menu.toggle': '열 앱 선택', 'menu.aria': '다음에서 열기', ...PRODUCT_NAMES,
+  'app.finder': 'Finder', 'app.explorer': '파일 탐색기', 'app.filemanager': '파일', 'app.terminal': '터미널',
+}
+
+/** Spanish dictionary. */
+export const es: Record<OpenInAppKey, string> = {
+  'open.title': 'Abrir el espacio de trabajo en {app}', 'open.tooltip': 'Abrir localmente', 'open.error': 'No se pudo abrir',
+  'menu.toggle': 'Elegir una aplicación', 'menu.aria': 'Abrir en', ...PRODUCT_NAMES,
+  'app.finder': 'Finder', 'app.explorer': 'Explorador de archivos', 'app.filemanager': 'Archivos', 'app.terminal': 'Terminal',
+}
+
+/** French dictionary. */
+export const fr: Record<OpenInAppKey, string> = {
+  'open.title': 'Ouvrir l’espace de travail dans {app}', 'open.tooltip': 'Ouvrir localement', 'open.error': 'Échec de l’ouverture',
+  'menu.toggle': 'Choisir une application', 'menu.aria': 'Ouvrir dans', ...PRODUCT_NAMES,
+  'app.finder': 'Finder', 'app.explorer': 'Explorateur de fichiers', 'app.filemanager': 'Fichiers', 'app.terminal': 'Terminal',
+}
+
+/** German dictionary. */
+export const de: Record<OpenInAppKey, string> = {
+  'open.title': 'Arbeitsbereich in {app} öffnen', 'open.tooltip': 'Lokal öffnen', 'open.error': 'Öffnen fehlgeschlagen',
+  'menu.toggle': 'App zum Öffnen auswählen', 'menu.aria': 'Öffnen mit', ...PRODUCT_NAMES,
+  'app.finder': 'Finder', 'app.explorer': 'Datei-Explorer', 'app.filemanager': 'Dateien', 'app.terminal': 'Terminal',
+}
+
+/** Brazilian Portuguese dictionary. */
+export const ptBR: Record<OpenInAppKey, string> = {
+  'open.title': 'Abrir o espaço de trabalho no {app}', 'open.tooltip': 'Abrir localmente', 'open.error': 'Falha ao abrir',
+  'menu.toggle': 'Escolher um aplicativo', 'menu.aria': 'Abrir em', ...PRODUCT_NAMES,
+  'app.finder': 'Finder', 'app.explorer': 'Explorador de Arquivos', 'app.filemanager': 'Arquivos', 'app.terminal': 'Terminal',
+}

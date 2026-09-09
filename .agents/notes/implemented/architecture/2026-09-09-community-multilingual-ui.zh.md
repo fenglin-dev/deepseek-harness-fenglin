@@ -1,0 +1,37 @@
+# Agent Note：社区版多语言 UI 架构
+
+Status: implemented
+
+[English](2026-09-09-community-multilingual-ui.md) | 中文
+
+## 问题
+
+上游 Client 有意只内置中文和英文，外部语言包可逐个 namespace 增加语言。社区桌面端还包含在 Client locale 服务可用前就会显示的 Electron 文案；PR #19 提供了正确的俄语功能字典，却没有统一负责语言可用性、启动语言选择与跨平台回退的 owner。若继续在菜单、preload 页面和各功能中复制 locale 条件，后续翻译将难以审计，也容易误翻译路径、包名和用户数据。
+
+## 决策
+
+Open DSH Desktop 按固定顺序发布统一社区语言目录：`zh`、`en`、`ja`、`ko`、`es`、`fr`、`de`、`pt-BR` 与 `ru`。`ui-desktop-shell` 通过一个可逆 Cordis effect 负责注册额外七种语言定义。功能包继续拥有自己的 namespace 字典；typed 多字典注册必须包含两个内置字典，并允许同时携带任意数量的额外完整字典。缺少 key 或功能字典时，沿该语言声明的英文 fallback 查找，而不是在展示代码中混入局部字面量条件。
+
+Electron 自有页面使用 `desktop-locale.ts` 统一处理 BCP 47 与下划线标签、字典选择和具名插值。解析器绝不翻译路径、URL、插件身份、命令或外部错误值。首次配置目录选择器也从同一目录动态生成语言选项。Harness 就绪前，原生菜单和恢复页使用原子写入的 `userData/desktop-locale.json`，读取上一次生效的 Profile 语言；若没有有效缓存，再回退到操作系统语言，最后回退到英文。Client 报告当前 Profile 的生效语言后，该值成为权威并刷新缓存。
+
+PR #19 提供的俄语字典继续作为 Desktop Shell、Open in App、Selection Actions 与原生菜单文案的来源。其他社区语言可以逐 namespace 完成翻译；在某功能尚无对应字典时选择该语言是受支持的，并明确让该功能显示英文。这样可以安全呈现未完成的覆盖范围，不阻塞发布，也不会产生第二个全局巨型字典。
+
+## 验证
+
+locale 测试固定稳定 id、地区与下划线匹配、英文回退、Unicode 与 Windows 路径、未知占位符、损坏缓存恢复及原子缓存内容。Client 生命周期测试固定语言目录注册和完整释放。功能测试要求每个发布字典与英文具有相同 key 集和占位符集合。严格 TypeScript 编译会依据各功能的 `LocaleNamespaceMap` key 并集检查额外字典。
+
+## Alternatives considered
+
+**把俄语作为与中文、英文并列的特殊内置语言。** 否决，因为之后每增加一种语言都要修改核心运行时，并会把社区翻译变成上游 locale 约定。
+
+**为整个桌面端和 Client 维护一个全局字典。** 否决，因为这会让文案离开定义其含义的功能，削弱 typed namespace 归属，并让彼此独立的翻译贡献频繁冲突。
+
+**Harness 启动前只使用操作系统语言。** 否决，因为 Profile 明确选择其他语言时，恢复页和原生菜单会在启动期间切换语言；最小化桌面缓存无需写入 Profile 即可保持这些界面一致。
+
+## 后果
+
+- 新增可选语言只需改一次社区目录；新增文案仍留在决定其语义的功能侧。
+- 翻译者可以一次提交一个完整 namespace，无需修改 LocaleRuntime 或无关组件。
+- Profile 就绪后，其语言同时控制 Client 与原生桌面 chrome；启动和恢复阶段通过桌面缓存保持一致。
+- 缓存只保存展示状态，不含路径或凭据，也绝不覆盖已经就绪的 Profile。
+- 复数规则与双向布局仍由语言包负责；本次改造不虚构基于字符串的复数约定。

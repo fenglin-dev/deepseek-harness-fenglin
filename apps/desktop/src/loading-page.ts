@@ -9,6 +9,7 @@ import type {
 } from './desktop-data-home.ts'
 import type { PluginSnapshotRestoreSnapshot, PluginSnapshotSummary } from './plugin-snapshot-manager.ts'
 import type { RecoveryPluginInventory, RecoveryPluginSource, RecoveryPluginSummary } from './recovery-plugins.ts'
+import { desktopDictionary } from './desktop-locale.ts'
 import { parseDesktopStartupProgress, type DesktopStartupProgress, type DesktopStartupStage } from './startup-progress.ts'
 
 type RecoveryPanel = 'plugins' | 'snapshots' | 'directory' | 'diagnostics'
@@ -25,8 +26,8 @@ function element<T extends Element>(selector: string, narrow?: (value: Element) 
 export function installLoadingPage(ipcRenderer: IpcRenderer): void {
   if (!location.pathname.endsWith('/loading.html')) return
   const query = new URLSearchParams(location.search)
-  const chinese = navigator.language.toLowerCase().startsWith('zh')
-  const copy = chinese ? chineseCopy : englishCopy
+  const requestedLocale = query.get('locale') ?? navigator.languages
+  const copy = desktopDictionary(requestedLocale, { zh: chineseCopy, en: englishCopy })
   const title = element<HTMLElement>('#title')
   const description = element<HTMLElement>('#description')
   const progress = element<HTMLElement>('#progress')

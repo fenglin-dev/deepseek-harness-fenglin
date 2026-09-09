@@ -89,6 +89,7 @@ async function bench() {
   } as never, () => null)
   return {
     ctx,
+    locale,
     slots,
     connect: () => {
       generation = { id: 1, host: { home: '/desktop/dsh-home' } }
@@ -99,6 +100,19 @@ async function bench() {
 }
 
 describe('ui-desktop-shell apply', () => {
+  it('registers the complete community language catalog and removes it with the plugin', async () => {
+    const b = await bench()
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(b.locale.getLocale().locales.map(language => language.id)).toEqual([
+      'zh', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'pt-BR', 'ru',
+    ])
+    b.locale.setLocale('ru')
+    expect(b.locale.bind('settings.locale')('language.title')).toBe('Язык')
+    await fiber.dispose()
+    expect(b.locale.getLocale().locales.map(language => language.id)).toEqual(['zh', 'en'])
+  })
+
   it('owns one native menu subscription and reports connection readiness through service injection', async () => {
     installBridge()
     const bridge = (globalThis as unknown as { deepSeekHarnessDesktop: Record<string, unknown> }).deepSeekHarnessDesktop

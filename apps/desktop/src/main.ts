@@ -142,6 +142,8 @@ import {
 } from './startup-diagnostics.ts'
 import { DesktopWebAccess, type DesktopWebStatus } from './desktop-web-access.ts'
 import { DesktopReturnControl } from './desktop-return-control.ts'
+import { createDesktopLocaleStore, type DesktopLocaleStore } from './desktop-locale-store.ts'
+import { resolveDesktopLocale } from './desktop-locale.ts'
 
 const APP_NAME = 'DeepSeek Harness'
 const DESKTOP_WEB_SUPPORTED = process.platform === 'darwin' || process.platform === 'win32'
@@ -188,6 +190,8 @@ let applicationMenu: ApplicationMenuController | undefined
 let disposeApplicationMenu: (() => void) | undefined
 let activeMenuHome: string | undefined
 let menuLocale = 'en'
+let desktopLocaleStore: DesktopLocaleStore | undefined
+let persistedProfileLocale: string | undefined
 let menuClientReady = false
 let snapshotMutationActive = false
 let recoveryHarnessSuspended = false
@@ -687,6 +691,7 @@ async function showDataHomeChooser(
       chooser.focus()
     })
     void chooser.loadFile(DATA_HOME_PAGE, { query: {
+      locale: menuLocale,
       selected: defaultSource === undefined ? 'fresh' : 'imported',
       source: defaultSource?.path ?? '',
       defaultSource: defaultSource?.path ?? '',
@@ -1112,6 +1117,7 @@ function showLoading(state: HarnessState, failure?: HarnessFailure & { logPath: 
   void mainSurface.loadFile(LOADING_PAGE, {
     query: {
       state,
+      locale: menuLocale,
       stage: startupProgress.stage,
       progress: String(startupProgress.progress),
       ...(startupProgress.detail === undefined ? {} : { detail: startupProgress.detail }),
@@ -1324,7 +1330,8 @@ function createWindow(): BrowserWindow {
 async function startApplication(): Promise<void> {
   if (process.platform === 'win32') app.setAppUserModelId('ai.flaq.deepseek-harness')
   await app.whenReady()
-  menuLocale = app.getLocale()
+  desktopLocaleStore = createDesktopLocaleStore(join(app.getPath('userData'), 'desktop-locale.json'))
+  menuLocale = desktopLocaleStore.read(app.getLocale())
   applicationMenu = new ApplicationMenuController({
     surface: () => mainSurface,
     state: () => ({ platform: process.platform, locale: menuLocale, ready: menuClientReady && harnessOrigin !== undefined,
@@ -2111,7 +2118,15 @@ async function startApplication(): Promise<void> {
     const { ready, locale } = state as { ready?: unknown; locale?: unknown }
     if (typeof ready !== 'boolean' || typeof locale !== 'string' || locale.length > 64) return
     menuClientReady = ready
-    menuLocale = locale
+    menuLocale = resolveDesktopLocale(locale)
+    if (persistedProfileLocale !== menuLocale) {
+      try {
+        desktopLocaleStore?.write(menuLocale)
+        persistedProfileLocale = menuLocale
+      } catch (error) {
+        console.warn('desktop: could not persist active locale', error)
+      }
+    }
     applicationMenu?.refresh()
   })
   ipcMain.on('dsh:menu:result', (event, result: unknown) => {

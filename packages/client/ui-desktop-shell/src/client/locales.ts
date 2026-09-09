@@ -434,6 +434,8 @@ export const ru = {
   'release.download.cancel': 'Отменить загрузку',
   'release.download.open': 'Открыть установщик',
   'release.download.resolving': 'Получаем информацию об установщике…',
+  'release.download.switching': 'Системная сеть недоступна. Переключаемся на резервный канал…',
+  'release.download.restarting': 'Резервный канал не может продолжить передачу. Загрузка начнётся заново…',
   'release.download.progress': 'Загрузка {percent}% · {transferred} / {total}',
   'release.download.progressLabel': 'Прогресс загрузки установщика',
   'release.download.verifying': 'Загрузка завершена. Проверяем SHA-256…',
