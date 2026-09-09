@@ -75,6 +75,7 @@ describe('BundledPluginInstaller', () => {
   it('installs only the bundled archive without attempting the registry', async () => {
     const f = await fixture()
     const entry = f.manifest.plugins[0]
+    if (entry === undefined) throw new Error('startup fixture is missing')
     const install = vi.fn(async () => {})
     await expect(installBundledPluginSource(entry, '/archive.tgz', install)).resolves.toBe('archive')
     expect(install).toHaveBeenCalledOnce()
@@ -100,13 +101,15 @@ describe('BundledPluginInstaller', () => {
     const manifest = twoStartupPlugins(f.manifest)
     const install = vi.fn(async () => {})
     const onFailure = vi.fn(async () => {})
-    const withStartupTransaction = vi.fn(async <T>(
+    const transactionCalls = vi.fn()
+    const withStartupTransaction = async <T>(
       entry: BundledPluginManifestEntry,
       operation: () => Promise<T>,
     ): Promise<T> => {
+      transactionCalls(entry)
       if (entry.packageName === 'startup') throw new Error('first transaction failed')
       return operation()
-    })
+    }
     const installer = new BundledPluginInstaller({
       manifest, resourcesDirectory: f.resourcesDirectory, dshHome: join(f.root, 'home'),
       install, onFailure, withStartupTransaction,
@@ -115,7 +118,7 @@ describe('BundledPluginInstaller', () => {
     const results = await installer.seedStartup()
 
     expect(results).toHaveLength(2)
-    expect(withStartupTransaction).toHaveBeenCalledTimes(2)
+    expect(transactionCalls).toHaveBeenCalledTimes(2)
     expect(onFailure).toHaveBeenCalledOnce()
     expect(install).toHaveBeenCalledOnce()
   })
@@ -212,6 +215,24 @@ describe('BundledPluginInstaller', () => {
     finishInstall()
     await vi.waitFor(() => { expect(installer.getInstall(first.snapshot.installId).phase).toBe('succeeded') })
     expect(install).toHaveBeenCalledOnce()
+  })
+
+  it('settles a manual job only after its managed activation commits', async () => {
+    const f = await fixture()
+    const install = vi.fn(async () => {})
+    const withManagedTransaction = vi.fn(async (_entry, operation: () => Promise<unknown>) => {
+      await operation()
+      throw new Error('candidate startup rolled back')
+    })
+    const installer = new BundledPluginInstaller({
+      manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome: join(f.root, 'home'),
+      install, withManagedTransaction, createId: () => 'managed-job',
+    })
+    const started = installer.startManual('web', 'manual@2.0.0')
+    if (!started.handled) throw new Error('expected managed request')
+    await vi.waitFor(() => { expect(installer.getInstall(started.snapshot.installId).phase).toBe('failed') })
+    expect(withManagedTransaction).toHaveBeenCalledOnce()
+    expect(installer.getInstall(started.snapshot.installId).diagnostic).toContain('rolled back')
   })
 
   it('restores an explicitly requested startup entry from its bundled archive', async () => {

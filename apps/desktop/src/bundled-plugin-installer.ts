@@ -53,6 +53,10 @@ export interface BundledPluginInstallerOptions {
     entry: BundledPluginManifestEntry,
     operation: () => Promise<T>,
   ) => Promise<T>
+  readonly withManagedTransaction?: <T>(
+    entry: BundledPluginManifestEntry,
+    operation: () => Promise<T>,
+  ) => Promise<T>
   readonly startupBudgetMs?: number
   readonly now?: () => number
   readonly shouldAttemptStartup?: (entry: BundledPluginManifestEntry) => Promise<boolean>
@@ -296,10 +300,12 @@ export class BundledPluginInstaller {
   private async runJob(job: InstallJob, entry: BundledPluginManifestEntry, force: boolean): Promise<void> {
     this.options.onManagedMutationStart?.(entry)
     try {
-      await this.seed(entry, force, (progress) => {
+      const operation = () => this.seed(entry, force, (progress) => {
         if (job.snapshot.phase !== 'running') return
         job.snapshot = { ...job.snapshot, ...progress }
       })
+      if (this.options.withManagedTransaction === undefined) await operation()
+      else await this.options.withManagedTransaction(entry, operation)
       job.snapshot = { ...job.snapshot, phase: 'succeeded', stage: 'configuring', progress: 100, exitCode: 0 }
     } catch (error) {
       job.snapshot = { ...job.snapshot, phase: 'failed', exitCode: 1, diagnostic: errorDiagnostic(error) }

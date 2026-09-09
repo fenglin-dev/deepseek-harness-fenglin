@@ -31,7 +31,7 @@ adapter 把每个 `SessionEventLikeEntry` 直接交给 assembler。外层 `type`
 
 shell 选择解析出 target 或 target source 收到首个 subscriber 时，该 target 进入 active 状态。assembler 从当前 Context 对它执行一次 replace，并使它参与后续增量 flush；创建 source 不会激活 target，取消订阅也不会停用 target。
 
-target package 通过 declaration merge 扩展 snapshot 与 Location data map，再调用 `ctx.uiConversation.events.register(...)` 和 `ctx.uiConversation.views.register(...)`。target 通过 `ctx.uiConversation.binding(binding).target(targetId)` 读取其 Session-owned source。注册属于 Cordis effect，返回的 disposer 从同一个 registry 移除 contribution。
+target package 通过 declaration merge 扩展 snapshot 与 Location data map，再调用 `ctx.uiConversation.events.register(...)` 和 `ctx.uiConversation.views.register(...)`。target 通过 `ctx.uiConversation.binding(binding).target(targetId)` 读取其 Session-owned source。注册属于 Cordis effect，返回的 disposer 从同一个 registry 移除 contribution。共享的请求检查服务于每个 target：`ctx.uiConversation.inspectSystemPrompt(previous, event)` 将系统消息与位置替换解释为不可变的已加载 surface 状态。它按 surface 顺序选择最后一个非空的存活系统节点，为连续重写只保留存活的替换位置；遇到未建立索引的更早端点后，提示词保持不可用，直到向前补页回放提供其顺序。target 自有的 Definition 独立保留历史卡片。`ctx.uiConversation.inspectRequestPrompt(previous, header, system)` 根据该有效提示词分类请求变更；普通消息与流式分片无需处理系统状态。
 
 <a id="shell-and-standard-props"></a>
 ## Shell 与标准 props
@@ -48,7 +48,7 @@ Session 首次绑定或缓存的 Session 成为 current 时，shell 会在渲染
 
 排队提交的本地回显在禁用的编辑、删除、插话按钮旁显示“发送中…”；折叠后的队列在标题栏保留发送状态。匹配的 Host 队列行替换回显后，各操作按原有的纯文本内容和运行状态要求启用。仅收到 prompt 确认不会启用队列操作。提交失败会移除回显并显示错误；输入框为空或仍保留上一次自动恢复的内容时，composer 恢复失败草稿，保留用户随后输入的文字。
 
-普通 composer 运行时，如果草稿为空或输入不可用，主指针操作保持为 Stop。可提交的文字或附件会把同一位置切换为 Queue Send；清空或成功提交草稿后恢复 Stop。繁忙态 Enter 设置会为普通 Session 与可继续 child 选择 Queue 或 Steer 键盘操作。它们的 QueueDock 行共享 Edit、Remove 与 Steer，空草稿也共享 steer-all 组合键。One-shot child 继续只读。Plan Mode 与 active goal 不改变附件入口。可继续 child 保留独立的 Send 与 Stop 操作，但不提供回形针、粘贴或拖放入口；parent 离线时，Send 与 composer 手势锁定，但在线 inbox 的 QueueDock 控制仍可使用（[决策](../../../.agents/notes/archived/bug-fix/2026-08-20-running-draft-primary-send.md)、[inbox 控制](../../../.agents/notes/implemented/feature/2026-08-27-continuable-subagent-human-inbox-control.zh.md)）。
+Send 和 Stop 按钮禁用时不显示提示气泡，轮次结束后由 Stop 切换成禁用 Send 的按钮也遵循此规则。普通 composer 运行时，如果草稿为空或输入不可用，主指针操作保持为 Stop。可提交的文字或附件会把同一位置切换为 Send；清空或成功提交草稿后恢复 Stop。繁忙态 Enter 设置为普通 Session 与可继续 child 选择 Queue 或 Steer 投递，运行中的 Send 按钮按 plain Enter 解析出的同一模式投递；当它在普通消息草稿上可用（没有待上传文件）时，其标签以该模式命名（排队发送或插话发送），因此该设置同时约束 Enter 与按钮，而 Cmd/Ctrl+Enter 仍使用另一模式；空闲会话、空草稿与 `/` 命令行保留普通的 Send 标签（[决策](../../../.agents/notes/implemented/bug-fix/2026-09-04-busy-send-button-follows-enter-setting.zh.md)）。它们的 QueueDock 行共享 Edit、Remove 与 Steer，空草稿也共享 steer-all 组合键。One-shot child 继续只读。Plan Mode 与 active goal 不改变附件入口。可继续 child 保留独立的 Send 与 Stop 操作，但不提供回形针、粘贴或拖放入口；parent 离线时，Send 与 composer 手势锁定，但在线 inbox 的 QueueDock 控制仍可使用（[决策](../../../.agents/notes/archived/bug-fix/2026-08-20-running-draft-primary-send.md)、[inbox 控制](../../../.agents/notes/implemented/feature/2026-08-27-continuable-subagent-human-inbox-control.zh.md)）。
 
 <a id="temporary-composer-entries"></a>
 ## 临时 composer entry

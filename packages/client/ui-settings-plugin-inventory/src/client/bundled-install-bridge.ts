@@ -38,6 +38,7 @@ export type DiagnosticLabScenarioId =
   | 'client-module-unavailable'
   | 'loader-package-name-mismatch'
   | 'startup-operation-timeout'
+  | 'plugin-transaction-interrupted'
   | 'loader-dependency-unavailable'
   | 'loader-export-unavailable'
   | 'legacy-session-api'

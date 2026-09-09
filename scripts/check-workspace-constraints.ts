@@ -18,7 +18,7 @@ const workspaceGlobs = [
   { dir: 'vendor', depth: 1 },
   { dir: 'packages', depth: 2 },
   { dir: 'native', depth: 1 },
-  { dir: 'native/landlock-run/packages', depth: 1 },
+  { dir: 'native/system/packages', depth: 1 },
   { dir: 'apps', depth: 1 },
 ] as const
 const vendoredPackages = new Set([
@@ -32,14 +32,16 @@ const vendoredPackages = new Set([
   '@deepseek-ai/cordis-plugin-hmr',
   '@deepseek-ai/cordis-plugin-logger-console',
 ])
-const publicLandlockPackages = new Set([
-  '@deepseek-ai/node-addon-landlock-run',
-  '@deepseek-ai/node-addon-landlock-run-linux-arm64',
-  '@deepseek-ai/node-addon-landlock-run-linux-x64',
+const publicNativePackages = new Set([
+  '@deepseek-ai/node-addon-system',
+  '@deepseek-ai/node-addon-system-darwin-arm64',
+  '@deepseek-ai/node-addon-system-darwin-x64',
+  '@deepseek-ai/node-addon-system-linux-arm64',
+  '@deepseek-ai/node-addon-system-linux-x64',
 ])
 /** Deliberate source payloads whose exact bytes are part of the package's audit surface. */
 const publicationSourceAllowlist: Readonly<Record<string, readonly string[]>> = {
-  '@deepseek-ai/node-addon-landlock-run': ['src/main.c'],
+  '@deepseek-ai/node-addon-system': ['src/main.c', 'src/flock.c'],
 }
 const repositoryUrl = 'git+https://github.com/deepseek-harness/deepseek-harness.git'
 /**
@@ -59,10 +61,16 @@ const communityPrivatePackageDirectories = new Set([
   'packages/client/ui-desktop-shell',
 ])
 /** Directories whose packages this repository publishes: one release member each. */
-const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
+const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/(?!desktop(?:-host)?$)[^/]+|vendor\/[^/]+)$/
+/** Installable application assembled by electron-builder rather than published to npm. */
+const desktopApplicationDirectory = 'apps/desktop'
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh': ['lib/*.js'],
+  '@deepseek-ai/dsh-desktop-host': [
+    'lib/index.js',
+    'config/desktop.cordis.patch.yml',
+  ],
   // Sourcemaps stay out by payload policy; the worker-preview surface
   // (dist/preview.html and dist/preview/) backs private experimental
   // packages and is not published.
@@ -114,8 +122,8 @@ function readJson(path: string): PackageManifest {
 
 const rootManifest = readJson(join(root, 'package.json'))
 const repositoryVersion = rootManifest.version
-const landlockWorkspaceManifest = readJson(join(root, 'native/landlock-run/package.json'))
-const landlockVersion = landlockWorkspaceManifest.version
+const nativeWorkspaceManifest = readJson(join(root, 'native/system/package.json'))
+const nativeVersion = nativeWorkspaceManifest.version
 
 /** Repo-relative dirs holding a package.json, walked to the configured depth. */
 function packageDirs(base: string, depth: number): string[] {
@@ -153,6 +161,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // The glob covers whichever sheets a package emits; sourcemaps stay
   // unpublished, as everywhere else in the repository.
   '@deepseek-ai/dsh-client-ui-primitives': ['lib/**/*.css'],
+  '@deepseek-ai/dsh-client-ui-dockkit': ['lib/**/*.css'],
   '@deepseek-ai/dsh-client-web': ['lib/**/*.css'],
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
   // The CPython side ships as source .py files, published as-is rather than built.
@@ -309,12 +318,12 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
   const label = manifest.name ?? dir
   const familyVersionError = checkDshFamilyVersion(manifest, repositoryVersion)
   if (familyVersionError !== undefined) errors.push(familyVersionError)
-  const isLandlockPackageDir = dir.startsWith('native/landlock-run/packages/')
-  const isPublicLandlockPackage = isLandlockPackageDir
+  const isNativePackageDir = dir.startsWith('native/system/packages/')
+  const isPublicNativePackage = isNativePackageDir
     && manifest.name !== undefined
-    && publicLandlockPackages.has(manifest.name)
+    && publicNativePackages.has(manifest.name)
 
-  if (isPublicLandlockPackage) {
+  if (isPublicNativePackage) {
     if (manifest.private === true) {
       errors.push(`${label}: published Landlock package must not set "private": true`)
     }
@@ -365,7 +374,7 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
     }
   }
 
-  if (dir.startsWith('apps/') && manifest.name?.startsWith('@deepseek-ai/')
+  if (dir.startsWith('apps/') && dir !== desktopApplicationDirectory && manifest.name?.startsWith('@deepseek-ai/')
     && !communityPrivatePackageDirectories.has(dir)) {
     const expectedFiles = appPackageFiles[manifest.name]
     if (expectedFiles === undefined) {
@@ -375,12 +384,12 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
     }
   }
 
-  if (isLandlockPackageDir) {
-    if (!isPublicLandlockPackage) {
+  if (isNativePackageDir) {
+    if (!isPublicNativePackage) {
       errors.push(`${label}: unexpected package in the public Landlock package family`)
     }
-    if (manifest.version !== landlockVersion) {
-      errors.push(`${label}: package.json version must match Landlock workspace version ${landlockVersion ?? '(missing)'}`)
+    if (manifest.version !== nativeVersion) {
+      errors.push(`${label}: package.json version must match native workspace version ${nativeVersion ?? '(missing)'}`)
     }
   }
 

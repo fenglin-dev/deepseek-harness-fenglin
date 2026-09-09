@@ -10,6 +10,8 @@
   - button "Session log":
     - text: Session log
     - img
+  - button "Open the sidebar":
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -44,7 +46,7 @@
   - img
   - text: Ran for {{duration}}
 - text: {{clock}}
-- textbox "Message or run a task... / commands, @ files or sessions"
+- textbox "Message or run a task, / commands, @ files or sessions"
 - button "Commands":
   - img
 - button "Add attachment":
@@ -55,4 +57,9 @@
   - img
 - button "0% of context used"
 - button "Send message" [disabled]
-- text: 1 turns · 1 steps LLM {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 0% Input 256 tok · Output 16 tok
+- button "1 turns 1 steps · {{throughput}} tok/s":
+  - img
+  - text: 1 turns 1 steps{{throughput}} tok/s
+- button "272 tok · Cache hit 0%":
+  - img
+  - text: 272 tokCache hit 0%

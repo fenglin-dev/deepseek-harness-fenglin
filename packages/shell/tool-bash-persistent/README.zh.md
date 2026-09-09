@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-tool-bash-persistent` 为 agent 提供 `bash` 工具，其 shell 状态对拥有它的 agent 跨调用保留：cwd、导出的变量、函数与后台任务都会在命令之间存活。每个 agent 都有自己由 terminal 服务的按所有者隔离 PTY 会话支撑的 shell，同一 agent 的命令逐个串行执行。配置选择 PTY 后端与单条命令的墙钟上限；超时或显式 `exit` 会关闭 shell，下一次调用从全新状态开始。它补充一次性 `dsh-tool-bash` 工具——当工作依赖跨调用状态时选择它。请与 `dsh-terminal-bash` 等 terminal 后端以及 `ctx.terminals` 服务一起挂载。
+本包为 agent 提供 `bash` 工具，使 cwd、导出的变量、函数与后台任务跨调用保留。每个 agent 都有隔离的 shell，其命令串行执行。需要跨调用状态的工作流应选择本包；每条命令都应从干净环境开始时使用 `dsh-tool-bash`。配置 PTY 后端与单条命令的超时；`exit`、超时或取消会重置 shell，而等待 stdin 的交互式命令可能一直运行到超时。
 
 ## 目录
 

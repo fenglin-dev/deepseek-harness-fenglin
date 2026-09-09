@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-settings-general` is the settings shell of the dsh web client: the Settings panel opens from the sidebar's bottom control with the trigger chrome and modal shell, a connection-failure indicator beside that control offers immediate recovery, the navigation is built from contributed sections and can be rearranged by the user, and first-run users are walked through one onboarding step at a time. It also registers everything on the Settings pages that belongs to no single feature: the trigger/header/close chrome content, the local configuration-file action, the General section and its `settings.general.item` slot, and the `settings` dictionaries. Feature-owned rows (Permission, Language, Appearance), sections (Models), and conditional onboarding steps stay with their feature packages; the shell itself ships no onboarding copy of its own.
+This package provides the Web client's Settings panel, connection-recovery control, reorderable feature navigation, and sequential first-run onboarding. Users can open it from the sidebar, retry a failed connection, and access a local configuration file when the Host makes one available on a loopback browser. Feature packages own their settings rows, sections, and onboarding steps; the shell supplies shared presentation without adding onboarding copy or built-in General rows.
 
 ## Table of Contents
 

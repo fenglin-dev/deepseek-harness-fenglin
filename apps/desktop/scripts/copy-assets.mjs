@@ -1,8 +1,17 @@
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const outputDirectory = fileURLToPath(new URL('../lib/', import.meta.url))
 mkdirSync(outputDirectory, { recursive: true })
+// tsc does not delete outputs for removed sources. Do not ship stale standalone
+// desktop carrier or updater modules after building this community checkout.
+for (const name of [
+  'core-package-set', 'host-process', 'host-protocol', 'ipc', 'locale', 'paths',
+  'preload-app', 'project-manager', 'release', 'seed-store', 'single-instance', 'update-coordinator',
+]) {
+  if (existsSync(new URL(`../src/${name}.ts`, import.meta.url))) continue
+  for (const extension of ['js', 'js.map']) rmSync(new URL(`../lib/${name}.${extension}`, import.meta.url), { force: true })
+}
 const { version } = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'))
 writeFileSync(new URL('../lib/harness-version.json', import.meta.url), `${JSON.stringify({ version })}\n`)
 copyFileSync(

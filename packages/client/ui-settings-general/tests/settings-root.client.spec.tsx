@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -7,6 +8,9 @@ import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts
 import type { SettingsNavigationRequest } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 import { en } from '../src/client/locales.ts'
+
+// Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
 
 afterEach(() => {
   cleanup()
@@ -80,6 +84,7 @@ function mount({
   const props: SettingsRootComponentProps = {
     useSessions,
     useSessionPendingInteraction,
+    useResource,
     useWorkspaces: unusedHook,
     wide,
     reconnect,

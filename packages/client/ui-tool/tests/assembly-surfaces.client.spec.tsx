@@ -1,3 +1,4 @@
+import { toolSessionEvents } from './tool-fixtures.client.ts'
 // @vitest-environment jsdom
 /** Tool assembly acceptance through the real ui-conversation host. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +14,6 @@ import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotTestRuntime, TestRemote, usePinnedBrowserLanguages, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyConversation, inject as injectConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { apply as applyTool, inject as injectTool } from '../src/client/apply.ts'
-import { toolSessionEvents } from './tool-details-render.client.tsx'
 
 // The service reads its initial locale from the browser; these specs assert
 // the shipped Chinese copy, so they state the browser they assume.
@@ -59,14 +59,13 @@ const bashResult = (seq: number, callId: string, over?: Partial<ToolResultNode>)
 })
 
 /** Test-owned AppFrame role: declares and renders the resident conversation area. */
-type AppRootProps = PropsRenderSlots<'conversation' | 'details'>
+type AppRootProps = PropsRenderSlots<'conversation'>
 function AppRoot({ renderSlot }: AppRootProps) {
   return <>{renderSlot('conversation', {})}</>
 }
 
 const LAYOUT_CHILDREN = {
   'conversation': { kind: 'single', scope: 'session-maybe' },
-  'details': { kind: 'single', scope: 'session' },
 } as const
 
 async function bench(nodes: ToolResultNode[]) {
@@ -78,6 +77,7 @@ async function bench(nodes: ToolResultNode[]) {
   })
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   runtime.ctx.provide('layout', { openDetails: vi.fn(), closeDetails: vi.fn() })
+  runtime.ctx.provide('sidebarRight', { openResource: vi.fn() } as never)
   runtime.ctx.provide('uiWorkspace', {
     connectWorkspace: vi.fn(async () => SID),
   } as never)

@@ -54,7 +54,7 @@ function byId(id: string): OpenInAppApp {
 
 /** Internals baseline every call completes: a rejecting runner and an empty PATH. */
 function bare(overrides: OpenInAppInternals): OpenInAppInternals {
-  return { run: runner(() => null), resolveExecutable: pathTable(), ...overrides }
+  return { env: {}, run: runner(() => null), resolveExecutable: pathTable(), ...overrides }
 }
 
 /** Hermetic Linux environment: XDG lookups stay inside the temp home. */
@@ -63,6 +63,26 @@ function linuxEnv(home: string): Readonly<Record<string, string>> {
 }
 
 describe('resolveOpenInAppApps', () => {
+  it.each(['darwin', 'win32', 'linux'] as const)('offers no applications over SSH on %s without probing', async (platform) => {
+    const run = vi.fn<NativeCommandRunner>()
+    const resolveExecutable = vi.fn(pathTable({ code: '/usr/bin/code' }))
+    const facts = {
+      platform, ssh: true, env: { DISPLAY: ':0', VSCODE_IPC_HOOK_CLI: '/tmp/vscode.sock' },
+      run, resolveExecutable,
+    }
+    await expect(resolveOpenInAppApps(TIMEOUT_MS, facts)).resolves.toEqual(new Map())
+    await expect(resolveLaunch(byId('vscode'), TIMEOUT_MS, facts)).resolves.toBeNull()
+    expect(run).not.toHaveBeenCalled()
+    expect(resolveExecutable).not.toHaveBeenCalled()
+  })
+
+  it('keeps local applications available regardless of flattened SSH markers', async () => {
+    const map = await resolveOpenInAppApps(TIMEOUT_MS, bare({
+      platform: 'darwin', applicationRoots: [], env: { SSH_CONNECTION: 'stale-value' },
+    }))
+    expect([...map.keys()]).toEqual(['finder', 'terminal'])
+  })
+
   it('fails loud when the PATH resolver is not supplied', async () => {
     await expect(resolveOpenInAppApps(TIMEOUT_MS, { platform: 'linux' }))
       .rejects.toThrow(/resolveExecutable is required/)

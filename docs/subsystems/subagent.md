@@ -471,11 +471,11 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.subagentModelSelection` — `SubagentModelSelectionConfig`
 
-Singleton settings owner read by delegation tools when an Agent is published.
+Singleton settings owner read when delegation tools are composed for a Session.
 
 ```ts cordis-catalog
 /**
- * Read a detached selection preference for the next eligible Agent publication.
+ * Read a detached selection preference for the next eligible Session composition.
  * @returns the enabled state and exact allowed routes.
  */
 current(): SubagentModelSelectionSettings

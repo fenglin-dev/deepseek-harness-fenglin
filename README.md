@@ -207,6 +207,8 @@ Cordis 的 Context、Service 注册和部分工具运行时依赖对象与 `Symb
 
 ### 诊断演练中心
 
+插件事务中断演练在隔离目录验证候选激活后的完整依赖回滚，不改变活动 Profile；所有场景默认不选中。具体规则见[诊断说明](docs/profile-diagnostics.md)。
+
 开发版与安装版都提供诊断演练中心。它使用客户端携带的离线故障样本，复现 Host 共享依赖影子副本、孤立 Bundle、scoped 根包与 unscoped Loader 名不匹配、聚合插件内部依赖缺失、已安装依赖缺少插件要求的 DSH API、损坏的 `settings.yaml`、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断，并展示“注入、检测、修复、复检、清理”的完整时间线。
 
 <p align="center">

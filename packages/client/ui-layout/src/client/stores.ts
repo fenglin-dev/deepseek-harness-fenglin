@@ -1,26 +1,46 @@
 /**
- * The root entry's transient layout store: panel geometry as plain widths in
- * px (0 = closed). Module level exports the factory only — a module-level
- * handle would pin the store's identity in the module
- * cache (a de-facto singleton surviving plugin reloads). register() receives
- * the factory (exclusive use: the framework instantiates per entry), AppFrame
- * derives its PropsStore share from the return type, and the service face
- * receives the bound actions through the registration's inject hook.
+ * Root-owned frame measurement, panel preferences, and presentation reports.
+ * The registration supplies a fresh store and binds its actions to ctx.layout.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import {
-  clampWidth, DETAILS_DEFAULT, DETAILS_MAX, DETAILS_MIN,
-  SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
+  clampWidth, RIGHTBAR_DEFAULT_RATIO, RIGHTBAR_MAX_RATIO, RIGHTBAR_MIN,
+  SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN,
 } from './columns.ts'
 
 /**
- * Layout store state: panel width preferences in px (0 = closed), plus the
- * narrow-viewport pair — `narrow` mirrors AppFrame's breakpoint reading
- * (viewport < SIDEBAR_AUTO_COLLAPSE) so toggleSidebar can pick semantics, and
- * `narrowExpanded` is the manual override that re-expands the auto-collapsed
- * sidebar over the squeezed center without rewriting the width preference.
+ * Transient layout preferences. Responsive concessions never rewrite widths;
+ * the right panel's expanded state belongs to its occupant.
  */
-type LayoutState = { sidebar: number; details: number; narrow: boolean; narrowExpanded: boolean }
+type LayoutState = {
+  sidebar: number
+  /** Last positive frame measurement; window width bootstraps the first render. */
+  viewportWidth: number
+  narrowExpanded: boolean
+  /**
+   * Saved right panel width in px, or null before its first opening. Resizing
+   * the frame and closing the panel preserve this preference.
+   */
+  rightbar: number | null
+  /**
+   * Whether the right panel is drawn at all, in either presentation.
+   *
+   * Derived chrome, not a source of truth: whether the right surface is
+   * expanded is a recorded fact owned by that surface, reported here so the
+   * frame can place the panel's resize handle. The occupant reports it; nothing
+   * else writes it.
+   */
+  rightbarShown: boolean
+  /**
+   * Whether the normal panel width reserves a grid track, including beneath
+   * fullscreen. Reported by the occupant; always false while hidden.
+   */
+  rightbarTrack: boolean
+  /** Reported fullscreen presentation; hides the outer resize handle. */
+  rightbarFullscreen: boolean
+  /** Suppress transitions for a fullscreen exit until another geometry action. */
+  rightbarInstant: boolean
+}
 
 /**
  * Annotation twin of the actions literal below (the export needs a declared
@@ -28,44 +48,76 @@ type LayoutState = { sidebar: number; details: number; narrow: boolean; narrowEx
  */
 type LayoutActions = {
   setSidebar: (draft: LayoutState, px: number) => void
-  setDetails: (draft: LayoutState, px: number) => void
   toggleSidebar: (draft: LayoutState) => void
-  setNarrow: (draft: LayoutState, narrow: boolean) => void
-  openDetails: (draft: LayoutState) => void
-  closeDetails: (draft: LayoutState) => void
+  setViewportWidth: (draft: LayoutState, width: number) => void
+  setRightbar: (draft: LayoutState, px: number) => void
+  openRightbar: (draft: LayoutState, track: boolean, fullscreen: boolean) => void
+  closeRightbar: (draft: LayoutState) => void
 }
 
 /**
- * Create the layout panel store handle. The preference IS the width, so
- * closing a panel forgets its drag width — reopening restores the contract
- * default. Actions are the complete write set: drag writes clamp
- * into the panel's contract range and never cross the open/closed line;
- * open/close transitions write 0 / the default explicitly. Below the
- * auto-collapse breakpoint (AppFrame feeds setNarrow) the sidebar toggle
- * flips the narrowExpanded override instead of the preference.
+ * Create the layout panel store handle. For the sidebar the preference IS the
+ * width, so closing it forgets its drag width — reopening restores the contract
+ * default. The right panel initializes at 45% of the frame on first opening
+ * and keeps that px preference across resizes and close. Drag writes clamp to
+ * the current frame's range. Narrow sidebar toggles change only the expansion
+ * override; opening the right panel clears that override.
  * @returns the store handle (spec + type + identity + factory in one).
  */
 export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutActions>  {
   const handle = defineStore({
-    init: (): LayoutState => ({ sidebar: SIDEBAR_DEFAULT, details: 0, narrow: false, narrowExpanded: false }),
+    init: (): LayoutState => ({
+      sidebar: SIDEBAR_DEFAULT,
+      viewportWidth: window.innerWidth,
+      narrowExpanded: false,
+      rightbar: null,
+      rightbarShown: false,
+      rightbarTrack: false,
+      rightbarFullscreen: false,
+      rightbarInstant: false,
+    }),
     actions: {
-      setSidebar: (d, px: number) => { d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX) },
-      setDetails: (d, px: number) => { d.details = clampWidth(px, DETAILS_MIN, DETAILS_MAX) },
+      setSidebar: (d, px: number) => {
+        d.rightbarInstant = false
+        d.sidebar = clampWidth(px, SIDEBAR_MIN, SIDEBAR_MAX)
+      },
       // Narrow toggles flip only the override: the width preference survives
       // untouched, so re-widening restores the pre-squeeze layout.
       toggleSidebar: (d) => {
-        if (d.narrow) d.narrowExpanded = !d.narrowExpanded
+        d.rightbarInstant = false
+        if (d.viewportWidth < SIDEBAR_AUTO_COLLAPSE) d.narrowExpanded = !d.narrowExpanded
         else d.sidebar = d.sidebar === 0 ? SIDEBAR_DEFAULT : 0
       },
       // Crossing the breakpoint in either direction drops the override: the
       // narrow default is auto-collapsed, the wide state is the preference.
-      setNarrow: (d, narrow: boolean) => {
-        if (d.narrow === narrow) return
-        d.narrow = narrow
-        d.narrowExpanded = false
+      setViewportWidth: (d, width: number) => {
+        if (d.viewportWidth === width) return
+        d.rightbarInstant = false
+        if ((d.viewportWidth < SIDEBAR_AUTO_COLLAPSE) !== (width < SIDEBAR_AUTO_COLLAPSE)) {
+          d.narrowExpanded = false
+        }
+        d.viewportWidth = width
       },
-      openDetails: (d) => { if (d.details === 0) d.details = DETAILS_DEFAULT },
-      closeDetails: (d) => { d.details = 0 },
+      setRightbar: (d, px: number) => {
+        d.rightbarInstant = false
+        d.rightbar = clampWidth(px, RIGHTBAR_MIN, Math.max(RIGHTBAR_MIN, d.viewportWidth * RIGHTBAR_MAX_RATIO))
+      },
+      openRightbar: (d, track: boolean, fullscreen: boolean) => {
+        if (!d.rightbarShown || d.rightbarTrack !== track || d.rightbarFullscreen !== fullscreen) {
+          d.rightbarInstant = d.rightbarFullscreen && !fullscreen
+        }
+        if (!d.rightbarShown && d.viewportWidth < SIDEBAR_AUTO_COLLAPSE) d.narrowExpanded = false
+        d.rightbar ??= Math.max(RIGHTBAR_MIN, Math.round(d.viewportWidth * RIGHTBAR_DEFAULT_RATIO))
+        d.rightbarShown = true
+        d.rightbarTrack = track
+        d.rightbarFullscreen = fullscreen
+      },
+      closeRightbar: (d) => {
+        if (d.rightbarShown) d.rightbarInstant = d.rightbarFullscreen
+        d.rightbarShown = false
+        d.rightbarTrack = false
+        d.rightbarFullscreen = false
+      },
     },
   })
   return handle

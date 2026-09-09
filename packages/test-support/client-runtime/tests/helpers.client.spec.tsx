@@ -33,7 +33,7 @@ function entry(seq: number): SessionLiveEventEntry {
       time: seq,
       data: { seq },
       ignorable: true,
-    } as SessionLiveEventEntry['event'],
+    } as unknown as SessionLiveEventEntry['event'],
   }
 }
 

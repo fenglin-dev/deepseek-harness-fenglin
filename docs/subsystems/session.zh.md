@@ -54,6 +54,19 @@ interface SessionEventMap {
    */
   'user/message': UserMessage
   /**
+   * The rendered system prompt on the model-visible surface. The loop appends
+   * the first one as surface node 0 before the step's first `user/message`.
+   * A prepared in-history route can append nonempty changes in a continuing
+   * series. An incapable route or new series normalizes text to the first system
+   * node. Normalization empties nonempty later nodes, then rewrites the head if
+   * needed, through logged per-node replacements. An empty rendering always
+   * clears all active system nodes, leaving no older instructions model-visible.
+   * Empty later nodes are dormant and project to no message; an empty head with
+   * no active later node records "no system prompt". Restored nonempty text follows
+   * the same route and series rule; empty nodes never restore older text.
+   */
+  'system/message': { turn: number; step: number; message: SystemMessage }
+  /**
    * Assembled assistant message for one step (derived history uses this).
    * Carries the step's `usage` when the adapter reported token accounting, so
    * the model output and its accounting travel together (there is no separate
@@ -99,6 +112,7 @@ interface SessionEventMap {
     turn: number
     step: number
     message: ToolResultMessage
+    /** Optional failure identity; allowed only when the tool-result block has `isError: true`. */
     error?: { name: string; code: string }
     meta?: JsonValue
   }
@@ -113,8 +127,10 @@ interface SessionEventMap {
     startsSeries?: true
   }
   /**
-   * Route metadata for the next request, logged only when the route or capacity
-   * changes. It does not participate in request reconstruction or header equality.
+   * Route metadata for the next request, logged only when the route, capacity,
+   * or system prompt update mode changes. It does not participate in request
+   * reconstruction or header equality. Prompt admission uses the bound prepared
+   * call's capability, not this snapshot from an earlier request.
    */
   'request/context': RequestContext
   /**
@@ -149,12 +165,13 @@ interface SessionEventMap {
 
 ### 请求头事件：`request/header`
 
-请求信封（即 `EpochHeader`：调用配置 + 适配器所提供默认值的标记 + 渲染后的系统提示词 + 已组装的工具 schema）会作为会话状态写入日志，因此每个对话请求都是日志的纯函数（见可重建性 Agent Note）。带有 reason `'initial'` 或 `'resume'` 的完整 `request/header` 快照记录每个 agent loop 实例的边界；请求变化时会追加 reason 为 `'change'` 的快照；未变的信封显式开启消息序列或跟随 surface 替换时，会追加 reason 为 `'series'` 的快照。如果发生变化的快照所属请求同时开启序列，它会携带 `startsSeries: true`。普通的仅追加后续 Turn，以及同一模型消息序列内的后续 Step 与重试沿用最新快照。`foldRequestHeader(events)` 通过选择最新快照重建请求头。该事件不是 `SurfaceEventType`，不产生 LLM 消息。
+请求信封（即 `EpochHeader`：调用配置 + 适配器所提供默认值的标记 + 已组装的工具 schema）会作为会话状态写入日志，因此每个对话请求都是日志的纯函数（见可重建性 Agent Note）。渲染后的系统提示词不属于请求头：它是派生历史，即 surface 第 0 号节点上的 `system/message` 事件以及任何后续的历史内系统节点（[决策](../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.zh.md)），因此提示词变更替换或追加一个系统节点，而请求头保持不变。带有 reason `'initial'` 或 `'resume'` 的完整 `request/header` 快照记录每个 agent loop 实例的边界；请求变化时会追加 reason 为 `'change'` 的快照；未变的信封显式开启消息序列或跟随 surface 替换时，会追加 reason 为 `'series'` 的快照。如果发生变化的快照所属请求同时开启序列，它会携带 `startsSeries: true`。普通的仅追加后续 Turn，以及同一模型消息序列内的后续 Step 与重试沿用最新快照。`foldRequestHeader(events)` 通过选择最新快照重建请求头。该事件不是 `SurfaceEventType`，不产生 LLM 消息。
 
 ```ts type-equiv
 /**
- * Logged request state outside derived history: call config, system prompt, and
- * tools. The latest full `request/header` snapshot reconstructs it; canonical
+ * Logged request state outside derived history: call config and tools. The
+ * system prompt is derived history — surface node 0, a `system/message` event.
+ * The latest full `request/header` snapshot reconstructs the header; canonical
  * empty optional fields are absent.
  */
 interface EpochHeader {
@@ -162,18 +179,16 @@ interface EpochHeader {
   config: LlmCallConfig
   /** Effective config fields materialized from the exact adapter rather than proposed by a caller. */
   adapterDefaults?: LlmCallConfigAdapterDefaults
-  /** Rendered system prompt text; absent for a system-less request. */
-  system?: string
   /** Assembled tool schemas; absent for a tool-less request. */
   tools?: ToolSchema[]
 }
 ```
 
-规范形式：空系统提示词和空工具列表都表示为字段缺失，与请求构建方式一致。包含旧版 `request/header-delta` 事件或完整快照原因为 `fallback` 的旧版 v0 日志，会在 seed、append 和持久化加载边界被拒绝，而不会以不完整方式回放。
+当前事件接纳要求 `request/header.header` 为规范形式：禁止任何 `system` 字段，必须省略 `tools: []` 与 `adapterDefaults: {}`。仅含空白的系统消息内容、`config.stop: []` 与嵌套扩展保持不变。seed、append 与当前持久化读取拒绝非规范 header，而不会静默规范化；[V3 信封决策](../../.agents/notes/implemented/architecture/2026-09-06-v3-canonical-session-envelopes.zh.md)负责历史转换。包含旧版 `request/header-delta` 事件或完整快照原因为 `fallback` 的旧版 v0 日志，会被拒绝，而不会以不完整方式回放。
 
 ### 路由容量事件：`request/context`
 
-请求所解析到的路由的上下文元数据是独立的已记录状态，在同一步骤内紧随 `request/header` 追加，且仅在提供方、模型或容量与上一条记录不同时追加。它保持在 `EpochHeader` 之外，因为该类型是 `headerEquals` 逐字段比较的重建约定。容量描述的是路由，不是请求输入，把它折叠进去会让一次容量变化被登记为请求信封的 `change`，也会把适配器元数据拉进 loop 的重建不变式。与 `request/header` 一样，它不是 `SurfaceEventType`，也不产生 LLM 消息。`session.requestContext()` 以增量方式归并最新一条记录。适配器不公布容量的路由会以缺失 `contextWindow` 的形式记录，因此新记录可以清除较早路由的容量。
+请求所解析到的路由的上下文元数据是独立的已记录状态，在同一步骤内紧随 `request/header` 追加，且仅在提供方、模型、容量或 `systemPromptUpdate` 模式与上一条记录不同时追加。它保持在 `EpochHeader` 之外，因为该类型是 `headerEquals` 逐字段比较的重建约定。容量与更新模式描述的是路由，不是请求输入，把它们折叠进去会让一次路由变化被登记为请求信封的 `change`，也会把适配器元数据拉进 loop 的重建不变式。与 `request/header` 一样，它不是 `SurfaceEventType`，也不产生 LLM 消息。`session.requestContext()` 以增量方式归并最新一条记录；agent loop 在决定变化后的系统提示词是替换最新的系统节点还是追加到已缓存历史之后时，读取该记录的 `systemPromptUpdate`（[决策规则](../../packages/core/agent-loop/README.zh.md#understand-the-implementation)）。适配器不公布容量的路由会以缺失 `contextWindow` 的形式记录，因此新记录可以清除较早路由的容量；未声明更新模式的路由同样会清除较早路由的 `systemPromptUpdate`。
 
 ```ts type-equiv
 /** Registration-bound metadata for one resolved model route. */
@@ -184,6 +199,8 @@ interface RequestContext {
   model: string
   /** Maximum combined request and response context in tokens, when advertised. */
   contextWindow?: number
+  /** `'in-history'` when the route reads the latest `system` message at any position as the effective system prompt. */
+  systemPromptUpdate?: SystemPromptUpdate
 }
 ```
 
@@ -221,7 +238,7 @@ type OptionalSessionSeq = SessionSeq | null
  * unions), so `switch (event.type)` narrows `event.data` without casts.
  *
  * The {@link sourceEventSeqs} and {@link surfaceOp} fields are conditional:
- * they only exist on {@link SurfaceEventType} variants (`user/message`,
+ * they only exist on {@link SurfaceEventType} variants (`system/message`, `user/message`,
  * `assistant/message`, `tool/result`).
  * Non-surface events (boundary markers, attempts, errors) never carry
  * surface metadata — the compiler enforces this at `Session.append()`
@@ -246,28 +263,22 @@ type SessionEvent<T extends SessionEventType = SessionEventType> = {
      * inconvenience) rather than silently resuming a gutted session.
      */
     ignorable?: true
-  } & (K extends SurfaceEventType ? {
-    /**
-     * Seq numbers of earlier events that this event cites as sources, such as
-     * the surface nodes shadowed by a compaction replacement. A v2
-     * `assistant/message` embeds its provider stream and cannot carry this field.
-     */
-    sourceEventSeqs?: SessionSeq[]
-    /** How this event entered the surface; absent for non-surface events. */
-    surfaceOp?: SurfaceOp
-  } : object)
+  } & (K extends SurfaceEventType ? SurfaceIntent<K> : {
+    surfaceOp?: never
+    sourceEventSeqs?: never
+  })
 }[T]
 ```
 
 `SessionEventType = keyof SessionEventMap`。由于 `SessionEventMap` 可通过合并扩展，对 `SessionEvent` 的 switch 语句禁止使用 `assertNever`：插件添加的变体是合法的未知值；处理已知 case 后在 `default` 中放行。
 
-V2 `assistant/message` 嵌入 provider stream，不能携带 `sourceEventSeqs`。User 与 tool surface event 可以在 provenance 或 replacement operation 需要时引用完整且非空的唯一较早 event 集合。
+每个 surface 事件都要求 `surfaceOp`；已知仅日志事件禁止两个 surface 元数据字段。原生未知或已退役的可忽略信封保持不透明。`assistant/message` 嵌入其提供方 stream，并禁止 `sourceEventSeqs`。System、user 与 tool surface 事件可以在来源或替换操作需要时引用完整、非空且唯一的较早事件集合。`tool/result` 仅在工具结果块带有 `isError: true` 时可以携带 `data.error`；失败结果的失败身份仍可省略。
 
 <a id="surface-types"></a>
 
 ## Surface 类型
 
-三种产生消息的类型（`SurfaceEventType`：`user/message`、`assistant/message`、`tool/result`）携带 surface 元数据，用来声明它们如何加入有序的派生 surface。见 [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.zh.md)。
+四种产生消息的类型（`SurfaceEventType`：`system/message`、`user/message`、`assistant/message`、`tool/result`）携带 surface 元数据，用来声明它们如何加入有序的派生 surface。`system/message` 承载渲染后的系统提示词：循环把第一条追加为 surface 第 0 号节点，并在提示词变化时恰好替换最新的系统节点，或在历史内路由上追加一条新的；surface 折叠拒绝任何其他覆盖第 0 号节点 `system/message` 的替换，而后续系统节点是普通历史，压缩替换可以遮蔽它。见 [session surface Agent Note](../../.agents/notes/implemented/architecture/2026-06-18-session-surface.zh.md)。
 
 ### `SurfaceEventType`：事件类型中产生消息的子集
 
@@ -275,10 +286,11 @@ V2 `assistant/message` 嵌入 provider stream，不能携带 `sourceEventSeqs`�
 /**
  * The subset of {@link SessionEventType} values whose events produce LLM
  * messages and are eligible to appear on the ordered surface. Only these
- * event types may carry {@link SurfaceOp}; user and tool events may also cite
+ * event types may carry {@link SurfaceOp}; system, user, and tool events may also cite
  * earlier sources through {@link SessionEvent.sourceEventSeqs}.
  */
 type SurfaceEventType =
+  | 'system/message'
   | 'user/message'
   | 'assistant/message'
   | 'tool/result'
@@ -293,19 +305,19 @@ type SurfaceEventType =
  *
  * - `'append'`: added to the tail — normal path for user/assistant/tool
  *   messages.
- * - `{ op: 'replace', start, end }`: replaces surface nodes from `start`
- *   (inclusive) through `end` (inclusive) with this node. Both must exist as
- *   surface nodes in the current surface. `start === end` replaces a single
+ * - `{ op: 'replace', startSeq, endSeq }`: replaces surface nodes from `startSeq`
+ *   (inclusive) through `endSeq` (inclusive) with this node. Both must exist as
+ *   surface nodes in the current surface. `startSeq === endSeq` replaces a single
  *   node. The node's {@link SessionEvent.sourceEventSeqs} must include every
  *   shadowed surface node. Used by compaction; any surface-replacing producer
  *   may use it.
  */
 type SurfaceOp =
   | 'append'
-  | { op: 'replace'; start: SessionSeq; end: SessionSeq }
+  | { op: 'replace'; startSeq: SessionSeq; endSeq: SessionSeq }
 ```
 
-`'append'` 是常规的尾部追加路径。`replace` 会遮蔽从 `start` 到 `end`（含两端）的 surface 条目（两者都必须是有效的 surface seq；`start === end` 时仅替换单个条目），并在原位置插入新事件。
+`'append'` 是常规的尾部追加路径。`replace` 恰好包含 `op`、`startSeq` 和 `endSeq`，不接受别名或额外键。它遮蔽这两个当前 surface 事件序号之间的闭区间，并在原位置插入新事件；相同端点仅替换一个条目。端点必须早于替换事件，但它们的相对顺序按 surface 顺序而非数值序号顺序确定。
 
 ### `SurfaceIntent`：`session.append()` 的参数
 
@@ -317,7 +329,7 @@ type SurfaceOp =
 type SurfaceIntent<T extends SurfaceEventType = SurfaceEventType> = {
   surfaceOp: SurfaceOp
 } & (T extends 'assistant/message' ? {
-  /** V2 Assistant messages embed their provider stream instead of citing source events. */
+  /** Assistant messages embed their provider stream instead of citing source events. */
   sourceEventSeqs?: never
 } : {
   /** Complete non-empty set of known earlier source-event seqs. */
@@ -518,6 +530,7 @@ declare class Session {
    *   (BigInt, function, symbol, undefined, negative zero, non-finite number,
    *   circular reference, sparse array, or an exotic object such as
    *   Map/Set/Date/class instance), or when the candidate violates the
+   *   request-header empty-field or tool-error consistency rules, or the
    *   canonical surface contract (marker shape and eligibility, unique
    *   earlier source-event references, positional replacement validity, and complete
    *   shadowed-node coverage). One iterative pass reads, validates, and

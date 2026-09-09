@@ -35,6 +35,7 @@ describe('Harness supervisor startup failures', () => {
 
     supervisor.start()
     await expect(ready).resolves.toBe('http://127.0.0.1:43129')
+    expect(supervisor.isDiagnosticMode).toBe(true)
     await supervisor.stop()
   }, 10_000)
 
@@ -64,6 +65,7 @@ describe('Harness supervisor startup failures', () => {
     })
     supervisor.start()
     await expect(ready).resolves.toBe('http://127.0.0.1:43124')
+    expect(supervisor.isDiagnosticMode).toBe(true)
     expect(states).toContain('restarting')
     expect(await readFile(logPath, 'utf8')).toContain('installation-owned diagnostic profile')
     await supervisor.stop()

@@ -1,17 +1,16 @@
 /** Public dsh launch resolution for the TypeScript SDK. */
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  DEFAULT_INITIALIZE_TIMEOUT_MS,
-  installedDshBin,
   resolveDshNodeLaunchFromManifests,
   resolveDshBinFromManifests,
   resolveDshLaunch,
 } from '../src/launch.ts'
+import { nativeLaunchProbe } from './native-launch-probe.ts'
 
 const cleanups: string[] = []
 afterEach(() => {
@@ -34,19 +33,21 @@ function manifestPair(dsh: object, client: object): { dshUrl: string; clientUrl:
 
 describe('SDK dsh launch resolution', () => {
   it('resolves the same-version installed dsh entry by default', () => {
-    const bin = installedDshBin()
-    expect(bin.endsWith(join('apps', 'cli', 'lib', 'bin.js'))).toBe(true)
-    const launch = resolveDshLaunch()
-    expect(launch.command).toBe(process.execPath)
-    expect(launch.args).toEqual(existsSync(bin)
+    nativeLaunchProbe(`
+    const bin = launch.installedDshBin();
+    assert.equal(bin.endsWith(join('apps', 'cli', 'lib', 'bin.js')), true);
+    const result = launch.resolveDshLaunch();
+    assert.equal(result.command, process.execPath);
+    assert.deepEqual(result.args, existsSync(bin)
       ? [bin, '--profile', 'sdk']
       : [
         '--import', import.meta.resolve('tsx/esm'), resolve(bin, '..', '..', 'src/bin.ts'),
         '--profile', 'sdk',
         '--patch', resolve(bin, '..', '..', 'src/sdk-source.cordis.patch.yml'),
-      ])
-    expect(launch.initializeTimeoutMs).toBe(DEFAULT_INITIALIZE_TIMEOUT_MS)
-    expect(launch.description).toBe('dsh profile "sdk"')
+      ]);
+    assert.equal(result.initializeTimeoutMs, launch.DEFAULT_INITIALIZE_TIMEOUT_MS);
+    assert.equal(result.description, 'dsh profile "sdk"');
+    `)
   })
 
   it('makes every filesystem input absolute before spawn and preserves patch order', () => {
@@ -99,12 +100,12 @@ describe('SDK dsh launch resolution', () => {
         patches: [sourcePatch],
         environment: { TSX_TSCONFIG_PATH: sourceTsconfig },
       })
-    expect(resolveDshNodeLaunchFromManifests(pair.dshUrl, pair.clientUrl))
-      .toEqual({
-        nodeArgs: ['--import', import.meta.resolve('tsx/esm'), sourceBin],
-        patches: [sourcePatch],
-        environment: { TSX_TSCONFIG_PATH: sourceTsconfig },
-      })
+    nativeLaunchProbe(`assert.deepEqual(launch.resolveDshNodeLaunchFromManifests(
+      ${JSON.stringify(pair.dshUrl)}, ${JSON.stringify(pair.clientUrl)}), {
+        nodeArgs: ['--import', import.meta.resolve('tsx/esm'), ${JSON.stringify(sourceBin)}],
+        patches: [${JSON.stringify(sourcePatch)}],
+        environment: { TSX_TSCONFIG_PATH: ${JSON.stringify(sourceTsconfig)} },
+      });`)
   })
 
   it('uses the built entry when the manifest bin exists', () => {

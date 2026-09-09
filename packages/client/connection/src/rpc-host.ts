@@ -58,6 +58,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
+  private readonly channels = new Set<string>()
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
   private readonly fetchRoutes = new Map<string, RegisteredFetchRoute>()
 
@@ -175,10 +176,17 @@ export class HostConnectionService extends Service implements HostConnectionHand
         await bridge(req, res, fetchHandler)
       },
     }
-    return owner.effect(
-      () => owner.webServer.register(route),
-      `client-connection: ${channel} rpc channel`,
-    )
+    return owner.effect(() => {
+      if (this.channels.has(channel)) throw new Error(`connection: duplicate route ${channel}`)
+      this.channels.add(channel)
+      const transport = owner.inject(['webServer'], (webCtx) => {
+        webCtx.effect(() => webCtx.webServer.register(route), `client-connection: ${channel} HTTP route`)
+      })
+      return async () => {
+        await transport.dispose()
+        this.channels.delete(channel)
+      }
+    }, `client-connection: ${channel} rpc channel`)
   }
 
   private registerInterceptor(

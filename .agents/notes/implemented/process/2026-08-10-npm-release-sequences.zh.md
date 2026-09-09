@@ -8,7 +8,7 @@ Status: implemented
 
 这个仓库有三组互不相干的可发布包，却没有任何发布通道把它们送上 registry。
 
-`packages/*/*` 与 `apps/*` 组成 `@deepseek-ai/dsh` 的运行面；`vendor/*` 是九个 rescope 过的 Cordis 框架包，各自带着上游的版本号；`native/landlock-run/packages/*` 是 Linux 平台包，有自己的 workflow。三组的版本基线、变更节奏和构建要求都不同：dsh 随产品迭代，vendor 只在同步上游或改动本地修改时才动，native 需要 musl 工具链和逐架构构建。把它们塞进一条发布流水线，等于每次产品发版都要重发框架和原生二进制。
+`packages/*/*` 与 `apps/*` 组成 `@deepseek-ai/dsh` 的运行面；`vendor/*` 是九个 rescope 过的 Cordis 框架包，各自带着上游的版本号；`native/system/packages/*` 是 Linux 平台包，有自己的 workflow。三组的版本基线、变更节奏和构建要求都不同：dsh 随产品迭代，vendor 只在同步上游或改动本地修改时才动，native 需要 musl 工具链和逐架构构建。把它们塞进一条发布流水线，等于每次产品发版都要重发框架和原生二进制。
 
 挡路的还有两处硬门。全部 217 个 workspace manifest 都是 `private: true`，`npm publish` 直接拒绝。更隐蔽的是 933 条 dsh 兄弟包之间硬写的 `peerDependencies: "^0.0.1"`：`pnpm pack` 只替换 `workspace:` 协议，不动语义范围，而 `^0.0.1` 等于 `>=0.0.1 <0.0.2`——发 `0.0.2` 落不进去，发 `0.0.1-rc.1` 也落不进去（semver 规定不带预发布段的范围排除预发布版本）。这些条目至今没出事，只因为版本一直停在 `0.0.1`。
 
@@ -24,7 +24,7 @@ Status: implemented
 |---|---|---|---|---|
 | dsh | 发布集：非 experimental 的 `packages/*/*` + `apps/*`；私有实验性包仅加入共享版本 bump | 发布集、私有 dsh 包与 workspace 根共用一个 `0.0.x` | `dsh-v<版本>` | `release.yml`（pack）/ `release-publish.yml`（发布） |
 | vendored framework | `vendor/*` 九个包 | 每包各自一条版本线 | `vendor-<包名>-v<版本>`（每包一个） | `release-vendor.yml`（pack）/ `release-vendor-publish.yml`（发布） |
-| native | `native/landlock-run/packages/*` | 自己的 `0.0.x` | `landlock-run-v<版本>` | `landlock-run-release.yml` |
+| native | `native/system/packages/*` | 自己的 `0.0.x` | `node-addon-system-v<版本>` | `node-addon-system-release.yml` |
 
 三组一律发到 npmjs.com 的 `@deepseek-ai` scope，且 access 按序列而非按 scope 区分：vendored 框架与 native 包是 `public`，dsh 族自 2026-08-13 其自身序列公开发布起即为 `public`（[理由](../../archived/process/2026-08-13-public-vendor-and-native-sequences.md)）。没有任何发布路径传 `--access`——一个选项无法服务级别互不相同的序列，且会覆盖真正拥有该级别的 manifest。
 

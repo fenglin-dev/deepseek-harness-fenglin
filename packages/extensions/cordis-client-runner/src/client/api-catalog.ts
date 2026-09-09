@@ -92,13 +92,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'openDetails(): void',
-        description: 'Open the details panel (no-op when already open).',
-        parameters: [],
+        signature: 'openRightbar(track: boolean, fullscreen: boolean): void',
+        description: 'Report the right panel\'s presentation without changing its expanded state.',
+        parameters: [{ name: 'track', description: 'whether the normal panel width reserves a grid track, including beneath a fullscreen overlay.' }, { name: 'fullscreen', description: 'whether the panel covers the frame and hides its outer resize handle; independent of the underlying grid track.' }],
       },
       {
-        signature: 'closeDetails(): void',
-        description: 'Close the details panel.',
+        signature: 'closeRightbar(): void',
+        description: 'Report the right panel as hidden: no track, no handle.',
         parameters: [],
       },
     ],

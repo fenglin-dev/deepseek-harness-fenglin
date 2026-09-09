@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -31,7 +32,11 @@ import {
 import { apply as applyNode } from '../src/index.ts'
 import type {} from '../src/client/index.ts'
 
+// Every session-scope fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
+
 afterEach(cleanup)
+
 
 const PARENT_ID = 'parent' as SessionId
 const CHILD_ID = 'child-1' as SessionId
@@ -309,6 +314,7 @@ function panelProps(data: WorkflowRunChatData, sessions = listState(), openSessi
     node: node(data),
     sessionId: PARENT_ID,
     useSessions: selector => selector(sessions),
+    useResource,
     useSessionPendingInteraction: selector => selector(panelAttention),
     useSession: selector => selector(panelSession),
     useProjection: () => undefined,

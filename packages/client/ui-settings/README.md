@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-settings` is the base every preference surface in the dsh web client builds on: a feature plugin binds a namespace and stores or edits its preference rows in the Host settings document without re-implementing transport or schema handling. `ctx.settingsScope` derives a per-namespace scope from the shared document mirror with revision fencing, so a concurrent write from another surface is refused instead of silently overwritten; `ctx.settingsSchema` rehydrates and validates schemas and edits immutable paths synchronously. It declares the slot types settings surfaces fill — `settings.trigger`/`settings.header`/`settings.close` (chrome), `settings.action` (ordered header actions), `settings.section` (one page per feature), `settings.plugins.tab`, and `settings.onboarding` — and renders nothing itself. `ctx.settingsNavigation.open()` lets an unrelated feature open one contributed section and optionally identify a subsection without importing the settings shell. Because the package depends on no `ui-*` presentation package, any feature that owns a preference can reach it; the settings shell itself lives in ui-settings-general.
+Web-client features use this package for namespace-scoped preferences backed by the Host settings document, schema validation, atomic multi-field updates, and protection against overwriting concurrent changes. It declares settings chrome, pages, header actions, plugin tabs, and onboarding extension points while rendering no interface. `ctx.settingsNavigation.open()` opens a contributed section and optional subsection without importing the presentation shell, so unrelated features can link directly to their settings.
 
 ## Table of Contents
 

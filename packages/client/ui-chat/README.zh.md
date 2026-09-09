@@ -1,5 +1,5 @@
 ---
-description: "渲染 Session 对话节点、详情、历史图片、操作、本地化和滚动状态的浏览器 Chat target。"
+description: "渲染 Session 对话节点、历史图片、操作、本地化和滚动状态的浏览器 Chat target。"
 kind: "package-reference"
 ---
 # @deepseek-ai/dsh-client-ui-chat
@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-Conversation 组装的浏览器 Chat target。本包注册 Chat event definition 与 snapshot 构造、提供 `useChat`、渲染 transcript node 和详情，并拥有 Chat 专属 store、action、本地化与滚动位置恢复；历史图片 URL 通过 Conversation 持有的按会话缓存（`ctx.uiConversation.imageUrl`）解析。其中 Assistant 与 Turn Tail definition 会直接 fold packed Assistant 历史 run，不展开其成员。steering 分类通过持久 splice state 只保留 next-step Inbox ID；next-turn splice 不创建 Chat Context。本地提交回显（`SessionSnapshot.pendingSubmissions`）保留提交开始时选定的区域：transcript 回显位于消息流末尾，steering 回显带 pending-steering 标记，queued 回显不进入 Chat。一旦 user/steering 节点或 queue occurrence 携带回显的 prompt `rpcId`，该回显即在同一渲染中隐藏，因此交接是原子的。
+使用本包可在浏览器中渲染已记录的 Session 对话，包括历史图片、本地化操作和滚动位置恢复。紧凑显示会收起已完成轮次的过程行，同时保持最终答案和独立有用的上下文可见；已打包的历史 Assistant 连续消息保持收起。本地 transcript 与 steering 提交会立即显示并保留在原区域，在权威 Session 记录到达时原子地消失，而 queued 提交始终不进入 Chat。本包不组装或修改模型请求。
 
 ## 目录
 
@@ -25,7 +25,7 @@ Conversation 组装的浏览器 Chat target。本包注册 Chat event definition
 <a id="system-prompt-row"></a>
 ## 系统提示词行
 
-Chat 会为非空的初始请求、显式消息序列起点、真实 system 字段变化，或前序 header 尚未进入已加载历史窗口的非初始请求显示一行默认折叠的`系统提示词`。前序 header 到达后，内容未变的 resume 不会重复该行；同一序列内仅配置或仅工具变化、工具步骤与重试也不会重复。该行位于请求的用户消息之前，与提供方 envelope 顺序一致；展开后显示保留原始换行的精确模型可见文本。没有系统提示词的 header 不创建该行。
+每个非空追加的 `system/message` 都拥有一行折叠提示词，包括无 header 窗口起点的完整提示词；同一步骤的 header 不会重复它。Chat 也会为非空的初始请求、显式消息序列起点、文本发生变化的 `system/message` surface 节点替换（文本读取自 `request/header` 处 surface 顺序中最后一个非空存活系统节点），或前序 header 尚未进入已加载历史窗口的非初始请求显示一行默认折叠的`系统提示词`。即使系统文本未变，resume 也会重复该行，包括分页补齐前序 header 和系统节点后；同一序列内仅配置或仅工具变化、工具步骤与重试不会重复，且 `system/message` 事件绝不会渲染为对话消息。该行位于请求的用户消息之前，与提供方 envelope 顺序一致；展开后显示保留原始换行的精确模型可见文本。系统节点为空或位于已加载窗口之外的请求不创建该行，直到包含该节点的分页到达。
 
 -----
 

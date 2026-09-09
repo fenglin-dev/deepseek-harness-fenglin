@@ -24,7 +24,7 @@ The test reports all five fresh-process samples and enforces reviewed median bud
 
 ## Measurements
 
-[workload.ts](workload.ts) owns synthetic dimensions. [The Agent Note](../../.agents/notes/implemented/testing/2026-09-06-backend-continuation-performance.md) owns timing endpoints, calibration evidence, memory interpretation, and exclusions. The model adapter does not perform provider serialization or network calls; integrated cases run synthetic tool bodies through the real tool-execution pipeline, while the SDK profile variant performs real file reads.
+[workload.ts](workload.ts) owns synthetic dimensions. Its current-generation history reserves an empty system head in the first step before user input, so resumed prompts replace that head without moving historical messages. [The Agent Note](../../.agents/notes/implemented/testing/2026-09-06-backend-continuation-performance.md) owns timing endpoints, calibration evidence, memory interpretation, and exclusions. The model adapter does not perform provider serialization or network calls; integrated cases run synthetic tool bodies through the real tool-execution pipeline, while the SDK profile variant performs real file reads.
 
 ## Dev Note
 

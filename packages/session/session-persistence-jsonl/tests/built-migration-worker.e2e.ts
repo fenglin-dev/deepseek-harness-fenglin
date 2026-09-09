@@ -30,7 +30,7 @@ describe.skipIf(!built)('built migration verifier (plain node)', () => {
         const handle = await ctx.sessionPersistence.open(id, 'write')
         await handle.close()
         await ctx.sessionPersistence.flush()
-        const header = JSON.parse((await readFile(join(directory, 'session.v2.jsonl'), 'utf8')).trim())
+        const header = JSON.parse((await readFile(join(directory, 'session.v3.jsonl'), 'utf8')).trim())
         console.log(JSON.stringify({ id: header.id, version: header.version }))
       } finally {
         await ctx.fiber.dispose()
@@ -44,6 +44,6 @@ describe.skipIf(!built)('built migration verifier (plain node)', () => {
     )
 
     expect(exitCode, `stderr:\n${stderr}`).toBe(0)
-    expect(JSON.parse(stdout.trim())).toEqual({ id: 'built-migration-worker', version: 2 })
+    expect(JSON.parse(stdout.trim())).toEqual({ id: 'built-migration-worker', version: 3 })
   })
 })

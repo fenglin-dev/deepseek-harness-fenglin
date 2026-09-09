@@ -2,6 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { LanguageRegistration } from '@deepseek-ai/dsh-client-locale/client'
+import { desktopLanguageTitles } from './locales.ts'
 
 /** Additional languages offered by Open DSH Desktop. */
 export const DESKTOP_LANGUAGE_DEFINITIONS = [
@@ -14,16 +15,6 @@ export const DESKTOP_LANGUAGE_DEFINITIONS = [
   { id: 'ru', label: 'Русский', fallback: 'en' },
 ] as const satisfies readonly LanguageRegistration[]
 
-const LANGUAGE_TITLES: Readonly<Record<(typeof DESKTOP_LANGUAGE_DEFINITIONS)[number]['id'], string>> = {
-  ja: '言語',
-  ko: '언어',
-  es: 'Idioma',
-  fr: 'Langue',
-  de: 'Sprache',
-  'pt-BR': 'Idioma',
-  ru: 'Язык',
-}
-
 /**
  * Register the community languages and their selector label as one reversible effect.
  * @param ctx - Desktop-shell client context.
@@ -35,7 +26,7 @@ export function registerDesktopLanguages(ctx: Context): () => void {
     for (const definition of DESKTOP_LANGUAGE_DEFINITIONS) {
       disposers.push(ctx.locale.addLanguage(definition))
       disposers.push(ctx.locale.register('settings.locale', definition.id, {
-        'language.title': LANGUAGE_TITLES[definition.id],
+        'language.title': desktopLanguageTitles[definition.id],
       }))
     }
   } catch (error) {

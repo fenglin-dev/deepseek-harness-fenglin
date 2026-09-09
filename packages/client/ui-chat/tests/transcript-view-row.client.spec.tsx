@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { TranscriptViewRow, type TranscriptViewRowProps } from '../src/client/settings/TranscriptViewRow.tsx'
@@ -27,6 +28,9 @@ function noPendingInteraction() {
   return bindSnapshotSelector(createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()))
 }
 
+// The resource hook the resources plugin merges into GlobalStandardProps; this row reads no address.
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
+
 function mount(mode: 'normal' | 'compact' = 'compact') {
   const source = createSnapshotStore(mode)
   const setTranscriptView = vi.fn((next: 'normal' | 'compact') => { source.set(next) })
@@ -34,6 +38,7 @@ function mount(mode: 'normal' | 'compact' = 'compact') {
     useSessions: emptySessions(),
     useSessionPendingInteraction: noPendingInteraction(),
     useWorkspaces: emptyWorkspaces(),
+    useResource,
     useTranscriptView: bindSnapshotSelector(source),
     setTranscriptView,
     t: makeTranslate(en),

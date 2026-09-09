@@ -18,5 +18,8 @@ describe('desktop startup plugin snapshot timing', () => {
     expect(source).toContain('bootableSnapshotTimer = setTimeout')
     expect(source).toContain('await manager.markBootable()')
     expect(source).toContain('cancelBootableSnapshot()')
+    const readiness = source.slice(source.indexOf("ipcMain.on('dsh:desktop:readiness'"), source.indexOf("ipcMain.handle('dsh:desktop:releases:get'"))
+    expect(readiness.indexOf('supervisor?.isDiagnosticMode === true')).toBeLessThan(readiness.indexOf('manager.reportReadiness(phase)'))
+    expect(readiness).toContain('Diagnostic Profile readiness does not verify the active Profile or its plugin snapshots.')
   })
 })

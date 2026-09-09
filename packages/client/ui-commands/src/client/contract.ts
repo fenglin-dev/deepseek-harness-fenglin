@@ -46,8 +46,8 @@ export type CommandUiSpec = {
 export interface CommandContribution {
   /** Command name without the leading slash (unique across contributions). */
   readonly name: string
-  /** Menu row description. */
-  readonly description: string
+  /** Resolve the localized menu row description when candidates are requested. */
+  readonly description: () => string
   /** Capability filter, called with a fresh projection per candidate pass. */
   available(session: ClientSessionContext): boolean
   /** The command's UI behavior (this phase: popupSelect only). */

@@ -4,13 +4,21 @@ English | [中文](README.zh.md)
 
 `@deepseek-ai/dsh-desktop` is the native application host for the existing DeepSeek Harness Web GUI. It starts one local Harness process, waits for its canonical readiness line, and loads that loopback origin in a hardened Electron window. Harness data keeps its ordinary format inside a desktop-owned home rather than sharing the official CLI's live `~/.dsh` tree.
 
+## Runtime and session compatibility
+
+This integration uses Harness 0.1.5-alpha.1 and external Node 24.17.0, while Electron remains pinned to 43.2.0 and pnpm to 11.7.0. Packaged macOS builds require macOS 13.5 or later; this records the embedded Node binary's minimum rather than promising compatibility from Electron alone.
+
+Session history follows the complete V0 → V1 → V2 → V3 migration chain. Migration preserves older generation files and writes validated successors, but old clients cannot be assumed to understand newly written V3 data. Plugin snapshots do not include sessions and cannot undo a session-format upgrade. Validate upgrades using an isolated copy of the data directory before reusing important history.
+
+Only ordinary Profile readiness can verify a successful-startup plugin snapshot. Entering diagnostic safe mode does not mark the failed active Profile healthy; during snapshot recovery it triggers the existing failed-start rollback. A dead process permits stale-lock cleanup only after the complete recorded owner passes validation; damaged owner metadata remains blocked for manual inspection.
+
 ## Run from this checkout
 
 Use Node `^22.19.0 || >=24.0.0`, then build the repository before starting the desktop app:
 
 ```sh
 pnpm install
-pnpm run build
+pnpm run build:community-desktop
 pnpm run dev:desktop
 ```
 
@@ -21,6 +29,15 @@ Source builds expose Enter recovery mode in General Settings. The action opens t
 The app opens the same onboarding and settings surfaces as `dsh web`. Users can configure DeepSeek or another compatible API provider, choose models, inspect installed plugins, edit supported plugin settings, invoke Skills, select workspaces, and manage sessions without a second configuration store.
 
 On packaged macOS and Windows, General Settings, the File menu, and the tray menu can open the active Harness generation in the system browser. The main process validates and retains its authenticated loopback URL without exposing it to the renderer; after the browser accepts the launch token, it redirects to a clean URL backed by the same Profile and process. That page can reveal the same Electron client through Return to Desktop beside Settings. A saved preference opens one browser page after each successful Harness start. Successful handoff hides the desktop window when the tray is available, while failure keeps or restores the window. Quitting Desktop stops the shared Harness and disconnects the browser page.
+
+<a id="plugin-changes"></a>
+## Plugin changes
+
+Desktop-hosted plugin commands prepare a same-disk candidate while the current Web Profile keeps running. After CLI verification, Desktop stops Harness, activates the candidate, and retains the previous dependency directory until both normal readiness markers arrive. Failed startup restores the previous managed files and dependencies; an interrupted activation is recovered before startup inspection. Build approval and its dependent retry stay in one candidate. Sessions, credentials, user patches, and plugin business data are not rolled back. Candidate preparation preserves local source specifiers; an unstageable relative or workspace source fails without changing the active Profile.
+
+The mutation lock tracks its controlling process and the actual pnpm Node worker. Either living process prevents stale-lock reclamation; release still requires the current owner token.
+
+Generated pnpm local locators are rebased with activation; literal manifest specifiers and locked integrity values remain unchanged. A replaced successful-startup snapshot becomes an automatic rollback point subject to the existing retention limit, so a deduplicated pre-change point survives a later successful startup.
 
 <a id="application-menus"></a>
 ## Application menus
@@ -83,7 +100,7 @@ npm run package:desktop:macos:arm64
 npm run package:desktop:macos:x64
 ```
 
-Artifacts are written to `.artifacts/desktop-macos/`. Each package embeds the target's Harness production closure, Node 24.11.1, and pnpm 11.7.0 in one runtime archive. Preparation accepts the pinned Node archive only after its official SHA-256 matches. On first launch, the app extracts the archive into its versioned user-data directory so Node ESM sees a real `node_modules` hierarchy. The embedded Node starts Harness, and the plugin manager receives the embedded pnpm by absolute path; the runtime `bin` directory leads plugin lifecycle-script `PATH`. A layout marker invalidates caches produced by incomplete packages.
+Artifacts are written to `.artifacts/desktop-macos/`. Each package embeds the target's Harness production closure, Node 24.17.0, and pnpm 11.7.0 in one runtime archive. Preparation accepts the pinned Node archive only after its official SHA-256 matches. On first launch, the app extracts the archive into its versioned user-data directory so Node ESM sees a real `node_modules` hierarchy. The embedded Node starts Harness, and the plugin manager receives the embedded pnpm by absolute path; the runtime `bin` directory leads plugin lifecycle-script `PATH`. A layout marker invalidates caches produced by incomplete packages.
 
 Build the unsigned Windows x64 NSIS installer on Windows with:
 
@@ -91,7 +108,7 @@ Build the unsigned Windows x64 NSIS installer on Windows with:
 npm run package:desktop:win:x64
 ```
 
-The installer is written to `.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe`. It carries the official Windows x64 Node 24.11.1 executable, pnpm 11.7.0, and a symlink-free production Harness closure with its real `node_modules` hierarchy, so a user does not need Node or pnpm on `PATH`. The Harness environment puts the embedded runtime first, guarantees `%SystemRoot%`, `System32`, Wbem, and Windows PowerShell, then preserves the user PATH inherited when Electron started. Plugins can therefore spawn Windows system executables and inherited third-party commands by bare name. A third-party tool remains unavailable when it is absent from that inherited PATH; changing the registry PATH or installing a command while the desktop is running requires an application restart, and the desktop does not evaluate PowerShell profiles to discover extra commands. Preparation verifies the official Node archive SHA-256, required Windows native modules, the embedded pnpm version, and a real Harness readiness launch before Electron Builder runs.
+The installer is written to `.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe`. It carries the official Windows x64 Node 24.17.0 executable, pnpm 11.7.0, and a symlink-free production Harness closure with its real `node_modules` hierarchy, so a user does not need Node or pnpm on `PATH`. The Harness environment puts the embedded runtime first, guarantees `%SystemRoot%`, `System32`, Wbem, and Windows PowerShell, then preserves the user PATH inherited when Electron started. Plugins can therefore spawn Windows system executables and inherited third-party commands by bare name. A third-party tool remains unavailable when it is absent from that inherited PATH; changing the registry PATH or installing a command while the desktop is running requires an application restart, and the desktop does not evaluate PowerShell profiles to discover extra commands. Preparation verifies the official Node archive SHA-256, required Windows native modules, the embedded pnpm version, and a real Harness readiness launch before Electron Builder runs.
 
 Build the Linux x64 packages on Linux with:
 

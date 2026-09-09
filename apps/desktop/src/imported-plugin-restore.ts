@@ -376,6 +376,7 @@ export interface ImportedPluginRestoreManagerOptions {
   readonly install: (packageSpec: string) => Promise<string>
   readonly inspectSource?: (packageSpec: string) => Promise<ImportedPluginSourceCheckResult>
   readonly mergeAllowBuilds?: (profileDir: string, rules: Readonly<Record<string, boolean>>) => Promise<boolean>
+  readonly withMutation?: <T>(operation: () => Promise<T>) => Promise<T>
 }
 
 /** Own opaque-id validation and sequential restoration outside the renderer. */
@@ -533,11 +534,13 @@ export class ImportedPluginRestoreManager {
     this.active = true
     this.plan = { ...this.plan, firstPromptDismissed: true, ignored: false }
     try {
-      await this.update(entry.restoreId, { state: 'installing', diagnostic: null })
-      const diagnostic = await this.options.install(archivePath)
-      await this.update(entry.restoreId, {
-        state: 'succeeded',
-        ...(diagnostic.trim() === '' ? {} : { diagnostic: diagnostic.slice(-2000) }),
+      await this.mutate(async () => {
+        await this.update(entry.restoreId, { state: 'installing', diagnostic: null })
+        const diagnostic = await this.options.install(archivePath)
+        await this.update(entry.restoreId, {
+          state: 'succeeded',
+          ...(diagnostic.trim() === '' ? {} : { diagnostic: diagnostic.slice(-2000) }),
+        })
       })
     } catch (error) {
       await this.update(entry.restoreId, { state: 'failed', diagnostic: boundedDiagnostic(error) })
@@ -569,12 +572,14 @@ export class ImportedPluginRestoreManager {
     try {
       for (const original of this.plan?.entries ?? []) {
         if (!ids.has(original.restoreId)) continue
-        await this.update(original.restoreId, { state: 'installing', diagnostic: null })
         try {
-          const diagnostic = await this.options.install(original.packageSpec)
-          await this.update(original.restoreId, {
-            state: 'succeeded',
-            ...(diagnostic.trim() === '' ? {} : { diagnostic: diagnostic.slice(-2000) }),
+          await this.mutate(async () => {
+            await this.update(original.restoreId, { state: 'installing', diagnostic: null })
+            const diagnostic = await this.options.install(original.packageSpec)
+            await this.update(original.restoreId, {
+              state: 'succeeded',
+              ...(diagnostic.trim() === '' ? {} : { diagnostic: diagnostic.slice(-2000) }),
+            })
           })
         } catch (error) {
           await this.update(original.restoreId, { state: 'failed', diagnostic: boundedDiagnostic(error) })
@@ -583,6 +588,10 @@ export class ImportedPluginRestoreManager {
     } finally {
       this.active = false
     }
+  }
+
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    return this.options.withMutation === undefined ? operation() : this.options.withMutation(operation)
   }
 
   private async update(

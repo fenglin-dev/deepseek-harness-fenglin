@@ -4,6 +4,8 @@
   - button "Session log":
     - text: Session log
     - img
+  - button "Open the sidebar":
+    - img
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
@@ -51,7 +53,7 @@
   - img
   - text: Ran for {{duration}}
 - text: {{date}} {{clock}}
-- textbox "Message or run a task... / commands, @ files or sessions"
+- textbox "Message or run a task, / commands, @ files or sessions"
 - button "Commands":
   - img
 - button "Add attachment":
@@ -61,4 +63,9 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
-- text: 1 turns · 2 steps LLM {{duration}} · Tool call {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 0% Input 280 tok · Output 30 tok
+- button "1 turns 2 steps":
+  - img
+  - text: 1 turns 2 steps
+- button "310 tok · Cache hit 0%":
+  - img
+  - text: 310 tokCache hit 0%

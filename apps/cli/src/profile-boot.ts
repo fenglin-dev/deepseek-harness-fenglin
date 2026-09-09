@@ -11,18 +11,22 @@
  * @module @deepseek-ai/dsh/profile-boot
  */
 
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import {
   boot,
+  acquireProfilePluginMutationLock,
+  createProfilePluginSnapshot,
+  finalizeProfilePluginSnapshot,
   composeEntries,
   DEFAULT_PROFILE_BUNDLES,
   healProfilesModuleFallback,
+  initProfile,
   installFailLoud,
   loadDiagnosticProfile,
   loadOptionalPatches,
@@ -114,6 +118,69 @@ export const PROFILE_ROOT_FILENAME = 'cordis.yml'
  */
 export function diagnosticProfileModuleBaseUrl(profileDir: string): string {
   return pathToFileURL(join(profileDir, '..', 'package.json')).href
+}
+
+/**
+ * Initialize a missing profile from one shipped template. This copies only
+ * the template's bundle list and patch-reload policy; local state from the
+ * same-named shipped profile is not read, and no inheritance metadata is
+ * persisted. Shipped profile names are reserved, and the target directory is
+ * claimed exclusively so existing or concurrent state is never reused.
+ * @param name - the new profile name.
+ * @param fromDefaultProfile - shipped profile template to copy.
+ * @param home - Harness home containing the profile directory.
+ * @throws when the template is unknown, the target name is shipped, or the target directory exists.
+ */
+export function initializeProfileFromDefault(
+  name: string,
+  fromDefaultProfile: string,
+  home: string = resolveDshHome(),
+): void {
+  const dir = resolveProfileDir(name, home)
+  const template = Object.hasOwn(PROFILE_TEMPLATES, fromDefaultProfile)
+    ? PROFILE_TEMPLATES[fromDefaultProfile]
+    : undefined
+  if (template === undefined) {
+    const expected = Object.keys(PROFILE_TEMPLATES).sort().map(value => JSON.stringify(value)).join(', ')
+    throw new Error(
+      `${NAME}: unknown default profile ${JSON.stringify(fromDefaultProfile)}; expected one of ${expected}`,
+    )
+  }
+  if (Object.hasOwn(PROFILE_TEMPLATES, name)) {
+    throw new Error(
+      `${NAME}: profile ${JSON.stringify(name)} is shipped and cannot be a custom profile target; `
+      + 'omit --from-default-profile to use it',
+    )
+  }
+  mkdirSync(dirname(dir), { recursive: true })
+  try {
+    mkdirSync(dir)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    const manifestPath = join(dir, 'package.json')
+    if (existsSync(manifestPath)) {
+      throw new Error(
+        `${NAME}: profile ${JSON.stringify(name)} already exists at ${manifestPath}; `
+        + 'omit --from-default-profile to use it',
+      )
+    }
+    throw new Error(
+      `${NAME}: profile directory ${dir} already exists; choose an unused profile name`,
+    )
+  }
+  try {
+    initProfile(dir, template.bundles, template.patchReload)
+  } catch (error) {
+    try {
+      rmSync(dir, { recursive: true, force: true })
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `${NAME}: profile initialization failed and ${dir} could not be removed`,
+      )
+    }
+    throw error
+  }
 }
 
 /**
@@ -232,9 +299,12 @@ export function quarantineStaleInBoxLoaderEntries(
  * the identical base).
  * @param name - the profile name.
  * @param userLayer - `false` skips parsing `cordis.patch.yml` (the default dump).
+ * @param fromDefaultProfile - shipped template used once to initialize a missing profile.
  * @returns the loaded profile.
+ * @throws when explicit initialization names an unknown template or an existing profile.
  */
-export function prepareProfile(name: string, userLayer = true): Profile {
+export function prepareProfile(name: string, userLayer = true, fromDefaultProfile?: string): Profile {
+  if (fromDefaultProfile !== undefined) initializeProfileFromDefault(name, fromDefaultProfile)
   const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   return profile
@@ -283,8 +353,9 @@ async function composeProfile(
   name: string,
   patchFiles: readonly string[],
   safeMode: boolean,
+  fromDefaultProfile?: string,
 ): Promise<ComposedProfile> {
-  const profile = safeMode ? prepareDiagnosticProfile(name) : prepareProfile(name)
+  const profile = safeMode ? prepareDiagnosticProfile(name) : prepareProfile(name, true, fromDefaultProfile)
   await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile })
   const homePatches = safeMode ? [] : loadOptionalPatches(NAME, homePatchPath()) ?? []
   const overlays: PatchOptions[] = safeMode
@@ -326,6 +397,8 @@ export interface RunProfileOptions {
   environment: LaunchEnvironmentSnapshot
   /** The profile name to boot. */
   profile: string
+  /** Shipped template used once to initialize a missing profile. */
+  fromDefaultProfile?: string | undefined
   /** `--patch` overlay paths, in argv order. */
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
@@ -503,7 +576,7 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
 
   let composed: ComposedProfile
   try {
-    composed = await composeProfile(options.profile, options.patchFiles, safeMode)
+    composed = await composeProfile(options.profile, options.patchFiles, safeMode, options.fromDefaultProfile)
   } catch (error) {
     await disposeProxy()
     throw error
@@ -710,19 +783,46 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         }),
     })
     let quarantined = false
-    if (options.safeModeOnFailure === true && externalBundle !== undefined) {
+    const pendingActivation = existsSync(join(resolveDshHome(), 'plugin-transactions', options.profile, 'pending.json'))
+    if (options.safeModeOnFailure === true && externalBundle !== undefined && !pendingActivation) {
       const profileDir = resolveProfileDir(options.profile)
-      const outcome = quarantineProfilePluginAfterLoadFailure({
-        binName: NAME,
-        profile: options.profile,
-        installAnchor: INSTALL_ANCHOR,
-        runPackageManager: args => runProfilePackageManager(profileDir, args),
-      }, externalBundle, issue, ownedFailure === undefined
-        ? 'client-module-unavailable'
-        : ownedFailure.failureKind === 'loader-dependency'
-          ? 'loader-dependency-unavailable'
-          : 'loader-module-unresolvable')
-      quarantined = outcome.status === 'quarantined'
+      let release: (() => void) | undefined
+      try {
+        release = acquireProfilePluginMutationLock({ profile: options.profile, waitMs: 0, operationKind: 'startup-quarantine' })
+      } catch {
+        // The original Loader incident remains primary; a concurrent writer
+        // owns recovery, so startup must not mutate its Profile underneath it.
+        process.stderr.write(`${NAME}: startup quarantine deferred because the Profile mutation lock is unavailable\n`)
+      }
+      if (release !== undefined) {
+        let snapshot: ReturnType<typeof createProfilePluginSnapshot> | undefined
+        try {
+          snapshot = createProfilePluginSnapshot({ profile: options.profile, kind: 'automatic', trigger: 'diagnostic-repair' })
+          const outcome = quarantineProfilePluginAfterLoadFailure({
+            binName: NAME,
+            profile: options.profile,
+            installAnchor: INSTALL_ANCHOR,
+            runPackageManager: args => runProfilePackageManager(profileDir, args),
+          }, externalBundle, issue, ownedFailure === undefined
+            ? 'client-module-unavailable'
+            : ownedFailure.failureKind === 'loader-dependency'
+              ? 'loader-dependency-unavailable'
+              : 'loader-module-unresolvable')
+          quarantined = outcome.status === 'quarantined'
+        } catch {
+          // Retain the original classified Loader incident when backup or repair fails.
+          process.stderr.write(`${NAME}: startup quarantine could not retain a safety point or complete repair; original incident retained\n`)
+        } finally {
+          try {
+            if (snapshot !== undefined) finalizeProfilePluginSnapshot({
+              profile: options.profile, snapshotId: snapshot.snapshotId, preserveIfUnchanged: snapshot.deduplicated === true,
+            })
+          } catch {
+            // Snapshot cleanup must not replace the original startup incident.
+            process.stderr.write(`${NAME}: startup quarantine snapshot cleanup deferred\n`)
+          } finally { release() }
+        }
+      }
       if (quarantined) {
         process.stderr.write(`${NAME}: quarantined startup-incompatible plugin ${JSON.stringify({
           schema: 'dsh/profile-diagnostic/v2',

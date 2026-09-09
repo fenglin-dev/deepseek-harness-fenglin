@@ -28,7 +28,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PRIMARY_NODE_VERSION: '24.11.1'
+  PRIMARY_NODE_VERSION: '24.17.0'
   DSH_TELEMETRY_DISABLED: '1'
 
 jobs:

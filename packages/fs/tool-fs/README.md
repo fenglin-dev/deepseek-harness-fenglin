@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tool-fs` provides the model-facing filesystem tools — `read`, `read_image`, `write`, and `edit` — and their executor. With them the model reads files with line numbers, creates or replaces them atomically, and applies targeted literal edits; results are capped and failures carry stable codes with recovery instructions, all backed by a mounted `ctx.fs` backend. The read-before-edit policy lives in a separate plugin (`dsh-fs-observation-policy`), so omitting it yields unconditional, still-atomic mutations. `read_image` appears while a durable attachment store is mounted and refuses execution unless the routed model declares image input. Choose this package when the model should read, create, replace, or edit UTF-8 text files; discovery (`glob`/`grep`) is a sibling package.
+Use `dsh-tool-fs` to let a model read UTF-8 files with line numbers, read supported images, create or atomically replace files, and apply targeted literal edits. Results are capped, and failures provide stable error codes and recovery instructions. Add `dsh-fs-observation-policy` when writes and edits must follow a successful read; without it, mutations remain atomic but are unconditional. Image reads require durable attachment storage and an image-capable routed model. Choose the sibling discovery package for glob or grep searches.
 
 ## Table of Contents
 

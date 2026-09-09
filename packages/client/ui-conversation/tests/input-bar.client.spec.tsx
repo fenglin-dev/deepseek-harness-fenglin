@@ -8,6 +8,7 @@
 // root listener routes them through the keymap commands); draft writes drive
 // the shell (jsdom's beforeinput lacks the ranges Lexical needs).
 
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { $getRoot, $isTextNode } from 'lexical'
@@ -24,12 +25,15 @@ import type { SubmitOutcome } from '../src/client/contract/input.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import { $replaceDetectSpanWithText, $selectDetectSpan } from '../src/client/input/editor/span-map.ts'
 import type {
-  ComposerAttachment, ComposerAttachmentsOwnerProps,
+  ComposerAttachment, ComposerAttachmentsOwnerProps, DraftFileUploads,
 } from '../src/client/contract/slots.ts'
 import type { DraftAttachmentId } from '../src/client/contract/input.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import { zh } from '../src/client/locales.ts'
+
+// Every fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
 
 afterEach(cleanup)
 
@@ -89,6 +93,8 @@ interface BenchOptions {
   rightItems?: React.ReactNode
   footer?: React.ReactNode
   attachments?: readonly ComposerAttachment[]
+  /** Upload states served for file-kind drafts (absent = every file is ready). */
+  fileUploads?: DraftFileUploads
   addFiles?: (files: readonly File[]) => string | null
   commandMenuOpen?: boolean
   busyEnter?: 'queue' | 'steer'
@@ -145,6 +151,7 @@ function bench(over?: BenchOptions) {
   const stop = vi.fn()
   const removeAttachment = vi.fn((id: DraftAttachmentId) => { shell.removeAttachment(id) })
   const menuLauncher = createSnapshotStore<string | null>(over?.commandMenuOpen === true ? 'command' : null)
+  const busyEnter = createSnapshotStore<'queue' | 'steer'>(over?.busyEnter ?? 'queue')
   const slotCalls: { key: string; owner: unknown }[] = []
   const renderSlot = ((key: string, owner: object) => {
     slotCalls.push({ key, owner })
@@ -162,6 +169,7 @@ function bench(over?: BenchOptions) {
     useSession: bindSnapshotSelector(session),
     useConversation: bindSnapshotSelector(createSnapshotStore(conversationFixture())),
     useSessionPendingInteraction: bindSnapshotSelector(createSnapshotStore(new Map())),
+    useResource,
     useSessions: bindSnapshotSelector(createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'ready',
       subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
@@ -179,19 +187,15 @@ function bench(over?: BenchOptions) {
     inputActions: shell.actions,
     keyboard: shell,
     addFiles: over?.addFiles ?? (() => null),
-    useFileUploads: bindSnapshotSelector(createSnapshotStore({})),
+    useFileUploads: bindSnapshotSelector(createSnapshotStore<DraftFileUploads>(over?.fileUploads ?? {})),
     retryFileUpload: undefined,
     removeAttachment,
     resolveDraftAttachments: ids => ids.flatMap((id) => {
       const attachment = over?.attachments?.find(candidate => candidate.id === id)
       return attachment === undefined ? [] : [attachment]
     }),
-    resolveSubmitMode: (running, gesture, steeringAvailable) => {
-      if (!running || !steeringAvailable) return 'queue'
-      const preferred = over?.busyEnter ?? 'queue'
-      return gesture === 'enter' ? preferred : preferred === 'queue' ? 'steer' : 'queue'
-    },
     toggleCommandMenu: over?.toggleCommandMenu ?? vi.fn(),
+    useBusyEnter: bindSnapshotSelector(busyEnter),
     useNotices: bindSnapshotSelector(shell.notices),
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(menuLauncher),
@@ -213,13 +217,29 @@ function bench(over?: BenchOptions) {
   const sendableDraft = (over?.draft?.trim() ?? '') !== '' || (over?.attachments?.length ?? 0) > 0
   const primaryStops = over?.running === true && over.subagent === undefined
     && (!sendableDraft || over.blocked !== undefined)
-  const button = view.container.querySelector<HTMLButtonElement>(
-    `button[aria-label="${primaryStops ? '停止生成' : '发送消息'}"]`,
-  )!
+  // A running steer-capable composer (ordinary session or continuable child
+  // with its parent online) labels Send by the delivery mode it performs over
+  // a plain message draft; idle sessions, one-shot children, locked
+  // composers, a child's empty draft, drafts with a pending upload, and `/`
+  // command lines keep plain Send (an ordinary running session's empty draft
+  // is the Stop seat). The mirror models plain-phase drafts only: cases
+  // that claim a command or freeze the machine query the DOM directly.
+  const steeringAvailable = over?.subagent === undefined || over.subagent.address.mode === 'continuable'
+  const composerLocked = over?.disabled === true || over?.inert === true || over?.blocked !== undefined
+    || (over?.subagent?.address.mode === 'continuable' && over.subagent.parentAvailable !== true)
+  const uploadsPending = (over?.attachments ?? []).some(attachment =>
+    attachment.kind === 'file' && over?.fileUploads?.[attachment.id]?.status !== 'ready')
+  const plainMessageDraft = sendableDraft && !uploadsPending && !(over?.draft?.trimStart().startsWith('/') ?? false)
+  const primaryLabel = primaryStops
+    ? '停止生成'
+    : over?.running === true && steeringAvailable && !composerLocked && plainMessageDraft
+      ? (over.busyEnter === 'steer' ? '插话发送' : '排队发送')
+      : '发送消息'
+  const button = view.container.querySelector<HTMLButtonElement>(`button[aria-label="${primaryLabel}"]`)!
   const interruptButton = view.container.querySelector<HTMLButtonElement>('button[aria-label="停止生成"]')
   return {
     view, textarea, button, interruptButton, props, sink, shell, wiring: shell, session, stop, removeAttachment, slotCalls,
-    menuLauncher,
+    menuLauncher, busyEnter,
     steerQueue: over?.steerQueue,
     get placeholder() { return placeholderOf(view.container) },
     get inputDisabled() { return textarea.getAttribute('aria-disabled') === 'true' },
@@ -473,9 +493,9 @@ describe('Enter semantics', () => {
   })
 
   it('keeps the owning placeholder or ordinary guidance when whole-queue steering is unavailable', () => {
-    expect(bench({ running: true }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
-    expect(bench({ queue: [row('q-1')] }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
-    expect(bench({ running: true, queue: [row('q-1')], draft: '消息' }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
+    expect(bench({ running: true }).placeholder).toBe('发消息或创建任务, / 调用指令, @ 文件或对话')
+    expect(bench({ queue: [row('q-1')] }).placeholder).toBe('发消息或创建任务, / 调用指令, @ 文件或对话')
+    expect(bench({ running: true, queue: [row('q-1')], draft: '消息' }).placeholder).toBe('发消息或创建任务, / 调用指令, @ 文件或对话')
     expect(bench({
       running: true,
       queue: [row('q-1')],
@@ -487,7 +507,7 @@ describe('Enter semantics', () => {
       running: true,
       queue: [row('q-1')],
       commandMenuOpen: true,
-    }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
+    }).placeholder).toBe('发消息或创建任务, / 调用指令, @ 文件或对话')
     // The steer hint intentionally outranks the plan placeholder: while it
     // shows, the whole-queue gesture is genuinely available in plan mode.
     expect(bench({
@@ -718,23 +738,110 @@ describe('Enter semantics', () => {
 })
 
 describe('running and lock semantics', () => {
+  it('dismisses the Stop tooltip when an empty composer becomes idle', () => {
+    vi.useFakeTimers()
+    try {
+      const { button, view, session } = bench({ running: true })
+      fireEvent.mouseEnter(button)
+      act(() => { vi.advanceTimersByTime(500) })
+      expect(view.getByRole('tooltip').textContent).toBe('停止生成')
+
+      // Disabling a hovered native button need not deliver mouseleave.
+      act(() => { session.set(snapshotOf({ running: false })) })
+      expect(button.disabled).toBe(true)
+      expect(button.getAttribute('aria-label')).toBe('发送消息')
+      expect(view.queryByRole('tooltip')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('running switches the primary between Stop and Queue Send with the draft', async () => {
-    const { textarea, button, stop, sink, shell } = bench({ running: true, busyEnter: 'steer' })
+    const { textarea, button, stop, sink, shell } = bench({ running: true })
     expect(textarea.getAttribute('aria-disabled')).not.toBe('true')
     expect(button.getAttribute('aria-label')).toBe('停止生成')
     fireEvent.click(button)
     expect(stop).toHaveBeenCalledTimes(1)
 
     writeDraft(shell, '排队消息')
-    expect(button.getAttribute('aria-label')).toBe('发送消息')
+    expect(button.getAttribute('aria-label')).toBe('排队发送')
     writeDraft(shell, '   ')
     expect(button.getAttribute('aria-label')).toBe('停止生成')
     writeDraft(shell, '排队消息2')
-    expect(button.getAttribute('aria-label')).toBe('发送消息')
+    expect(button.getAttribute('aria-label')).toBe('排队发送')
     fireEvent.click(button)
     expect(sink).toHaveBeenCalledWith('排队消息2', [], 'queue', expect.any(AbortSignal))
     await vi.waitFor(() => { expect(button.getAttribute('aria-label')).toBe('停止生成') })
     expect(stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('running Send follows the busy-state Steer preference and labels the delivery', () => {
+    const { button, sink } = bench({ running: true, busyEnter: 'steer', draft: '按钮插话' })
+    expect(button.getAttribute('aria-label')).toBe('插话发送')
+    fireEvent.click(button)
+    expect(sink).toHaveBeenCalledWith('按钮插话', [], 'steer', expect.any(AbortSignal))
+  })
+
+  it('running Send relabels when the busy-state preference changes live', () => {
+    const { button, busyEnter, sink } = bench({ running: true, draft: '跟随设置' })
+    expect(button.getAttribute('aria-label')).toBe('排队发送')
+    act(() => { busyEnter.set('steer') })
+    expect(button.getAttribute('aria-label')).toBe('插话发送')
+    fireEvent.click(button)
+    expect(sink).toHaveBeenCalledWith('跟随设置', [], 'steer', expect.any(AbortSignal))
+  })
+
+  it('running Send keeps the plain label for a slash line and a claimed command', () => {
+    // An unclaimed `/` line adjudicates on submit; a claimed command executes
+    // instead of delivering a message. Neither click is a Queue/Steer delivery.
+    const slash = bench({ running: true, busyEnter: 'steer', draft: '/goal inspect' })
+    expect(slash.button.getAttribute('aria-label')).toBe('发送消息')
+    expect(slash.button.disabled).toBe(false)
+
+    const claimed = bench({ running: true, busyEnter: 'steer' })
+    act(() => {
+      claimed.shell.setDraft('/goal ')
+      claimed.shell.beginCommand(
+        { token: '/goal ', submit: () => Promise.resolve({ kind: 'success' }) },
+        { start: 0, end: 6, draftRev: claimed.shell.snapshot.draftRev },
+      )
+    })
+    expect(claimed.shell.snapshot.phase).toBe('claimed')
+    const button = claimed.view.container.querySelector<HTMLButtonElement>('button[aria-label="发送消息"]')
+    expect(button).not.toBeNull()
+    expect(claimed.view.container.querySelector('button[aria-label="插话发送"]')).toBeNull()
+  })
+
+  it('running Send keeps the plain label while a file upload is still pending', () => {
+    const file = { kind: 'file' as const, id: 'file-1' as DraftAttachmentId, file: new File(['x'], 'note.txt', { type: 'text/plain' }) }
+    const pending = bench({
+      running: true, busyEnter: 'steer', draft: '带附件', attachments: [file],
+      fileUploads: { [file.id]: { status: 'uploading', loaded: 0 } },
+    })
+    expect(pending.button.getAttribute('aria-label')).toBe('发送消息')
+    expect(pending.button.disabled).toBe(true)
+
+    // A failed upload holds the same gate until it is retried or removed.
+    const failed = bench({
+      running: true, busyEnter: 'steer', draft: '带附件', attachments: [file],
+      fileUploads: { [file.id]: { status: 'error', message: 'upload failed' } },
+    })
+    expect(failed.button.getAttribute('aria-label')).toBe('发送消息')
+    expect(failed.button.disabled).toBe(true)
+
+    const ready = bench({
+      running: true, busyEnter: 'steer', draft: '带附件', attachments: [file],
+      fileUploads: { [file.id]: { status: 'ready', receiptId: 'receipt-1' as never, file: { kind: 'file' } as never } },
+    })
+    expect(ready.button.getAttribute('aria-label')).toBe('插话发送')
+    expect(ready.button.disabled).toBe(false)
+  })
+
+  it('idle Send keeps the plain label regardless of the busy-state preference', () => {
+    const { button, sink } = bench({ busyEnter: 'steer', draft: '空闲发送' })
+    expect(button.getAttribute('aria-label')).toBe('发送消息')
+    fireEvent.click(button)
+    expect(sink).toHaveBeenCalledWith('空闲发送', [], 'queue', expect.any(AbortSignal))
   })
 
   it('running treats an attachment-only draft as Send', async () => {
@@ -745,7 +852,7 @@ describe('running and lock semantics', () => {
       previewUrl: 'blob:pixel',
     }
     const { button, sink } = bench({ running: true, attachments: [attachment] })
-    expect(button.getAttribute('aria-label')).toBe('发送消息')
+    expect(button.getAttribute('aria-label')).toBe('排队发送')
     fireEvent.click(button)
     expect(sink).toHaveBeenCalledWith('', ['draft-1'], 'queue', expect.any(AbortSignal))
     await vi.waitFor(() => { expect(button.getAttribute('aria-label')).toBe('停止生成') })
@@ -796,7 +903,7 @@ describe('running and lock semantics', () => {
         parentAvailable: true,
       },
     })
-    expect(button.getAttribute('aria-label')).toBe('发送消息')
+    expect(button.getAttribute('aria-label')).toBe('排队发送')
     expect(interruptButton).not.toBeNull()
     expect(textarea.getAttribute('aria-disabled')).not.toBe('true')
     expect((view.getByLabelText('添加附件') as HTMLButtonElement).disabled).toBe(true)
@@ -806,6 +913,27 @@ describe('running and lock semantics', () => {
     expect(sink).toHaveBeenCalledWith('后续消息', [], 'queue', expect.any(AbortSignal))
     fireEvent.click(interruptButton!)
     expect(stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('running continuable subagent Send follows the Steer preference like an ordinary session', () => {
+    const subagent = {
+      address: {
+        parentSessionId: 'parent' as SessionId,
+        childSessionId: SID,
+        mode: 'continuable' as const,
+      },
+      parentAvailable: true,
+    }
+    const { button, sink } = bench({ running: true, busyEnter: 'steer', draft: '子代理插话', subagent })
+    expect(button.getAttribute('aria-label')).toBe('插话发送')
+    fireEvent.click(button)
+    expect(sink).toHaveBeenCalledWith('子代理插话', [], 'steer', expect.any(AbortSignal))
+
+    // No draft: the child has no Stop seat to fall back to, so its disabled
+    // Send keeps the plain label instead of naming a delivery it cannot make.
+    const empty = bench({ running: true, busyEnter: 'steer', subagent })
+    expect(empty.button.getAttribute('aria-label')).toBe('发送消息')
+    expect(empty.button.disabled).toBe(true)
   })
 
   it.each([
@@ -1002,7 +1130,7 @@ describe('running and lock semantics', () => {
   it('disabled state shows the unavailable placeholder; custom placeholder wins', () => {
     expect(bench({ disabled: true }).placeholder).toBe('会话不可用')
     const live = bench()
-    expect(live.placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
+    expect(live.placeholder).toBe('发消息或创建任务, / 调用指令, @ 文件或对话')
     const custom = bench({ placeholder: 'Custom placeholder' })
     expect(custom.placeholder).toBe('Custom placeholder')
   })
@@ -1049,7 +1177,7 @@ describe('running and lock semantics', () => {
     expect(entering.placeholder).toBe('描述你的任务以生成计划')
     // Pending exit: target is default again.
     const leaving = bench({ plan: { active: true, pending: true } })
-    expect(leaving.placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
+    expect(leaving.placeholder).toBe('发消息或创建任务, / 调用指令, @ 文件或对话')
     // Owner placeholder outranks the plan swap.
     const custom = bench({ plan: { active: true, pending: false }, placeholder: 'Custom placeholder' })
     expect(custom.placeholder).toBe('Custom placeholder')

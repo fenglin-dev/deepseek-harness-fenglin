@@ -1978,6 +1978,22 @@ describe('plugin registration and config', () => {
       .toThrow(/maxTokens must be a positive integer/)
   })
 
+  it('surfaces a catalog model\'s in-history system prompt update mode and rejects any other mode', async () => {
+    const adapter = adapterOf({ models: [
+      { id: 'capable', systemPromptUpdate: 'in-history' },
+      { id: 'plain' },
+    ] })
+    await expect(adapter.resolveModel('deepseek-official', 'capable'))
+      .resolves.toMatchObject({ systemPromptUpdate: 'in-history' })
+    await expect(adapter.resolveModel('deepseek-official', 'plain'))
+      .resolves.not.toHaveProperty('systemPromptUpdate')
+    await expect(adapter.resolveModel('deepseek-official', 'not-in-catalog'))
+      .resolves.not.toHaveProperty('systemPromptUpdate')
+    expect(() => resolveAdapterOptions({
+      models: [{ id: 'bogus', systemPromptUpdate: 'leading' as unknown as 'in-history' }],
+    })).toThrow(/systemPromptUpdate must be "in-history" when present/)
+  })
+
   it('rejects image request limits on a text-only catalog model', () => {
     expect(() => resolveAdapterOptions({
       models: [{ id: 'text-only', inputModalities: ['text'], imagePixelBudget: 1 }],

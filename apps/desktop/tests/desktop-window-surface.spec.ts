@@ -36,7 +36,7 @@ vi.mock('electron', () => {
     destroyed = false
     close = vi.fn(() => { this.destroyed = true })
     isDestroyed = vi.fn(() => this.destroyed)
-    loadFile = vi.fn(async () => {})
+    loadFile = vi.fn<(path: string) => Promise<void>>(async () => {})
     loadURL = vi.fn(async () => {})
     send = vi.fn()
   }

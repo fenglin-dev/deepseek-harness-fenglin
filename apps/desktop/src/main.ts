@@ -40,6 +40,7 @@ import {
 } from './permissions.ts'
 import { ensurePackagedRuntime, packagedRuntimeArchiveRoot } from './packaged-runtime.ts'
 import { HarnessSupervisor, type HarnessFailure, type HarnessState } from './supervisor.ts'
+import { ProfileTransactionManager } from './profile-transaction-manager.ts'
 import { terminateWindowsProcessTree } from './windows-process-tree.ts'
 import { revealHarnessLog, type OpenLogResult } from './log-reveal.ts'
 import { createNotificationThrottle, desktopNotificationDictionary } from './notifications.ts'
@@ -141,6 +142,7 @@ import {
   type StartupDiagnosticIncident,
 } from './startup-diagnostics.ts'
 import { DesktopWebAccess, type DesktopWebStatus } from './desktop-web-access.ts'
+import { shellMessages, trayMessages, dataHomeMessages } from './locales/shell.ts'
 import { DesktopReturnControl } from './desktop-return-control.ts'
 import { createDesktopLocaleStore, type DesktopLocaleStore } from './desktop-locale-store.ts'
 import { resolveDesktopLocale } from './desktop-locale.ts'
@@ -195,6 +197,9 @@ let persistedProfileLocale: string | undefined
 let menuClientReady = false
 let snapshotMutationActive = false
 let recoveryHarnessSuspended = false
+let recoveryCandidateHome: (() => string | undefined) | undefined
+let recoveryActivateCandidate: (() => Promise<void>) | undefined
+let recoveryDiscardCandidate: (() => Promise<void>) | undefined
 let recoveryRestartRequired = false
 let recoveryPluginRemove: ((packageName: string) => Promise<void>) | undefined
 let latestRecoveryFailure: string | undefined
@@ -230,7 +235,7 @@ function scheduleBootableSnapshot(manager: PluginSnapshotManager): void {
   cancelBootableSnapshot()
   bootableSnapshotTimer = setTimeout(() => {
     bootableSnapshotTimer = undefined
-    if (harnessOrigin === undefined || lifecycle?.isQuitting === true) return
+    if (harnessOrigin === undefined || lifecycle?.isQuitting === true || supervisor?.isDiagnosticMode === true) return
     if (menuBusy()) {
       void appendDesktopStartupLog(
         'Bootable plugin snapshot stability window restarted because a managed operation is active.',
@@ -255,7 +260,7 @@ function restartBootableSnapshotStabilityWindow(reason: string): void {
   cancelBootableSnapshot()
   const manager = pluginSnapshotManager
   if (manager === undefined || harnessOrigin === undefined
-    || lifecycle?.isQuitting === true || reportedDesktopReadiness.size !== 2) return
+    || lifecycle?.isQuitting === true || supervisor?.isDiagnosticMode === true || reportedDesktopReadiness.size !== 2) return
   void appendDesktopStartupLog(`Restarting bootable plugin snapshot stability window: ${reason}.`)
   scheduleBootableSnapshot(manager)
 }
@@ -332,7 +337,7 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
     case 'about': {
       const manifest = JSON.parse(await readFile(new URL('./harness-version.json', import.meta.url), 'utf8')) as { version: string }
       await dialog.showMessageBox({ type: 'info', title: menuCopy(menuLocale).about,
-        message: 'Open DeepSeek Harness Desktop',
+        message: shellMessages(app.getLocale()).productName,
         detail: `${app.getVersion()}\nHarness ${manifest.version}\n\n${menuCopy(menuLocale).community}` })
       return
     }
@@ -374,6 +379,7 @@ let pluginSnapshotManager: PluginSnapshotManager | undefined
 let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
 let desktopThemeSource: DesktopThemeSource = 'system'
 const reportedDesktopReadiness = new Set<'client' | 'event-dispatch'>()
+let profileTransactionManager: ProfileTransactionManager | undefined
 const pendingDataHomeSelections = new Map<string, {
   readonly rendererId: number
   readonly selectionKind: DesktopDataHomeSelectionKind
@@ -463,42 +469,9 @@ function desktopCapabilities(): DesktopCapabilities {
   }
 }
 
-function desktopCopy(): {
-  open: string
-  openWeb: string
-  restart: string
-  openLog: string
-  launchAtLogin: string
-  notifications: string
-  quit: string
-  logErrorTitle: string
-} {
-  return app.getLocale().toLowerCase().startsWith('zh')
-    ? {
-      open: '打开窗口', openWeb: '在浏览器中打开', restart: '快速重启', openLog: '打开 Harness 日志', launchAtLogin: '开机自启',
-      notifications: '系统通知', quit: '退出', logErrorTitle: '无法打开日志',
-    }
-    : {
-      open: 'Open Window', openWeb: 'Open in Browser', restart: 'Quick Restart', openLog: 'Open Harness Log', launchAtLogin: 'Launch at Login',
-      notifications: 'Notifications', quit: 'Quit', logErrorTitle: 'Could Not Open Log',
-    }
-}
+function desktopCopy() { return trayMessages(app.getLocale()) }
 
-function dataHomeCopy(): {
-  completeTitle: string
-  completeMessage: string
-  failedTitle: string
-} {
-  return app.getLocale().toLowerCase().startsWith('zh')
-    ? {
-      completeTitle: '导入完成', completeMessage: '用户数据与插件恢复清单已复制到独立桌面目录。进入客户端后可选择重新安装插件。',
-      failedTitle: '无法导入官方数据',
-    }
-    : {
-      completeTitle: 'Import complete', completeMessage: 'User data and a plugin restore list were copied into the independent desktop directory. Choose plugins to reinstall after entering Desktop.',
-      failedTitle: 'Could not import official data',
-    }
-}
+function dataHomeCopy() { return dataHomeMessages(app.getLocale()) }
 
 function isDataHomeSelection(value: unknown): value is DataHomeSelection {
   return value === 'imported' || value === 'reused' || value === 'fresh'
@@ -647,7 +620,7 @@ async function showDataHomeChooser(
     ipcMain.handle('dsh:data-home:choose-source', async (event): Promise<DataHomeSourceResult> => {
       if (event.sender !== chooser.webContents) throw new Error('desktop: invalid data-home source requester')
       const result = await dialog.showOpenDialog(chooser, {
-        title: app.getLocale().toLowerCase().startsWith('zh') ? '选择 DSH 配置目录' : 'Choose DSH configuration directory',
+        title: shellMessages(app.getLocale()).chooseSource,
         properties: ['openDirectory'],
       })
       const candidate = result.filePaths[0]
@@ -664,9 +637,7 @@ async function showDataHomeChooser(
     ipcMain.handle('dsh:data-home:choose-target', async (event): Promise<DataHomeTargetResult> => {
       if (event.sender !== chooser.webContents) throw new Error('desktop: invalid data-home target requester')
       const result = await dialog.showOpenDialog(chooser, {
-        title: app.getLocale().toLowerCase().startsWith('zh')
-          ? '选择空文件夹作为配置目录'
-          : 'Choose an empty folder for the configuration',
+        title: shellMessages(app.getLocale()).chooseTarget,
         properties: ['openDirectory', 'createDirectory'],
       })
       const candidate = result.filePaths[0]
@@ -1000,6 +971,12 @@ async function runPackageManagerInvocation(
     : packageManager
   const commandArgs = javaScriptEntry ? [packageManager, ...args] : [...args]
   try {
+    if (args[0] === 'install' && environment.DSH_HOME !== undefined
+      && cwd === join(environment.DSH_HOME, 'profiles', 'web')) {
+      return await runDesktopInvocation(resolveHarnessInvocation(environment, [
+        'plugin', '--profile', 'web', 'snapshot', 'materialize', ...args.slice(1),
+      ], options), 'package-manager', timeoutMs)
+    }
     return await runDesktopInvocation({
       command,
       args: commandArgs,
@@ -1054,8 +1031,8 @@ async function resolveStartupBuildApproval(
   const chinese = app.getLocale().toLowerCase().startsWith('zh')
   const result = await showDesktopMessageBox({
     type: 'warning',
-    title: chinese ? '插件构建脚本被拦截' : 'Plugin build script blocked',
-    message: chinese ? '一个插件需要运行构建脚本' : 'A plugin needs to run a build script',
+    title: shellMessages(app.getLocale()).buildBlockedTitle,
+    message: shellMessages(app.getLocale()).buildBlockedMessage,
     detail: chinese
       ? `pnpm 已阻止 ${approval.packageBuildKey} 的构建脚本。该插件已被安全隔离，因此即使不允许也可以继续进入应用。仅在你信任插件来源时允许。`
       : `pnpm blocked the build script for ${approval.packageBuildKey}. The plugin is already safely isolated, so you can continue without allowing it. Only allow a source you trust.`,
@@ -1083,8 +1060,8 @@ async function resolveStartupBuildApproval(
     const detail = error instanceof Error ? error.message : String(error)
     await showDesktopMessageBox({
       type: 'warning',
-      title: chinese ? '插件恢复失败' : 'Plugin recovery failed',
-      message: chinese ? '应用仍可继续启动' : 'The application can still start',
+      title: shellMessages(app.getLocale()).recoveryFailedTitle,
+      message: shellMessages(app.getLocale()).recoveryFailedMessage,
       detail: chinese
         ? `构建许可未能安全完成或插件仍有其他问题。插件会继续保持隔离，可稍后在“诊断”中重试。\n\n${detail.slice(-2000)}`
         : `The approval could not be completed safely or the plugin has another issue. It remains isolated and can be retried later in Diagnostics.\n\n${detail.slice(-2000)}`,
@@ -1123,6 +1100,10 @@ function showLoading(state: HarnessState, failure?: HarnessFailure & { logPath: 
       ...(startupProgress.detail === undefined ? {} : { detail: startupProgress.detail }),
       ...(failure === undefined ? {} : { message: failure.message, logPath: failure.logPath }),
     },
+  }).catch((error: unknown) => {
+    // A newer loading stage or the ready page can supersede this navigation.
+    if (error instanceof Error && 'code' in error && error.code === 'ERR_ABORTED') return
+    console.error('desktop: loading page navigation failed', error)
   })
 }
 
@@ -1152,10 +1133,8 @@ function configureNavigation(renderer: WebContents): void {
     const capability = harnessPermissionName(permission, details, chinese ? 'zh' : 'en')
     const options: MessageBoxOptions = {
       type: 'question',
-      title: chinese ? `${APP_NAME} 权限请求` : `${APP_NAME} permission request`,
-      message: chinese
-        ? `当前功能请求${capability}`
-        : `The current feature wants to ${capability}`,
+      title: shellMessages(app.getLocale()).permissionTitle(APP_NAME),
+      message: shellMessages(app.getLocale()).permissionMessage(capability),
       detail: chinese
         ? '仅在你确认后，当前本机 Harness 页面才能使用此能力。拒绝不会影响其他功能。'
         : 'Only the current local Harness page can use this capability after you approve it. Denying it will not affect other features.',
@@ -1449,9 +1428,9 @@ async function startApplication(): Promise<void> {
     const surface = mainSurface
     if (surface === undefined) throw new Error('desktop: main window is unavailable')
     const result = await dialog.showOpenDialog(surface.window, {
-      title: app.getLocale().toLowerCase().startsWith('zh')
-        ? selectionKind === 'empty' ? '选择空文件夹以创建新配置' : '选择已有 DSH 配置目录'
-        : selectionKind === 'empty' ? 'Choose an empty folder for a new configuration' : 'Choose an existing DSH data directory',
+      title: selectionKind === 'empty'
+        ? shellMessages(app.getLocale()).chooseEmpty
+        : shellMessages(app.getLocale()).chooseExisting,
       properties: ['openDirectory'],
     })
     const candidate = result.filePaths[0]
@@ -1493,9 +1472,7 @@ async function startApplication(): Promise<void> {
     const surface = mainSurface
     if (surface === undefined) throw new Error('desktop: main window is unavailable')
     const result = await dialog.showOpenDialog(surface.window, {
-      title: app.getLocale().toLowerCase().startsWith('zh')
-        ? '切换或新建 DSH 配置目录'
-        : 'Switch or create a DSH data directory',
+      title: shellMessages(app.getLocale()).switchData,
       properties: ['openDirectory', 'createDirectory'],
     })
     const candidate = result.filePaths[0]
@@ -1683,7 +1660,18 @@ async function startApplication(): Promise<void> {
     if (rendererOrigin !== harnessOrigin || reportedDesktopReadiness.has(phase)) return
     reportedDesktopReadiness.add(phase)
     void appendDesktopStartupLog(phase === 'client' ? 'client ready' : 'event-dispatch is ready')
+    if (supervisor?.isDiagnosticMode === true) {
+      profileTransactionManager?.failed()
+      void appendDesktopStartupLog('Diagnostic Profile readiness does not verify the active Profile or its plugin snapshots.')
+      if (phase === 'client') void pluginSnapshotManager?.handleHarnessFailure(
+        'The active Profile failed to start; only the installation-owned diagnostic Profile became ready.',
+      ).catch((error: unknown) => {
+        console.error('desktop: snapshot rollback after diagnostic fallback failed', error)
+      })
+      return
+    }
     const readinessComplete = reportedDesktopReadiness.size === 2
+    if (readinessComplete) profileTransactionManager?.ready()
     const manager = pluginSnapshotManager
     if (manager !== undefined) void (async () => {
       await manager.reportReadiness(phase)
@@ -1764,9 +1752,7 @@ async function startApplication(): Promise<void> {
     if (harnessOrigin === undefined) throw new Error('desktop: Harness must be ready before opening recovery mode')
     if (menuBusy()) throw new Error(menuCopy(menuLocale).busy)
     showLoading('failed', {
-      message: app.getLocale().toLowerCase().startsWith('zh')
-        ? '已从开发模式手动进入恢复工作区。Harness 仍在运行，可以不做任何修改，直接点击“继续”返回客户端。'
-        : 'Recovery workspace was opened manually from a development build. Harness is still running; you can choose Continue without making changes to return to the client.',
+      message: shellMessages(app.getLocale()).recoveryPreview,
       logPath: harnessLogPath,
     })
     return { entered: true as const }
@@ -1774,7 +1760,7 @@ async function startApplication(): Promise<void> {
   ipcMain.handle('dsh:desktop:recovery-plugins:list', (event) => {
     assertMainRenderer(event.sender)
     if (activeMenuHome === undefined) throw new Error('desktop: active Profile is unavailable')
-    return readRecoveryPluginInventory(activeMenuHome)
+    return readRecoveryPluginInventory(recoveryCandidateHome?.() ?? activeMenuHome)
   })
   ipcMain.handle('dsh:desktop:recovery-plugins:remove', async (event, packageName: unknown) => {
     assertMainRenderer(event.sender)
@@ -1782,12 +1768,12 @@ async function startApplication(): Promise<void> {
     if (activeMenuHome === undefined || recoveryPluginRemove === undefined) {
       throw new Error('desktop: recovery plugin removal is not ready')
     }
-    const inventory = await readRecoveryPluginInventory(activeMenuHome)
+    const inventory = await readRecoveryPluginInventory(recoveryCandidateHome?.() ?? activeMenuHome)
     if (!inventory.plugins.some(plugin => plugin.packageName === packageName)) {
       throw new Error('desktop: recovery plugin is not a direct removable dependency')
     }
     await recoveryPluginRemove(packageName)
-    return readRecoveryPluginInventory(activeMenuHome)
+    return readRecoveryPluginInventory(recoveryCandidateHome?.() ?? activeMenuHome)
   })
   ipcMain.handle('dsh:desktop:recovery:export', async (event) => {
     assertMainRenderer(event.sender)
@@ -1797,7 +1783,7 @@ async function startApplication(): Promise<void> {
     const inventory = await readRecoveryPluginInventory(activeMenuHome)
     const day = new Date().toISOString().slice(0, 10)
     const result = await dialog.showSaveDialog(surface.window, {
-      title: app.getLocale().toLowerCase().startsWith('zh') ? '导出诊断报告' : 'Export diagnostic report',
+      title: shellMessages(app.getLocale()).exportDiagnostics,
       defaultPath: join(app.getPath('documents'), `DeepSeek-Harness-diagnostic-${day}.json`),
       filters: [{ name: 'JSON', extensions: ['json'] }],
     })
@@ -1823,14 +1809,16 @@ async function startApplication(): Promise<void> {
     }, undefined, 2)}\n`, { mode: 0o600 })
     return { saved: true as const, fileName: basename(result.filePath) }
   })
-  ipcMain.handle('dsh:desktop:recovery:exit', (event) => {
+  ipcMain.handle('dsh:desktop:recovery:exit', async (event) => {
     assertMainRenderer(event.sender)
-    if (menuBusy()) throw new Error(menuCopy(menuLocale).busy)
+    if (recoveryCandidateHome?.() !== undefined) await recoveryDiscardCandidate?.()
+    else if (menuBusy()) throw new Error(menuCopy(menuLocale).busy)
     setTimeout(() => { void lifecycle?.requestQuit() }, 0)
     return { exiting: true as const }
   })
-  ipcMain.handle('dsh:harness:retry', (event) => {
+  ipcMain.handle('dsh:harness:retry', async (event) => {
     assertMainRenderer(event.sender)
+    await recoveryActivateCandidate?.()
     if (recoveryRestartRequired) {
       setTimeout(() => { requestDesktopRestart() }, 150)
       return { started: true }
@@ -1936,12 +1924,12 @@ async function startApplication(): Promise<void> {
     const chooser = mainWindow
     const result = await (chooser === undefined
       ? dialog.showOpenDialog({
-        title: chinese ? '选择插件本地来源' : 'Choose a local plugin source',
+        title: shellMessages(app.getLocale()).choosePluginSource,
         properties: kind === 'directory' ? ['openDirectory'] : ['openFile'],
         ...(kind === 'archive' ? { filters: [{ name: 'npm package', extensions: ['tgz'] }] } : {}),
       })
       : dialog.showOpenDialog(chooser, {
-        title: chinese ? '选择插件本地来源' : 'Choose a local plugin source',
+        title: shellMessages(app.getLocale()).choosePluginSource,
         properties: kind === 'directory' ? ['openDirectory'] : ['openFile'],
         ...(kind === 'archive' ? { filters: [{ name: 'npm package', extensions: ['tgz'] }] } : {}),
       }))
@@ -1959,8 +1947,8 @@ async function startApplication(): Promise<void> {
       if (importedPluginVersionDiffers(entry.declaredSpec, staged.manifest.version)) {
         const confirmation = await showDesktopMessageBox({
           type: 'warning',
-          title: chinese ? '插件版本与原配置不同' : 'Plugin version differs from the imported configuration',
-          message: chinese ? `仍要安装 ${entry.packageName} 吗？` : `Install ${entry.packageName} anyway?`,
+          title: shellMessages(app.getLocale()).pluginVersionDiffers,
+          message: shellMessages(app.getLocale()).confirmPlugin(entry.packageName),
           detail: chinese
             ? `原声明：${entry.declaredSpec}\n本地版本：${staged.manifest.version ?? '未知'}\n本地包将安装到桌面版独立环境。`
             : `Imported declaration: ${entry.declaredSpec}\nLocal version: ${staged.manifest.version ?? 'unknown'}\nThe local package will install into the independent Desktop environment.`,
@@ -2163,6 +2151,7 @@ async function startApplication(): Promise<void> {
       cancelBootableSnapshot()
       await Promise.allSettled([
         releaseDownloader?.dispose(), oneShotOperations.dispose(), supervisor?.stop(), desktopReturnControl?.close(),
+        profileTransactionManager?.dispose(),
       ])
     },
     releaseQuit: () => {
@@ -2289,9 +2278,18 @@ async function startApplication(): Promise<void> {
       recoveryRestartRequired = true
     }
     await appendDesktopStartupLog(`Recovery mode is removing external plugin ${packageName}.`)
-    await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
+    const remove = () => runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
       'plugin', '--profile', 'web', 'remove', packageName,
     ], launchOptions), `recovery-plugin-remove:${packageName}`, BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS)
+    if (supervisor === undefined) await remove()
+    else {
+      if (recoveryMutationBusy || managedCandidateActive || (desktopCandidateId !== undefined && !recoveryOwnsCandidate)) {
+        throw new Error('desktop: another plugin mutation is active')
+      }
+      recoveryMutationBusy = true
+      recoveryOwnsCandidate = true
+      try { await withProfileMutationSafety('recovery-plugin-remove', remove) } finally { recoveryMutationBusy = false }
+    }
     await appendDesktopStartupLog(`Recovery mode removed external plugin ${packageName}.`)
   }
   const runSnapshotCommand = async <T>(
@@ -2306,29 +2304,119 @@ async function startApplication(): Promise<void> {
     return parsePluginSnapshotJson(output) as T
   }
   const startupSafety = { rollbackFailed: false }
+  let desktopCandidateId: string | undefined
+  const mutationHome = (): string => harnessEnvironment.DSH_HOME ?? dshHome
+  const candidateEnvironment = (id: string): NodeJS.ProcessEnv => ({
+    ...harnessEnvironment, DSH_HOME: dshHome,
+    DSH_PLUGIN_TRANSACTION_ORIGIN: undefined,
+    DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN: id,
+  })
+  const beginDesktopCandidate = async (): Promise<void> => {
+    if (desktopCandidateId !== undefined) return
+    cancelBootableSnapshot()
+    const output = await runDesktopInvocation(resolveHarnessInvocation({
+      ...harnessEnvironment, DSH_HOME: dshHome, DSH_DESKTOP_MUTATION_OWNER_PID: String(process.pid),
+      ...(supervisor === undefined ? { DSH_PLUGIN_SNAPSHOT_BATCH: '1' } : {}),
+    }, ['plugin', '--profile', 'web', 'transaction', 'prepare'], launchOptions), 'plugin-candidate-prepare', 60_000)
+    const parsed = parsePluginSnapshotJson(output) as { id?: unknown }
+    if (typeof parsed.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(parsed.id)) {
+      throw new Error('desktop: invalid prepared transaction ID')
+    }
+    desktopCandidateId = parsed.id
+    harnessEnvironment.DSH_HOME = join(dshHome, 'plugin-transactions', 'web', parsed.id, 'candidate')
+    harnessEnvironment.DSH_PLUGIN_TRANSACTION_ORIGIN = dshHome
+    harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = parsed.id
+    harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID = String(process.pid)
+  }
+  const clearCandidateEnvironment = (): void => {
+    desktopCandidateId = undefined
+    harnessEnvironment.DSH_HOME = dshHome
+    delete harnessEnvironment.DSH_PLUGIN_TRANSACTION_ORIGIN
+    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
+  }
+  const discardDesktopCandidate = async (): Promise<void> => {
+    const id = desktopCandidateId
+    if (id === undefined) return
+    const environment = candidateEnvironment(id)
+    clearCandidateEnvironment()
+    await runDesktopInvocation(resolveHarnessInvocation(environment,
+      ['plugin', '--profile', 'web', 'transaction', 'rollback', id], launchOptions), 'plugin-candidate-discard', 60_000, [0], true)
+    await runDesktopInvocation(resolveHarnessInvocation(environment,
+      ['plugin', '--profile', 'web', 'snapshot', 'end-restore-lease'], launchOptions), 'plugin-candidate-release', 15_000, [0], true)
+  }
+  const activateDesktopCandidate = async (resume: boolean): Promise<void> => {
+    const id = desktopCandidateId
+    if (id === undefined) return
+    await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment,
+      ['plugin', '--profile', 'web', 'doctor'], launchOptions), 'plugin-candidate-check', PROFILE_CHECK_TIMEOUT_MS)
+    await runDesktopInvocation(resolveHarnessInvocation(candidateEnvironment(id),
+      ['plugin', '--profile', 'web', 'transaction', 'ready', id], launchOptions), 'plugin-candidate-ready', 15_000)
+    clearCandidateEnvironment()
+    if (profileTransactionManager === undefined) throw new Error('desktop: plugin activation manager unavailable')
+    try { await profileTransactionManager.activatePrepared(id, resume) } catch (error) {
+      desktopCandidateId = id
+      throw error
+    }
+    if (resume && !await profileTransactionManager.waitForSettlement(id)) {
+      throw new Error('desktop: plugin startup failed; the previous Profile was restored')
+    }
+  }
+  profileTransactionManager = new ProfileTransactionManager({
+    home: dshHome,
+    command: async (args, token) => {
+      const environment: NodeJS.ProcessEnv = { ...harnessEnvironment, DSH_HOME: dshHome, DSH_PLUGIN_TRANSACTION_ORIGIN: undefined }
+      if (token !== undefined) environment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = token
+      await runDesktopInvocation(resolveHarnessInvocation(environment, [
+        'plugin', '--profile', 'web', ...args,
+      ], launchOptions), 'profile-transaction', 60_000)
+    },
+    stopHarness: async () => { await supervisor?.stop() },
+    resumeHarness: () => { supervisor?.resume() },
+    onActivation: () => {
+      cancelBootableSnapshot()
+      publishStartupProgress({ stage: 'starting-harness', progress: 88 })
+    },
+    onRollback: () => {
+      void appendDesktopStartupLog('Plugin activation failed; the previous Profile was restored and is restarting.')
+    },
+    onError: (error) => {
+      startupSafety.rollbackFailed = true
+      cancelBootableSnapshot()
+      console.error('desktop: plugin transaction requires recovery', error)
+      void appendDesktopStartupLog('Plugin transaction could not be settled; its recovery journal was retained.')
+      if (supervisor !== undefined) void supervisor.stop().then(() => {
+        showLoading('failed', {
+          message: shellMessages(app.getLocale()).transactionRecoveryFailed,
+          logPath: harnessLogPath,
+        })
+      })
+    },
+  })
+  try { await profileTransactionManager.recoverBeforeStartup() } catch (error) {
+    startupSafety.rollbackFailed = true
+    await appendDesktopStartupLog('Interrupted plugin transaction recovery failed; using diagnostic mode.')
+    console.error('desktop: interrupted plugin transaction recovery failed', error)
+  }
   const withProfileMutationSafety = async <T>(
     operationKind: string,
     operation: () => Promise<T>,
   ): Promise<T> => {
-    const token = randomUUID()
-    let leaseActive = false
+    await beginDesktopCandidate()
     let safetySnapshotId: string | undefined
-    harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = token
-    harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID = String(process.pid)
     try {
-      await runSnapshotCommand(['begin-restore-lease'], SNAPSHOT_COMMAND_TIMEOUT_MS)
-      leaseActive = true
       const safety = await runSnapshotCommand<{ snapshotId: string }>(['create-safety'], SNAPSHOT_COMMAND_TIMEOUT_MS)
       safetySnapshotId = safety.snapshotId
       try {
-        return await operation()
+        const result = await operation()
+        return result
       } catch (operationError) {
         try {
           await runSnapshotCommand(['restore-files', safety.snapshotId], SNAPSHOT_COMMAND_TIMEOUT_MS, true)
           await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
             'plugin', '--profile', 'web', 'install', '--offline', '--frozen-lockfile',
           ], launchOptions), `${operationKind}:rollback`, BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS, [0], true)
-          await appendDesktopStartupLog(`Rolled back startup mutation ${operationKind}.`)
+          await appendDesktopStartupLog(`Rolled back candidate mutation ${operationKind}.`)
         } catch (rollbackError) {
           startupSafety.rollbackFailed = true
           safetySnapshotId = undefined
@@ -2350,13 +2438,42 @@ async function startApplication(): Promise<void> {
           await runSnapshotCommand(['settle-safety', safetySnapshotId], SNAPSHOT_COMMAND_TIMEOUT_MS, true)
         }
       } finally {
-        try {
-          if (leaseActive) await runSnapshotCommand(['end-restore-lease'], SNAPSHOT_COMMAND_TIMEOUT_MS, true)
-        } finally {
-          delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
-          delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
-        }
+        if (startupSafety.rollbackFailed) await discardDesktopCandidate()
       }
+    }
+  }
+  let managedCandidateActive = false
+  let recoveryOwnsCandidate = false
+  let recoveryMutationBusy = false
+  recoveryCandidateHome = () => recoveryOwnsCandidate && desktopCandidateId !== undefined ? mutationHome() : undefined
+  recoveryActivateCandidate = async () => {
+    if (!recoveryOwnsCandidate) return
+    if (recoveryMutationBusy) throw new Error('desktop: recovery plugin removal is still running')
+    try { await activateDesktopCandidate(false) } finally { recoveryOwnsCandidate = desktopCandidateId !== undefined }
+  }
+  recoveryDiscardCandidate = async () => {
+    if (!recoveryOwnsCandidate) return
+    if (recoveryMutationBusy) throw new Error('desktop: recovery plugin removal is still running')
+    try { await discardDesktopCandidate() } finally { recoveryOwnsCandidate = desktopCandidateId !== undefined }
+  }
+  const runManagedPluginMutation = async <T>(operation: () => Promise<T>): Promise<T> => {
+    if (managedCandidateActive || desktopCandidateId !== undefined) throw new Error('desktop: another plugin mutation is active')
+    managedCandidateActive = true
+    try {
+      await beginDesktopCandidate()
+      const result = await operation()
+      await activateDesktopCandidate(true)
+      return result
+    } catch (error) {
+      try { await discardDesktopCandidate() } catch (rollbackError) {
+        startupSafety.rollbackFailed = true
+        console.error('desktop: managed plugin recovery journal retained', rollbackError)
+        await supervisor?.stop()
+      }
+      throw error
+    } finally {
+      managedCandidateActive = false
+      restartBootableSnapshotStabilityWindow('managed plugin mutation settled')
     }
   }
   const profileCheckStartedAt = Date.now()
@@ -2382,8 +2499,8 @@ async function startApplication(): Promise<void> {
     profileMutationLock = inspectProfileMutationLock(dshHome)
   }
   const profileMutationBlocked = profileMutationLock.active
-  let startupProfileMutationAllowed = !profileMutationBlocked
-  let profileNeedsRepair = !profileInitialized && !profileMutationBlocked
+  let startupProfileMutationAllowed = !profileMutationBlocked && !startupSafety.rollbackFailed
+  let profileNeedsRepair = !profileInitialized && startupProfileMutationAllowed
   if (profileMutationBlocked) {
     const created = profileMutationLock.createdAt === undefined
       ? undefined
@@ -2410,7 +2527,7 @@ async function startApplication(): Promise<void> {
       detail: 'profile-lock-safe-mode',
       state: 'degraded',
     })
-  } else if (profileInitialized) {
+  } else if (profileInitialized && !startupSafety.rollbackFailed) {
     try {
       await appendDesktopStartupLog('Checking Web Profile compatibility without modifying it.')
       const inspection = await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
@@ -2484,7 +2601,7 @@ async function startApplication(): Promise<void> {
           state: 'degraded',
         })
         showLoading('failed', {
-          message: `Web Profile initialization failed: ${message}`,
+          message: shellMessages(app.getLocale()).initializeFailed(message),
           logPath: harnessLogPath,
         })
         return
@@ -2537,7 +2654,7 @@ async function startApplication(): Promise<void> {
   bundledPluginInstaller = new BundledPluginInstaller({
     manifest,
     resourcesDirectory: bundledDirectory,
-    dshHome,
+    get dshHome() { return mutationHome() },
     repairLegacyMarkers: !app.isPackaged,
     startupBudgetMs: 120_000,
     shouldAttemptStartup: plugin => startupPluginCooldown.shouldAttempt(plugin.packageName, plugin.version),
@@ -2547,6 +2664,7 @@ async function startApplication(): Promise<void> {
       restartBootableSnapshotStabilityWindow(`bundled plugin ${plugin.packageName} settled`)
     },
     withStartupTransaction: (plugin, operation) => withStartupPluginTransaction(plugin.packageName, operation),
+    withManagedTransaction: (_plugin, operation) => runManagedPluginMutation(operation),
     prepare: async (plugin) => {
       await appendDesktopStartupLog(`Preparing bundled plugin ${plugin.packageName}@${plugin.version}.`)
       for (const packageName of plugin.approvedBuilds ?? []) {
@@ -2606,7 +2724,7 @@ async function startApplication(): Promise<void> {
   const installedProfileDependencies: Record<string, string> = {}
   try {
     const profileManifest = JSON.parse(
-      await readFile(join(dshHome, 'profiles', 'web', 'package.json'), 'utf8'),
+      await readFile(join(mutationHome(), 'profiles', 'web', 'package.json'), 'utf8'),
     ) as { dependencies?: Record<string, unknown> }
     for (const [packageName, declaredSpec] of Object.entries(profileManifest.dependencies ?? {})) {
       if (typeof declaredSpec === 'string') installedProfileDependencies[packageName] = declaredSpec
@@ -2615,16 +2733,17 @@ async function startApplication(): Promise<void> {
     console.warn('desktop: could not identify installed startup plugins for imported restore', error)
   }
   importedPluginRestoreManager = new ImportedPluginRestoreManager({
-    dshHome,
+    get dshHome() { return mutationHome() },
     providedDependencies: installedProfileDependencies,
     inspectSource: packageSpec => inspectImportedPluginSource(packageSpec, harnessEnvironment, launchOptions),
     install: packageSpec => runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
       'plugin', '--profile', 'web', 'add', packageSpec,
     ], launchOptions), 'imported-plugin-install', IMPORTED_PLUGIN_INSTALL_TIMEOUT_MS),
-    mergeAllowBuilds: (profileDir, rules) => withProfileMutationSafety(
+    mergeAllowBuilds: (_profileDir, rules) => withProfileMutationSafety(
       'imported-plugin-allow-builds',
-      () => mergeImportedAllowBuilds(profileDir, rules),
+      () => mergeImportedAllowBuilds(join(mutationHome(), 'profiles', 'web'), rules),
     ),
+    withMutation: operation => runManagedPluginMutation(operation),
   })
   try {
     if (startupProfileMutationAllowed) await importedPluginRestoreManager.prepare()
@@ -2635,9 +2754,23 @@ async function startApplication(): Promise<void> {
     console.warn('desktop: imported plugin restore metadata is unavailable; startup will continue', error)
     await appendFile(harnessLogPath, `[desktop] Imported plugin restore unavailable: ${error instanceof Error ? error.message : String(error)}\n`)
   }
+  try {
+    if (startupSafety.rollbackFailed) await discardDesktopCandidate()
+    else await activateDesktopCandidate(false)
+  } catch (error) {
+    try { await discardDesktopCandidate() } catch (rollbackError) {
+      startupSafety.rollbackFailed = true
+      console.error('desktop: candidate startup rollback needs recovery', rollbackError)
+    }
+    await appendDesktopStartupLog('Startup candidate could not be activated; preserved the prior Profile.')
+    console.error('desktop: startup plugin candidate failed', error)
+  }
   publishStartupProgress({ stage: 'starting-harness', progress: 88 })
   await appendDesktopStartupLog('Starting Harness supervisor.')
-  const launch = resolveHarnessLaunch(harnessEnvironment, launchOptions)
+  const launch = resolveHarnessLaunch({
+    ...harnessEnvironment, DSH_DESKTOP_MUTATION_OWNER_PID: String(process.pid),
+  }, launchOptions)
+  profileTransactionManager.start()
   const notificationCopy = desktopNotificationDictionary(app.getLocale())
   const allowNotification = createNotificationThrottle(5 * 60_000)
   let recovering = false
@@ -2650,7 +2783,7 @@ async function startApplication(): Promise<void> {
   supervisor = new HarnessSupervisor({
     launch,
     logPath: harnessLogPath,
-    environment: harnessEnvironment,
+    environment: { ...harnessEnvironment },
     ...(profileMutationBlocked || startupSafety.rollbackFailed
       ? {
         initialSafeMode: true,
@@ -2685,7 +2818,7 @@ async function startApplication(): Promise<void> {
       desktopWebAccess?.openAutomatically(preferences.openBrowserOnStartup)
     },
     onState: (state) => {
-      if (state === 'restarting' || state === 'failed') {
+      if (state === 'restarting' || state === 'failed' || state === 'stopped') {
         cancelBootableSnapshot()
         harnessOrigin = undefined
         desktopReturnControl?.clear()
@@ -2702,6 +2835,7 @@ async function startApplication(): Promise<void> {
       }
     },
     onFailure: (failure) => {
+      profileTransactionManager?.failed()
       if (pluginSnapshotManager === undefined) {
         showLoading('failed', { ...failure, logPath: harnessLogPath })
         showNotification('failed', notificationCopy.failed)
@@ -2785,6 +2919,28 @@ async function startApplication(): Promise<void> {
     logDirectory: join(app.getPath('logs'), 'diagnostic-lab'),
     suspendHarness: async () => { await supervisor?.stop() },
     resumeHarness: () => { supervisor?.resume() },
+    runTransactionInterruptionExercise: async () => {
+      const home = await mkdtemp(join(tmpdir(), 'dsh-transaction-lab-'))
+      const environment: NodeJS.ProcessEnv = { ...harnessEnvironment, DSH_HOME: home, DSH_DIAGNOSTIC_LAB: '1' }
+      delete environment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+      try {
+        const output = await runDesktopInvocation(resolveHarnessInvocation(environment, [
+          'plugin', '--profile', 'web', 'transaction', 'exercise',
+        ], launchOptions), 'diagnostic-transaction-interrupt', 15_000)
+        const record = parsePluginSnapshotJson(output) as { id?: unknown }
+        if (typeof record.id !== 'string' || !/^[a-f0-9-]{36}$/u.test(record.id)) throw new Error('invalid diagnostic transaction ID')
+        const journal = join(home, 'plugin-transactions', 'web', 'pending.json')
+        const generation = join(home, 'profiles', 'web', 'node_modules', 'diagnostic-generation')
+        const interrupted = await readFile(generation, 'utf8') === 'unconfirmed'
+          && (JSON.parse(await readFile(journal, 'utf8')) as { phase?: unknown }).phase === 'checking-startup'
+        await runDesktopInvocation(resolveHarnessInvocation(environment, [
+          'plugin', '--profile', 'web', 'transaction', 'rollback', record.id,
+        ], launchOptions), 'diagnostic-transaction-recover', 15_000)
+        const recovered = await readFile(generation, 'utf8') === 'healthy'
+          && !await lstat(journal).then(() => true, () => false)
+        return { interrupted, recovered }
+      } finally { await rm(home, { recursive: true, force: true }) }
+    },
     runStartupTimeoutExercise: async () => {
       const directory = await mkdtemp(join(tmpdir(), 'dsh-startup-timeout-lab-'))
       const marker = join(directory, 'mutation.marker')

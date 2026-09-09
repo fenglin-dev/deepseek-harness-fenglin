@@ -209,6 +209,22 @@
   display: none;
 }
 
+/* The far-right corner seat reaches 16px into the header's 28px right padding,
+   so its control sits past the utilities' edge; it is laid out only while an
+   occupant is registered, and the occupant keeps its width while hidden, so the
+   utilities never move because of it. */
+.headerCorner {
+  display: flex;
+  flex: none;
+  align-items: center;
+  margin-left: 12px;
+  margin-right: -16px;
+}
+
+.headerCorner:empty {
+  display: none;
+}
+
 /* figma Tab_Group 34:11441: 35px strip, gap 36, pad-left 8, tabs bottom-aligned. */
 .tabs {
   position: relative;
@@ -497,9 +513,10 @@
   gap: 2px;
   min-width: 0;
   margin-top: 4px;
-  /* figma drew px 8; nudged +12 so the chip's folder glyph lines up closer to
-     the card's inner controls below. */
-  padding-left: 20px;
+  /* figma drew px 8; left nudged +12 so the chip's folder glyph lines up
+     closer to the card's inner controls below; right keeps the trailing
+     preset seat off the card edge. */
+  padding: 0 16px 0 20px;
 }
 
 /* Hero: the composer sits inside the session scroll body; center there so

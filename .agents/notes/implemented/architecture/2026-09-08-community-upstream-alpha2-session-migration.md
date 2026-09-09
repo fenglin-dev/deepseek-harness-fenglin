@@ -10,7 +10,7 @@ Upstream replaces the persistence coordinator with SessionHandle ownership and a
 
 ## Decision
 
-The integration is pinned to `dsh-v0.1.3-alpha.2` (`82a5fd61a7cf5c293cec4bdff68f455398d685e9`), not upstream master. Desktop branding, bundled plugin versions, native titlebar/content isolation, diagnostic recovery, snapshots and external-tool controls remain downstream-owned.
+The [current integration decision](2026-09-09-community-alpha15-runtime-and-connection.md) owns the upstream tag and runtime choices. This record retains the V0/V1 historical repair policy. Desktop branding, bundled plugin versions, native titlebar/content isolation, diagnostic recovery, snapshots and external-tool controls remain downstream-owned.
 
 The v0-to-v1 and decoded v1-to-v2 migration stages buffer an empty-identity assistant tool message and its adjacent failed call/result pairs. Only matching `UNKNOWN_TOOL` results with the same turn, step, arguments and source sequence receive deterministic synthetic identities. Ambiguous or incomplete groups fail migration; no event is silently discarded. Existing source files remain untouched by the generation-specific migration writer. The newly generated v2 artifact contains the repaired identities.
 
@@ -20,7 +20,7 @@ CLI startup retains dependency healing and safe-mode composition while installin
 
 ## Alternatives considered
 
-The embedded external-tool manifest and Web installation fallback pin both official Providers to `0.1.3-alpha.2`, with registry-verified SHA-512 values. Codex `0.149.1` and Claude Agent SDK `0.3.241` remain unchanged. Updating these local pins does not publish the remote signed manifest or update users' installed tools. A remote publication needs a separate compatibility review for the desktop version line it serves.
+The embedded external-tool manifest and Web installation fallback use exact registry-verified Provider versions. Updating these local pins does not publish the remote signed manifest or update users' installed tools. A remote publication needs a separate compatibility review for the desktop version line it serves.
 
 **Keep the coordinator.** Rejected because upstream's SessionHandle and exclusive writer lease own persistence; duplicating them would undermine locking and migration.
 
@@ -32,7 +32,7 @@ Historical packed tool deltas may have empty string IDs or names. The physical r
 
 ## Consequences
 
-Upgraded sessions use v2 storage and must not be assumed readable by the previous desktop release. Plugin snapshots restore deployment state, not session data. Verification uses synthetic temporary sessions, never users' live configuration. The upstream process-cleanup changes do not establish that Windows out-of-workspace deletion is prevented.
+The repaired v2 generation feeds the adjacent V3 migrator; the final generation must not be assumed readable by the previous desktop release. Plugin snapshots restore deployment state, not session data. Verification uses synthetic temporary sessions, never users' live configuration. The upstream process-cleanup changes do not establish that Windows out-of-workspace deletion is prevented.
 
 The existing [gateway identity decision](../bug-fix/2026-08-17-empty-gateway-tool-call-identity.md) remains active: it prevents malformed new stream identities, while this migration handles already persisted failures.
 

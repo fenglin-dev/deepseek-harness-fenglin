@@ -25,7 +25,7 @@ This package renders the deliverables row a finished turn ends with — the file
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin alongside `ui-conversation`; a finished turn then ends with the produced-files row between the closing message's body and its action footer. Each chip opens the file through the Host opener, with relative paths resolved against the session cwd; when the row first appears, it queries `session.canOpenWorkspacePath()`, and an omitted-file **Show in folder** action opens the session workspace only when the page is loopback and that query succeeds with `true`.
+Mount this plugin alongside `ui-conversation`; a finished turn then ends with the produced-files row between the closing message's body and its action footer. Each chip opens the file through the owner's `openFile`, which the chat view routes to the right Sidebar as a text-preview tab, with relative paths resolved against the session cwd. The row offers no folder action: the Sidebar has no directory form, so an omitted-file remainder is a label only.
 
 ### The row
 
@@ -55,7 +55,7 @@ The Node half registers the static `ui:deliverable-file-references` system-promp
 Read these pages when the deliverables surface is not enough. They move from the row to the turn-tail hole and the decisions behind the vocabulary.
 
 - [ui-conversation](../ui-conversation/README.md) — declares the `conversation.chat.turnTail` hole and renders the closing prose.
-- [Workspace file links](../../../.agents/notes/implemented/feature/2026-07-31-web-workspace-file-links.md) — the decision behind the produced-files row and the Host open path.
+- [Workspace file links](../../../.agents/notes/implemented/feature/2026-07-31-web-workspace-file-links.md) — the decision behind the produced-files row; its Host open path is superseded by the [right Sidebar](../../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.md).
 - [Inline file mentions](../../../.agents/notes/archived/feature/2026-08-07-web-inline-file-mentions.md) — the decision behind clickable mentions in the closing prose.
 - [Client package map](../README.md) — adjacent browser UI packages.
 
@@ -87,7 +87,7 @@ These limits define the current deliverables vocabulary. They are current packag
 
 - **Mention matching is exact path or unique basename only** — a suffix mention stays inert; widening the matcher is deferred until a real closing-message shape needs it.
 - **Files created indirectly by terminal commands remain outside the matching vocabulary** — naming such a file in inline code does not make it clickable unless a successful mutation location also records that path.
-- **Native folder handoff targets the Host desktop** — a browser reached through a non-loopback authority omits the action, as does a deployment reporting no native opener; SSH forwarding that makes a remote Host look loopback-local must set the Session Controller's `nativeOpen: false`.
+- **Directories have no destination** — chips open files in the right Sidebar's text preview, which shows files only; the former native folder handoff is gone rather than replaced.
 
 <a id="dev-note"></a>
 ### Dev Note

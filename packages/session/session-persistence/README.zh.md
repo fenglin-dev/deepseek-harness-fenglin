@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-session-persistence` 持久存储会话的事件日志，并通过一个逐会话句柄寻址每个已存储会话：后端无关服务（`ctx.sessionPersistence`）暴露 `create`/`open`/`stat`/`list`，`create`/`open` 返回承载全部日志读写与单写者所有权的 `SessionHandle`。持久化单元就是现有 `SessionEvent` 日志——不存在另一套并行的存储消息类型——不可回放的元数据（格式版本、工作目录、血缘、种子边界）作为 `SessionHeader` 单独传输。后端拥有自己的存储，seam 拥有语义：仅追加的连续日志、以显式 `flush` 持久性屏障托底的尽力而为 append、绝不到达读取方的撕裂物理尾部、失败即关闭的存储记录校验，以及进程内排除第二个写入方。挂载随产品交付的 [JSONL 后端](../session-persistence-jsonl/README.zh.md)（每个会话一份产物），agent-loop 就会持久化并恢复会话，loop 与模型无需知道下面是哪个后端。
+本包让应用通过后端无关的 API 持久存储并恢复会话事件日志。读者可以创建、打开、检查、列出、追加、读取、刷新和关闭已存储会话，同时保持连续且仅追加的历史记录。只有完成 flush 才构成持久性屏障；读取方不会收到撕裂尾部或无效记录，并且每个后端实例内每个会话只允许一个写入方。若希望每个会话使用一份压缩日志，可选用随产品交付的 [JSONL 后端](../session-persistence-jsonl/README.zh.md)；也可以实现具备相同可观察保证的其他后端。
 
 ## 目录
 

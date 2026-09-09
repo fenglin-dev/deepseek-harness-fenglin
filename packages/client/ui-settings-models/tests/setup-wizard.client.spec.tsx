@@ -67,6 +67,7 @@ function mount({ modelReady = false, acknowledge = true }: {
     complete,
     openSection,
     useSessions: unusedHook,
+    useResource: unusedHook,
     useSessionPendingInteraction: (() => new Map()) as never,
     useWorkspaces: unusedHook,
     modelsController,

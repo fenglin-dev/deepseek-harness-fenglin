@@ -1,0 +1,423 @@
+/*
+ * Docking-kit styles. One sheet on purpose: a consumer bundle de-duplicates
+ * injected stylesheets by `<pluginId>/<basename>`, so a second sheet whose file
+ * name matches one in the embedding package would be dropped silently. Keeping
+ * a single `dockkit.module.css` makes that collision impossible.
+ *
+ * Colours come from the embedder's token layer; the kit names no literal. Type
+ * follows the embedder's content axis (`--dsh-content-font-size` and its
+ * secondary step) so a surface reads at the same size as the page around it.
+ * Emphasis — a hovered divider, the drop caret, the drop-zone hint — takes the
+ * platform's accent (`--dsw-alias-brand-primary-new-colorprimary-new-color`),
+ * not `--dsw-alias-brand-primary`, which this platform binds to its
+ * near-black (light) or near-white (dark) foreground.
+ */
+
+.split {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.splitRow {
+  flex-direction: row;
+}
+
+.splitColumn {
+  flex-direction: column;
+}
+
+.splitCell {
+  display: flex;
+  flex-basis: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.divider {
+  position: relative;
+  flex: none;
+  background: var(--dsw-alias-border-l1);
+  touch-action: none;
+}
+
+.splitRow > .divider {
+  width: 4px;
+  cursor: col-resize;
+}
+
+.splitColumn > .divider {
+  height: 4px;
+  cursor: row-resize;
+}
+
+.divider:hover {
+  background: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+/* Both floors: a flex item's minimum is its content's, and a body's longest
+   unwrapped line would widen the surface past the embedder's box, carrying the
+   strip's controls and the body's scrollbar out of view. */
+.surface {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A body that overflows scrolls inside its pane; nothing escapes the pane. */
+.pane {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+}
+
+.pane[data-dockkit-pane-active] {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+/* One centre line for everything in the strip: every child — chip, add
+   control, split control, the embedder's chrome — is 24px tall, and the strip
+   centres them, so chip text and control glyphs never sit at different heights.
+   A child with another height would break that; keep them at 24px.
+
+   The strip never clips: the chip box below is its one shrinking part, and
+   every control after it is `flex: none`, so a narrow pane costs chips, never
+   controls. */
+.tabStrip {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  height: 36px;
+  padding: 0 6px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+  touch-action: none;
+}
+
+/* The chips. Shrinks to nothing before any control after it moves; what no
+   longer fits is clipped here. Deliberately not a scroller: a horizontal
+   scroll container claims a press-and-move as its own gesture and cancels the
+   pointer, which would abandon every tab drag in a narrow pane. Tabs shrink
+   and ellipsize first. */
+.stripTabs {
+  display: flex;
+  flex: 0 1 auto;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* Takes the free space and gives it all back first: a zero basis shrinks
+   nothing, so shortage lands on the chip box alone. */
+.stripFill {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Embedder controls at the strip's end, set off from the kit's own split
+   control by a hairline so the two groups read as two groups. */
+.stripChrome {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+  height: 24px;
+  margin-left: 2px;
+  padding-left: 4px;
+  border-left: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+.caret {
+  flex: none;
+  align-self: center;
+  width: 2px;
+  height: 20px;
+  background: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  flex: 0 1 auto;
+  gap: 4px;
+  align-items: center;
+  min-width: 44px;
+  max-width: 170px;
+  height: 24px;
+  padding: 0 5px 0 10px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: 1;
+  white-space: nowrap;
+  border-radius: 12px;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.tabTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tabClose {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  color: inherit;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  corner-shape: round;
+  cursor: pointer;
+}
+
+.addTab {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.addTab:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.tabClose:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.tab:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The active chip is the filled capsule; the rest are bare text. */
+.tabActive {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.tabDragging {
+  opacity: 0.5;
+}
+
+.iconButton {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.iconButton:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.iconButton:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+/*
+ * Portalled beside the app root, so its stacking level is stated here: above the
+ * floating panels (which the embedder draws at 60), because a menu opened from
+ * a tab must never sit under a panel. No z-index token layer exists to draw from
+ * yet.
+ */
+.menu {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  min-width: 96px;
+  padding: 4px;
+  background: var(--dsw-alias-bg-layer-3);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+}
+
+.menuItem {
+  padding: 5px 8px;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.menuItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.paneBody {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;  /* This sheet draws elevated surfaces (the strip and the menu), so a scroller
+     inside it rebinds the thumb indirection in a complete pair — a base-surface
+     thumb on an elevated ground reads as a smudge. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.empty {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+}
+
+.dockHint {
+  position: absolute;
+  background: var(--dsw-alias-bg-multi-select);
+  border: 1px solid var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  pointer-events: none;
+}
+
+.dockHint[data-dockkit-dock-zone='center'] {
+  inset: 0;
+}
+
+.dockHint[data-dockkit-dock-zone='left'] {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+}
+
+.dockHint[data-dockkit-dock-zone='right'] {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 40%;
+}
+
+[data-dockkit-drop-zones='horizontal'] .dockHint[data-dockkit-dock-zone='left'],
+[data-dockkit-drop-zones='horizontal'] .dockHint[data-dockkit-dock-zone='right'] {
+  width: 50%;
+}
+
+[data-dockkit-drop-zones='horizontal'] .dockHint[data-dockkit-dock-zone='left']:not([data-dockkit-drop-active]),
+[data-dockkit-drop-zones='horizontal'] .dockHint[data-dockkit-dock-zone='right']:not([data-dockkit-drop-active]) {
+  background: transparent;
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.dockHint[data-dockkit-dock-zone='top'] {
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 40%;
+}
+
+.dockHint[data-dockkit-dock-zone='bottom'] {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 40%;
+}
+
+.float {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px var(--dsw-alias-bg-mask-drop);
+  pointer-events: auto;
+}
+
+/* The active panel keeps the same hairline: it is already on top of the z
+   order and casts the same shadow, and a heavier or darker frame read as a
+   defect. `data-dockkit-float-active` stays on the element for tests. */
+
+.floatHeader {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.floatTitle {
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.floatBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 10px;
+  overflow: auto;  /* This sheet draws elevated surfaces (the strip and the menu), so a scroller
+     inside it rebinds the thumb indirection in a complete pair — a base-surface
+     thumb on an elevated ground reads as a smudge. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.floatResize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.floatResize::after {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid var(--dsw-alias-label-tertiary);
+  border-bottom: 2px solid var(--dsw-alias-label-tertiary);
+  content: '';
+}

@@ -16,7 +16,7 @@ Status: implemented
 
 本决策取代[一次录制／确定性回放决策](2026-06-19-acp-snapshot-tests.zh.md)中 ACP 专属的放置位置与控制器所有权；后者继续负责会话日志回放、例外 override、规范化和 ACP transcript 比较。
 
-录制会话仍是主要输入和预期输出。来自用户的消息驱动所选公开接口，录制的 assistant chunk 驱动确定性模型回放，规范化后的持久化结果必须等于 fixture。父会话和子会话共享同一类型化脱敏映射。提交的 fixture 使用保留关系的身份 token，并将请求 system prompt 和工具 schema 替换为 token；每个不同 header 类仍保留一个显式 sidecar 所有者。
+录制会话仍是主要输入，并在当前代际场景中同时作为预期输出。来自用户的消息驱动所选公开接口，录制的 assistant chunk 驱动确定性模型回放，规范化后的持久化结果必须等于 fixture。父会话和子会话共享同一类型化脱敏映射。提交的 fixture 使用保留关系的身份 token，并将请求 system prompt 和工具 schema 替换为 token；每个不同 header 类仍保留一个显式 sidecar 所有者。
 
 Fixture 解码与比较只取决于选定 JSONL 内容；文件名标识 inventory role，但不是 parser 输入。replay、seed、record、refresh 与规范化比较路径都使用同一个严格静态 catalog 校验。
 
@@ -29,6 +29,8 @@ Headless stderr 重建会同时展开 `assistant/message` 与仅写入日志的 
 每个现有 ACP 场景都获得一个保留行为的目标。普通单次行为使用 headless profile，需要持久机器控制的行为使用 SDK profile，只有 ACP 协议行为继续归 ACP 所有。由录制会话驱动的 Web 场景加入该语料，并保留其 ARIA 或几何预期输出作为辅助证据。没有录制会话来源的 Web 和包级测试保留归属方本地的预期输出，并停止使用快照路径或文件名。
 
 Workspace 输入继续归各场景本地所有。变更文件的场景比较完整的预期最终 workspace，record 与 refresh 绝不改写该预期，因此模型或工具的自报结果无法满足测试。现有的有意会话复用继续使用显式、无环的所有者引用；语料不增加 workspace 继承或通用 fixture 合并机制。
+
+当前 writer 的 request-header pin 与保留的迁移输入分离：`tool-call-turn` 固定 default 组合，`empty-response-retry-current` 固定 retry 组合。可读 sidecar 仍由 `text-turn` 持有。六份保留的历史输入保持字节冻结，并继续被选为回放输入；其固定历史版本的目录不含会取代它们的规范 V3 同角色文件。单独的 `writer.expected.jsonl` 与 `writer.<ordinal>.expected.jsonl` 文件固定精确的规范化原生 V3 父子会话输出，保留历史输入的 SDK 场景则通过 `notifications.current.expected.jsonl` 固定当前通知。这些输出比较基准不是 replay 代际。[快照工具包](../../../../packages/test-support/session-snapshot/README.zh.md)负责选择与刷新行为。结构迁移可以保留请求含义而不复现原生 writer 的事件布局，因此正式迁移拥有独立的正确性测试。反向投影为历史 header、剥除结构差异、跳过输出相等断言或替换冻结输入都会掩盖回归，而不是验证这些相互独立的约定。
 
 ## Alternatives considered
 

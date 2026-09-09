@@ -512,11 +512,17 @@ export function createProfilePluginSnapshot(
     if (options.kind === 'bootable') {
       for (const previous of listProfilePluginSnapshots({ home, profile: options.profile })) {
         if (previous.kind === 'bootable' && previous.snapshotId !== snapshotId) {
-          rmSync(snapshotDirectory(home, previous.snapshotId), { recursive: true, force: true })
+          const { difference: _difference, ...retained } = previous
+          const metadata = join(snapshotDirectory(home, previous.snapshotId), SNAPSHOT_METADATA)
+          const pendingMetadata = `${metadata}.${randomUUID()}.tmp`
+          try {
+            writePrivateFile(pendingMetadata, `${JSON.stringify({ ...retained, kind: 'automatic' }, undefined, 2)}\n`)
+            renameSync(pendingMetadata, metadata)
+          } finally { rmSync(pendingMetadata, { force: true }) }
         }
       }
     }
-    if (options.kind === 'automatic') pruneAutomaticSnapshots(home, options.profile)
+    if (options.kind === 'automatic' || options.kind === 'bootable') pruneAutomaticSnapshots(home, options.profile)
     return record
   } catch (error) {
     rmSync(temporary, { recursive: true, force: true })
@@ -776,20 +782,22 @@ function publishMutationOwner(lockPath: string, content: string, replace = false
   }
 }
 
-function readMutationOwner(lockPath: string): { pid: number; token?: string; operationKind?: string } {
+function readMutationOwner(lockPath: string): { pid: number; workerPid?: number; token?: string; operationKind?: string } {
   try {
     if (!lstatSync(lockPath).isFile()) throw new Error('not a regular file')
     const owner = JSON.parse(readFileSync(lockPath, 'utf8')) as {
       pid?: unknown
+      workerPid?: unknown
       token?: unknown
       operationKind?: unknown
     } | null
     if (owner === null || !Number.isSafeInteger(owner.pid) || (owner.pid as number) <= 0
+      || (owner.workerPid !== undefined && (!Number.isSafeInteger(owner.workerPid) || (owner.workerPid as number) <= 0))
       || (owner.token !== undefined && typeof owner.token !== 'string')
       || (owner.operationKind !== undefined && typeof owner.operationKind !== 'string')) {
       throw new Error('invalid owner')
     }
-    return owner as { pid: number; token?: string; operationKind?: string }
+    return owner as { pid: number; workerPid?: number; token?: string; operationKind?: string }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new Error('dsh: plugin mutation lease is unavailable (no active lock)', { cause: error })
@@ -827,8 +835,8 @@ export function acquireProfilePluginMutationLock(
         if (released) return
         released = true
         try {
-          const current = JSON.parse(readFileSync(lockPath, 'utf8')) as { token?: unknown }
-          if (current.token === token) unlinkSync(lockPath)
+          const current = readMutationOwner(lockPath)
+          if (current.token === token && (current.workerPid === undefined || !processExists(current.workerPid))) unlinkSync(lockPath)
         } catch (error) {
           // A missing, unreadable, or replaced lock no longer belongs to this
           // owner. Leave it in place rather than risking deletion of a newer
@@ -840,8 +848,8 @@ export function acquireProfilePluginMutationLock(
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
       try {
         const ownerSource = readFileSync(lockPath, 'utf8')
-        const owner = JSON.parse(ownerSource) as { pid?: unknown; token?: unknown }
-        if (typeof owner.pid === 'number' && Number.isSafeInteger(owner.pid) && owner.pid > 0 && !processExists(owner.pid)) {
+        const owner = readMutationOwner(lockPath)
+        if (!processExists(owner.pid) && (owner.workerPid === undefined || !processExists(owner.workerPid))) {
           const current = readFileSync(lockPath, 'utf8')
           if (current === ownerSource) unlinkSync(lockPath)
           continue
@@ -909,6 +917,9 @@ export function endProfilePluginMutationLease(
   if (owner.token !== options.token) throw new Error('dsh: plugin mutation lease token does not match')
   const current = readMutationOwner(lockPath)
   if (current.token !== options.token) throw new Error('dsh: plugin mutation lease changed before release')
+  if (current.workerPid !== undefined && processExists(current.workerPid)) {
+    throw new Error('dsh: plugin mutation worker is still running; cannot release its lease')
+  }
   unlinkSync(lockPath)
 }
 

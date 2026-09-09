@@ -20,8 +20,8 @@ import type {
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { makeTranslate, RemoteError, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { ProducedFiles, type ProducedFilesInjected, type ProducedFilesProps } from '../src/client/ProducedFiles.tsx'
+import { makeTranslate, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { ProducedFiles } from '../src/client/ProducedFiles.tsx'
 import {
   basename, deliverablesDefinition, producedFileMentions, producedForClosing, selectProducedFiles,
   type DeliverablesTurnData,
@@ -405,24 +405,12 @@ describe('produced-file Turn data', () => {
 
 describe('ProducedFiles row', () => {
   const t = makeTranslate(zh)
-  const capability = (
-    canOpenPath: boolean | undefined,
-    isLoopback = true,
-  ): Pick<ProducedFilesProps, 'isLoopback' | 'ensureWorkspacePathOpen' | 'useWorkspacePathOpen'> => {
-    return {
-      isLoopback,
-      ensureWorkspacePathOpen: () => {},
-      useWorkspacePathOpen: selector => selector(canOpenPath),
-    }
-  }
 
-  it('renders the bounded CSS candidates and opens a file or the workspace folder', () => {
+  it('renders the bounded chips and opens the file it was clicked for', () => {
     const paths = ['deep/a.html', 'b.css', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts', 'h.ts']
     const openFile = vi.fn<(path: string) => void>()
 
-    const view = render(
-      <ProducedFiles matched={paths} openFile={openFile} {...capability(true)} t={t} />,
-    )
+    const view = render(<ProducedFiles matched={paths} openFile={openFile} t={t} />)
     expect(view.getByText('产物')).toBeTruthy()
     const row = view.container.querySelector('[data-produced-files-row]')
     if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
@@ -433,24 +421,27 @@ describe('ProducedFiles row', () => {
     expect(chip.getAttribute('title')).toBe('deep/a.html')
     expect(view.queryByRole('button', { name: '打开 g.ts' })).toBeNull()
     fireEvent.click(chip)
+    // The row hands over the path it was given; where it opens is the
+    // Sidebar's decision, not this row's.
     expect(openFile).toHaveBeenCalledWith('deep/a.html')
-
-    const showFolder = view.getByRole('button', { name: '在文件夹中显示' })
-    fireEvent.click(showFolder)
-    expect(openFile).toHaveBeenLastCalledWith('.')
   })
 
-  it('keeps the folder action absent without overflow or a local native opener', () => {
+  it('renders a remainder counter after every chip but the last when every file fits', () => {
+    const view = render(<ProducedFiles matched={['a.md', 'b.md', 'c.md']} openFile={() => {}} t={t} />)
+    const row = view.container.querySelector('[data-produced-files-row]')
+    if (!(row instanceof HTMLElement)) throw new Error('produced row missing')
+    expect(within(row).getAllByRole('button')).toHaveLength(3)
+    // One counter per chip that could be the last visible one; the final chip hides nothing.
+    expect([...row.querySelectorAll('[data-shown]')].map(node => node.getAttribute('data-shown'))).toEqual(['1', '2'])
+  })
+
+  it('offers no folder action, because a directory has no preview to open', () => {
     const openFile = vi.fn<(path: string) => void>()
-    const view = render(
-      <ProducedFiles matched={['a.md']} openFile={openFile} {...capability(true)} t={t} />,
-    )
     const overflowing = ['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md', 'g.md']
+    const view = render(<ProducedFiles matched={overflowing} openFile={openFile} t={t} />)
     expect(view.queryByRole('button', { name: '在文件夹中显示' })).toBeNull()
-    for (const unavailable of [capability(false), capability(true, false), capability(undefined)]) {
-      view.rerender(<ProducedFiles matched={overflowing} openFile={openFile} {...unavailable} t={t} />)
-      expect(view.queryByRole('button', { name: '在文件夹中显示' })).toBeNull()
-    }
+    // Nothing in the row reaches the local machine any more.
+    expect(openFile).not.toHaveBeenCalled()
   })
 
   it('uses singular English copy when exactly one file is hidden', () => {
@@ -458,7 +449,6 @@ describe('ProducedFiles row', () => {
       <ProducedFiles
         matched={['a.md', 'b.md', 'c.md', 'd.md', 'e.md', 'f.md', 'g.md']}
         openFile={() => {}}
-        {...capability(false)}
         t={makeTranslate(en)}
       />,
     )
@@ -523,16 +513,9 @@ describe('plugin registration', () => {
     await fiber.await()
     const [entry] = ctx.slots.entries('conversation.chat.turnTail')
     expect(entry).toBeDefined()
-    const injected = entry?.inject?.() as unknown as ProducedFilesInjected
-    expect(injected.isLoopback).toBe(false)
-    expect(typeof injected.ensureWorkspacePathOpen).toBe('function')
-    expect(injected.hooks.workspacePathOpen.getSnapshot()).toBeUndefined()
-    ctx.emit('connection/reset')
-    injected.ensureWorkspacePathOpen()
-    await vi.waitFor(() => {
-      expect(injected.hooks.workspacePathOpen.getSnapshot()).toBe(true)
-    })
-    injected.ensureWorkspacePathOpen()
+    // The row needs no injected Host capability: it hands a path to its owner
+    // and nothing in it reaches the local machine.
+    expect(entry?.inject).toBeUndefined()
 
     // The prose face is live while the plugin is: a produced turn yields a
     // resolver whose matches open through the owner-supplied opener.
@@ -553,53 +536,5 @@ describe('plugin registration', () => {
     expect(ctx.slots.entries('conversation.chat.turnTail')).toHaveLength(0)
     // Fiber teardown retracts the service: the consumer's ctx.get sees the off state.
     expect((ctx as unknown as { get(name: string): unknown }).get('chatFileMentions')).toBeUndefined()
-  })
-
-  it('queries the workspace opener lazily and replaces stale results after reconnect', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SlotRegistry).await()
-    new UiConversation(ctx, { binding: () => undefined } as never)
-    ctx.slots.register({
-      name: 'root',
-      children: { 'conversation.chat.turnTail': { kind: 'chain', scope: 'session' } },
-    } as never, () => null)
-    const first = Promise.withResolvers<{ ok: true; value: boolean }>()
-    const second = Promise.withResolvers<{ ok: true; value: boolean }>()
-    const staleFailure = Promise.withResolvers<{ ok: false; error: RemoteError }>()
-    const capability = vi.fn()
-      .mockReturnValueOnce(first.promise)
-      .mockReturnValueOnce(second.promise)
-      .mockReturnValueOnce(staleFailure.promise)
-      .mockResolvedValueOnce({ ok: false, error: new RemoteError('gateway/internal', 'offline', {}) })
-    const session = { canOpenWorkspacePath: capability }
-    ctx.provide('remote', {
-      $on: () => () => {},
-      $host: { home: undefined, isLoopback: true },
-      session,
-    } as never)
-    ctx.provide('remote.session', session as never)
-    ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
-    await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
-    const fiber = ctx.plugin({ inject: [...inject], apply })
-    await fiber.await()
-    const entry = ctx.slots.entries('conversation.chat.turnTail')[0]
-    const injected = entry?.inject?.() as unknown as ProducedFilesInjected
-
-    injected.ensureWorkspacePathOpen()
-    injected.ensureWorkspacePathOpen()
-    expect(capability).toHaveBeenCalledOnce()
-    ctx.emit('connection/reset')
-    expect(capability).toHaveBeenCalledTimes(2)
-    first.resolve({ ok: true, value: false })
-    await Promise.resolve()
-    expect(injected.hooks.workspacePathOpen.getSnapshot()).toBeUndefined()
-    second.resolve({ ok: true, value: true })
-    await vi.waitFor(() => { expect(injected.hooks.workspacePathOpen.getSnapshot()).toBe(true) })
-
-    ctx.emit('connection/reset')
-    ctx.emit('connection/reset')
-    staleFailure.resolve({ ok: false, error: new RemoteError('gateway/internal', 'stale offline', {}) })
-    await vi.waitFor(() => { expect(injected.hooks.workspacePathOpen.getSnapshot()).toBe(false) })
-    await fiber.dispose()
   })
 })

@@ -9,7 +9,7 @@ describe('external tool compatibility bridge', () => {
   it('asks desktop main to resolve a closed tool id', async () => {
     const resolve = vi.fn(async () => ({
       toolId: 'codex' as const,
-      packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.3-alpha.2',
+      packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.5-alpha.1',
     }))
     ;(globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop = {
       externalTools: { resolve },
@@ -17,7 +17,7 @@ describe('external tool compatibility bridge', () => {
 
     await expect(resolveExternalToolInstallRequest('codex')).resolves.toEqual({
       profile: 'web',
-      packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.3-alpha.2',
+      packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.5-alpha.1',
     })
     expect(resolve).toHaveBeenCalledWith('codex')
   })
@@ -25,7 +25,7 @@ describe('external tool compatibility bridge', () => {
   it('uses the exact embedded browser fallback without a desktop bridge', async () => {
     await expect(resolveExternalToolInstallRequest('claude-code')).resolves.toEqual({
       profile: 'web',
-      packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.3-alpha.2',
+      packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.5-alpha.1',
     })
   })
 })

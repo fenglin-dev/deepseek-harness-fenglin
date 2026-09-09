@@ -13,7 +13,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply as applyConversation, inject as injectConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { apply as applyTool, inject as injectTool } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import { toolSessionEvents } from './tool-details-render.client.tsx'
+import { toolSessionEvents } from './tool-fixtures.client.ts'
 
 const SID = 's1' as SessionId
 
@@ -42,14 +42,13 @@ const toolResult = (seq: number, callId: string, name: string, args = '{"command
 })
 
 /** Test-owned AppFrame role: declares and renders the resident conversation area. */
-type AppRootProps = PropsRenderSlots<'conversation' | 'details'>
+type AppRootProps = PropsRenderSlots<'conversation'>
 function AppRoot({ renderSlot }: AppRootProps) {
   return <>{renderSlot('conversation', {})}</>
 }
 
 const LAYOUT_CHILDREN = {
   'conversation': { kind: 'single', scope: 'session-maybe' },
-  'details': { kind: 'single', scope: 'session' },
 } as const
 
 /**
@@ -64,6 +63,8 @@ async function bench(nodes: ToolResultNode[]) {
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const layout = { openDetails: vi.fn(), closeDetails: vi.fn() }
   runtime.ctx.provide('layout', layout)
+  const sidebarRight = { openResource: vi.fn<(address: string) => void>() }
+  runtime.ctx.provide('sidebarRight', sidebarRight as never)
   runtime.ctx.provide('uiWorkspace', {
     connectWorkspace: vi.fn(async () => SID),
   } as never)
@@ -72,7 +73,7 @@ async function bench(nodes: ToolResultNode[]) {
   runtime.slots.installLocale(locale)
   await runtime.sessions.add({
     id: SID,
-    summary: { title: 'S', displayTitle: 'S' },
+    summary: { title: 'S', displayTitle: 'S', cwd: '/w' },
     events: toolSessionEvents(nodes),
     session: {
       loadOlder: vi.fn<ISession['loadOlder']>(),
@@ -83,7 +84,7 @@ async function bench(nodes: ToolResultNode[]) {
   await runtime.mount({ inject: [...injectConversation], apply: applyConversation })
   await runtime.mount({ inject: [...injectChat], apply: applyChat })
   await runtime.mount({ inject: [...injectTool], apply: applyTool })
-  return { runtime, slots: runtime.slots, layout, openWorkspacePath }
+  return { runtime, slots: runtime.slots, layout, openWorkspacePath, sidebarRight }
 }
 
 describe('keyed toolview hole through the real machinery', () => {
@@ -126,22 +127,23 @@ describe('keyed toolview hole through the real machinery', () => {
     await b.runtime.dispose()
   })
 
-  it('file-path clicks travel owner openFile → chat inject → session.openWorkspacePath', async () => {
+  it('file-path clicks travel owner openFile → chat inject → the right Sidebar', async () => {
     const b = await bench([toolResult(3, 'c1', 'read', '{"path":"src/a.ts"}')])
     const view = b.runtime.renderRoot()
     view.getByText('src/a.ts').click()
-    expect(b.layout.openDetails).not.toHaveBeenCalled()
     await vi.waitFor(() => {
-      expect(b.openWorkspacePath).toHaveBeenCalledWith({ path: 'src/a.ts' })
+      expect(b.sidebarRight.openResource).toHaveBeenCalledWith('dsh-resource://file/session/s1/src/a.ts')
     })
+    // Nothing on this path reaches the local machine any more.
+    expect(b.openWorkspacePath).not.toHaveBeenCalled()
     await b.runtime.dispose()
   })
 
-  it('bash summary clicks do not open details or host paths', async () => {
+  it('bash summary clicks open nothing at all', async () => {
     const b = await bench([toolResult(3, 'c1', 'bash')])
     const view = b.runtime.renderRoot()
     view.getByText('Build').click()
-    expect(b.layout.openDetails).not.toHaveBeenCalled()
+    expect(b.sidebarRight.openResource).not.toHaveBeenCalled()
     expect(b.openWorkspacePath).not.toHaveBeenCalled()
     await b.runtime.dispose()
   })
@@ -208,6 +210,7 @@ describe('registrant declaration injection', () => {
     })
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
     runtime.ctx.provide('layout', { openDetails: vi.fn(), closeDetails: vi.fn() })
+    runtime.ctx.provide('sidebarRight', { openResource: vi.fn() } as never)
     runtime.ctx.provide('uiWorkspace', {
       connectWorkspace: vi.fn(async () => SID),
     } as never)

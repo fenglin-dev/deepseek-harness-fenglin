@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-subagent` is the service behind child-agent delegation: an agent hands a task to a named child, collects the finished result, and — for continuable children — keeps sending follow-up work across turns. Multiple providers coexist under one contract, so a single composition can offer in-process children, out-of-process ACP or SDK children, and real Codex or Claude Code children side by side. Children come in two shapes: one-shot runs that settle with a single result, and continuable children whose durable session accepts later messages and can be interrupted. The same service answers discovery questions — which children exist, their mode, activity, and lineage — without loading or resuming them. Mount it with at least one provider backend and a delegation tool; the backends and the model-facing tools live in sibling packages.
+Use `dsh-subagent` to delegate work to named child agents, collect their results, and continue supported child conversations across turns. A composition can offer in-process, ACP, SDK, Codex, or Claude Code children side by side. Choose one-shot children for a single result or continuable children for later messages and interruption. You can also inspect available children, their mode, activity, and lineage without loading or resuming them. Enable at least one supported child backend and a delegation tool.
 
 ## Table of Contents
 

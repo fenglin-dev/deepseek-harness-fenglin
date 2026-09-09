@@ -49,7 +49,7 @@ const ctx = await boot('dsh', resolveConfigPath(argv[2], process.env.DSH_SNAPSHO
 
 Profile 与 bundle 的声明类型从 [`@deepseek-ai/dsh-package-manifest`](../../util/package-manifest/README.zh.md) 导入。App-boot 负责 profile 加载、JSON 校验和解析后的运行时数据。
 
-profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`headless`、`acp`、`sdk` 与 `sdk-minimal` 从同一 launcher 启动不同组合。profile 位于 `$DSH_HOME/profiles/<name>`，由可安装 bundle、自身 `cordis.patch.yml` 与 `patchReload: live | startup` 组成；自定义 profile 省略 reload 策略时保留历史 `live` 默认值。随产品交付的 `web` 模板实时重载，其他随附模板只在启动时应用 patch。`sdk-minimal` 只列出自身的独立 bundle，其他模板保留 base 加模式 bundle 的栈。`dsh plugin` 创建自定义 profile；缺失 bundle 或未声明 patch 的 bundle 会让启动明确失败。
+profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`headless`、`acp`、`sdk` 与 `sdk-minimal` 从同一 launcher 启动不同组合。profile 位于 `$DSH_HOME/profiles/<name>`，由可安装 bundle、自身 `cordis.patch.yml` 与 `patchReload: live | startup` 组成；自定义 profile 省略 reload 策略时保留历史 `live` 默认值。随产品交付的 `web` 模板实时重载，其他随附模板只在启动时应用 patch。`sdk-minimal` 只列出自身的独立 bundle，其他模板保留 base 加模式 bundle 的栈。`dsh --profile <name> --from-default-profile <template>` 从一个随附模板，在新的非内置名称处创建自定义 profile；`dsh plugin` 则初始化以 base 为基础的 profile，并管理其中安装的 bundle。缺失 bundle 或未声明 patch 的 bundle 会让启动明确失败。由应用持有的 npm 项目（例如 Electron 保留的 Desktop profile）通过 `loadProfileDirectory` 加载已经初始化的目录，而不会将它暴露给 CLI profile 查找。
 
 Profile 预检会在组合前收敛依赖身份与隔离状态。如果旧版或中断的卸载已经删除停用插件及其持久隔离记录，却留下 lockfile、修复报告或诊断引用，检查会报告 `profile.quarantine-removal-residue`；修复只移除这些陈旧引用和不完整的软件包目录，不会再次隔离已经消失的插件。后续成功安装若同时恢复依赖、有序 Bundle 与软件包清单，并且当前 Loader 证明该软件包根处于活动状态，Host 清单会删除过期隔离元数据，而不会删除活动软件包。
 
@@ -149,6 +149,7 @@ Profile 预检会在组合前收敛依赖身份与隔离状态。如果旧版或
 - **快照回放替换仅识别特定 basename**——只有以 `cordis.yml` 或 `cordis.yaml` 结尾的配置会映射到同级 `cordis.snapshot.yml`；自定义配置名称需要调用方自行选择。
 - **环境发现以启动为界**——`loadLayeredEnv` 只读取一次调用目录与 harness home 中的 `.env`；它不搜索父目录，也不跟随之后选择的 workspace。`loadEnv` 仍是非产品 bin 使用的单目录 helper。
 - **用户 patch 会替换匹配到的整个配置**——按 id 定位的 patch 不做深度合并，因此 profile 覆盖必须重述需要保留的组合包字段。
+- **可启动插件点会保留前一代**——标记新的成功启动状态时，上一可启动点会降级为自动快照，而不会被删除。内容相同的自动点会去重，当前可启动点不参与自动数量淘汰。
 
 <a id="dev-note"></a>
 ### 开发备注

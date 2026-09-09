@@ -372,7 +372,7 @@ describe('dsh-tool-subagent', () => {
   })
 
   it('shows a configured product usage hint only while its tool is visible', async () => {
-    const ctx = new Context()
+    const ctx = await projectedContext()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(SubagentRuntime)
@@ -1205,7 +1205,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
 
   /** Boot the real continuable stack without any model-facing follow-up adapter. */
   async function continuableSetup() {
-    const ctx = await projectedContext()
+    const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
     const root = mkdtempSync(path.join(tmpdir(), 'dsh-tool-subagent-continuable-'))
     roots.push(root)
@@ -1258,7 +1258,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
       { description: 'continuable work', prompt: 'dig in' },
       { agent: parent },
     )
-    expect(started.isError).toBe(false)
+    expect(started.isError, text(started)).toBe(false)
     const match = /^started subagent (\S+)$/.exec(text(started))
     expect(match).not.toBeNull()
     const [, childId] = match!

@@ -205,7 +205,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     dir: 'tools',
     source: 'packages/core/tools/src/ptc.ts',
     requires: ['ctx.tools', 'ctx.codeRuntime (execution time)', 'ctx.systemPrompt'],
-    writes: ['tool/call', 'one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call', 'tool/result'],
+    writes: ['tool/call', 'one tool/ptc-dispatch-start + tool/ptc-dispatch pair per bridged sub-call', 'tool/result'],
     // The registry's OWN tool: run_code exists only under a non-native mode
     // (the registry registers it in its constructor; the code runtime is read
     // at assembly/execution time, so the schema harvest needs none mounted).

@@ -24,7 +24,7 @@
 
 ## 测量
 
-[workload.ts](workload.ts)拥有合成维度。[Agent Note](../../.agents/notes/implemented/testing/2026-09-06-backend-continuation-performance.zh.md)拥有计时终点、校准证据、内存解释和排除项。模型适配器不执行服务商序列化或网络调用；集成用例通过真实工具执行管线运行合成工具体，SDK profile 变体则执行真实文件读取。
+[workload.ts](workload.ts)拥有合成维度。其当前代历史在首个 step 的用户输入之前保留空 system 头节点，因此续聊提示会替换该头节点而不移动历史消息。[Agent Note](../../.agents/notes/implemented/testing/2026-09-06-backend-continuation-performance.zh.md)拥有计时终点、校准证据、内存解释和排除项。模型适配器不执行服务商序列化或网络调用；集成用例通过真实工具执行管线运行合成工具体，SDK profile 变体则执行真实文件读取。
 
 ## Dev Note
 

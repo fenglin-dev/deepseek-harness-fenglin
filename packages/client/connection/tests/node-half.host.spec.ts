@@ -118,6 +118,50 @@ function browserCookie(connection: HostConnectionHandle, authority: string): str
 }
 
 describe('connection node half', () => {
+  it('retains a channel without a Web server and mounts it when that service arrives', async () => {
+    const ctx = new Context()
+    provideBrowserCredentials(ctx)
+    const connection = ctx.plugin({ inject: [...inject], apply })
+    await connection.await()
+    const plugin = ctx.plugin({
+      inject: ['connection'],
+      apply(owner: Context) {
+        owner.connection.rpc.handle('/late-web', async () => ({ ok: true, value: null }))
+      },
+    })
+    await plugin.await()
+    const routes: WebRoute[] = []
+    ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
+    await expect.poll(() => routes.some(route => route.path === '/late-web')).toBe(true)
+    await plugin.dispose()
+    expect(routes.some(route => route.path === '/late-web')).toBe(false)
+    await connection.dispose()
+  })
+
+  it('mounts plugin RPC with only connection injected and withdraws it with the plugin', async () => {
+    const { ctx, routes, dispose } = await mounted()
+    const plugin = ctx.plugin({
+      inject: ['connection'],
+      apply(owner: Context) {
+        owner.connection.rpc.handle('/pocket-fixture', async () => ({ ok: true, value: null }))
+      },
+    })
+    await plugin.await()
+    expect(routes.some(route => route.path === '/pocket-fixture')).toBe(true)
+    await plugin.dispose()
+    expect(routes.some(route => route.path === '/pocket-fixture')).toBe(false)
+    await dispose()
+  })
+
+  it('provides the carrier-neutral service without a Web server', async () => {
+    const ctx = new Context()
+    provideBrowserCredentials(ctx)
+    const fiber = ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(ctx.get('connection')).toBeInstanceOf(Object)
+    await fiber.dispose()
+  })
+
   it('injects validated browser recovery timing and withdraws it on disposal', async () => {
     const { ctx, dispose } = await mounted({ recovery: { generationReadyTimeoutMs: 25_000 } })
     try {
@@ -285,6 +329,7 @@ describe('connection node half', () => {
       calls.push({ endpoint, payload })
       return { ok: true, value: { accepted: true } }
     })
+    await expect.poll(() => routes.some(candidate => candidate.path === '/rpc')).toBe(true)
     const route = routes.find(candidate => candidate.path === '/rpc')
     expect(route).toBeDefined()
 
@@ -414,6 +459,7 @@ describe('connection node half', () => {
       if (endpoint === 'fail') throw new Error('handler broke')
       return { ok: true, value: null }
     })
+    await expect.poll(() => routes.some(candidate => candidate.path === '/rpc')).toBe(true)
     const route = routes.find(candidate => candidate.path === '/rpc')!
     const harnessHeaders = {
       host: 'harness.example',

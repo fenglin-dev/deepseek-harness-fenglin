@@ -29,6 +29,7 @@ export type DiagnosticLabScenarioId =
   | 'build-script-blocked'
   | 'interrupted-repair'
   | 'startup-operation-timeout'
+  | 'plugin-transaction-interrupted'
 
 /** Data environment used by one diagnostic exercise. */
 type DiagnosticLabTarget = 'isolated' | 'active-profile'
@@ -147,6 +148,8 @@ export interface DiagnosticLabManagerOptions {
     readonly rolledBack: boolean
     readonly continued: boolean
   }>
+  /** Exercise real CLI activation and a fresh-process rollback in an empty home. */
+  runTransactionInterruptionExercise?(): Promise<{ readonly interrupted: boolean; readonly recovered: boolean }>
   onSnapshot(snapshot: DiagnosticLabRunSnapshot): void
   readonly now?: () => Date
   /** Test-only escape hatch; production always stages real Doctor fixtures. */
@@ -173,6 +176,7 @@ const SCENARIOS: readonly DiagnosticLabScenario[] = [
   { id: 'build-script-blocked', title: 'Blocked build script', description: 'Uses a reviewed local marker script to verify exact allowBuilds approval.', expectedCode: 'pnpm.build-script-blocked', targets: ['isolated'] },
   { id: 'interrupted-repair', title: 'Interrupted repair recovery', description: 'Leaves a recovery journal at a controlled boundary and resumes cleanup.', expectedCode: 'runtime.interrupted-repair', targets: ['isolated'] },
   { id: 'startup-operation-timeout', title: 'Bounded startup operation timeout', description: 'Simulates a one-shot startup command timing out, then verifies cancellation, rollback evidence, and continued startup.', expectedCode: 'runtime.profile-check-timeout', targets: ['isolated'] },
+  { id: 'plugin-transaction-interrupted', title: 'Interrupted plugin activation', description: 'Activates an inert candidate in an isolated home, then uses a fresh CLI to restore its dependency directory from the retained journal.', expectedCode: 'runtime.plugin-transaction-interrupted', targets: ['isolated'] },
 ]
 
 const SCENARIO_BY_ID = new Map(SCENARIOS.map(scenario => [scenario.id, scenario]))
@@ -217,6 +221,7 @@ const FIXTURES: Record<DiagnosticLabScenarioId, ScenarioFixture> = {
   'build-script-blocked': { code: 'pnpm.build-script-blocked', file: 'profile/build.json', content: '{"package":"@hecoococ/dsh-lab-build","allowed":false,"script":"write-marker"}\n', checksum: 'ed9d0c04fd3ce37918df14818a6c2d39d884a1f97ed735bfe76f22c1080234d5', repairedContent: '{"package":"@hecoococ/dsh-lab-build","allowed":true,"marker":true}\n' },
   'interrupted-repair': { code: 'runtime.interrupted-repair', file: 'profile/interrupted.json', content: '{"repair":"interrupted","journal":true}\n', checksum: '45864a432cef75a4af007e732ec9c42166174f6c3a20b1ba035d5c2f708cca13', repairedContent: '{"repair":"recovered"}\n' },
   'startup-operation-timeout': { code: 'runtime.profile-check-timeout', file: 'profile/startup-timeout.json', content: '{"operation":"profile-check","state":"timeout","rolledBack":true}\n', checksum: 'e5cd8557899751ba49b1fba0e27266fb46303f05f3ca22f2d71450f3c488c0ee', repairedContent: '{"operation":"profile-check","state":"cancelled","rolledBack":true}\n' },
+  'plugin-transaction-interrupted': { code: 'runtime.plugin-transaction-interrupted', file: 'profile/plugin-transaction.json', content: '{"repair":"interrupted","journal":true}\n', checksum: '45864a432cef75a4af007e732ec9c42166174f6c3a20b1ba035d5c2f708cca13', repairedContent: '{"repair":"recovered"}\n' },
 }
 
 function sha256(content: string | Buffer): string {
@@ -588,6 +593,8 @@ export class DiagnosticLabManager {
           await this.#runLegacySessionApiScenario(runRoot)
         } else if (scenarioId === 'startup-operation-timeout') {
           await this.#runStartupTimeoutScenario(runRoot)
+        } else if (scenarioId === 'plugin-transaction-interrupted') {
+          await this.#runTransactionInterruptionScenario(runRoot)
         } else {
           await this.#runScenario(runRoot, scenarioId)
         }
@@ -774,6 +781,40 @@ export class DiagnosticLabManager {
         repaired: false,
         retained: existsSync(scenarioRoot),
         durationMs: Date.now() - started,
+        diagnostic: sanitize(describeUnknown(error), this.#options.activeDshHome),
+      })
+      throw error
+    }
+  }
+
+  async #runTransactionInterruptionScenario(runRoot: string): Promise<void> {
+    const scenarioId = 'plugin-transaction-interrupted' as const
+    const fixture = FIXTURES[scenarioId]
+    const root = join(runRoot, 'runtime', 'scenarios', scenarioId)
+    const path = join(root, fixture.file)
+    assertInside(join(runRoot, 'runtime'), root)
+    const started = Date.now()
+    try {
+      await this.#step(scenarioId, 'baseline')
+      if (existsSync(root)) throw new Error('diagnostic scenario baseline contains stale files')
+      await this.#step(scenarioId, 'inject')
+      await atomicWrite(path, fixture.content)
+      await this.#step(scenarioId, 'detect')
+      const exercise = await this.#options.runTransactionInterruptionExercise?.()
+      if (exercise?.interrupted !== true) throw new Error('plugin activation journal was not retained')
+      await this.#step(scenarioId, 'repair')
+      if (!exercise.recovered) throw new Error('plugin dependencies were not restored by the fresh CLI')
+      await atomicWrite(path, fixture.repairedContent ?? fixture.content)
+      await this.#step(scenarioId, 'verify')
+      await this.#step(scenarioId, 'retain')
+      this.#appendResult({
+        scenarioId, phase: 'passed', expectedCode: fixture.code, actualCode: fixture.code,
+        repaired: true, retained: true, disposition: 'repaired', durationMs: Date.now() - started,
+      })
+    } catch (error) {
+      this.#appendResult({
+        scenarioId, phase: this.#cancelled.has(this.#requireActive().runId) ? 'cancelled' : 'failed', expectedCode: fixture.code, repaired: false,
+        retained: existsSync(root), durationMs: Date.now() - started,
         diagnostic: sanitize(describeUnknown(error), this.#options.activeDshHome),
       })
       throw error

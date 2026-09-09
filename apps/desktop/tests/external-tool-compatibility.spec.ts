@@ -43,7 +43,7 @@ function bundleBytes(bytes: Uint8Array, digest = createHash('sha256').update(byt
 }
 
 function response(bytes: Uint8Array): Response {
-  return new Response(bytes, { status: 200, headers: { 'content-length': String(bytes.byteLength) } })
+  return new Response(new Uint8Array(bytes), { status: 200, headers: { 'content-length': String(bytes.byteLength) } })
 }
 
 describe('external tool compatibility', () => {
@@ -64,8 +64,8 @@ describe('external tool compatibility', () => {
     const fetchMock = vi.fn<typeof fetch>().mockRejectedValue(new Error('offline'))
     const manager = new ExternalToolCompatibilityManager({
       cacheDirectory: await temporaryDirectory(),
-      desktopVersion: '0.1.2-alpha.5',
-      now: () => new Date('2026-09-03T00:00:00.000Z'),
+      desktopVersion: '0.1.5-alpha.1',
+      now: () => new Date('2026-09-09T00:00:00.000Z'),
       fetch: fetchMock,
       verifyBundle: async () => {},
     })
@@ -84,7 +84,7 @@ describe('external tool compatibility', () => {
       revision: manifestJson.revision + 1,
       tools: {
         ...manifestJson.tools,
-        codex: { ...manifestJson.tools.codex, version: '0.1.3-alpha.3' },
+        codex: { ...manifestJson.tools.codex, version: '0.1.5-alpha.2' },
       },
     })
     const fetchMock = vi.fn<typeof fetch>()
@@ -94,14 +94,14 @@ describe('external tool compatibility', () => {
       .mockResolvedValueOnce(response(bundleBytes(newer)))
     const manager = new ExternalToolCompatibilityManager({
       cacheDirectory: await temporaryDirectory(),
-      desktopVersion: '0.1.2-alpha.5',
-      now: () => new Date('2026-09-03T00:00:00.000Z'),
+      desktopVersion: '0.1.5-alpha.1',
+      now: () => new Date('2026-09-09T00:00:00.000Z'),
       fetch: fetchMock,
       verifyBundle: async () => {},
     })
-    await expect(manager.resolve('codex')).resolves.toMatchObject({ version: '0.1.3-alpha.2' })
+    await expect(manager.resolve('codex')).resolves.toMatchObject({ version: '0.1.5-alpha.1' })
     await expect(manager.resolve('codex')).resolves.toMatchObject({
-      version: '0.1.3-alpha.3', revision: manifestJson.revision + 1, source: 'remote',
+      version: '0.1.5-alpha.2', revision: manifestJson.revision + 1, source: 'remote',
     })
   })
 
@@ -120,8 +120,8 @@ describe('external tool compatibility', () => {
     })
     const manager = new ExternalToolCompatibilityManager({
       cacheDirectory: await temporaryDirectory(),
-      desktopVersion: '0.1.2-alpha.5',
-      now: () => new Date('2026-09-03T00:00:00.000Z'),
+      desktopVersion: '0.1.5-alpha.1',
+      now: () => new Date('2026-09-09T00:00:00.000Z'),
       fetch: fetchMock,
       verifyBundle: async () => {},
     })
@@ -141,7 +141,7 @@ describe('external tool compatibility', () => {
   it('parses exact pins and never creates a floating package spec', () => {
     const manifest = parseExternalToolCompatibilityManifest(manifestJson)
     expect(resolveExternalToolCoordinate(manifest, 'codex', 'embedded')).toMatchObject({
-      packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.3-alpha.2',
+      packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.5-alpha.1',
       source: 'embedded',
     })
   })
@@ -156,14 +156,14 @@ describe('external tool compatibility', () => {
       .mockResolvedValueOnce(response(bundle))
     const manager = new ExternalToolCompatibilityManager({
       cacheDirectory,
-      desktopVersion: '0.1.2-alpha.5',
-      now: () => new Date('2026-09-03T00:00:00.000Z'),
+      desktopVersion: '0.1.5-alpha.1',
+      now: () => new Date('2026-09-09T00:00:00.000Z'),
       fetch: fetchMock,
       verifyBundle,
     })
 
     await expect(manager.resolve('claude-code')).resolves.toMatchObject({
-      packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.3-alpha.2',
+      packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.5-alpha.1',
       source: 'remote',
     })
     expect(verifyBundle).toHaveBeenCalledOnce()
@@ -182,8 +182,8 @@ describe('external tool compatibility', () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response('Not Found', { status: 404 }))
     const manager = new ExternalToolCompatibilityManager({
       cacheDirectory: await temporaryDirectory(),
-      desktopVersion: '0.1.2-alpha.5',
-      now: () => new Date('2026-09-03T00:00:00.000Z'),
+      desktopVersion: '0.1.5-alpha.1',
+      now: () => new Date('2026-09-09T00:00:00.000Z'),
       fetch: fetchMock,
     })
     await expect(manager.resolve('codex')).resolves.toMatchObject({ source: 'embedded' })
@@ -203,8 +203,8 @@ describe('external tool compatibility', () => {
       .mockResolvedValueOnce(response(bundleBytes(manifest, '0'.repeat(64))))
     const manager = new ExternalToolCompatibilityManager({
       cacheDirectory,
-      desktopVersion: '0.1.2-alpha.5',
-      now: () => new Date('2026-09-03T00:00:00.000Z'),
+      desktopVersion: '0.1.5-alpha.1',
+      now: () => new Date('2026-09-09T00:00:00.000Z'),
       fetch: fetchMock,
       verifyBundle: async () => {},
     })
@@ -218,8 +218,8 @@ describe('external tool compatibility', () => {
     const revisionThree = manifestBytes({ ...manifestJson, revision: cachedRevision })
     const first = new ExternalToolCompatibilityManager({
       cacheDirectory,
-      desktopVersion: '0.1.2-alpha.5',
-      now: () => new Date('2026-09-03T00:00:00.000Z'),
+      desktopVersion: '0.1.5-alpha.1',
+      now: () => new Date('2026-09-09T00:00:00.000Z'),
       fetch: vi.fn()
         .mockResolvedValueOnce(response(revisionThree))
         .mockResolvedValueOnce(response(bundleBytes(revisionThree))),
@@ -230,8 +230,8 @@ describe('external tool compatibility', () => {
     const revisionTwo = manifestBytes()
     const second = new ExternalToolCompatibilityManager({
       cacheDirectory,
-      desktopVersion: '0.1.2-alpha.5',
-      now: () => new Date('2026-09-03T00:00:00.000Z'),
+      desktopVersion: '0.1.5-alpha.1',
+      now: () => new Date('2026-09-09T00:00:00.000Z'),
       fetch: vi.fn()
         .mockResolvedValueOnce(response(revisionTwo))
         .mockResolvedValueOnce(response(bundleBytes(revisionTwo))),
@@ -241,8 +241,8 @@ describe('external tool compatibility', () => {
 
     const offline = new ExternalToolCompatibilityManager({
       cacheDirectory,
-      desktopVersion: '0.1.2-alpha.5',
-      now: () => new Date('2026-09-03T00:00:00.000Z'),
+      desktopVersion: '0.1.5-alpha.1',
+      now: () => new Date('2026-09-09T00:00:00.000Z'),
       fetch: vi.fn(async () => { throw new Error('offline') }),
       verifyBundle: async () => {},
     })
@@ -258,7 +258,7 @@ describe('external tool compatibility', () => {
     const manager = new ExternalToolCompatibilityManager({
       cacheDirectory,
       desktopVersion: '0.1.3-alpha.1',
-      now: () => new Date('2026-09-03T00:00:00.000Z'),
+      now: () => new Date('2026-09-09T00:00:00.000Z'),
       fetch: fetchMock,
       verifyBundle: async () => {},
     })

@@ -1,5 +1,16 @@
 /** Desktop shell settings and update copy. */
 
+/** Selector-heading copy for community languages registered by the desktop shell. */
+export const desktopLanguageTitles = {
+  ja: '言語',
+  ko: '언어',
+  es: 'Idioma',
+  fr: 'Langue',
+  de: 'Sprache',
+  'pt-BR': 'Idioma',
+  ru: 'Язык',
+} as const
+
 export const zh = {
   'menu.unavailable': '此设置页面尚未加载或对应插件未安装。请在设置中检查插件；不会自动安装。',
   'close.linux': 'Linux 托盘可见性取决于桌面环境及其扩展。若看不到图标，可选择完整退出。',

@@ -4,13 +4,21 @@
 
 `@deepseek-ai/dsh-desktop` 是现有 DeepSeek Harness Web GUI 的原生应用宿主。它启动一个本地 Harness 进程，等待规范的就绪输出，再用经过加固的 Electron 窗口加载该回环地址。Harness 数据仍保持普通格式，但存放在桌面端自有 home 中，不再实时共享官方 CLI 的 `~/.dsh` 目录树。
 
+## 运行时与会话兼容性
+
+本次集成使用 Harness 0.1.5-alpha.1 和外部 Node 24.17.0，Electron 仍固定为 43.2.0，pnpm 固定为 11.7.0。macOS 安装版要求 macOS 13.5 或更高版本；这是内置 Node 二进制的最低要求，不能只根据 Electron 推断系统兼容性。
+
+会话历史遵循完整的 V0 → V1 → V2 → V3 迁移链。迁移保留旧代文件并写入经过校验的后继文件，但不能假设旧客户端能理解新写入的 V3 数据。插件快照不包含会话，也不能撤销会话格式升级。复用重要历史数据前，应使用数据目录的隔离副本验证升级。
+
+只有普通 Profile 就绪才可以验证最近成功启动的插件快照。进入诊断安全模式不会把失败的活动 Profile 标为健康；快照恢复期间进入安全模式会触发现有启动失败回滚。只有完整的 owner 记录通过校验后，死亡进程才允许清理遗留锁；owner 元数据损坏时保持阻塞，等待人工检查。
+
 ## 从当前仓库运行
 
 使用 Node `^22.19.0 || >=24.0.0`，先构建仓库，再启动桌面应用：
 
 ```sh
 pnpm install
-pnpm run build
+pnpm run build:community-desktop
 pnpm run dev:desktop
 ```
 
@@ -21,6 +29,15 @@ pnpm run dev:desktop
 应用提供与 `dsh web` 相同的引导和设置界面。用户无需维护第二份配置，即可配置 DeepSeek 或其他兼容 API Provider、选择模型、查看已安装插件、编辑受支持的插件设置、调用 Skill、选择工作区并管理会话。
 
 在 macOS 和 Windows 安装版中，通用设置、文件菜单和托盘菜单都可以在系统浏览器中打开当前 Harness 启动代次。主进程校验并保留带认证的回环 URL，不向渲染层暴露该地址；浏览器接受启动令牌后会重定向到干净 URL，并继续使用同一 Profile 和进程。该页面可通过“设置”旁的“返回客户端”唤醒同一个 Electron 客户端。用户可保存“每次 Harness 成功启动后打开一个浏览器页面”的偏好。交接成功且托盘可用时，桌面窗口会隐藏；交接失败时，窗口保持或恢复显示。完整退出 Desktop 会停止共用 Harness，并断开浏览器页面。
+
+<a id="plugin-changes"></a>
+## 插件变更
+
+桌面托管的插件命令会在当前 Web Profile 持续运行时准备同磁盘候选目录。CLI 验证通过后，桌面停止 Harness、激活候选状态，并保留旧依赖目录，直到普通 Profile 的两项就绪信号都到达。启动失败会恢复旧受管文件和依赖；激活中断会在启动检查前恢复。构建授权及其后续重试属于同一个候选事务。会话、凭据、用户 Patch 和插件业务数据不参与回退。候选准备保留本地来源声明；无法安全暂存的相对路径或 workspace 来源会明确失败，不修改活动 Profile。
+
+修改锁同时记录控制进程和实际执行 pnpm 的 Node 工作进程。任一进程仍存活时都不会回收锁；释放时仍须匹配当前 owner token。
+
+pnpm 生成的本地来源定位随激活重新计算相对位置；manifest 原始 spec 和锁定的完整性值保持不变。被替换的成功启动快照转为受既有保留数量限制的自动回退点，因此去重复用的变更前快照不会随下一次成功启动而消失。
 
 <a id="application-menus"></a>
 ## 应用菜单
@@ -83,7 +100,7 @@ npm run package:desktop:macos:arm64
 npm run package:desktop:macos:x64
 ```
 
-产物写入 `.artifacts/desktop-macos/`。每个安装包在同一个运行时归档中内嵌目标平台的 Harness 生产依赖闭包、Node 24.11.1 和 pnpm 11.7.0；准备脚本仅在固定 Node 归档与官方 SHA-256 一致时接受它。首次启动时，应用会把归档解压到按版本隔离的用户数据目录，使 Node ESM 能看到真实的 `node_modules` 层级。内置 Node 负责启动 Harness，插件管理器通过绝对路径使用内置 pnpm，插件生命周期脚本的 `PATH` 则以内置运行时的 `bin` 目录开头。布局标记会让不完整的安装包缓存自动失效。
+产物写入 `.artifacts/desktop-macos/`。每个安装包在同一个运行时归档中内嵌目标平台的 Harness 生产依赖闭包、Node 24.17.0 和 pnpm 11.7.0；准备脚本仅在固定 Node 归档与官方 SHA-256 一致时接受它。首次启动时，应用会把归档解压到按版本隔离的用户数据目录，使 Node ESM 能看到真实的 `node_modules` 层级。内置 Node 负责启动 Harness，插件管理器通过绝对路径使用内置 pnpm，插件生命周期脚本的 `PATH` 则以内置运行时的 `bin` 目录开头。布局标记会让不完整的安装包缓存自动失效。
 
 在 Windows 上使用下列命令构建未签名的 Windows x64 NSIS 安装程序：
 
@@ -91,7 +108,7 @@ npm run package:desktop:macos:x64
 npm run package:desktop:win:x64
 ```
 
-安装程序写入 `.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe`。它包含官方 Windows x64 Node 24.11.1 可执行文件、pnpm 11.7.0，以及保留真实 `node_modules` 层级且无符号链接的 Harness 生产依赖闭包，用户无需在 `PATH` 中安装 Node 或 pnpm。Harness 环境会把内置运行时放在最前面，保证包含 `%SystemRoot%`、`System32`、Wbem 与 Windows PowerShell，再保留 Electron 启动时继承的用户 PATH。因此插件可以按裸命令名启动 Windows 系统程序和已继承的第三方命令。未出现在这份继承 PATH 中的第三方工具仍不可用；客户端运行期间修改注册表 PATH 或安装新命令后需要重启应用，客户端不会执行 PowerShell profile 来发现其他命令。Electron Builder 运行前，准备脚本会校验官方 Node 归档的 SHA-256、必需的 Windows 原生模块、内置 pnpm 版本，并实际启动 Harness 等待就绪。
+安装程序写入 `.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe`。它包含官方 Windows x64 Node 24.17.0 可执行文件、pnpm 11.7.0，以及保留真实 `node_modules` 层级且无符号链接的 Harness 生产依赖闭包，用户无需在 `PATH` 中安装 Node 或 pnpm。Harness 环境会把内置运行时放在最前面，保证包含 `%SystemRoot%`、`System32`、Wbem 与 Windows PowerShell，再保留 Electron 启动时继承的用户 PATH。因此插件可以按裸命令名启动 Windows 系统程序和已继承的第三方命令。未出现在这份继承 PATH 中的第三方工具仍不可用；客户端运行期间修改注册表 PATH 或安装新命令后需要重启应用，客户端不会执行 PowerShell profile 来发现其他命令。Electron Builder 运行前，准备脚本会校验官方 Node 归档的 SHA-256、必需的 Windows 原生模块、内置 pnpm 版本，并实际启动 Harness 等待就绪。
 
 在 Linux 上使用下列命令构建 Linux x64 软件包：
 

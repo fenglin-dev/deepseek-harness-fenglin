@@ -82,6 +82,8 @@
 
 诊断演练中心为这些规则提供固定场景。`@dsh-diagnostic-lab/legacy-session-api` 场景可在隔离 home 和当前 Profile 中使用且默认不勾选，用于验证 `profile.session-api-incompatible` 风险提示的归属，不调用旧接口辅助函数，也不隔离测试包。`@dsh-diagnostic-lab/loader-dependency-unavailable` 会在隔离 home 与当前 Profile 中验证安装后缺失软件包的归属和隔离。仅限当前 Profile 的 `@dsh-diagnostic-lab/loader-export-unavailable` 会从已安装的 settings Host 导入一个故意不存在的命名导出，恢复真实 Harness，并验证系统在回退安全模式前完成运行时隔离。损坏设置场景写入重复键，等待真实活动 Profile 报告 `config.settings-invalid` 与 `skippedUserSettings: true`，确认原始字节保持不变，并通过**全部恢复**逐字节还原演练前设置。测试包始终属于 `diagnostic` 资源，普通启动绝不会预装。
 
+隔离的 `plugin-transaction-interrupted` 演练会将无副作用的候选状态停留在 `checking-startup`，再运行独立 CLI，恢复旧依赖目录并移除已完成的日志。它不会停止活动 Harness，也不修改其 Profile。所有演练场景仍默认不选中。现有的缺失导出演练也覆盖依赖不可用核心 API 的插件，与仅提示风险的旧 Session API 用法保持区分。
+
 ## 导出
 
 `dsh/profile-diagnostic-export/v1` 包含 v2 问题、完整的机器可读规则清单与版本、平台、架构、Node 版本、所选 Profile 名称、安全模式摘要、隔离记录和当前 Loader entry 摘要。它不包含凭据正文、环境变量值、完整 diff、绝对用户路径、包管理器命令拼接或无界堆栈。当前导出只是某一时刻的支持资料，不是配置备份，也不是授权令牌。

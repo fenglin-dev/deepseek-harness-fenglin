@@ -19,7 +19,7 @@ import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './suppor
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/feedback-release', import.meta.url))
 // Both routes borrow the same settled turn; this manifest references its owner.
-const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/feedback-command/session.v2.jsonl', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/feedback-command/session.v3.jsonl', import.meta.url))
 const ACK_EXPECTED = join(SNAPSHOT_DIR, 'ack.expected.md')
 const ACK_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'ack-expanded.expected.md')
 const RELEASE_EXPECTED = join(SNAPSHOT_DIR, 'feedback-release.expected.json')
@@ -110,7 +110,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
           { id: 'feedback-mock', name: 'Feedback mock', contextWindow: 128_000 },
         ] },
       ],
-      // The replayed session.v2.jsonl belongs to the feedback-command scenario;
+      // The replayed session.v3.jsonl belongs to the feedback-command scenario;
       // comparing (or refreshing) the persisted session here would rewrite
       // that shared source with this lane's feedback events. Persistence and
       // collector assertions belong to this lane.
@@ -267,7 +267,7 @@ describe.each(MODE === 'record' ? ['deepseek-official'] : ['deepseek-official', 
     await selectModel('DeepSeek-V4-Flash')
     expect(captured()).toHaveLength(releasedCount)
     await page.getByRole('button', { name: 'New session', exact: true }).last().click()
-    const input = page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build... / commands, @ files or sessions"]')
+    const input = page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build, / commands, @ files or sessions"]')
     await input.waitFor({ timeout: 15_000 })
     await input.fill('/feedback Feedback before any model request.')
     expect(captured()).toHaveLength(releasedCount)

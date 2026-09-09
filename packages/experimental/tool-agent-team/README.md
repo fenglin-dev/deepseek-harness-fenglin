@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-experimental-tool-agent-team` gives the model a team toolset on top of the team domain package: create named teammates, steer messages to them, see who is available, wait for progress, interrupt a stuck teammate, and manage a shared task board — nine tools in total. A short policy section in every member's prompt teaches the model when to form a team (only when you ask for one) and how to coordinate on a shared workspace. Mounting it replaces legacy subagent controls with the same tool names, so a composition that wants both must disable the legacy definitions. It is experimental: excluded from official releases, carries no stability promise, and creates teammates only when you explicitly ask for a team.
+This package lets the model create named teammates, send them messages, inspect availability, wait for progress, interrupt stuck work, and coordinate through a shared task board. Every team member receives the same nine tools and guidance for coordinating in a shared workspace. Choose it when the model should operate a team only after you explicitly request one. It replaces legacy subagent controls with the same tool names, so compositions that need both must disable the legacy definitions. The package is experimental, excluded from official releases, and provides no stability guarantee.
 
 ## Table of Contents
 
