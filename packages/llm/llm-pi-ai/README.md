@@ -104,7 +104,7 @@ For self-hosted Chat Completions endpoints, `thinkingTokenBudgetField` selects t
 
 ### Change configuration at runtime
 
-Profiles are re-read once per operation through the optional settings seam: the base and the user's `llm-pi-ai:` settings section merge per provider, so a user can add a route, override one field of a composition route, or point a route at another proxy, all effective on the next request with no restart. A section the adapter could not serve is refused where it is written — `settings.mutate` answers `settings-rejected` — and a stored section that later fails keeps the namespace's last good value. When the route set or a route's retry policy changes, the plugin re-registers atomically: a conflicting route leaves the previous routes serving.
+Profiles are re-read once per operation through the optional settings seam: the base and the user's `llm-pi-ai:` settings section merge per provider, so a user can add a route, override one field of a composition route, or point a route at another proxy, all effective on the next request with no restart. A section the adapter could not serve is refused where it is written — `settings.mutate` answers `settings-rejected`. If catalog drift makes an already-stored provider route unserviceable, that row remains visible for correction or removal, healthy sibling routes continue serving, and the bad route is not registered. A correction must make the complete section serviceable; the adapter never guesses a removed model's wire protocol or remote availability. When the route set or a route's retry policy changes, the plugin re-registers atomically: a conflicting route leaves the previous routes serving.
 
 ### Discover models from endpoints
 

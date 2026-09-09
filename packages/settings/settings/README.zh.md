@@ -73,7 +73,7 @@ TypeScript 会按小写字母、数字与连字符文法检查字面量 namespac
 
 ### 事件与失败
 
-`settings/updated (ns, next, prev, source)` 在每次已提交变更后触发——进程内写入（`source: 'update'`）或外部观察到的编辑（`source: 'provider'`）——解析值深相等时绝不触发。`settings/document-updated (ns, revision)` 在原始用户分节发生变化时触发，即使解析值没有变——已打开的编辑器正需要它来得知字段从继承变为覆盖。schema 拒绝的存量分节在重载时保留该 namespace 的最后可用值并告警；注册时同样的失败会直接拒绝注册。
+`settings/updated (ns, next, prev, source)` 在每次已提交变更后触发——进程内写入（`source: 'update'`）或外部观察到的编辑（`source: 'provider'`）——解析值深相等时绝不触发。`settings/document-updated (ns, revision)` 在原始用户分节发生变化时触发，即使解析值没有变——已打开的编辑器正需要它来得知字段从继承变为覆盖。schema 拒绝的存量分节在重载时保留该 namespace 的最后可用值并告警；注册时同样的失败会直接拒绝注册。具备修复能力的 owner 可以设置 `acceptUnserviceableStored`，仅接纳 schema 有效但被其自定义 validator 拒绝的存量分节，将其暴露给用户修正，并从已证明可用的子集继续运行。组合层 base 与之后的每次写入仍会严格校验。
 
 -----
 

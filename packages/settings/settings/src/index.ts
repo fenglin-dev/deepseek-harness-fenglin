@@ -78,12 +78,20 @@ export interface SettingsRegisterOptions<T> {
    * Once the owner is registered, a stored section that fails this keeps the
    * namespace's last good value and warns, exactly as a schema failure does,
    * so an externally edited document cannot strand a running owner. At
-   * registration there is no last good value yet, so a stored section that
-   * already fails rejects the registration itself — again exactly as a schema
-   * failure does.
+   * registration the failure normally rejects registration. A repair-capable
+   * owner may opt into {@link acceptUnserviceableStored}; schema failures and
+   * all later writes remain strict.
    * @param value - the resolved section, schema-valid by construction.
    */
   validate?: (value: T) => void
+  /**
+   * Admit an already-stored, schema-valid section when only {@link validate}
+   * rejects it, while continuing to validate every later write. The owner must
+   * be able to run from the serviceable subset of that value and expose the
+   * stored fields for repair. The composition base is still validated first,
+   * so this cannot hide a broken shipped configuration.
+   */
+  acceptUnserviceableStored?: boolean
 }
 
 /** One registered namespace as surfaced to configuration UIs. */
@@ -421,8 +429,10 @@ export abstract class SettingsProvider extends Service {
   /**
    * Register a namespace schema and receive its owner scope. The registration
    * is an effect on the calling plugin's fiber: disposing that fiber removes
-   * the namespace and its observers. An invalid stored section fails the
-   * registration itself — the earliest point where the schema can judge it.
+   * the namespace and its observers. An invalid stored section normally fails
+   * registration — the earliest point where the schema can judge it. A
+   * repair-capable owner may admit only schema-valid stored data rejected by
+   * its custom validator through {@link SettingsRegisterOptions.acceptUnserviceableStored}.
    * @param ns - unique namespace; duplicate registration fails loud.
    * @param schema - schemastery schema resolving this namespace's value.
    * @param options - composition `base` layer and effect timing.
@@ -438,6 +448,16 @@ export abstract class SettingsProvider extends Service {
     if (this.registrations.has(parsedNs)) {
       throw new Error(`settings namespace "${parsedNs}" is already registered`)
     }
+    const section = this.section(parsedNs)
+    let resolved: T
+    if (section !== undefined && options?.acceptUnserviceableStored === true) {
+      // Prove the owner-provided base independently. Only an incompatible
+      // stored user layer receives the repairable-start exception.
+      this.resolve(schema, options.base, undefined, options.validate)
+      resolved = this.resolve(schema, options.base, section)
+    } else {
+      resolved = this.resolve(schema, options?.base, section, options?.validate)
+    }
     const registration: SettingsRegistration = {
       ns: parsedNs,
       schema: schema as z<unknown>,
@@ -446,7 +466,7 @@ export abstract class SettingsProvider extends Service {
       ...options?.validate === undefined
         ? {}
         : { validate: options.validate as (value: unknown) => void },
-      resolved: deepFreeze(this.resolve(schema, options?.base, this.section(parsedNs), options?.validate)),
+      resolved: deepFreeze(resolved),
       revision: 0,
       watchers: new Set(),
     }
@@ -492,6 +512,7 @@ export abstract class SettingsProvider extends Service {
     const scope = this.register<Namespace, T>(ns, schema, {
       base: entry,
       ...hooks.validate === undefined ? {} : { validate: hooks.validate },
+      ...hooks.acceptUnserviceableStored === true ? { acceptUnserviceableStored: true } : {},
     })
     hooks.setSource(() => scope.get())
     this.ctx.effect(() => () => {
@@ -901,6 +922,11 @@ export interface SettingsSectionHooks<T> {
    * @param value - the resolved section, schema-valid by construction.
    */
   validate?: (value: T) => void
+  /**
+   * Keep a schema-valid stored section visible for repair when only
+   * {@link validate} rejects it. Every subsequent write remains validated.
+   */
+  acceptUnserviceableStored?: boolean
 }
 
 export default SettingsProvider

@@ -40,16 +40,24 @@ interface SettingsRegisterOptions<T> {
    * Once the owner is registered, a stored section that fails this keeps the
    * namespace's last good value and warns, exactly as a schema failure does,
    * so an externally edited document cannot strand a running owner. At
-   * registration there is no last good value yet, so a stored section that
-   * already fails rejects the registration itself — again exactly as a schema
-   * failure does.
+   * registration the failure normally rejects registration. A repair-capable
+   * owner may opt into {@link acceptUnserviceableStored}; schema failures and
+   * all later writes remain strict.
    * @param value - the resolved section, schema-valid by construction.
    */
   validate?: (value: T) => void
+  /**
+   * Admit an already-stored, schema-valid section when only {@link validate}
+   * rejects it, while continuing to validate every later write. The owner must
+   * be able to run from the serviceable subset of that value and expose the
+   * stored fields for repair. The composition base is still validated first,
+   * so this cannot hide a broken shipped configuration.
+   */
+  acceptUnserviceableStored?: boolean
 }
 ```
 
-`validate` runs after the schema admits a value, so it sees defaults and the composition base exactly as the owner will. `dsh-llm-pi-ai` uses it to refuse a provider profile it could not serve at the write that produced it, rather than storing one that would disable every route in its namespace.
+`validate` runs after the schema admits a value, so it sees defaults and the composition base exactly as the owner will. `dsh-llm-pi-ai` uses it to refuse a provider profile it could not serve at the write that produced it, rather than storing one that would disable every route in its namespace. Its repair-capable registration admits an older schema-valid section only when catalog drift invalidates a route, keeps healthy routes serving, and exposes the bad row for correction or removal; no new invalid write is accepted.
 
 `applies` is a UI hint, not a mechanism: a `restart` owner never watches, so its value is read once at construction and configuration surfaces can badge the pending change.
 

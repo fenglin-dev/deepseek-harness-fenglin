@@ -120,6 +120,7 @@ function registrationFacts(profiles: ReadonlyMap<string, ResolvedPiAiProviderPro
  */
 function directoryEntries(
   profiles: ReadonlyMap<string, ResolvedPiAiProviderProfile>,
+  configured: Readonly<Record<string, { displayName?: string }>> | undefined,
 ): LlmConfigurableProvider[] {
   const catalog = new Set(catalogProviderIds())
   const entries = new Map<string, LlmConfigurableProvider>()
@@ -136,31 +137,61 @@ function directoryEntries(
     })
   }
   for (const provider of catalog) declare(provider, provider)
+  for (const [provider, profile] of Object.entries(configured ?? {})) {
+    if (provider.length > 0) declare(provider, profile.displayName || provider)
+  }
   for (const [provider, profile] of profiles) declare(provider, profile.displayName)
   return [...entries.values()]
+}
+
+/** Resolve each route independently so one stale catalog entry remains editable. */
+function resolveServiceableProfiles(
+  providers: Config['providers'],
+  report: (provider: string, error: unknown) => void,
+): Map<string, ResolvedPiAiProviderProfile> {
+  const resolved = new Map<string, ResolvedPiAiProviderProfile>()
+  for (const [provider, source] of Object.entries(providers ?? {})) {
+    try {
+      const profile = resolveProfiles({ [provider]: source }).get(provider)
+      if (profile !== undefined) resolved.set(provider, profile)
+    } catch (error) {
+      report(provider, error)
+    }
+  }
+  return resolved
 }
 
 /** Register one generic pi-ai adapter for all configured provider routes. */
 export function apply(ctx: Context, config: Config): void {
   let current: () => Config = () => config
   let lastRaw: Config | undefined
+  let lastTolerant = false
   let memoized: ReadonlyMap<string, ResolvedPiAiProviderProfile> | undefined
+  let tolerateUnserviceableStored = false
   /**
    * The resolved profiles for the current configuration, memoized by the raw
    * snapshot's identity — which is also what makes the adapter's own snapshot
    * stable across operations that observe no change.
    *
-   * No fallback for an unserviceable snapshot lives here: the section schema
-   * resolves the whole profile set, so a write that could not be served is
-   * refused where it is written, and the settings seam keeps a namespace's
-   * last good value for a stored section that fails. Anything reaching this
-   * point has already resolved once.
+   * Composition config and every new settings write resolve strictly. Only an
+   * already-stored user section uses route-by-route resolution: catalog drift
+   * can then leave the stale row mounted for repair without disabling healthy
+   * siblings. The settings validator still prevents another unserviceable
+   * value from being persisted.
    */
   const profiles = (): ReadonlyMap<string, ResolvedPiAiProviderProfile> => {
     const raw = current()
-    if (raw === lastRaw && memoized !== undefined) return memoized
-    const next = resolveProfiles(raw.providers)
+    if (raw === lastRaw && tolerateUnserviceableStored === lastTolerant && memoized !== undefined) return memoized
+    const next = tolerateUnserviceableStored
+      ? resolveServiceableProfiles(raw.providers, (provider, error) => {
+        ctx.logger.error(
+          `llm-pi-ai: provider route "${provider}" is unavailable until its stored settings are repaired`,
+        )
+        ctx.logger.error(error)
+      })
+      : resolveProfiles(raw.providers)
     lastRaw = raw
+    lastTolerant = tolerateUnserviceableStored
     memoized = next
     return next
   }
@@ -225,7 +256,7 @@ export function apply(ctx: Context, config: Config): void {
   let directory: DirectoryRegistrationHandle | undefined
   let directoryFacts: unknown
   const ensureDirectory = (): void => {
-    const entries = directoryEntries(profiles())
+    const entries = directoryEntries(profiles(), current().providers)
     if (deepEqualJson(entries, directoryFacts)) return
     // Atomic replace, never dispose-then-register: a route another adapter
     // family already declares (a profile keyed `deepseek-official`) would
@@ -299,8 +330,13 @@ export function apply(ctx: Context, config: Config): void {
       // schema-valid profile the adapter cannot serve would be stored and then
       // silently disable every route in this namespace.
       validate: assertServiceable,
+      // A catalog can remove a model after the user saved it. Keep the
+      // namespace and the invalid provider row mounted so the Models page can
+      // remove or correct that route; healthy siblings continue serving.
+      acceptUnserviceableStored: true,
       setSource: (source) => {
         current = source
+        tolerateUnserviceableStored = source() !== config
       },
       onChange: () => {
         // Named here rather than left to the settings watcher: `assertServiceable`

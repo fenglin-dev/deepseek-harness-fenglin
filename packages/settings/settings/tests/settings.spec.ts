@@ -131,6 +131,34 @@ describe('registration', () => {
     })).toThrow(/unreadable/)
   })
 
+  it('can expose a schema-valid unserviceable stored section for repair while validating writes', async () => {
+    const { ctx } = await boot({ doc: { 'ui-theme': { fontSize: 4 } } })
+    const validate = (value: { theme: string; fontSize: number }): void => {
+      if (value.fontSize < 10) throw new Error(`font size ${String(value.fontSize)} is unreadable`)
+    }
+    const scope = ctx.settings.register('ui-theme', ThemeSchema, {
+      base: { fontSize: 14 },
+      validate,
+      acceptUnserviceableStored: true,
+    })
+
+    expect(scope.get()).toMatchObject({ fontSize: 4 })
+    await expect(scope.update({ theme: 'dark' })).rejects.toThrow(/unreadable/)
+    await scope.replace({ fontSize: 18 })
+    expect(scope.get()).toMatchObject({ fontSize: 18 })
+  })
+
+  it('does not let repairable stored settings hide an unserviceable composition base', async () => {
+    const { ctx } = await boot({ doc: { 'ui-theme': { theme: 'dark' } } })
+    expect(() => ctx.settings.register('ui-theme', ThemeSchema, {
+      base: { fontSize: 4 },
+      validate: (value) => {
+        if (value.fontSize < 10) throw new Error(`font size ${String(value.fontSize)} is unreadable`)
+      },
+      acceptUnserviceableStored: true,
+    })).toThrow(/unreadable/)
+  })
+
   it('rejects a duplicate namespace loud', async () => {
     const { ctx } = await boot()
     ctx.settings.register('ui-theme', ThemeSchema)

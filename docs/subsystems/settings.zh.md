@@ -40,16 +40,24 @@ interface SettingsRegisterOptions<T> {
    * Once the owner is registered, a stored section that fails this keeps the
    * namespace's last good value and warns, exactly as a schema failure does,
    * so an externally edited document cannot strand a running owner. At
-   * registration there is no last good value yet, so a stored section that
-   * already fails rejects the registration itself — again exactly as a schema
-   * failure does.
+   * registration the failure normally rejects registration. A repair-capable
+   * owner may opt into {@link acceptUnserviceableStored}; schema failures and
+   * all later writes remain strict.
    * @param value - the resolved section, schema-valid by construction.
    */
   validate?: (value: T) => void
+  /**
+   * Admit an already-stored, schema-valid section when only {@link validate}
+   * rejects it, while continuing to validate every later write. The owner must
+   * be able to run from the serviceable subset of that value and expose the
+   * stored fields for repair. The composition base is still validated first,
+   * so this cannot hide a broken shipped configuration.
+   */
+  acceptUnserviceableStored?: boolean
 }
 ```
 
-`validate` 在 schema 接纳该值之后运行，因此它看到的默认值和组合 base 与 owner 实际看到的完全一致。`dsh-llm-pi-ai` 用它在写入处拒绝自己无法服务的提供方 profile，而不是先存下来、再让该 namespace 下每条路由失效。
+`validate` 在 schema 接纳该值之后运行，因此它看到的默认值和组合 base 与 owner 实际看到的完全一致。`dsh-llm-pi-ai` 用它在写入处拒绝自己无法服务的提供方 profile，而不是先存下来、再让该 namespace 下每条路由失效。它的修复型注册仅在目录漂移使旧的 schema 有效分节出现坏路由时接纳该分节，让健康路由继续服务并暴露坏行供修正或删除；新的无效写入仍不会被接受。
 
 `applies` 是 UI 提示而非机制：`restart` 的 owner 从不 watch，其值在构造期读取一次，配置界面可为待生效变更加标。
 

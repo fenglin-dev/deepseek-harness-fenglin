@@ -74,6 +74,37 @@ describe('login flows in a real composition', () => {
 })
 
 describe('request-level dynamic profiles', () => {
+  it('keeps a stale catalog model editable without disabling healthy provider routes', async () => {
+    const dir = await home()
+    await writeFile(join(dir, 'settings.yaml'), [
+      'llm-pi-ai:',
+      '  providers:',
+      '    openai: {}',
+      '    openrouter:',
+      '      models:',
+      '        - id: stealth/ox-alpha',
+      '',
+    ].join('\n'))
+
+    const ctx = await boot(dir, {})
+
+    expect(ctx.settings.describe().some(descriptor => descriptor.ns === NS)).toBe(true)
+    expect(ctx.llm.listProviders().map(provider => provider.id)).toEqual(['openai'])
+    expect(ctx.llm.listConfigurableProviders()).toContainEqual({
+      provider: 'openrouter',
+      displayName: 'openrouter',
+      settingsNs: NS,
+      settingsPath: ['providers', 'openrouter'],
+      declared: false,
+    })
+    await expect(ctx.settings.update(NS, { providers: { openai: { displayName: 'OpenAI' } } }))
+      .rejects.toThrow(/stealth\/ox-alpha.*needs an api/)
+
+    await ctx.settings.mutate(NS, [{ op: 'unset', path: ['providers', 'openrouter'] }])
+    expect(ctx.llm.listProviders().map(provider => provider.id)).toEqual(['openai'])
+    expect((ctx.settings.get(NS) as LlmPiAi.Config).providers?.openrouter).toBeUndefined()
+  })
+
   it('mounts bare and dormant, then registers routes the moment settings supply providers', async () => {
     vi.stubEnv('PI_DYNAMIC_KEY', '')
     const dir = await home()

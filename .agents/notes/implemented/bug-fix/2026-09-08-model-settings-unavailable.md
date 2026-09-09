@@ -10,7 +10,7 @@ A provider directory can register before its settings section rejects a stored m
 
 ## Decision
 
-The Models page derives unavailable sections from its existing directory and settings snapshots. It names these sections in an accessible warning, offers a read-only Retry, and excludes unavailable providers from Add. Healthy provider editors remain usable. Recovery guidance requires a settings backup, correction, and Harness restart; the page neither guesses a protocol nor removes credentials.
+The Models page derives unavailable sections from its existing directory and settings snapshots. It names these sections in an accessible warning, offers a read-only Retry, and excludes unavailable providers from Add. For `llm-pi-ai`, schema-valid stored settings rejected only because catalog drift made one route unserviceable remain mounted for repair: the invalid route is not registered, while healthy sibling routes continue serving. Every later write must make the complete section serviceable. The page neither guesses a protocol nor removes credentials.
 
 ## Alternatives considered
 
@@ -18,4 +18,4 @@ Automatically assigning a protocol can route requests incorrectly. Rejecting the
 
 ## Consequences
 
-Component tests cover missing sections, disabled additions, healthy provider access, read-only retry, and editor recovery after the settings mirror refreshes. The warning identifies the section, not the Host exception; detailed causes remain in startup diagnostics. This change does not make invalid provider configurations loadable or verify remote model availability.
+Component and composition tests cover missing sections, disabled additions, healthy provider access, read-only retry, catalog-drift repair, and editor recovery after the settings mirror refreshes. The warning identifies the section, not the Host exception; detailed causes remain in startup diagnostics. This repair seam does not register the invalid route or verify remote model availability.
