@@ -105,6 +105,7 @@
     "apps/desktop/src/**/*.ts",
     "apps/desktop/scripts/**/*.ts",
     "apps/desktop/tests/**/*.ts",
+    "apps/desktop/tsdown.preload.config.ts",
     "packages/client/ui-settings-plugin-inventory/src/client/external-tool-compatibility-bridge.ts",
     "benchmarks/**/*.ts",
     "packages/*/*/tests/**/*.ts",

@@ -12,13 +12,13 @@ Status: implemented
 
 Open DSH Desktop 按固定顺序发布统一社区语言目录：`zh`、`en`、`ja`、`ko`、`es`、`fr`、`de`、`pt-BR` 与 `ru`。`ui-desktop-shell` 通过一个可逆 Cordis effect 负责注册额外七种语言定义。功能包继续拥有自己的 namespace 字典；typed 多字典注册必须包含两个内置字典，并允许同时携带任意数量的额外完整字典。缺少 key 或功能字典时，沿该语言声明的英文 fallback 查找，而不是在展示代码中混入局部字面量条件。
 
-Electron 自有页面使用 `desktop-locale.ts` 统一处理 BCP 47 与下划线标签、字典选择和具名插值。解析器绝不翻译路径、URL、插件身份、命令或外部错误值。首次配置目录选择器也从同一目录动态生成语言选项。Harness 就绪前，原生菜单和恢复页使用原子写入的 `userData/desktop-locale.json`，读取上一次生效的 Profile 语言；若没有有效缓存，再回退到操作系统语言，最后回退到英文。Client 报告当前 Profile 的生效语言后，该值成为权威并刷新缓存。
+Electron 自有页面使用 `desktop-locale.ts` 统一处理 BCP 47 与下划线标签、字典选择和具名插值。解析器绝不翻译路径、URL、插件身份、命令或外部错误值。首次配置目录选择器也从同一目录动态生成语言选项，并为每个可选语言提供完整文案；页眉让可变宽度控件参与正常布局，空间不足时自动换行。选择器外壳始终限制在视口内，底栏保持可见，翻译后增高的内容则在左右内容区内部滚动。Harness 就绪前，原生菜单和恢复页使用原子写入的 `userData/desktop-locale.json`，读取上一次生效的 Profile 语言；若没有有效缓存，再回退到操作系统语言，最后回退到英文。Client 报告当前 Profile 的生效语言后，该值成为权威并刷新缓存。
 
 PR #19 提供的俄语字典继续作为 Desktop Shell、Open in App、Selection Actions 与原生菜单文案的来源。其他社区语言可以逐 namespace 完成翻译；在某功能尚无对应字典时选择该语言是受支持的，并明确让该功能显示英文。这样可以安全呈现未完成的覆盖范围，不阻塞发布，也不会产生第二个全局巨型字典。
 
 ## 验证
 
-locale 测试固定稳定 id、地区与下划线匹配、英文回退、Unicode 与 Windows 路径、未知占位符、损坏缓存恢复及原子缓存内容。Client 生命周期测试固定语言目录注册和完整释放。功能测试要求每个发布字典与英文具有相同 key 集和占位符集合。严格 TypeScript 编译会依据各功能的 `LocaleNamespaceMap` key 并集检查额外字典。
+locale 测试固定稳定 id、地区与下划线匹配、英文回退、Unicode 与 Windows 路径、未知占位符、损坏缓存恢复及原子缓存内容。Client 生命周期测试固定语言目录注册和完整释放。功能测试要求每个发布字典与英文具有相同 key 集和占位符集合。首次配置目录选择器还会检查每个可选语言都有完整非空文案，并用可换行页眉布局承载较长的语言名称和开发按钮文案。严格 TypeScript 编译会依据各功能的 `LocaleNamespaceMap` key 并集检查额外字典。
 
 ## Alternatives considered
 

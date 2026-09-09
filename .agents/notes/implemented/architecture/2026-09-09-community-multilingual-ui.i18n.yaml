@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-community-multilingual-ui.md
-2026-09-09-community-multilingual-ui.md: e8ebcd52c250bb24e58bff5b7de539bc9859d86b
-2026-09-09-community-multilingual-ui.zh.md: cecc1b4c98d242a61b92848864d7e8c93b7cd368
+2026-09-09-community-multilingual-ui.md: 504a867589ed2fc6412a6088512e90f219df0a10
+2026-09-09-community-multilingual-ui.zh.md: 16908d759d14f1fda5ecfd426818c187f2918fd9

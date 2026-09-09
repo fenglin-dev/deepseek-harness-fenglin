@@ -16,26 +16,41 @@
       * { box-sizing: border-box; }
       body { margin: 0; min-height: 100vh; overflow: hidden; background: #fff; }
       button { font: inherit; }
-      .shell { display: grid; grid-template-rows: 82px 1fr 82px; min-height: 100vh; }
+      .shell {
+        display: grid;
+        grid-template-rows: minmax(82px, auto) minmax(0, 1fr) 82px;
+        height: 100vh;
+        min-height: 0;
+        overflow: hidden;
+      }
       .titlebar {
         align-items: center;
         border-bottom: 1px solid #e6e7ea;
         display: flex;
+        gap: 24px;
         justify-content: flex-start;
-        padding: 0 38px;
+        padding: 12px 28px 12px 38px;
         position: relative;
+      }
+      .header-actions {
+        align-items: center;
+        display: flex;
+        flex: 1 1 auto;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: flex-end;
+        min-width: 0;
       }
       .language-picker {
         align-items: center;
         display: flex;
-        position: absolute;
-        right: 28px;
+        flex: 0 0 auto;
+        position: relative;
       }
       .development-tools {
         align-items: center;
         display: flex;
-        position: absolute;
-        right: 204px;
+        flex: 0 1 auto;
       }
       .development-tools[hidden] { display: none; }
       .development-toggle {
@@ -47,7 +62,9 @@
         cursor: pointer;
         font-size: 12px;
         font-weight: 620;
+        max-width: min(320px, 100%);
         padding: 8px 12px;
+        white-space: normal;
         transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
       }
       .development-toggle:hover { background: #e3edff; border-color: #a9c1f2; }
@@ -73,12 +90,13 @@
         gap: 10px;
         justify-content: space-between;
         min-width: 158px;
+        max-width: min(240px, calc(100vw - 40px));
         padding: 9px 12px;
         transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
       }
       .language-inline-label { color: #858a94; font-size: 12px; font-weight: 560; }
       .language-divider { background: #e1e3e8; height: 16px; width: 1px; }
-      #language-current { flex: 1; text-align: left; }
+      #language-current { flex: 1; min-width: 0; text-align: left; white-space: nowrap; }
       .language-trigger:hover { background: #fff; border-color: #bfc4cd; box-shadow: 0 4px 12px rgb(20 25 36 / 8%); }
       .language-trigger[aria-expanded="true"] { border-color: #a9bde9; box-shadow: 0 0 0 3px rgb(65 118 230 / 10%); }
       .language-chevron {
@@ -102,7 +120,9 @@
         position: absolute;
         right: 0;
         top: calc(100% + 9px);
-        width: 176px;
+        max-width: calc(100vw - 40px);
+        min-width: 100%;
+        width: max-content;
         z-index: 12;
       }
       .language-menu[hidden] { display: none; }
@@ -126,7 +146,7 @@
       .language-option:focus-visible { outline: 2px solid #4176e6; outline-offset: -2px; }
       .language-code { color: #9297a1; font-size: 11px; font-weight: 650; letter-spacing: .08em; }
       .language-option[aria-selected="true"] .language-code { color: #6d91dd; }
-      .brand { align-items: center; display: flex; gap: 13px; }
+      .brand { align-items: center; display: flex; flex: 0 0 auto; gap: 13px; }
       .brand img { border-radius: 11px; box-shadow: 0 6px 16px rgb(20 53 118 / 18%); height: 40px; width: 40px; }
       .brand-copy { display: grid; gap: 2px; }
       .brand-copy strong { font-size: 18px; font-weight: 720; letter-spacing: -.028em; line-height: 1.12; }
@@ -358,7 +378,7 @@
       .target-action:hover { background: #f5f7fa; border-color: #b8bec8; }
       .target-error { color: #bc433d; font-size: 12px; line-height: 1.45; margin: 11px 0 0 36px; }
       .target-error[hidden] { display: none; }
-      .footer { align-items: center; border-top: 1px solid #e6e7ea; display: flex; justify-content: space-between; padding: 0 52px; }
+      .footer { align-items: center; border-top: 1px solid #e6e7ea; display: flex; justify-content: space-between; min-height: 82px; padding: 0 52px; }
       .compare-link { appearance: none; background: transparent; border: 0; color: #286be8; cursor: pointer; padding: 8px 0; }
       .compare-link:hover { text-decoration: underline; }
       .actions { display: flex; gap: 12px; }
@@ -457,18 +477,24 @@
         .detail { padding: 30px; }
         .footer { padding: 0 30px; }
       }
+      @media (max-width: 720px) {
+        .titlebar { align-items: flex-start; flex-direction: column; gap: 10px; padding: 12px 20px; }
+        .header-actions { justify-content: flex-start; width: 100%; }
+      }
     </style>
   </head>
   <body>
     <main class="shell">
       <header class="titlebar">
         <div class="brand"><img src="icon.png" alt=""><span class="brand-copy"><strong>DeepSeek Harness</strong><small data-copy="windowTitle">选择数据目录</small></span></div>
-        <div id="development-tools" class="development-tools" hidden>
-          <button id="simulate-missing-source" class="development-toggle" type="button" aria-pressed="false">开发：模拟未找到配置</button>
-        </div>
-        <div id="language-picker" class="language-picker">
-          <button id="language-trigger" class="language-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="language-inline-label" data-copy="languageLabel">语言</span><span class="language-divider" aria-hidden="true"></span><span id="language-current">中文</span><span class="language-chevron" aria-hidden="true"></span></button>
-          <div id="language-menu" class="language-menu" role="listbox" aria-label="语言" hidden></div>
+        <div class="header-actions">
+          <div id="development-tools" class="development-tools" hidden>
+            <button id="simulate-missing-source" class="development-toggle" type="button" aria-pressed="false">开发：模拟未找到配置</button>
+          </div>
+          <div id="language-picker" class="language-picker">
+            <button id="language-trigger" class="language-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="language-inline-label" data-copy="languageLabel">语言</span><span class="language-divider" aria-hidden="true"></span><span id="language-current">中文</span><span class="language-chevron" aria-hidden="true"></span></button>
+            <div id="language-menu" class="language-menu" role="listbox" aria-label="语言" hidden></div>
+          </div>
         </div>
       </header>
       <section class="content">

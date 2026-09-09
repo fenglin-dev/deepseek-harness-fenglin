@@ -78,8 +78,7 @@ describe('desktop data-home chooser', () => {
     expect(preload).toContain("const development = parameters.get('development') === 'true'")
     expect(preload).toContain('const displayedSource = (): string | undefined => simulateMissingSource ? undefined : source')
     expect(preload).toContain('simulateMissingSourceButton.ariaPressed = String(simulateMissingSource)')
-    expect(preload).toContain('Copy a plugin restore list without Profiles, node_modules, or lockfiles')
-    expect(preload).toContain('Every explicit false remains denied')
+    expect(preload).toContain("import { copyFor, detailsFor } from './locales/data-home.ts'")
     expect(preload).toContain("type DataHomeTargetMode = 'default' | 'custom'")
     expect(preload).toContain("detailStage.dataset.step = destinationVisible ? 'destination' : 'details'")
     expect(preload).toContain('backButton.hidden = !destinationVisible')
@@ -90,6 +89,32 @@ describe('desktop data-home chooser', () => {
     expect(preload).not.toContain('showConfirmation')
     expect(preload).toContain("{ kind: 'custom' as const, selectionId: customTarget.selectionId }")
     expect(preload).not.toContain("target: { kind: 'custom', path:")
+  })
+
+  it('keeps long locale controls in normal header flow', async () => {
+    const html = await readFile(`${desktopRoot}/src/data-home.html`, 'utf8')
+    expect(html).toContain('class="header-actions"')
+    expect(html).toContain('.header-actions {')
+    expect(html).toContain('flex-wrap: wrap')
+    expect(html).toContain('width: max-content')
+    expect(html).not.toContain('right: 204px')
+  })
+
+  it('keeps the footer inside the viewport when translated content wraps', async () => {
+    const html = await readFile(`${desktopRoot}/src/data-home.html`, 'utf8')
+    const shellRule = html.match(/\.shell \{(?<rule>[^}]+)\}/u)?.groups?.rule ?? ''
+    const contentRule = html.match(/\.content \{(?<rule>[^}]+)\}/u)?.groups?.rule ?? ''
+    const choicesRule = html.match(/\.choices-pane \{(?<rule>[^}]+)\}/u)?.groups?.rule ?? ''
+    const detailRule = html.match(/\.detail \{(?<rule>[^}]+)\}/u)?.groups?.rule ?? ''
+    const footerRule = html.match(/\.footer \{(?<rule>[^}]+)\}/u)?.groups?.rule ?? ''
+
+    expect(shellRule).toContain('height: 100vh')
+    expect(shellRule).toContain('grid-template-rows: minmax(82px, auto) minmax(0, 1fr) 82px')
+    expect(shellRule).toContain('overflow: hidden')
+    expect(contentRule).toContain('min-height: 0')
+    expect(choicesRule).toContain('overflow: auto')
+    expect(detailRule).toContain('overflow-y: auto')
+    expect(footerRule).toContain('min-height: 82px')
   })
 
   it('keeps first-run source validation in Electron and shows the chooser without a default source', async () => {
