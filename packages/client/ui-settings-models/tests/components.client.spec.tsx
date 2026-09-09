@@ -307,6 +307,33 @@ async function mountDeepSeekCard(overrides: Parameters<typeof scriptedFace>[0] =
 }
 
 describe('ModelsSection', () => {
+  it('explains missing provider settings without hiding healthy providers or writing credentials', async () => {
+    const scripted = scriptedFace()
+    scripted.face.settings.describe.mockResolvedValue(remoteOk({
+      writable: true, hasDocument: true,
+      namespaces: wireNamespaces().filter(view => view.ns === 'llm-deepseek'),
+    }))
+    const mounted = await mountFace(scripted)
+    expect(screen.getByRole('alert').textContent).toContain(en.providerSettingsUnavailable)
+    expect(screen.getByRole('alert').textContent).toContain('llm-pi-ai')
+    expect(screen.getByRole('button', { name: deepSeekCopy(en.editProvider) })).toBeTruthy()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.customAdd }).disabled).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.add }).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: en.retry }))
+    await waitFor(() => { expect(mounted.face.llm.listProviders).toHaveBeenCalledTimes(2) })
+    expect(mounted.set).not.toHaveBeenCalled()
+    expect(mounted.unset).not.toHaveBeenCalled()
+    expect(mounted.mutate).not.toHaveBeenCalled()
+    scripted.face.settings.describe.mockResolvedValue(remoteOk({
+      writable: true, hasDocument: true, namespaces: wireNamespaces(),
+    }))
+    await act(async () => { await mounted.mirror.load(); await mounted.controller.load() })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.add }).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+  })
+
   it('renders nothing before the slot injects its dependencies', () => {
     const uninjected = {} as ModelsSectionProps
     render(<ModelsSection {...uninjected} />)

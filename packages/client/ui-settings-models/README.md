@@ -29,6 +29,8 @@ Open the Models page from the Settings navigation to see every configured provid
 
 ### API keys
 
+If the provider directory names a settings section that did not register, the page names the unavailable section and offers Retry while retaining healthy provider editors. Add only lists providers whose settings schema is available. Check the startup log and back up `settings.yaml` before correcting invalid model or protocol entries; restart Harness before retrying a failed registration. The warning does not imply lost credentials and performs no configuration writes.
+
 The primary field on an editor card is a single **API key** input — the page never asks for an environment-variable name. A typed key stores write-only through `credentials.set` under the profile's reference, deriving `<ROUTE>_API_KEY` when the profile has none, and the pi-ai profile records that derivation as `apiKeyEnv`, so `settings.yaml` never carries a key value. Leaving a new pi-ai provider's key blank saves a reference-free profile and preserves provider-native authentication (for example the Bedrock credential chain or Vertex ADC). A row labels API-key state with a green solid dot only when a referenced credential is confirmed configured, and with a red solid dot only when a named reference is confirmed missing. A successful Apply emits a local accessible status message without echoing secret material.
 
 ### Editing a provider

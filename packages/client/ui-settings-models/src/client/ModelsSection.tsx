@@ -290,7 +290,10 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
   const configured = state.rows.filter(row => row.configured)
-  const addable = state.rows.filter(row => !row.configured && row.entry.settingsNs !== '')
+  const unavailableNamespaces = [...new Set(state.rows
+    .map(row => row.entry.settingsNs)
+    .filter(ns => ns !== '' && !state.namespaces.has(ns)))]
+  const addable = state.rows.filter(row => !row.configured && state.namespaces.has(row.entry.settingsNs))
   const addTarget = adding ? editing : undefined
   const addNamespace = addTarget === undefined ? undefined : state.namespaces.get(addTarget.settingsNs)
   // The draft's directory row, for the card extension seat. A refresh can drop
@@ -308,6 +311,16 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
     <div className={styles['section']}>
       <h2 className={styles['title']}>{t('title')}</h2>
       <p className={styles['intro']}>{t('intro')}</p>
+      {state.status === 'ready' && unavailableNamespaces.length > 0 ? (
+        <div role="alert">
+          <p className={styles['error']}>
+            {t('providerSettingsUnavailable')} {unavailableNamespaces.join(', ')}
+          </p>
+          <button type="button" className={styles['secondaryButton']} onClick={() => { void controller.load() }}>
+            {t('retry')}
+          </button>
+        </div>
+      ) : null}
       {!state.writable && state.status === 'ready' ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
       {savedIdentity === undefined
         ? null
