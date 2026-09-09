@@ -564,7 +564,10 @@ describe('launchResolved', () => {
     // The opener is the shipped Invoke-Item channel; the detached spawner never runs.
     expect(spawns).toEqual([])
     expect(commands).toEqual([
-      ['powershell.exe', '-NoProfile', '-Command', "Invoke-Item -LiteralPath 'C:\\w\\dir'"],
+      [
+        'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+        '-NoProfile', '-Command', "Invoke-Item -LiteralPath 'C:\\w\\dir'",
+      ],
     ])
   })
 

@@ -6,7 +6,7 @@ import { homedir, tmpdir, userInfo } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, session, shell, Tray,
+  app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, Notification, session, shell, Tray,
   type MenuItemConstructorOptions, type MessageBoxOptions, type WebContents, type WebPreferences,
 } from 'electron'
 import { appendBundledPluginFailure, verifyBundledPluginArchive } from './bundled-plugin-seed.ts'
@@ -59,7 +59,7 @@ import { EXTERNAL_TOOL_IDS, type DesktopExternalToolId } from './external-tool-c
 import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycle.ts'
 import { ApplicationMenuController } from './application-menu-controller.ts'
 import { CLIENT_COMMANDS, menuCopy, type DesktopCommand } from './application-menu.ts'
-import { inspectProfileMutationLock } from './menu-mutation-guard.ts'
+import { inspectProfileMutationLock, menuMutationActive } from './menu-mutation-guard.ts'
 import { isDesktopRenderer, withDesktopWindowMetadata } from './window-frame.ts'
 import {
   createDesktopWindowSurface,
@@ -274,6 +274,7 @@ function profileDoctorStatus(output: string): 'failed' | 'healthy' | 'quarantine
 function menuBusy(): boolean {
   const lab = diagnosticLabManager?.current()
   return snapshotMutationActive || lab?.phase === 'running' || lab?.phase === 'queued' || lab?.phase === 'restoring'
+    || (activeMenuHome !== undefined && menuMutationActive(activeMenuHome))
 }
 
 function reportMenuError(error: unknown): void {
@@ -1409,6 +1410,7 @@ async function startApplication(): Promise<void> {
     downloadDirectory: join(app.getPath('userData'), 'updates'),
     getRelease: () => releaseChecker?.status ?? { phase: 'unsupported' },
     openPath: path => shell.openPath(path),
+    systemFetch: (input, init) => net.fetch(input, init),
   })
   externalToolCompatibility = new ExternalToolCompatibilityManager({
     cacheDirectory: join(app.getPath('userData'), 'external-tool-compatibility'),
@@ -1753,6 +1755,7 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     if (app.isPackaged) throw new Error('desktop: recovery preview is available only in development mode')
     if (harnessOrigin === undefined) throw new Error('desktop: Harness must be ready before opening recovery mode')
+    if (menuBusy()) throw new Error(menuCopy(menuLocale).busy)
     showLoading('failed', {
       message: app.getLocale().toLowerCase().startsWith('zh')
         ? '已从开发模式手动进入恢复工作区。Harness 仍在运行，可以不做任何修改，直接点击“继续”返回客户端。'
@@ -1815,6 +1818,7 @@ async function startApplication(): Promise<void> {
   })
   ipcMain.handle('dsh:desktop:recovery:exit', (event) => {
     assertMainRenderer(event.sender)
+    if (menuBusy()) throw new Error(menuCopy(menuLocale).busy)
     setTimeout(() => { void lifecycle?.requestQuit() }, 0)
     return { exiting: true as const }
   })
@@ -2142,7 +2146,9 @@ async function startApplication(): Promise<void> {
     },
     disposeHost: async () => {
       cancelBootableSnapshot()
-      await Promise.allSettled([oneShotOperations.dispose(), supervisor?.stop(), desktopReturnControl?.close()])
+      await Promise.allSettled([
+        releaseDownloader?.dispose(), oneShotOperations.dispose(), supervisor?.stop(), desktopReturnControl?.close(),
+      ])
     },
     releaseQuit: () => {
       quitReleased = true

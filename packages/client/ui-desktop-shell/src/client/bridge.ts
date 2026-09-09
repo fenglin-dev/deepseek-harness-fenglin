@@ -102,6 +102,14 @@ export type DesktopReleaseDownloadStatus =
   | { phase: 'unsupported' | 'idle' }
   | { phase: 'resolving'; version: string }
   | {
+    phase: 'switching'
+    version: string
+    fileName: string
+    transferredBytes: number
+    totalBytes: number
+    resumeFromBytes: number
+  }
+  | {
     phase: 'downloading'
     version: string
     fileName: string

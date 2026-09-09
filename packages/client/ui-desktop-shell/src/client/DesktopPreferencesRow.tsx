@@ -110,25 +110,30 @@ export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferenc
       ? releaseDownload
       : { phase: 'idle' as const }
   const downloadActive = selectedDownload.phase === 'resolving'
+    || selectedDownload.phase === 'switching'
     || selectedDownload.phase === 'downloading'
     || selectedDownload.phase === 'verifying'
   const downloadText = selectedDownload.phase === 'resolving'
     ? t('release.download.resolving')
-    : selectedDownload.phase === 'downloading'
-      ? t('release.download.progress', {
-        percent: selectedDownload.percent,
-        transferred: formatBytes(selectedDownload.transferredBytes),
-        total: formatBytes(selectedDownload.totalBytes),
-      })
-      : selectedDownload.phase === 'verifying'
-        ? t('release.download.verifying')
-        : selectedDownload.phase === 'ready'
-          ? t('release.download.ready', { file: selectedDownload.fileName })
-          : selectedDownload.phase === 'cancelled'
-            ? t('release.download.cancelled')
-            : selectedDownload.phase === 'error'
-              ? t('release.download.error', { message: selectedDownload.message })
-              : null
+    : selectedDownload.phase === 'switching'
+      ? t(selectedDownload.resumeFromBytes === 0 && selectedDownload.transferredBytes > 0
+        ? 'release.download.restarting'
+        : 'release.download.switching')
+      : selectedDownload.phase === 'downloading'
+        ? t('release.download.progress', {
+          percent: selectedDownload.percent,
+          transferred: formatBytes(selectedDownload.transferredBytes),
+          total: formatBytes(selectedDownload.totalBytes),
+        })
+        : selectedDownload.phase === 'verifying'
+          ? t('release.download.verifying')
+          : selectedDownload.phase === 'ready'
+            ? t('release.download.ready', { file: selectedDownload.fileName })
+            : selectedDownload.phase === 'cancelled'
+              ? t('release.download.cancelled')
+              : selectedDownload.phase === 'error'
+                ? t('release.download.error', { message: selectedDownload.message })
+                : null
 
   return (
     <section className={css.group}>

@@ -261,6 +261,31 @@ describe('desktop shell components', () => {
     b.controller.dispose()
   })
 
+  it('shows fallback and restart download states while keeping cancellation available', async () => {
+    const fallback = setup(undefined, undefined, {
+      phase: 'switching', version: '0.1.0-rc.8',
+      fileName: 'DeepSeek-Harness-macos-arm64.dmg',
+      transferredBytes: 25, totalBytes: 100, resumeFromBytes: 25,
+    })
+    const fallbackView = render(<DesktopPreferencesRow {...({
+      controller: fallback.controller, t,
+    } as DesktopPreferencesRowProps)} />)
+    expect(await screen.findByText('The system network failed. Switching to the fallback channel…')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel download' }))
+    await waitFor(() => { expect(fallback.cancelDownload).toHaveBeenCalledOnce() })
+    fallback.controller.dispose()
+    fallbackView.unmount()
+
+    const restart = setup(undefined, undefined, {
+      phase: 'switching', version: '0.1.0-rc.8',
+      fileName: 'DeepSeek-Harness-macos-arm64.dmg',
+      transferredBytes: 25, totalBytes: 100, resumeFromBytes: 0,
+    })
+    render(<DesktopPreferencesRow {...({ controller: restart.controller, t } as DesktopPreferencesRowProps)} />)
+    expect(await screen.findByText('The fallback channel cannot resume this transfer. Downloading again…')).toBeTruthy()
+    restart.controller.dispose()
+  })
+
   it('keeps the update check inside General Settings when the client is current', async () => {
     const b = setup({ phase: 'current', currentVersion: '0.1.0-rc.8' })
     render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
