@@ -199,8 +199,10 @@ prepareDocument(): Promise<string | undefined>
 /**
  * Register a namespace schema and receive its owner scope. The registration
  * is an effect on the calling plugin's fiber: disposing that fiber removes
- * the namespace and its observers. An invalid stored section fails the
- * registration itself — the earliest point where the schema can judge it.
+ * the namespace and its observers. An invalid stored section normally fails
+ * registration — the earliest point where the schema can judge it. A
+ * repair-capable owner may admit only schema-valid stored data rejected by
+ * its custom validator through {@link SettingsRegisterOptions.acceptUnserviceableStored}.
  * @param ns - unique namespace; duplicate registration fails loud.
  * @param schema - schemastery schema resolving this namespace's value.
  * @param options - composition `base` layer and effect timing.
