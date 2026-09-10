@@ -310,6 +310,16 @@ abstract resolveExecutable( command: string, env?: Readonly<Record<string, strin
 abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle
 
 /**
+ * Start an authorized plugin service that may outlive the current Harness
+ * process. Providers must bind the declaration to their own approval store;
+ * the base seam fails closed when no such provider is available.
+ * @param _spec - Exact process request whose non-secret launch identity is approved.
+ * @param _declaration - Stable plugin, version, service, purpose and launch fingerprint.
+ * @returns Provider-owned handle for the authorized persistent range.
+ */
+spawnPersistent(_spec: SubprocessSpawnSpec, _declaration: import('./persistent.ts').PersistentServiceDeclaration): SubprocessHandle
+
+/**
  * Allocate a real terminal and start one owned process session. This is the
  * only non-pipe process primitive: implementations own terminal byte I/O,
  * foreground groups, signals, and whole-session quiescence.

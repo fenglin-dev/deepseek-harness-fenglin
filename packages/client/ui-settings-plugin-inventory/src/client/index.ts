@@ -25,6 +25,7 @@ import { readImportedPluginRestoreBridge } from './imported-restore-bridge.ts'
 import { desktopPluginSnapshotsAvailable } from './plugin-snapshot-bridge.ts'
 import { desktopSettingsRecoveryAvailable } from './settings-recovery-bridge.ts'
 import { desktopStartupDiagnosticsAvailable } from './startup-diagnostics-bridge.ts'
+import { preparePersistentPluginUninstall } from './persistent-process-bridge.ts'
 import { en, zh, type PluginInventoryLocaleKey } from './locales.ts'
 import {
   cancelDesktopDiagnosticLabRun,
@@ -86,6 +87,7 @@ export function apply(ctx: ClientContext): void {
     getPluginInstall(installId, getHostInstall)
   )
   const startUninstall: PluginInventorySettingsTabInjected['startUninstall'] = async (request) => {
+    await preparePersistentPluginUninstall(request.packageName)
     const result = await ctx.remote.pluginInventory.startUninstall(request)
     if (!result.ok) throw new Error(`pluginInventory.startUninstall failed: ${result.error.code}: ${result.error.message}`)
     return result.value

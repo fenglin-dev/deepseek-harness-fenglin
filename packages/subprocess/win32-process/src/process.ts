@@ -85,6 +85,8 @@ export interface CurrentTokenProcessSpawnOptions extends ProcessSpawnOptions {
   env: Readonly<Record<string, string>>
   /** Runner CRT descriptors carrying target stdin, stdout, and stderr. */
   stdio: CurrentTokenStdioFileDescriptors
+  /** Let descendants leave this outer Desktop Job and enter their own managed Jobs. */
+  allowChildBreakaway?: boolean
 }
 
 /** Runner CRT descriptors whose OS handles become the target standard handles. */
@@ -330,12 +332,13 @@ export function waitForProcessExit(api: Win32ProcessBindings, process: NativePtr
   }
 }
 
-function createKillOnCloseJob(api: Win32ProcessBindings): NativePtr {
+function createKillOnCloseJob(api: Win32ProcessBindings, allowChildBreakaway = false): NativePtr {
   const job = api.createJobObjectW(null, null)
   if (isNullPtr(job)) throwLastError(api, 'CreateJobObjectW')
   const information = Buffer.alloc(abi.JOBOBJECT_EXTENDED_LIMIT_SIZE)
   information.writeUInt32LE(
-    abi.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    abi.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+      | (allowChildBreakaway ? abi.JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK : 0),
     abi.JOBOBJECT_EXTENDED_LIMIT_FLAGS_OFFSET,
   )
   if (api.setInformationJobObject(
@@ -403,8 +406,9 @@ function spawnJobProcess(
   resolveStdio: () => ProcessStandardHandles,
   createName: 'CreateProcessAsUserW' | 'CreateProcessW',
   create: (startupInfo: NativePtr, processInfo: NativePtr) => number,
+  allowChildBreakaway = false,
 ): SpawnedJobProcess {
-  const job = createKillOnCloseJob(api)
+  const job = createKillOnCloseJob(api, allowChildBreakaway)
   const enabled: NativePtr[] = []
   let startupInfo: NativePtr | undefined
   let processInfo: NativePtr | undefined
@@ -536,7 +540,7 @@ export function spawnCurrentTokenJobProcess(
       options.cwd,
       startupInfo,
       processInfo,
-    ))
+    ), options.allowChildBreakaway === true)
 }
 
 /**

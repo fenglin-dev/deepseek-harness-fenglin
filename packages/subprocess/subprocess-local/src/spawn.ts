@@ -75,6 +75,8 @@ export interface SpawnInternals {
  * intentionally absent from the public subprocess seam.
  */
 export interface LocalSubprocessHandle extends SubprocessHandle {
+  /** Trusted root process used only for recovery identity registration. */
+  readonly rootPid?: number
   /** Force-terminate the current tree synchronously without starting timers or waits. */
   terminateForHostExit(): void
 }
@@ -620,6 +622,7 @@ export function bindManagedProcess(
   }
 
   return {
+    ...(launch.rootPid === undefined ? {} : { rootPid: launch.rootPid }),
     /* v8 ignore start -- pipe-mode streams exist on every conforming launch;
        the null-coalesces guard an internal adapter defect only. */
     stdin: stdinMode === 'pipe' ? stdin ?? undefined : undefined,
@@ -669,6 +672,7 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
     direct,
   )
   return bindManagedProcess(spec, {
+    ...(pid === undefined ? {} : { rootPid: pid }),
     stdin: child.stdin,
     stdout: child.stdout,
     stderr: child.stderr,

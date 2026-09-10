@@ -22,6 +22,9 @@ describe('desktop startup progress', () => {
     expect(parseDesktopStartupProgress({ stage: 'checking-profile', progress: 28 })).toEqual({
       stage: 'checking-profile', progress: 28,
     })
+    expect(parseDesktopStartupProgress({ stage: 'reclaiming-processes', progress: 72 })).toEqual({
+      stage: 'reclaiming-processes', progress: 72,
+    })
     expect(parseDesktopStartupProgress({
       stage: 'checking-profile', progress: 28, startedAt: 10, deadlineAt: 20, state: 'degraded',
     })).toEqual({

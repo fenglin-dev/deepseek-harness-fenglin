@@ -492,6 +492,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../packages/subprocess/subprocess
       semver:
         specifier: ^7.8.5
         version: 7.8.5

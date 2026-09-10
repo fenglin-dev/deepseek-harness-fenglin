@@ -20,6 +20,38 @@ function bench(closeBehavior: 'tray' | 'quit', options: Partial<DesktopLifecycle
 }
 
 describe('desktop lifecycle', () => {
+  it('does not schedule a restart until cleanup has completed', async () => {
+    let settle!: () => void
+    const cleanup = new Promise<void>((resolve) => { settle = resolve })
+    const b = bench('quit', { disposeHost: () => cleanup })
+    const relaunch = vi.fn()
+    const pending = b.lifecycle.requestRestart(relaunch)
+    await Promise.resolve()
+    expect(relaunch).not.toHaveBeenCalled()
+    expect(b.releaseQuit).not.toHaveBeenCalled()
+    settle()
+    await pending
+    expect(relaunch).toHaveBeenCalledOnce()
+    expect(b.releaseQuit).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the window alive and allows retry after failed process cleanup', async () => {
+    const failure = new Error('managed range remains alive')
+    const cleanup = vi.fn().mockRejectedValueOnce(failure).mockResolvedValueOnce(undefined)
+    const reportError = vi.fn()
+    const b = bench('quit', { disposeHost: cleanup, reportError })
+    const relaunch = vi.fn()
+    await b.lifecycle.requestRestart(relaunch)
+    expect(relaunch).not.toHaveBeenCalled()
+    expect(b.releaseQuit).not.toHaveBeenCalled()
+    expect(b.lifecycle.isQuitting).toBe(false)
+    expect(b.window.show).toHaveBeenCalledOnce()
+    expect(reportError).toHaveBeenCalledWith(failure)
+    await b.lifecycle.requestRestart(relaunch)
+    expect(cleanup).toHaveBeenCalledTimes(2)
+    expect(relaunch).toHaveBeenCalledOnce()
+    expect(b.releaseQuit).toHaveBeenCalledOnce()
+  })
   it('does not schedule a relaunch or stop Harness while a plugin mutation is active', async () => {
     const b = bench('quit', { canQuit: () => false })
     const relaunch = vi.fn()
@@ -63,8 +95,9 @@ describe('desktop lifecycle', () => {
     const second = b.lifecycle.requestRestart(relaunch)
 
     expect(first).toBe(second)
-    expect(relaunch).toHaveBeenCalledOnce()
+    expect(relaunch).not.toHaveBeenCalled()
     await first
+    expect(relaunch).toHaveBeenCalledOnce()
     expect(b.disposeHost).toHaveBeenCalledOnce()
     expect(b.releaseQuit).toHaveBeenCalledOnce()
   })

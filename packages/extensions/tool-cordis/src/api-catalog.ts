@@ -2394,6 +2394,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['synchronously when pre-aborted or when argv, cwd, environment, or grace is invalid before handle creation.'],
       },
       {
+        signature: 'spawnPersistent(_spec: SubprocessSpawnSpec, _declaration: import(\'./persistent.ts\').PersistentServiceDeclaration): SubprocessHandle',
+        description: 'Start an authorized plugin service that may outlive the current Harness process. Providers must bind the declaration to their own approval store; the base seam fails closed when no such provider is available.',
+        parameters: [{ name: '_spec', description: 'Exact process request whose non-secret launch identity is approved.' }, { name: '_declaration', description: 'Stable plugin, version, service, purpose and launch fingerprint.' }],
+        returns: 'Provider-owned handle for the authorized persistent range.',
+      },
+      {
         signature: 'abstract spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>',
         description: 'Allocate a real terminal and start one owned process session. This is the only non-pipe process primitive: implementations own terminal byte I/O, foreground groups, signals, and whole-session quiescence.',
         parameters: [{ name: 'spec', description: 'fully specified argv, cwd, environment, dimensions, grace, and allocation cancellation.' }],
@@ -4740,6 +4746,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
+  },
+  {
+    name: 'PersistentServiceDeclaration',
+    declaration: 'export interface PersistentServiceDeclaration {\n    readonly pluginName: string;\n    readonly pluginVersion: string;\n    readonly serviceId: string;\n    readonly purpose: string;\n    readonly specFingerprint: string;\n}',
   },
   {
     name: 'PostToolDecision',

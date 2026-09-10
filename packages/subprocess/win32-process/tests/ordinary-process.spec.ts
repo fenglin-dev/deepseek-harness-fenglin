@@ -15,6 +15,8 @@ import {
   JOBOBJECT_BASIC_ACCOUNTING_ACTIVE_PROCESSES_OFFSET,
   JOBOBJECT_BASIC_ACCOUNTING_SIZE,
   JobObjectBasicAccountingInformation,
+  JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+  JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK,
   WAIT_TIMEOUT,
 } from '../src/abi.ts'
 import { PROCESS_INFORMATION, STARTUPINFOW } from '../src/ffi.ts'
@@ -75,6 +77,15 @@ function api(overrides: Partial<CurrentTokenProcessBindings> = {}): CurrentToken
 }
 
 describe('ordinary Job process operations', () => {
+  it('adds silent breakaway only when the Desktop outer owner requests it', () => {
+    const setInformationJobObject = vi.fn((_job: NativePtr, _class: number, _information: Buffer) => 1)
+    spawnCurrentTokenJobProcess(api({ setInformationJobObject }), options({ allowChildBreakaway: true }))
+    const information = setInformationJobObject.mock.calls[0]?.[2] as Buffer
+    expect(information.readUInt32LE(16)).toBe(
+      JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK,
+    )
+  })
+
   it('creates suspended, assigns the Job, and resumes before returning', () => {
     const events: string[] = []
     const createProcessW = vi.fn((

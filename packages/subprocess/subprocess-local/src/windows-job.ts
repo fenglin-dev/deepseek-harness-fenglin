@@ -33,6 +33,8 @@ export interface WindowsJobInternals {
   runnerAvailable?: (invocation: RunnerInvocation) => boolean
   loadWin32ProcessBindings?: typeof loadWin32ProcessBindings
   probeCurrentTokenJobSupport?: typeof probeCurrentTokenJobSupport
+  /** Desktop outer range only: let Host descendants establish independent lifetimes. */
+  allowChildBreakaway?: boolean
 }
 
 type RunnerProcess = Omit<ReturnType<typeof spawn>, 'send' | 'stdio'> & {
@@ -186,7 +188,10 @@ export function launchWindowsJob(
     runnerSpawned = true
     try {
       if (child.send === undefined) throw new Error('subprocess-local: Windows runner has no IPC channel')
-      child.send({ type: 'start', cwd: spec.cwd, env: targetEnv }, (error) => {
+      child.send({
+        type: 'start', cwd: spec.cwd, env: targetEnv,
+        ...(internals.allowChildBreakaway === true ? { allowChildBreakaway: true } : {}),
+      }, (error) => {
         if (error === null) return
         failInfrastructure(error)
         owner.terminateForHostExit()
@@ -223,6 +228,7 @@ export function launchWindowsJob(
   })
 
   return {
+    ...(child.pid === undefined ? {} : { rootPid: child.pid }),
     stdin: spec.stdio.stdin === 'ignore' ? null : targetStdin,
     stdout: child.stdio[5] as Readable | null,
     stderr: child.stdio[6] as Readable | null,

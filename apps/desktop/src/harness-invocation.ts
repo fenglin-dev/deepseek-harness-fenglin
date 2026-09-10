@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { acceptsHarnessInvocationExit, type HarnessLaunch } from './launch.ts'
+import type { DesktopProcessObserver } from './process-observer.ts'
 
 const DIAGNOSTIC_LIMIT = 4_000
 const OUTPUT_LIMIT = 1024 * 1024
@@ -18,6 +19,9 @@ export interface HarnessInvocationOptions {
   readonly signal: AbortSignal
   readonly acceptedExitCodes?: readonly number[]
   readonly operationId?: string
+  /** Register this root with the desktop's cross-task process owner. */
+  readonly onSpawn?: (pid: number) => void
+  readonly managedRuntime?: DesktopProcessObserver | undefined
 }
 
 export interface HarnessInvocationSnapshot {
@@ -115,6 +119,7 @@ export async function runHarnessInvocation(
       message: `desktop: Harness invocation ${options.kind} was cancelled before launch`,
     })
   }
+  if (options.managedRuntime !== undefined) return runManagedHarnessInvocation(launch, options, options.managedRuntime)
   return new Promise<string>((resolve, reject) => {
     const child = spawn(launch.command, launch.args, {
       cwd: launch.cwd,
@@ -124,6 +129,9 @@ export async function runHarnessInvocation(
       detached: process.platform !== 'win32',
     })
     const output: Buffer[] = []
+    child.once('spawn', () => {
+      if (child.pid !== undefined) options.onSpawn?.(child.pid)
+    })
     let outputBytes = 0
     let settled = false
     let failureReason: 'cancelled' | 'timeout' | undefined
@@ -213,8 +221,79 @@ export async function runHarnessInvocation(
   })
 }
 
+async function runManagedHarnessInvocation(
+  launch: HarnessLaunch,
+  options: HarnessInvocationOptions,
+  runtime: DesktopProcessObserver,
+): Promise<string> {
+  const startedAt = Date.now()
+  const operationId = options.operationId ?? randomUUID()
+  const controller = new AbortController()
+  let interrupted: 'cancelled' | 'timeout' | undefined
+  let wake!: () => void
+  const interruption = new Promise<undefined>((resolve) => { wake = () => { resolve(undefined) } })
+  const stop = (reason: 'cancelled' | 'timeout'): void => {
+    interrupted ??= reason
+    controller.abort()
+    wake()
+  }
+  const cancel = (): void => { stop('cancelled') }
+  options.signal.addEventListener('abort', cancel, { once: true })
+  const deadline = setTimeout(() => { stop('timeout') }, options.timeoutMs)
+  let output = Buffer.alloc(0)
+  const retain = (chunk: Buffer): void => {
+    output = Buffer.concat([output, chunk]).subarray(-OUTPUT_LIMIT)
+  }
+  try {
+    if (options.signal.aborted) cancel()
+    controller.signal.throwIfAborted()
+    const environment = Object.fromEntries(Object.entries({ ...process.env, ...launch.environment })
+      .filter((entry): entry is [string, string] => entry[1] !== undefined))
+    const { handle } = runtime.launch({
+      label: options.kind,
+      lifecycle: 'task',
+      argv: [launch.command, ...launch.args], cwd: launch.cwd ?? process.cwd(), env: environment,
+      stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' }, graceMs: 10_000, signal: controller.signal,
+    })
+    handle.stdout?.on('data', retain)
+    handle.stderr?.on('data', retain)
+    try {
+      const result = await Promise.race([handle.done, interruption])
+      const value = output.toString('utf8').trim()
+      if (interrupted !== undefined || result === undefined || !acceptsHarnessInvocationExit(
+        result.exitCode, result.signal, options.acceptedExitCodes ?? [0],
+      )) {
+        throw new HarnessInvocationError({
+          operationId, kind: options.kind, reason: interrupted ?? 'failed',
+          durationMs: Date.now() - startedAt,
+          message: `desktop: Harness invocation ${options.kind} ${interrupted ?? 'failed'}: ${value.slice(-DIAGNOSTIC_LIMIT)}`,
+        })
+      }
+      return value
+    } finally {
+      try {
+        // Direct command completion does not authorize surviving task descendants.
+        handle.terminate()
+        if (!await handle.waitForExit(AbortSignal.timeout(15_000))) {
+          throw new Error('desktop: managed command cleanup remains unconfirmed; restart is blocked')
+        }
+      } finally {
+        handle.stdout?.off('data', retain)
+        handle.stderr?.off('data', retain)
+      }
+    }
+  } finally {
+    clearTimeout(deadline)
+    options.signal.removeEventListener('abort', cancel)
+  }
+}
+
 /** Own every short-lived CLI child so quit and restart can settle them together. */
 export class DesktopOperationSupervisor {
+  constructor(
+    private readonly onSpawn?: (pid: number, kind: string) => void,
+    private readonly runtime?: () => DesktopProcessObserver | undefined,
+  ) {}
   readonly #active = new Map<string, {
     readonly controller: AbortController
     readonly promise: Promise<unknown>
@@ -245,7 +324,11 @@ export class DesktopOperationSupervisor {
     const controller = new AbortController()
     const startedAt = Date.now()
     const { allowDuringDisposal: _allowDuringDisposal, ...invocationOptions } = options
-    const promise = runHarnessInvocation(launch, { ...invocationOptions, operationId, signal: controller.signal })
+    const promise = runHarnessInvocation(launch, {
+      ...invocationOptions, operationId, signal: controller.signal,
+      onSpawn: (pid) => { this.onSpawn?.(pid, options.kind) },
+      managedRuntime: this.runtime?.(),
+    })
     const entry = {
       controller,
       promise,
@@ -266,7 +349,7 @@ export class DesktopOperationSupervisor {
   async dispose(): Promise<void> {
     if (this.#phase === 'disposed') return
     this.#phase = 'disposing'
-    const deadline = Date.now() + 3_000
+    const deadline = Date.now() + 15_000
     for (;;) {
       const entries = [...this.#active.values()]
       for (const entry of entries) {
@@ -274,7 +357,12 @@ export class DesktopOperationSupervisor {
         entry.snapshot = { ...entry.snapshot, phase: 'cancelling' }
         entry.controller.abort()
       }
-      if (entries.length === 0 || Date.now() >= deadline) break
+      if (entries.length === 0) break
+      if (Date.now() >= deadline) {
+        // Keep admission closed and retain ownership for a later cleanup retry.
+        for (const entry of entries) entry.controller.abort()
+        throw new Error('desktop: command cleanup timed out; shutdown remains blocked')
+      }
       await Promise.race([
         Promise.allSettled(entries.map(entry => entry.promise)).then(() => undefined),
         new Promise<void>((resolve) => { setTimeout(resolve, Math.min(50, Math.max(1, deadline - Date.now()))) }),

@@ -191,6 +191,12 @@ describe('closed runner protocol', () => {
     expect(parseWindowsStartRequest({ type: 'start', cwd: 'C:\\x', env: { A: '1' } })).toEqual({
       type: 'start', cwd: 'C:\\x', env: { A: '1' },
     })
+    expect(parseWindowsStartRequest({
+      type: 'start', cwd: 'C:\\x', env: {}, allowChildBreakaway: true,
+    })).toEqual({ type: 'start', cwd: 'C:\\x', env: {}, allowChildBreakaway: true })
+    expect(() => parseWindowsStartRequest({
+      type: 'start', cwd: 'C:\\x', env: {}, allowChildBreakaway: 'yes',
+    })).toThrow()
     expect(() => parseWindowsStartRequest({ type: 'start', cwd: 'C:\\x', env: {}, extra: 1 })).toThrow()
     expect(isWindowsTerminateRequest({ type: 'terminate' })).toBe(true)
     expect(isWindowsTerminateRequest({ type: 'terminate', reason: 'no' })).toBe(false)

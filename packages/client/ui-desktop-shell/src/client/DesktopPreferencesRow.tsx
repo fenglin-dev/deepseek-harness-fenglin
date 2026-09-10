@@ -6,12 +6,19 @@ import { Button, IconChevronDownOutline14, Menu, Modal } from '@deepseek-ai/dsh-
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DEVELOPMENT_RELEASE_VERSION, type DesktopShellController } from './controller.ts'
 import type { DesktopIconsBridge } from './icon-protocol.ts'
+import type { DesktopProcessesBridge } from './bridge.ts'
+import { ManagedProcessesRow } from './ManagedProcessesRow.tsx'
 import { DesktopIconSettings } from './DesktopIconSettings.tsx'
 import css from './DesktopShell.module.css'
 
 export type DesktopPreferencesRowProps = PropsRuntime<'settings.general.item'>
   & PropsLocale<'desktop-shell'>
-  & { controller: DesktopShellController; icons?: DesktopIconsBridge | undefined }
+  & {
+    controller: DesktopShellController
+    icons?: DesktopIconsBridge | undefined
+    processes?: DesktopProcessesBridge | undefined
+    openLog?: (() => Promise<unknown>) | undefined
+  }
 
 function Toggle({ enabled, disabled, label, onChange }: {
   enabled: boolean
@@ -41,7 +48,7 @@ function formatBytes(value: number): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferencesRowProps) {
+export function DesktopPreferencesRow({ controller, icons, processes, openLog, t }: DesktopPreferencesRowProps) {
   const subscribe = useCallback((listener: () => void) => controller.subscribe(listener), [controller])
   const getSnapshot = useCallback(() => controller.getSnapshot(), [controller])
   const state = useSyncExternalStore(subscribe, getSnapshot)
@@ -138,6 +145,7 @@ export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferenc
   return (
     <section className={css.group}>
       {icons !== undefined && ['darwin', 'win32'].includes(state.capabilities.platform) && <DesktopIconSettings bridge={icons} t={t} />}
+      {processes !== undefined && openLog !== undefined && <ManagedProcessesRow bridge={processes} openLog={openLog} t={t} />}
       {desktopWebSupported && <><div className={css.row}>
         <div className={css.text}>
           <div className={css.title}>{t('web.title')}</div>

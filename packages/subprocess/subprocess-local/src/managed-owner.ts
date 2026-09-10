@@ -17,6 +17,8 @@ export interface BoundProcessOwner {
 
 /** Platform launch facts consumed by the common stdio and result lifecycle. */
 export interface ManagedProcessLaunch {
+  /** Root process published by the trusted launcher for identity-fenced crash recovery. */
+  rootPid?: number
   stdin: Writable | null
   stdout: Readable | null
   stderr: Readable | null

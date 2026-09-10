@@ -16,10 +16,17 @@ import * as nodePty from 'node-pty'
 import type { IPtyForkOptions } from 'node-pty'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
+  PersistentServiceDeclaration,
   SubprocessHandle,
   SubprocessSpawnSpec,
   SubprocessTerminalHandle,
   SubprocessTerminalSpawnSpec,
+} from '@deepseek-ai/dsh-subprocess'
+import {
+  FilePersistentServiceAuthorizer,
+  FilePersistentServiceRuntimeRegistry,
+  persistentProfileFingerprint,
+  persistentSpawnSpecFingerprint,
 } from '@deepseek-ai/dsh-subprocess'
 import {
   bindManagedProcess,
@@ -51,6 +58,16 @@ import { LocalTerminalHandle } from './terminal.ts'
 export class LocalSubprocessRuntime extends SubprocessRuntime {
   /** Live handles retained for normal disposal and synchronous host-exit finalization. */
   private live = new Set<LocalSubprocessHandle>()
+  /** Authorized services intentionally kept outside the Harness lifetime. */
+  private persistent = new Set<LocalSubprocessHandle>()
+  /** Recovery identities sampled for services intentionally surviving Harness. */
+  private persistentRecords = new Map<LocalSubprocessHandle, {
+    key: string
+    declaration: PersistentServiceDeclaration
+    registry: FilePersistentServiceRuntimeRegistry
+    identities: Map<string, { pid: number; started: string }>
+  }>()
+  private persistentTimer: ReturnType<typeof setInterval> | undefined
   /** Live terminals retained through normal quiescence or host-exit finalization. */
   private terminals = new Set<LocalTerminalHandle>()
   /** Test hook: process, spill, and platform operations forwarded to spawnSubprocess. */
@@ -69,6 +86,8 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       process.prependListener('exit', onHostExit)
       return async () => {
         await this.disposeManagedProcesses()
+        clearInterval(this.persistentTimer)
+        this.persistentTimer = undefined
         process.off('exit', onHostExit)
       }
     }, 'local subprocess teardown')
@@ -184,6 +203,112 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       handle.waitForExit().then(() => { this.live.delete(handle) })
     void handle.done.then(release, release).catch(() => {})
     return handle
+  }
+
+  /**
+   * Start a plugin service only after an exact user approval has been recorded.
+   * The detached provider range is deliberately not included in normal Harness
+   * disposal; revocation is handled by the desktop authority before the plugin
+   * is disabled or its Profile is switched.
+   */
+  override spawnPersistent(spec: SubprocessSpawnSpec, declaration: PersistentServiceDeclaration): SubprocessHandle {
+    validateSubprocessSpec(spec)
+    if (declaration.specFingerprint !== persistentSpawnSpecFingerprint(spec)) {
+      throw new Error('subprocess: persistent service launch fingerprint does not match the requested process')
+    }
+    const environment = targetEnvironment(spec)
+    const statePath = environment.DSH_DESKTOP_PERSISTENT_SERVICES
+    const dataHome = environment.DSH_HOME
+    if (statePath === undefined || dataHome === undefined || dataHome.trim() === '') {
+      throw new Error('subprocess: persistent service authorization is unavailable')
+    }
+    const authority = new FilePersistentServiceAuthorizer(
+      statePath,
+      persistentProfileFingerprint(dataHome),
+    )
+    const decision = authority.request(declaration)
+    if (!decision.granted) {
+      throw new Error(`subprocess: persistent service approval required (${decision.key})`)
+    }
+    const inspector = this.terminalInspector ?? createProcessInspector()
+    const registry = new FilePersistentServiceRuntimeRegistry(
+      statePath,
+      persistentProfileFingerprint(dataHome),
+    )
+    const previous = registry.identities(decision.key)
+    if (previous.length > 0) {
+      const snapshot = inspector.snapshot()
+      if (previous.some(identity => snapshot.alive(identity))) {
+        throw new Error('subprocess: persistent service is already running; reconnect instead of starting another instance')
+      }
+      registry.clear(decision.key)
+    }
+    const handle = this.spawn(spec) as LocalSubprocessHandle
+    this.live.delete(handle)
+    if (handle.rootPid === undefined) {
+      this.live.add(handle)
+      handle.terminate()
+      throw new Error('subprocess: persistent service launcher did not publish a recovery identity')
+    }
+    const tree = inspector.snapshot().tree(handle.rootPid)
+    if (!tree.some(identity => identity.pid === handle.rootPid)) {
+      this.live.add(handle)
+      handle.terminate()
+      throw new Error('subprocess: cannot establish persistent service identity')
+    }
+    const identities = new Map(tree.map(identity => [`${identity.pid}:${identity.started}`, identity]))
+    try {
+      registry.track(decision.key, declaration, [...identities.values()])
+    } catch (error) {
+      this.live.add(handle)
+      handle.terminate()
+      throw new Error('subprocess: cannot persist the service recovery identity', { cause: error })
+    }
+    this.persistent.add(handle)
+    this.persistentRecords.set(handle, { key: decision.key, declaration, registry, identities })
+    this.startPersistentSampling(inspector)
+    const release = async (): Promise<void> => {
+      if (!await handle.waitForExit()) return
+      this.persistent.delete(handle)
+      const record = this.persistentRecords.get(handle)
+      this.persistentRecords.delete(handle)
+      record?.registry.clear(record.key)
+      if (this.persistentRecords.size === 0) {
+        clearInterval(this.persistentTimer)
+        this.persistentTimer = undefined
+      }
+    }
+    void handle.done.then(release, release).catch(() => {
+      // Retain the last identity journal when the managed range cannot be confirmed empty.
+    })
+    return handle
+  }
+
+  private startPersistentSampling(inspector: ProcessInspector): void {
+    if (this.persistentTimer !== undefined) return
+    this.persistentTimer = setInterval(() => {
+      try {
+        const snapshot = inspector.snapshot()
+        for (const record of this.persistentRecords.values()) {
+          for (const identity of [...record.identities.values()]) {
+            if (!snapshot.alive(identity)) continue
+            for (const child of snapshot.tree(identity.pid)) {
+              record.identities.set(`${child.pid}:${child.started}`, child)
+            }
+          }
+          for (const [key, identity] of record.identities) {
+            if (!snapshot.alive(identity)) record.identities.delete(key)
+          }
+          record.registry.track(record.key, record.declaration, [...record.identities.values()])
+        }
+      } catch {
+        // A service without a trustworthy recovery journal may not remain
+        // authorized to outlive Harness. Termination retains the last valid
+        // journal so Desktop can still retry identity-fenced cleanup.
+        for (const handle of this.persistentRecords.keys()) handle.terminate()
+      }
+    }, 2_000)
+    this.persistentTimer.unref()
   }
 
   private selectContainmentMode(

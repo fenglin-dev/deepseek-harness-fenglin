@@ -47,6 +47,7 @@ export function installLoadingPage(ipcRenderer: IpcRenderer): void {
   const retry = element<HTMLButtonElement>('#retry')
   const exitButton = element<HTMLButtonElement>('#exit')
   const failed = query.get('state') === 'failed'
+  const shutdown = query.get('mode') === 'shutdown'
   let currentProgress: DesktopStartupProgress | undefined
 
   const progressText = (snapshot: DesktopStartupProgress): string => {
@@ -89,8 +90,8 @@ export function installLoadingPage(ipcRenderer: IpcRenderer): void {
   openSlowLog.addEventListener('click', openLog)
 
   if (!failed) {
-    title.textContent = copy.startupTitle
-    description.textContent = copy.startupDescription
+    title.textContent = shutdown ? copy.shutdownTitle : copy.startupTitle
+    description.textContent = shutdown ? copy.shutdownDescription : copy.startupDescription
     let slowTicker: ReturnType<typeof setInterval> | undefined
     const showSlowProgress = (): void => {
       const snapshot = currentProgress
@@ -116,10 +117,10 @@ export function installLoadingPage(ipcRenderer: IpcRenderer): void {
   }
 
   document.body.classList.add('recovery')
-  title.textContent = copy.recoveryTitle
-  description.textContent = copy.recoveryDescription
-  progressTask.textContent = copy.paused
-  progress.setAttribute('aria-valuetext', copy.paused)
+  title.textContent = shutdown ? copy.shutdownFailedTitle : copy.recoveryTitle
+  description.textContent = shutdown ? copy.shutdownFailedDescription : copy.recoveryDescription
+  progressTask.textContent = shutdown ? copy.cleanupBlocked : copy.paused
+  progress.setAttribute('aria-valuetext', shutdown ? copy.cleanupBlocked : copy.paused)
   toggleDetails.hidden = false
   toggleDetails.textContent = copy.viewDetails
   failureMessage.textContent = query.get('message') ?? copy.recoveryDescription
@@ -128,6 +129,22 @@ export function installLoadingPage(ipcRenderer: IpcRenderer): void {
     failureDetails.hidden = !failureDetails.hidden
     toggleDetails.textContent = failureDetails.hidden ? copy.viewDetails : copy.hideDetails
   })
+  if (shutdown) {
+    slow.hidden = false
+    slowMessage.textContent = copy.shutdownFailedHint
+    retry.textContent = copy.retryCleanup
+    exitButton.hidden = true
+    const footerHint = element<HTMLElement>('#footer-hint')
+    footerHint.textContent = copy.shutdownFailedHint
+    recoveryWorkspace.hidden = false
+    element<HTMLElement>('#recovery-home').hidden = true
+    element<HTMLElement>('#recovery-detail').hidden = true
+    retry.addEventListener('click', () => {
+      retry.disabled = true
+      void ipcRenderer.invoke('dsh:desktop:shutdown:retry').finally(() => { retry.disabled = false })
+    })
+    return
+  }
   recoveryWorkspace.hidden = false
   localizeRecoveryWorkspace(copy)
 
@@ -340,6 +357,13 @@ export function installLoadingPage(ipcRenderer: IpcRenderer): void {
 interface RecoveryCopy {
   readonly startupTitle: string
   readonly startupDescription: string
+  readonly shutdownTitle: string
+  readonly shutdownDescription: string
+  readonly shutdownFailedTitle: string
+  readonly shutdownFailedDescription: string
+  readonly shutdownFailedHint: string
+  readonly cleanupBlocked: string
+  readonly retryCleanup: string
   readonly recoveryTitle: string
   readonly recoveryDescription: string
   readonly paused: string
@@ -380,11 +404,15 @@ interface RecoveryCopy {
 
 const chineseCopy: RecoveryCopy = {
   startupTitle: '正在启动 DeepSeek Harness', startupDescription: '正在准备本地运行环境与预设插件。会话和凭据仅保存在本机。',
+  shutdownTitle: '正在安全关闭 DeepSeek Harness', shutdownDescription: '正在停止任务并回收受管进程。确认配置不再被占用后才会退出或重启。',
+  shutdownFailedTitle: '后台进程回收未完成', shutdownFailedDescription: '已阻止退出或重启，避免另一个 Harness 进程在配置仍被占用时启动。',
+  shutdownFailedHint: '请查看日志了解未退出的任务，然后重试回收。这里不会提供绕过检查的强制重启。',
+  cleanupBlocked: '安全关闭已暂停', retryCleanup: '重试回收',
   recoveryTitle: '诊断模式', recoveryDescription: '正常启动已暂停。当前仅开放诊断与恢复工具，请查看原因、日志或选择一种恢复方式。',
   paused: '启动已暂停', viewDetails: '查看错误详情', hideDetails: '收起错误详情', logs: '打开日志目录', logLabel: '日志：',
   slow: '启动时间较长，你可以打开 Harness 日志查看当前进度。',
   slowDetail: (task, elapsed, remaining) => remaining === undefined ? `${task} 已运行 ${elapsed} 秒。应用会自动降级或显示可恢复错误，不会无限等待。` : `${task} 已运行 ${elapsed} 秒，最迟约 ${remaining} 秒后自动降级。`,
-  stages: { 'preparing-desktop': '正在准备桌面环境', 'preparing-runtime': '正在准备内置运行时', 'checking-profile': '正在检查插件兼容性', 'verifying-plugin': '正在校验插件', 'extracting-plugin': '正在解压插件', 'configuring-plugin': '正在配置插件', 'starting-harness': '正在启动 Harness', 'restarting-harness': '正在重新启动 Harness', ready: '启动完成' },
+  stages: { 'preparing-desktop': '正在准备桌面环境', 'preparing-runtime': '正在准备内置运行时', 'checking-profile': '正在检查插件兼容性', 'verifying-plugin': '正在校验插件', 'extracting-plugin': '正在解压插件', 'configuring-plugin': '正在配置插件', 'starting-harness': '正在启动 Harness', 'restarting-harness': '正在重新启动 Harness', 'waiting-background-tasks': '正在等待或取消后台修改任务', 'stopping-harness': '正在请求 Harness 和插件正常停止', 'reclaiming-processes': '正在回收受管进程树', 'checking-shutdown': '正在确认配置目录已解除占用', ready: '启动完成' },
   operations: { 'profile-read-only-check': '正在只读检查插件兼容性', 'profile-lock-wait': 'Profile 正被其他操作占用，等待其完成', 'profile-lock-diagnostics': 'Profile 正被其他操作占用，正在打开诊断模式', 'profile-diagnostics-ready': '诊断工具已就绪，正常 Profile 仍保持暂停', 'profile-check-timeout': '兼容性检查已超时，已跳过异常步骤并继续启动', 'profile-repair': '正在修复 Profile', 'profile-initialize': '正在初始化全新 Profile', 'profile-initialize-failed': '全新 Profile 初始化失败' },
   pluginLoading: '正在读取已安装插件…', pluginLoadFailed: '无法读取插件清单',
   pluginSource: source => ({ registry: '在线安装', bundled: '桌面预装', local: '本地来源', other: '其他来源' })[source],
@@ -400,11 +428,15 @@ const chineseCopy: RecoveryCopy = {
 
 const englishCopy: RecoveryCopy = {
   startupTitle: 'Starting DeepSeek Harness', startupDescription: 'Preparing the local runtime and preset plugins. Your sessions and credentials stay on this machine.',
+  shutdownTitle: 'Closing DeepSeek Harness safely', shutdownDescription: 'Stopping tasks and reclaiming managed processes. Exit or restart continues only after the Profile is no longer in use.',
+  shutdownFailedTitle: 'Background process cleanup did not complete', shutdownFailedDescription: 'Exit or restart was blocked so another Harness cannot start while the Profile may still be in use.',
+  shutdownFailedHint: 'Inspect the log for the task that is still running, then retry cleanup. There is no force-restart bypass.',
+  cleanupBlocked: 'Safe shutdown paused', retryCleanup: 'Retry cleanup',
   recoveryTitle: 'Diagnostics mode', recoveryDescription: 'Normal startup is paused. Only diagnostic and recovery tools are available until you inspect the cause or choose a recovery option.',
   paused: 'Startup paused', viewDetails: 'View error details', hideDetails: 'Hide error details', logs: 'Open log folder', logLabel: 'Log: ',
   slow: 'Startup is taking longer than expected. Open the Harness log to inspect its progress.',
   slowDetail: (task, elapsed, remaining) => remaining === undefined ? `${task} has run for ${elapsed}s. The app will degrade or show a recoverable error instead of waiting forever.` : `${task} has run for ${elapsed}s and will degrade in about ${remaining}s at the latest.`,
-  stages: { 'preparing-desktop': 'Preparing desktop environment', 'preparing-runtime': 'Preparing the embedded runtime', 'checking-profile': 'Checking plugin compatibility', 'verifying-plugin': 'Verifying plugin', 'extracting-plugin': 'Extracting plugin', 'configuring-plugin': 'Configuring plugin', 'starting-harness': 'Starting Harness', 'restarting-harness': 'Restarting Harness', ready: 'Startup complete' },
+  stages: { 'preparing-desktop': 'Preparing desktop environment', 'preparing-runtime': 'Preparing the embedded runtime', 'checking-profile': 'Checking plugin compatibility', 'verifying-plugin': 'Verifying plugin', 'extracting-plugin': 'Extracting plugin', 'configuring-plugin': 'Configuring plugin', 'starting-harness': 'Starting Harness', 'restarting-harness': 'Restarting Harness', 'waiting-background-tasks': 'Waiting for or cancelling background mutations', 'stopping-harness': 'Requesting Harness and plugins to stop cleanly', 'reclaiming-processes': 'Reclaiming managed process trees', 'checking-shutdown': 'Confirming the Profile is no longer in use', ready: 'Startup complete' },
   operations: { 'profile-read-only-check': 'Checking plugin compatibility without changes', 'profile-lock-wait': 'Waiting for the operation that owns the Profile', 'profile-lock-diagnostics': 'Another operation owns the Profile; opening Diagnostics', 'profile-diagnostics-ready': 'Diagnostic tools are ready; the normal Profile remains paused', 'profile-check-timeout': 'Compatibility check timed out; skipped the step and continued startup', 'profile-repair': 'Repairing the Profile', 'profile-initialize': 'Initializing a new Profile', 'profile-initialize-failed': 'New Profile initialization failed' },
   pluginLoading: 'Loading installed plugins…', pluginLoadFailed: 'Could not load the plugin list',
   pluginSource: source => ({ registry: 'Online install', bundled: 'Desktop preset', local: 'Local source', other: 'Other source' })[source],

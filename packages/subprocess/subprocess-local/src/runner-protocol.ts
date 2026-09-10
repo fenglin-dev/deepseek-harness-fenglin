@@ -37,6 +37,7 @@ export interface WindowsStartRequest {
   type: 'start'
   cwd: string
   env: Record<string, string>
+  allowChildBreakaway?: boolean
 }
 
 /** The only parent-to-runner control message on Windows. */
@@ -171,11 +172,15 @@ export function readLinuxStartupError(path: string): LinuxStartupError | undefin
  * @returns validated target start request.
  */
 export function parseWindowsStartRequest(value: unknown): WindowsStartRequest {
-  if (!isRecord(value) || !hasExactKeys(value, ['type', 'cwd', 'env'])
-    || value.type !== 'start' || typeof value.cwd !== 'string' || !isStringRecord(value.env)) {
+  if (!isRecord(value) || !hasExactKeys(value, ['type', 'cwd', 'env'], ['allowChildBreakaway'])
+    || value.type !== 'start' || typeof value.cwd !== 'string' || !isStringRecord(value.env)
+    || (value.allowChildBreakaway !== undefined && typeof value.allowChildBreakaway !== 'boolean')) {
     throw new Error('subprocess runner received an invalid Windows start request')
   }
-  return { type: 'start', cwd: value.cwd, env: value.env }
+  return {
+    type: 'start', cwd: value.cwd, env: value.env,
+    ...(value.allowChildBreakaway === undefined ? {} : { allowChildBreakaway: value.allowChildBreakaway }),
+  }
 }
 
 /**

@@ -64,6 +64,12 @@ Reads are offset-based and non-consuming: a background reader and a final batch 
 
 Termination and waiting use one provider-managed range. `terminate()` starts the provider's documented procedure, is idempotent, and becomes a no-op after that range is empty; the request's abort signal starts the same procedure. `waitForExit()` observes the same range and resolves only after the provider proves it quiescent, so direct command completion does not hide a surviving descendant. It rejects when the selected owner can no longer prove quiescence. Providers document their native owners and weaker fallbacks; callers own deadlines, teardown ladders, and cause classification.
 
+### Requesting an authorized persistent service
+
+Desktop-aware local providers may implement `spawnPersistent(spec, declaration)` for a plugin service that is allowed to outlive Harness. Build `declaration.specFingerprint` with `persistentSpawnSpecFingerprint(spec)`, and provide a stable package name, exact plugin version, service id, and user-facing purpose. The first call records a pending request and fails without starting the process. After the user approves that exact Profile/version/service/spec tuple in Desktop settings, the plugin may retry the same call. A command, non-secret environment entry, plugin version, or service id change requires another approval; rotating a secret-like environment value does not expose it or invalidate lifecycle consent.
+
+Persistent approval changes lifetime only. It grants no extra filesystem, network, subprocess, or model capability. Installation, recovery, diagnostic, and Profile-mutation work must use ordinary task lifetime. A plugin must tolerate denial and a later retry, and should use a stable protocol endpoint if it needs to reconnect after Harness restarts. Providers that cannot establish a separately recoverable identity fail closed.
+
 ### Running a terminal session
 
 For interactive programs, `spawnTerminal` allocates a real PTY: write text, read UTF-8 output, inspect and signal the current foreground process group, and await one `terminate()` that settles every session member the provider can still observe. Readiness, scrollback, and prompt policy stay with the PTY consumer.

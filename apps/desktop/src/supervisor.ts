@@ -2,14 +2,16 @@
 
 import { mkdirSync, createWriteStream, type WriteStream } from 'node:fs'
 import { dirname } from 'node:path'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn } from 'node:child_process'
+import type { Readable, Writable } from 'node:stream'
 import { LineBuffer, parseHarnessReadyLine } from './readiness.ts'
 import type { HarnessLaunch } from './launch.ts'
+import type { DesktopProcessObserver } from './process-observer.ts'
 
 const RESTART_BASE_DELAY_MS = 500
 const RESTART_MAX_DELAY_MS = 15_000
 const PRE_READY_EXIT_LIMIT = 3
-const STOP_TIMEOUT_MS = 5_000
+const STOP_TIMEOUT_MS = 10_000
 const SAFE_MODE_ELIGIBLE_MARKER = 'dsh: profile safe mode eligible '
 
 /** Observable lifecycle states for the desktop chrome. */
@@ -18,6 +20,17 @@ export type HarnessState = 'starting' | 'ready' | 'restarting' | 'failed' | 'sto
 /** Bounded diagnostic emitted when Harness cannot reach readiness. */
 export interface HarnessFailure {
   message: string
+}
+
+interface RunningHarness {
+  readonly token: object
+  readonly pid?: number
+  readonly stdin: Writable | undefined
+  readonly stdout: Readable
+  readonly stderr: Readable
+  readonly done: Promise<{ exitCode: number | null; signal: NodeJS.Signals | null; error?: Error }>
+  terminate(force: boolean): Promise<void>
+  waitForExit(): Promise<boolean>
 }
 
 /** Dependencies and lifecycle callbacks for {@link HarnessSupervisor}. */
@@ -29,6 +42,10 @@ export interface HarnessSupervisorOptions {
   onDiagnosticReady(url: string, failure: HarnessFailure): void
   onState(state: HarnessState): void
   onFailure(failure: HarnessFailure): void
+  /** Native managed-range launcher selected from the Harness runtime. */
+  managedRuntime?: DesktopProcessObserver
+  /** Register the spawned root before it can be treated as ready. */
+  onSpawn?(pid: number): void
   /** Start directly with the installation-owned diagnostic Profile. */
   initialDiagnosticMode?: boolean
   /** Primary reason retained if an explicitly selected diagnostic mode also fails. */
@@ -42,7 +59,7 @@ export interface HarnessSupervisorOptions {
 /** Owns one restartable Harness child and its durable combined log. */
 export class HarnessSupervisor {
   readonly #options: HarnessSupervisorOptions
-  #child: ChildProcessWithoutNullStreams | undefined
+  #child: RunningHarness | undefined
   #log: WriteStream | undefined
   #restartTimer: NodeJS.Timeout | undefined
   #restartCount = 0
@@ -82,15 +99,21 @@ export class HarnessSupervisor {
     this.#log ??= createWriteStream(this.#options.logPath, { flags: 'a' })
     this.#options.onState(this.#restartCount === 0 ? 'starting' : 'restarting')
 
-    const child = spawn(this.#options.launch.command, this.#options.launch.args, {
-      env: {
-        ...this.#options.environment,
-        ...this.#options.launch.environment,
-        ...(this.#diagnosticMode ? { DSH_PROFILE_SAFE_MODE: '1' } : {}),
-      },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
+    const environment = {
+      ...this.#options.environment,
+      ...this.#options.launch.environment,
+      ...(this.#diagnosticMode ? { DSH_PROFILE_SAFE_MODE: '1' } : {}),
+    } as Record<string, string>
+    let child: RunningHarness
+    try {
+      child = this.#spawn(environment)
+    } catch (error) {
+      this.#failed = true
+      const failure = error instanceof Error ? error : new Error(String(error))
+      const message = `Harness process owner could not start: ${failure.message}`
+      this.#reportStartupFailure(message, `[desktop] ${message}\n`)
+      return
+    }
     this.#child = child
     let ready = false
     let spawnError: Error | undefined
@@ -122,16 +145,21 @@ export class HarnessSupervisor {
         if (line.includes(SAFE_MODE_ELIGIBLE_MARKER)) safeModeEligible = true
       }
     })
-    child.on('error', (error) => {
+    void child.done.then(async ({ exitCode: code, signal, error }) => {
       spawnError = error
-      this.#log?.write(`[desktop] failed to start Harness: ${error.message}\n`)
-    })
-    child.on('close', (code, signal) => {
+      if (error !== undefined) this.#log?.write(`[desktop] failed to start Harness: ${error.message}\n`)
+      const rangeStopped = await child.waitForExit()
+      if (!rangeStopped) {
+        this.#failed = true
+        const message = 'Harness process range did not become idle; automatic restart is blocked.'
+        this.#reportStartupFailure(message, `[desktop] ${message}\n`)
+        return
+      }
       stdoutLines.flush()
       const stderrTail = stderrLines.flush()
       if (stderrTail?.includes(SAFE_MODE_ELIGIBLE_MARKER) === true) safeModeEligible = true
       this.#log?.write(`[desktop] Harness exited code=${String(code)} signal=${String(signal)}\n`)
-      if (this.#child === child) this.#child = undefined
+      if (this.#child?.token === child.token) this.#child = undefined
       if (this.#stopping) {
         this.#options.onState('stopped')
         return
@@ -182,7 +210,68 @@ export class HarnessSupervisor {
         this.#restartTimer = undefined
         this.start()
       }, delay)
+    }, (error: unknown) => {
+      const failure = error instanceof Error ? error : new Error(String(error))
+      return child.waitForExit().then((rangeStopped) => {
+        if (this.#child?.token === child.token) this.#child = undefined
+        this.#failed = true
+        const message = rangeStopped
+          ? `Harness process owner failed: ${failure.message}`
+          : `Harness process owner failed and cleanup is unconfirmed: ${failure.message}`
+        this.#reportStartupFailure(message, `[desktop] ${message}\n`)
+      })
     })
+  }
+
+  #spawn(environment: Record<string, string>): RunningHarness {
+    const token = {}
+    if (this.#options.managedRuntime !== undefined) {
+      const launched = this.#options.managedRuntime.launch({
+        label: 'Harness',
+        lifecycle: 'client',
+        argv: [this.#options.launch.command, ...this.#options.launch.args],
+        cwd: this.#options.launch.cwd ?? process.cwd(),
+        env: environment,
+        stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
+        graceMs: 10_000,
+        signal: new AbortController().signal,
+      })
+      const handle = launched.handle
+      if (handle.stdout === undefined || handle.stderr === undefined) {
+        handle.terminate()
+        throw new Error('desktop: managed Harness launcher did not provide output pipes')
+      }
+      return {
+        token, stdin: handle.stdin, stdout: handle.stdout, stderr: handle.stderr, done: handle.done,
+        terminate: () => { handle.terminate(); return Promise.resolve() },
+        waitForExit: () => handle.waitForExit(AbortSignal.timeout(15_000)),
+      }
+    }
+    const processChild = spawn(this.#options.launch.command, this.#options.launch.args, {
+      env: environment, cwd: this.#options.launch.cwd, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+    })
+    processChild.once('spawn', () => {
+      if (processChild.pid !== undefined) this.#options.onSpawn?.(processChild.pid)
+    })
+    const done = new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null; error?: Error }>((resolve) => {
+      let error: Error | undefined
+      processChild.once('error', (value) => { error = value })
+      processChild.once('close', (exitCode, signal) => { resolve({ exitCode, signal, ...(error === undefined ? {} : { error }) }) })
+    })
+    return {
+      token, ...(processChild.pid === undefined ? {} : { pid: processChild.pid }),
+      stdin: processChild.stdin, stdout: processChild.stdout, stderr: processChild.stderr, done,
+      terminate: async (force) => {
+        if (processChild.pid !== undefined && this.#options.terminateProcessTree !== undefined) {
+          await this.#options.terminateProcessTree(processChild.pid, force)
+        } else processChild.kill(force ? 'SIGKILL' : 'SIGTERM')
+      },
+      waitForExit: async () => {
+        if (processChild.exitCode !== null || processChild.signalCode !== null) return true
+        await done
+        return true
+      },
+    }
   }
 
   /** Retry a startup that exhausted its pre-readiness attempts. */
@@ -206,38 +295,32 @@ export class HarnessSupervisor {
     }
     const child = this.#child
     if (child !== undefined) {
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
         let settled = false
-        const finish = (): void => {
+        const finish = (error?: unknown): void => {
           if (settled) return
           settled = true
           clearTimeout(timeout)
-          resolve()
+          if (error === undefined) resolve()
+          else reject(error instanceof Error ? error : new Error('desktop: Harness cleanup failed', { cause: error }))
         }
         const forceStop = async (): Promise<void> => {
           try {
-            if (child.pid !== undefined && this.#options.terminateProcessTree !== undefined) {
-              await this.#options.terminateProcessTree(child.pid, true)
-            } else {
-              child.kill('SIGKILL')
-            }
+            await child.terminate(true)
+            if (!await child.waitForExit()) throw new Error('desktop: Harness process range remains active')
+            finish()
           } catch (error) {
             this.#log?.write(`[desktop] failed to force-stop Harness process tree: ${error instanceof Error ? error.message : String(error)}\n`)
-          } finally {
-            finish()
+            finish(error)
           }
         }
         const timeout = setTimeout(() => { void forceStop() }, this.#options.stopTimeoutMs ?? STOP_TIMEOUT_MS)
-        child.once('close', () => {
-          finish()
+        void child.done.then(async () => {
+          if (await child.waitForExit()) finish()
+        }, () => {})
+        void child.terminate(false).catch((error: unknown) => {
+          this.#log?.write(`[desktop] failed to request Harness process-tree shutdown: ${error instanceof Error ? error.message : String(error)}\n`)
         })
-        if (child.pid !== undefined && this.#options.terminateProcessTree !== undefined) {
-          void this.#options.terminateProcessTree(child.pid, false).catch((error: unknown) => {
-            this.#log?.write(`[desktop] failed to request Harness process-tree shutdown: ${error instanceof Error ? error.message : String(error)}\n`)
-          })
-        } else {
-          child.kill('SIGTERM')
-        }
       })
     }
     this.#child = undefined

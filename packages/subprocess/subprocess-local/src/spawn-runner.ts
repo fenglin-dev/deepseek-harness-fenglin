@@ -309,6 +309,7 @@ class WindowsJobRunner {
         args,
         cwd: request.cwd,
         env: request.env,
+        ...(request.allowChildBreakaway === undefined ? {} : { allowChildBreakaway: request.allowChildBreakaway }),
         stdio: { stdin: 4, stdout: 5, stderr: 6 },
       })
       this.processHandle = spawned.process

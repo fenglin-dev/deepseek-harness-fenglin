@@ -11,6 +11,10 @@ export type DesktopStartupStage =
   | 'configuring-plugin'
   | 'starting-harness'
   | 'restarting-harness'
+  | 'waiting-background-tasks'
+  | 'stopping-harness'
+  | 'reclaiming-processes'
+  | 'checking-shutdown'
   | 'ready'
 
 /** Point-in-time progress backed by a completed or active startup operation. */
@@ -38,6 +42,10 @@ const startupStages: readonly DesktopStartupStage[] = [
   'configuring-plugin',
   'starting-harness',
   'restarting-harness',
+  'waiting-background-tasks',
+  'stopping-harness',
+  'reclaiming-processes',
+  'checking-shutdown',
   'ready',
 ]
 

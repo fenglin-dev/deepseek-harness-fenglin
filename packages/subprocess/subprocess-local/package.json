@@ -22,12 +22,19 @@
       "types": "./lib/types/bin.d.ts",
       "default": "./lib/runner.js"
     },
+    "./process-control": {
+      "types": "./lib/types/process-control.d.ts",
+      "default": "./lib/process-control.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
     "lib/runner.js",
+    "lib/process-control.js",
+    "lib/process-inspector-*.js",
+    "lib/windows-job-*.js",
     "lib/runner-*.js",
     "scripts/ensure-spawn-helper.mjs",
     "lib/types/**/*.d.ts"

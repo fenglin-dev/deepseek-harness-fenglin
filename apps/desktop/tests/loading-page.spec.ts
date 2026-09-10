@@ -52,6 +52,7 @@ describe('desktop loading page', () => {
     expect(main).toContain('isRecoveryPluginPackageName(packageName)')
     expect(main).toContain('inventory.plugins.some(plugin => plugin.packageName === packageName)')
     expect(main).toContain("'plugin', '--profile', 'web', 'remove', packageName")
+    expect(main).toContain('await stopAndRevokePersistentServicesForPlugin(packageName)')
   })
 
   it('shows the active bounded operation and its automatic degradation policy', async () => {
@@ -62,6 +63,23 @@ describe('desktop loading page', () => {
     expect(loadingPage).toContain('snapshot.deadlineAt - now')
     expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:log:open')")
     expect(loadingPage).toContain('不会无限等待')
+  })
+
+  it('uses the real shutdown stages instead of presenting cleanup as startup', async () => {
+    const main = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8')
+    const loadingPage = await readFile(new URL('../src/loading-page.ts', import.meta.url), 'utf8')
+
+    expect(main).toContain("{ stage: 'waiting-background-tasks', progress: 12 }")
+    expect(main).toContain("{ stage: 'stopping-harness', progress: 38 }")
+    expect(main).toContain("{ stage: 'reclaiming-processes', progress: 72 }")
+    expect(main).toContain("{ stage: 'checking-shutdown', progress: 94 }")
+    expect(main).toContain("{ mode: 'shutdown' }")
+    expect(loadingPage).toContain("const shutdown = query.get('mode') === 'shutdown'")
+    expect(loadingPage).toContain("shutdownTitle: '正在安全关闭 DeepSeek Harness'")
+    expect(loadingPage).toContain("'reclaiming-processes': 'Reclaiming managed process trees'")
+    expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:shutdown:retry')")
+    expect(main).toContain("ipcMain.handle('dsh:desktop:shutdown:retry'")
+    expect(main).toContain("}, 'shutdown')")
   })
 
   it('keeps the paused startup bar while exposing four peer recovery tools', async () => {
@@ -79,7 +97,7 @@ describe('desktop loading page', () => {
     expect(html).toContain('#recovery-home, #recovery-detail { min-height: 0; overflow: auto;')
     expect(loadingPage).toContain("const failed = query.get('state') === 'failed'")
     expect(loadingPage).toContain("if (!failed) {\n    ipcRenderer.on('dsh:startup-progress'")
-    expect(loadingPage).toContain('progressTask.textContent = copy.paused')
+    expect(loadingPage).toContain('progressTask.textContent = shutdown ? copy.cleanupBlocked : copy.paused')
     expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:recovery-plugins:list')")
     expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:recovery-plugins:remove', plugin.packageName)")
     expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:recovery:export')")

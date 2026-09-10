@@ -14,6 +14,20 @@ import { DSH_ENV_PREFIX } from './types.ts'
 import type { SubprocessHandle, SubprocessSpawnSpec } from './types.ts'
 import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from './types.ts'
 
+export {
+  FilePersistentServiceAuthorizer,
+  FilePersistentServiceRuntimeRegistry,
+  normalizePersistentServiceDeclaration,
+  persistentProfileFingerprint,
+  persistentSpawnSpecFingerprint,
+  persistentServiceKey,
+} from './persistent.ts'
+export type {
+  PersistentServiceDeclaration,
+  PersistentServiceProcessIdentity,
+  PersistentServiceSummary,
+} from './persistent.ts'
+
 export { DSH_ENV_PREFIX } from './types.ts'
 export type {
   CollectedOutput,
@@ -142,6 +156,18 @@ export abstract class SubprocessRuntime extends Service {
    * @throws synchronously when pre-aborted or when argv, cwd, environment, or grace is invalid before handle creation.
    */
   abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle
+
+  /**
+   * Start an authorized plugin service that may outlive the current Harness
+   * process. Providers must bind the declaration to their own approval store;
+   * the base seam fails closed when no such provider is available.
+   * @param _spec - Exact process request whose non-secret launch identity is approved.
+   * @param _declaration - Stable plugin, version, service, purpose and launch fingerprint.
+   * @returns Provider-owned handle for the authorized persistent range.
+   */
+  spawnPersistent(_spec: SubprocessSpawnSpec, _declaration: import('./persistent.ts').PersistentServiceDeclaration): SubprocessHandle {
+    throw new Error('subprocess: persistent service authorization is unavailable')
+  }
 
   /**
    * Allocate a real terminal and start one owned process session. This is the

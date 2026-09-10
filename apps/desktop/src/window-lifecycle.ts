@@ -31,7 +31,6 @@ export interface DesktopLifecycle {
 export function createDesktopLifecycle(options: DesktopLifecycleOptions): DesktopLifecycle {
   let quitting = false
   let quitOperation: Promise<void> | undefined
-  let restartRequested = false
 
   const showWindow = (): void => {
     const window = options.getWindow() ?? options.createWindow()
@@ -40,11 +39,19 @@ export function createDesktopLifecycle(options: DesktopLifecycleOptions): Deskto
     window.focus()
   }
 
-  const beginQuit = (): Promise<void> => {
+  const beginQuit = (relaunch?: () => void): Promise<void> => {
     quitting = true
-    quitOperation = options.disposeHost()
-      .catch((error: unknown) => { options.reportError(error) })
-      .then(() => { options.releaseQuit() })
+    quitOperation = Promise.resolve().then(() => options.disposeHost())
+      .then(() => {
+        relaunch?.()
+        options.releaseQuit()
+      })
+      .catch((error: unknown) => {
+        quitting = false
+        quitOperation = undefined
+        options.reportError(error)
+        showWindow()
+      })
     return quitOperation
   }
 
@@ -71,11 +78,7 @@ export function createDesktopLifecycle(options: DesktopLifecycleOptions): Deskto
     requestRestart(relaunch) {
       if (quitOperation !== undefined) return quitOperation
       if (options.canQuit?.() === false) return Promise.resolve()
-      if (!restartRequested) {
-        restartRequested = true
-        relaunch()
-      }
-      return beginQuit()
+      return beginQuit(relaunch)
     },
   }
 }

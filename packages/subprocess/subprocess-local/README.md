@@ -124,6 +124,10 @@ No direct invalidation; the named consumers own any request-prefix changes.
 
 ## Known Limitations and Deferred Work
 
+The `process-control` entry provides `DesktopProcessObserver` for legacy descendants observed below desktop-spawned roots. It retains PID/start identities after reparenting and refuses successful cleanup while observed processes remain. This is a process-table fallback, not Job/scope containment: descendants that escape before observation are not covered. The desktop caller owns registration failures, shutdown presentation and restart admission.
+
+The local provider implements the optional authorized-persistent path. It stores approval declarations separately from PID/start recovery identities, samples newly created descendants every two seconds, and removes the runtime journal only after its managed range is confirmed empty. Ordinary provider disposal, Desktop cleanup and crash recovery deliberately exclude approved persistent identities. A still-live identity rejects duplicate launch so the plugin can reconnect through its stable protocol. The outer Windows Desktop Job enables silent child breakaway, allowing subprocess-owned Jobs and authorized persistent ranges to survive Harness shutdown. This is lifecycle management, not a security boundary: Profile plugins remain trusted executable code, declaration ownership is cooperative, and a plugin that bypasses `ctx.subprocess` receives none of these guarantees. Native Windows/Linux persistence and packaged behavior still require platform qualification before release acceptance.
+
 <a id="known-limitations-and-deferred-work"></a>
 
 

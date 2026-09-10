@@ -18,11 +18,16 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./persistent": {
+      "types": "./lib/types/persistent.d.ts",
+      "default": "./lib/persistent.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
+    "lib/persistent.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

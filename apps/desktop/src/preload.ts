@@ -38,6 +38,8 @@ import type {
 } from './external-tool-compatibility-manifest.ts'
 import { installLoadingPage } from './loading-page.ts'
 import type { StartupDiagnosticIncident } from './startup-diagnostics.ts'
+import type { DesktopProcessSnapshot } from './process-observer.ts'
+import type { PersistentServiceSummary } from '@deepseek-ai/dsh-subprocess/persistent'
 import type { DesktopWebOpenResult, DesktopWebStatus } from './desktop-web-access.ts'
 
 /** Renderer-visible update methods; no generic process or filesystem access is exposed. */
@@ -157,6 +159,16 @@ export interface DesktopStartupDiagnosticsBridge {
     readonly installId?: string
   }>
   openLog(): Promise<OpenLogResult>
+}
+
+/** Redacted desktop process inventory and opaque stop operation. */
+export interface DesktopProcessesBridge {
+  list(): Promise<readonly DesktopProcessSnapshot[]>
+  stop(id: string): Promise<readonly DesktopProcessSnapshot[]>
+  persistentServices(): Promise<readonly PersistentServiceSummary[]>
+  approvePersistentService(key: string): Promise<readonly PersistentServiceSummary[]>
+  revokePersistentService(key: string): Promise<readonly PersistentServiceSummary[]>
+  preparePluginUninstall(pluginName: string): Promise<{ readonly prepared: true }>
 }
 
 /** Device-local background persistence owned by the desktop data directory. */
@@ -315,6 +327,21 @@ const startupDiagnosticsBridge: DesktopStartupDiagnosticsBridge = {
   openLog: () => ipcRenderer.invoke('dsh:desktop:log:open') as Promise<OpenLogResult>,
 }
 
+const processesBridge: DesktopProcessesBridge = {
+  list: () => ipcRenderer.invoke('dsh:desktop:processes:list') as Promise<readonly DesktopProcessSnapshot[]>,
+  stop: id => ipcRenderer.invoke('dsh:desktop:processes:stop', id) as Promise<readonly DesktopProcessSnapshot[]>,
+  persistentServices: () => ipcRenderer.invoke('dsh:desktop:persistent-services:list') as Promise<readonly PersistentServiceSummary[]>,
+  approvePersistentService: key => ipcRenderer.invoke(
+    'dsh:desktop:persistent-services:approve', key,
+  ) as Promise<readonly PersistentServiceSummary[]>,
+  revokePersistentService: key => ipcRenderer.invoke(
+    'dsh:desktop:persistent-services:revoke', key,
+  ) as Promise<readonly PersistentServiceSummary[]>,
+  preparePluginUninstall: pluginName => ipcRenderer.invoke(
+    'dsh:desktop:persistent-services:prepare-plugin-uninstall', pluginName,
+  ) as Promise<{ readonly prepared: true }>,
+}
+
 const chatBackgroundBridge: DesktopChatBackgroundBridge = {
   read: () => ipcRenderer.invoke('dsh:desktop:chat-background:read') as Promise<DesktopChatBackground | undefined>,
   write: background => ipcRenderer.invoke(
@@ -367,6 +394,7 @@ contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
   diagnosticLab: Object.freeze(diagnosticLabBridge),
   pluginSnapshots: Object.freeze(pluginSnapshotsBridge),
   startupDiagnostics: Object.freeze(startupDiagnosticsBridge),
+  processes: Object.freeze(processesBridge),
   chatBackground: Object.freeze(chatBackgroundBridge),
   ...(sourceMode ? {
     updater: Object.freeze(bridge),

@@ -1,6 +1,7 @@
 /** Electron application host for the existing DeepSeek Harness Web GUI. */
 
 import { randomUUID } from 'node:crypto'
+import { loadProcessObserver, type DesktopProcessObserver } from './process-observer.ts'
 import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir, userInfo } from 'node:os'
 import { basename, dirname, join } from 'node:path'
@@ -146,6 +147,12 @@ import { shellMessages, trayMessages, dataHomeMessages } from './locales/shell.t
 import { DesktopReturnControl } from './desktop-return-control.ts'
 import { createDesktopLocaleStore, type DesktopLocaleStore } from './desktop-locale-store.ts'
 import { resolveDesktopLocale } from './desktop-locale.ts'
+import {
+  FilePersistentServiceAuthorizer,
+  FilePersistentServiceRuntimeRegistry,
+  persistentProfileFingerprint,
+  type PersistentServiceSummary,
+} from '@deepseek-ai/dsh-subprocess/persistent'
 
 const APP_NAME = 'DeepSeek Harness'
 const DESKTOP_WEB_SUPPORTED = process.platform === 'darwin' || process.platform === 'win32'
@@ -163,9 +170,9 @@ const PROFILE_CHECK_TIMEOUT_MS = 15_000
 const PROFILE_LOCK_WAIT_MS = 5_000
 const PROFILE_REPAIR_TIMEOUT_MS = 60_000
 const BUILD_APPROVAL_TIMEOUT_MS = 15_000
-const BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS = 45_000
+const BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS = 10 * 60_000
 const SNAPSHOT_COMMAND_TIMEOUT_MS = 15_000
-const IMPORTED_PLUGIN_INSTALL_TIMEOUT_MS = 60_000
+const IMPORTED_PLUGIN_INSTALL_TIMEOUT_MS = 10 * 60_000
 const BOOTABLE_SNAPSHOT_DELAY_MS = 30_000
 const DEFAULT_SOURCE_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const DESKTOP_DATA_HOME = resolveDesktopDataHomeLayout(
@@ -203,7 +210,43 @@ let recoveryDiscardCandidate: (() => Promise<void>) | undefined
 let recoveryRestartRequired = false
 let recoveryPluginRemove: ((packageName: string) => Promise<void>) | undefined
 let latestRecoveryFailure: string | undefined
-const oneShotOperations = new DesktopOperationSupervisor()
+let processObserver: DesktopProcessObserver | undefined
+let processObservationFailure: unknown
+let persistentServiceAuthority: FilePersistentServiceAuthorizer | undefined
+let persistentServiceRuntime: FilePersistentServiceRuntimeRegistry | undefined
+async function stopPersistentServicesForActiveProfile(): Promise<void> {
+  if (persistentServiceAuthority === undefined || persistentServiceRuntime === undefined) return
+  const runtime = processObserver
+  for (const service of persistentServiceAuthority.list()) {
+    const identities = persistentServiceRuntime.identities(service.key)
+    if (identities.length === 0) continue
+    if (runtime === undefined) throw new Error('desktop: persistent services cannot be stopped safely')
+    await runtime.stopRecovered(service.key, `${service.pluginName}: ${service.serviceId}`, identities)
+    persistentServiceRuntime.clear(service.key)
+  }
+}
+async function stopAndRevokePersistentServicesForPlugin(pluginName: string): Promise<void> {
+  if (persistentServiceAuthority === undefined || persistentServiceRuntime === undefined) return
+  const services = persistentServiceAuthority.list().filter(service => service.pluginName === pluginName)
+  for (const service of services) {
+    const identities = persistentServiceRuntime.identities(service.key)
+    if (identities.length > 0) {
+      if (processObserver === undefined) throw new Error('desktop: persistent services cannot be stopped safely')
+      await processObserver.stopRecovered(service.key, `${service.pluginName}: ${service.serviceId}`, identities)
+      persistentServiceRuntime.clear(service.key)
+    }
+    persistentServiceAuthority.revoke(service.key)
+  }
+}
+async function preservePersistentServicesForActiveProfile(): Promise<void> {
+  if (persistentServiceAuthority === undefined || persistentServiceRuntime === undefined || processObserver === undefined) return
+  const identities = persistentServiceAuthority.list().flatMap(service => persistentServiceRuntime?.identities(service.key) ?? [])
+  await processObserver.preserve(identities)
+}
+function observeProcess(pid: number, label: string): void {
+  try { processObserver?.register(pid, label) } catch (error) { processObservationFailure = error }
+}
+const oneShotOperations = new DesktopOperationSupervisor(observeProcess, () => processObserver)
 let bootableSnapshotTimer: NodeJS.Timeout | undefined
 const startupWarnings: string[] = []
 let trayUnavailable = false
@@ -961,7 +1004,7 @@ async function runPackageManagerInvocation(
   cwd: string,
   environment: NodeJS.ProcessEnv,
   options: DesktopLaunchOptions,
-  timeoutMs = 10_000,
+  timeoutMs = 10 * 60_000,
 ): Promise<string> {
   const packageManager = options.packageManagerBin
   if (packageManager === undefined) throw new Error('desktop: bundled pnpm is unavailable')
@@ -1088,13 +1131,23 @@ function publishStartupProgress(next: DesktopStartupProgress): void {
   mainSurface?.send('dsh:startup-progress', startupProgress)
 }
 
-function showLoading(state: HarnessState, failure?: HarnessFailure & { logPath: string }): void {
+function showLoading(
+  state: HarnessState,
+  failure?: HarnessFailure & { logPath: string },
+  mode?: 'shutdown',
+): void {
   if (mainSurface === undefined || mainSurface.window.isDestroyed() || state === 'ready' || state === 'stopped') return
   if (failure !== undefined) latestRecoveryFailure = failure.message
   void mainSurface.loadFile(LOADING_PAGE, {
     query: {
       state,
       locale: menuLocale,
+      ...(mode === 'shutdown' || startupProgress.stage === 'waiting-background-tasks'
+        || startupProgress.stage === 'stopping-harness'
+        || startupProgress.stage === 'reclaiming-processes'
+        || startupProgress.stage === 'checking-shutdown')
+        ? { mode: 'shutdown' }
+        : {},
       stage: startupProgress.stage,
       progress: String(startupProgress.progress),
       ...(startupProgress.detail === undefined ? {} : { detail: startupProgress.detail }),
@@ -1334,6 +1387,15 @@ async function startApplication(): Promise<void> {
   applyStartupDockIcon()
   const dshHome = await prepareDesktopDshHome(DESKTOP_DATA_HOME)
   activeMenuHome = dshHome
+  const persistentServicesPath = join(app.getPath('userData'), 'managed-processes', 'persistent-services-v1.json')
+  persistentServiceAuthority = new FilePersistentServiceAuthorizer(
+    persistentServicesPath,
+    persistentProfileFingerprint(dshHome),
+  )
+  persistentServiceRuntime = new FilePersistentServiceRuntimeRegistry(
+    persistentServicesPath,
+    persistentProfileFingerprint(dshHome),
+  )
   const retainStartupWarning = async (
     code: StartupDiagnosticCode,
     operation: string,
@@ -1356,6 +1418,8 @@ async function startApplication(): Promise<void> {
     DSH_DESKTOP_APPLICATION_VERSION: app.getVersion(),
     DSH_DESKTOP_PNPM_VERSION: DESKTOP_PNPM_VERSION,
     DSH_PROFILE_SAFE_MODE_ON_FAILURE: '1',
+    DSH_DESKTOP_PERSISTENT_SERVICES: persistentServicesPath,
+    DSH_DESKTOP_PERSISTENT_PROFILE: persistentProfileFingerprint(dshHome),
   }
   try {
     const resolvedProxy = await resolveSystemProxyEnvironment(
@@ -1412,6 +1476,55 @@ async function startApplication(): Promise<void> {
   ipcMain.handle('dsh:desktop:capabilities', (event) => {
     assertMainRenderer(event.sender)
     return desktopCapabilities()
+  })
+  ipcMain.handle('dsh:desktop:processes:list', (event) => {
+    assertMainRenderer(event.sender)
+    return processObserver?.list() ?? []
+  })
+  ipcMain.handle('dsh:desktop:processes:stop', async (event, id: unknown) => {
+    assertMainRenderer(event.sender)
+    if (typeof id !== 'string' || id.length < 1 || id.length > 128) {
+      throw new TypeError('desktop: invalid managed process id')
+    }
+    const current = processObserver?.list().find(process => process.id === id)
+    if (current === undefined || !current.stoppable) throw new Error('desktop: process cannot be stopped from settings')
+    await processObserver?.stop(id)
+    return processObserver?.list() ?? []
+  })
+  ipcMain.handle('dsh:desktop:persistent-services:list', (event): readonly PersistentServiceSummary[] => {
+    assertMainRenderer(event.sender)
+    return persistentServiceAuthority?.list() ?? []
+  })
+  ipcMain.handle('dsh:desktop:persistent-services:approve', (event, key: unknown): readonly PersistentServiceSummary[] => {
+    assertMainRenderer(event.sender)
+    if (typeof key !== 'string' || !/^[a-f0-9]{64}$/u.test(key)) {
+      throw new TypeError('desktop: invalid persistent service request')
+    }
+    if (persistentServiceAuthority === undefined) throw new Error('desktop: persistent service authority is unavailable')
+    return persistentServiceAuthority.approve(key)
+  })
+  ipcMain.handle('dsh:desktop:persistent-services:revoke', async (event, key: unknown): Promise<readonly PersistentServiceSummary[]> => {
+    assertMainRenderer(event.sender)
+    if (typeof key !== 'string' || !/^[a-f0-9]{64}$/u.test(key)) {
+      throw new TypeError('desktop: invalid persistent service request')
+    }
+    if (persistentServiceAuthority === undefined) throw new Error('desktop: persistent service authority is unavailable')
+    if (persistentServiceRuntime === undefined) throw new Error('desktop: persistent service runtime registry is unavailable')
+    const service = persistentServiceAuthority.list().find(record => record.key === key)
+    if (service === undefined) throw new Error('desktop: persistent service request is unavailable')
+    const identities = persistentServiceRuntime.identities(key)
+    if (identities.length > 0) {
+      if (processObserver === undefined) throw new Error('desktop: persistent service cannot be stopped safely')
+      await processObserver.stopRecovered(key, `${service.pluginName}: ${service.serviceId}`, identities)
+      persistentServiceRuntime.clear(key)
+    }
+    return persistentServiceAuthority.revoke(key)
+  })
+  ipcMain.handle('dsh:desktop:persistent-services:prepare-plugin-uninstall', async (event, packageName: unknown) => {
+    assertMainRenderer(event.sender)
+    if (!isRecoveryPluginPackageName(packageName)) throw new TypeError('desktop: invalid plugin identity')
+    await stopAndRevokePersistentServicesForPlugin(packageName)
+    return { prepared: true as const }
   })
   ipcMain.handle('dsh:desktop:data-home:get', (event) => {
     assertMainRenderer(event.sender)
@@ -1537,6 +1650,7 @@ async function startApplication(): Promise<void> {
       pendingDataHomeSelections.delete(request.selectionId)
     }
     if (!decision.changed) return { restarting: false, activePath: dshHome }
+    await stopPersistentServicesForActiveProfile()
     await writeDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile, decision.setup)
     setTimeout(requestDesktopRestart, 250)
     return { restarting: true, activePath: decision.path }
@@ -1815,6 +1929,11 @@ async function startApplication(): Promise<void> {
     else if (menuBusy()) throw new Error(menuCopy(menuLocale).busy)
     setTimeout(() => { void lifecycle?.requestQuit() }, 0)
     return { exiting: true as const }
+  })
+  ipcMain.handle('dsh:desktop:shutdown:retry', (event) => {
+    assertMainRenderer(event.sender)
+    setTimeout(() => { void lifecycle?.requestQuit() }, 0)
+    return { started: true as const }
   })
   ipcMain.handle('dsh:harness:retry', async (event) => {
     assertMainRenderer(event.sender)
@@ -2154,10 +2273,33 @@ async function startApplication(): Promise<void> {
     },
     disposeHost: async () => {
       cancelBootableSnapshot()
-      await Promise.allSettled([
-        releaseDownloader?.dispose(), oneShotOperations.dispose(), supervisor?.stop(), desktopReturnControl?.close(),
-        profileTransactionManager?.dispose(),
-      ])
+      publishStartupProgress({ stage: 'waiting-background-tasks', progress: 12 })
+      showLoading('restarting')
+      const outcomes: PromiseSettledResult<unknown>[] = []
+      outcomes.push(...await Promise.allSettled([
+        releaseDownloader?.dispose(), oneShotOperations.dispose(), profileTransactionManager?.dispose(),
+      ]))
+      const taskFailures = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
+      if (taskFailures.length > 0) {
+        throw new AggregateError(taskFailures.map(outcome => outcome.reason as unknown), 'desktop: managed task cleanup failed')
+      }
+      // Do not stop Harness until every authorized persistent identity has
+      // been removed from both normal and crash-recovery cleanup scopes.
+      await preservePersistentServicesForActiveProfile()
+      publishStartupProgress({ stage: 'stopping-harness', progress: 38 })
+      outcomes.push(...await Promise.allSettled([supervisor?.stop(), desktopReturnControl?.close()]))
+      publishStartupProgress({ stage: 'reclaiming-processes', progress: 72 })
+      outcomes.push(...await Promise.allSettled([processObserver?.stopAll()]))
+      publishStartupProgress({ stage: 'checking-shutdown', progress: 94 })
+      if (activeMenuHome !== undefined && inspectProfileMutationLock(activeMenuHome).active) {
+        outcomes.push({ status: 'rejected', reason: new Error('desktop: Profile mutation lock remains active after process cleanup') })
+      }
+      if (processObservationFailure !== undefined) outcomes.push({
+        status: 'rejected', reason: new Error('desktop: process identity registration failed', { cause: processObservationFailure }),
+      })
+      const failures = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
+      if (failures.length > 0) throw new AggregateError(failures.map(outcome => outcome.reason as unknown), 'desktop: process cleanup failed')
+      publishStartupProgress({ stage: 'checking-shutdown', progress: 100 })
     },
     releaseQuit: () => {
       quitReleased = true
@@ -2166,7 +2308,15 @@ async function startApplication(): Promise<void> {
       tray = undefined
       app.quit()
     },
-    reportError: (error) => { console.error('desktop: shutdown failed', error) },
+    reportError: (error) => {
+      console.error('desktop: shutdown failed', error)
+      showLoading('failed', {
+        message: app.getLocale().toLowerCase().startsWith('zh')
+          ? '后台进程回收未完成，已阻止退出和重启。请查看日志后重试退出。'
+          : 'Background process cleanup did not complete. Exit and restart were blocked. Inspect the logs, then retry quitting.',
+        logPath: harnessLogPath,
+      }, 'shutdown')
+    },
   })
   desktopReturnControl = DESKTOP_WEB_SUPPORTED ? new DesktopReturnControl({
     showWindow: () => { lifecycle?.showWindow() },
@@ -2282,6 +2432,7 @@ async function startApplication(): Promise<void> {
     } else if (supervisor === undefined) {
       recoveryRestartRequired = true
     }
+    await stopAndRevokePersistentServicesForPlugin(packageName)
     await appendDesktopStartupLog(`Recovery mode is removing external plugin ${packageName}.`)
     const remove = () => runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
       'plugin', '--profile', 'web', 'remove', packageName,
@@ -2489,6 +2640,15 @@ async function startApplication(): Promise<void> {
     deadlineAt: profileCheckStartedAt + PROFILE_CHECK_TIMEOUT_MS,
   })
   let initialProfileRepairDiagnostic = ''
+  const observerLaunch = resolveHarnessInvocation(harnessEnvironment, [], launchOptions)
+  const observerBin = observerLaunch.args[0]
+  if (observerBin === undefined) throw new Error('desktop: Harness entry is unavailable for process ownership')
+  processObserver = await loadProcessObserver(
+    observerBin,
+    observerLaunch.command,
+    join(app.getPath('userData'), 'managed-processes', 'recovery-v1.json'),
+    `${persistentServicesPath}.runtime`,
+  )
   const profileManifestPath = join(dshHome, 'profiles', 'web', 'package.json')
   const profileInitialized = await lstat(profileManifestPath).then(stat => stat.isFile(), () => false)
   let profileMutationLock = inspectProfileMutationLock(dshHome)
@@ -2787,8 +2947,10 @@ async function startApplication(): Promise<void> {
   }
   supervisor = new HarnessSupervisor({
     launch,
+    onSpawn: (pid) => { observeProcess(pid, 'Harness') },
     logPath: harnessLogPath,
     environment: { ...harnessEnvironment },
+    managedRuntime: processObserver,
     ...(profileMutationBlocked || startupSafety.rollbackFailed
       ? {
         initialDiagnosticMode: true,

@@ -85,7 +85,10 @@ export function apply(ctx: Context): void {
   }, 'ui-desktop-shell: bridge state')
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item', id: 'desktop-shell', order: 75, locale: NS,
-    inject: () => ({ controller, icons: bridge.icons }),
+    inject: () => ({
+      controller, icons: bridge.icons, processes: bridge.processes,
+      openLog: () => bridge.shell.openLog(),
+    }),
   }, DesktopPreferencesRow))
   ctx.inject(['settingsNavigation'], (inner) => {
     const openUpdates = (): void => {

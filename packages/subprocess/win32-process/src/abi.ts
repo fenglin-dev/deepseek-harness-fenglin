@@ -30,6 +30,8 @@ export const ERROR_BROKEN_PIPE = 109
 export const ERROR_NO_DATA = 232
 /** Job limit that terminates every member when the final Job handle closes. */
 export const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+/** Let child processes leave an outer Desktop Job without an extra creation flag. */
+export const JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK = 0x00001000
 /** QueryInformationJobObject class for basic accounting and active-process count. */
 export const JobObjectBasicAccountingInformation = 1
 /** SetInformationJobObject class for JOBOBJECT_EXTENDED_LIMIT_INFORMATION. */

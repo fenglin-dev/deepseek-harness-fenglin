@@ -61,11 +61,13 @@ function launch(
   child = new FakeChild(),
   request: Parameters<typeof launchWindowsJob>[0] = spec,
   emitSpawn = true,
+  overrides: Parameters<typeof launchWindowsJob>[2] = {},
 ) {
   const spawn = vi.fn((_command: string, _args: readonly string[], _options: unknown) => child)
   const result = launchWindowsJob(request, { TARGET: 'yes' }, {
     spawn: spawn as never,
     runnerInvocation: ['C:\\node.exe', 'C:\\runner.js'],
+    ...overrides,
   })
   if (emitSpawn) child.emit('spawn')
   return { child, result, spawn }
@@ -167,6 +169,13 @@ describe('Windows parent runner contract', () => {
     if (typeof carrier !== 'number') throw new Error('expected numeric null-device carrier')
     expect(() => fstatSync(carrier)).toThrow()
     expect(result.stdin).toBeNull()
+  })
+
+  it('requests silent child breakaway only for a Desktop outer range', () => {
+    const { child } = launch(undefined, spec, true, { allowChildBreakaway: true })
+    expect(child.sent).toEqual([{
+      type: 'start', cwd: 'C:\\target', env: { TARGET: 'yes' }, allowChildBreakaway: true,
+    }])
   })
 
   it('closes the ignored-stdin descriptor when runner spawn throws synchronously', () => {

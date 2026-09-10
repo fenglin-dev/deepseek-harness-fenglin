@@ -24,6 +24,42 @@ export interface DesktopWebBridge {
   onStatus(callback: (status: DesktopWebStatus) => void): () => void
 }
 
+/** Redacted managed process state from Electron. */
+export interface DesktopProcessSnapshot {
+  schema: 'open-dsh-desktop/managed-process/v1'
+  id: string
+  label: string
+  lifecycle: 'task' | 'client' | 'legacy-child'
+  plugin?: string
+  phase: 'running' | 'stopping' | 'failed'
+  startedAt: string
+  containment: string
+  stoppable: boolean
+}
+
+/** Opaque process-management operations; no PID or command is exposed. */
+export interface DesktopProcessesBridge {
+  list(): Promise<readonly DesktopProcessSnapshot[]>
+  stop(id: string): Promise<readonly DesktopProcessSnapshot[]>
+  persistentServices(): Promise<readonly DesktopPersistentServiceSummary[]>
+  approvePersistentService(key: string): Promise<readonly DesktopPersistentServiceSummary[]>
+  revokePersistentService(key: string): Promise<readonly DesktopPersistentServiceSummary[]>
+  preparePluginUninstall(pluginName: string): Promise<{ readonly prepared: true }>
+}
+
+/** Redacted declaration awaiting or holding a user's persistent-service approval. */
+export interface DesktopPersistentServiceSummary {
+  key: string
+  pluginName: string
+  pluginVersion: string
+  serviceId: string
+  purpose: string
+  specFingerprint: string
+  status: 'pending' | 'approved'
+  requestedAt: string
+  approvedAt?: string
+}
+
 /** Platform and build-mode support reported by Electron. */
 export interface DesktopCapabilities {
   platform: string
@@ -162,6 +198,7 @@ export interface DesktopBridge {
   releases: DesktopReleasesBridge
   desktopWeb: DesktopWebBridge
   icons?: DesktopIconsBridge
+  processes?: DesktopProcessesBridge
 }
 
 /**
@@ -175,11 +212,13 @@ export function readDesktopBridge(): DesktopBridge | null {
     releases?: DesktopReleasesBridge
     desktopWeb?: DesktopWebBridge
     icons?: DesktopIconsBridge
+    processes?: DesktopProcessesBridge
     menu?: DesktopBridge['menu']
   } | undefined
   return candidate?.shell === undefined || candidate.releases === undefined || candidate.desktopWeb === undefined
     ? null
     : { shell: candidate.shell, releases: candidate.releases, desktopWeb: candidate.desktopWeb,
       ...(candidate.menu === undefined ? {} : { menu: candidate.menu }),
-      ...(candidate.icons === undefined ? {} : { icons: candidate.icons }) }
+      ...(candidate.icons === undefined ? {} : { icons: candidate.icons }),
+      ...(candidate.processes === undefined ? {} : { processes: candidate.processes }) }
 }

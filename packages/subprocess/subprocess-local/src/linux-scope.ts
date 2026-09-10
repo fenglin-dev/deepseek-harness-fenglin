@@ -494,6 +494,7 @@ export function launchLinuxScope(
     internals.sleep ?? sleepWithAbort,
   )
   return {
+    ...(child.pid === undefined ? {} : { rootPid: child.pid }),
     stdin: child.stdin,
     stdout: child.stdout,
     stderr: child.stderr,
