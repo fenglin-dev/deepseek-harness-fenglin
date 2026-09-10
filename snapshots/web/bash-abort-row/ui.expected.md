@@ -1,14 +1,9 @@
 - banner:
   - navigation "Session hierarchy":
     - 'button "Run two shell commands: wait" [disabled]'
-  - button "Copy loaded conversation":
+  - button "More actions":
     - img
-  - button "More session actions":
-    - img
-  - button "Session log":
-    - text: Session log
-    - img
-  - button "Open the sidebar":
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]

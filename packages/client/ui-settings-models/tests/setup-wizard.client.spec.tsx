@@ -70,6 +70,7 @@ function mount({ modelReady = false, acknowledge = true }: {
     useResource: unusedHook,
     useSessionPendingInteraction: (() => new Map()) as never,
     useWorkspaces: unusedHook,
+    usePanelInfo: selector => selector({ activePanelId: null }),
     modelsController,
     welcomeController,
     useModels: bindSnapshotSelector(modelsController.store),

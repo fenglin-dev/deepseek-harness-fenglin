@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Web users can inspect agent-preset compositions and the global plugin inventory, including enablement, provenance, failures, and search across both scopes. The package also presents diagnostics, imported-plugin recovery, external tools, and Plugin Market discovery. Its new-session Explore plugins control uses market-owned recommendations and Profile state for guarded installation and links to the full market, without maintaining a duplicate catalog or fallback statistics. Loading, empty, failure, and retry states remain local to each mounted surface.
+The **Plugin list** tab presents agent presets first and collapses the global inventory until needed. Cards identify instances by stable entry id and expose enablement, provenance, runtime status, disabled conditions, and discovery failures; search covers both groups and points to matches in other presets. The package also presents diagnostics, imported-plugin recovery, external tools, and Plugin Market discovery. Its new-session Explore plugins control uses market-owned recommendations and Profile state for guarded installation and links to the full market without maintaining a duplicate catalog or fallback statistics. Loading, empty, failure, and retry states remain local to each mounted surface.
 
 ## Table of Contents
 
@@ -41,7 +41,7 @@ Open **Explore plugins** on the new-session page to browse the recommended ranki
 
 ### Reading a card
 
-Each collapsed card uses the short module name as its title and a small enablement tag; enabled entries also show a colored root-fiber status dot. Expanding one card reveals the declared entry id, the full module specifier, and the state facts: a preset row names the preset it comes from, its runtime status when the composition is live, and its disable condition when it carries one; a preset-provided global row explains that agent presets provide it per session, names the presets that enable it, and offers a jump into the preset group. Preset names resolve through the shared `presetDisplayText` fold (`dsh-agent-presets/display`) over [`ui-agent-preset`](../ui-agent-preset/README.md)'s dictionaries: shipped presets follow the active locale while user-authored ones keep their own metadata, so an English surface never echoes the preset files' Chinese names. Search filters both groups by module name and entry id.
+Each collapsed card uses the short module name as its primary title, shows the stable entry id underneath, and carries a small enablement tag; enabled entries also show a colored root-fiber status dot. A composition-generated subtitle omits its leading `include:` marker, while hover, search, the accessible name, and expanded details retain the complete id. Long entry ids truncate in the row and remain available on hover. Expanding one card reveals the declared entry id, the full module specifier, and the state facts: a preset row names the preset it comes from, its runtime status when the composition is live, and its disable condition when it carries one; a preset-provided global row explains that agent presets provide it per session, names the presets that enable it, and offers a jump into the preset group. Preset names resolve through the shared `presetDisplayText` fold (`dsh-agent-presets/display`) over [`ui-agent-preset`](../ui-agent-preset/README.md)'s dictionaries: shipped presets follow the active locale while user-authored ones keep their own metadata, so an English surface never echoes the preset files' Chinese names. Search filters both groups by module name and entry id.
 
 ### The preset switcher
 
@@ -67,7 +67,7 @@ The browser plugin registers one localized `settings.plugins.tab` contribution w
 
 ### Rendering
 
-Row keys are scope-qualified (`global:`, `preset:<id>:<index>`), so one module appearing in both scopes keeps distinct disclosure state; an entry id is shown as detail only when the row declares one and is never classified by string shape. The preset-provided marking is derived client-side: a global entry carries it when it is disabled there while at least one preset row for the same module specifier is actually enabled, so a module every preset gates off (or declares only conditionally) stays plainly disabled rather than over-claiming provision.
+Row keys are scope-qualified (`global:`, `preset:<id>:<index>`), so one module appearing in both scopes keeps distinct disclosure state; a declared entry id appears in expanded details and supplies the collapsed subtitle after removal of a leading composition `include:` marker, while a row without one stays unlabeled. The preset-provided marking is derived client-side: a global entry carries it when it is disabled there while at least one preset row for the same module specifier is actually enabled, so a module every preset gates off (or declares only conditionally) stays plainly disabled rather than over-claiming provision.
 
 </details>
 

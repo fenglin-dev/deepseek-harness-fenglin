@@ -396,6 +396,21 @@ Types: [ContentBlock](subsystems/core.md) · [TokenUsage](subsystems/llm-streami
 
 Source: [`packages/compaction/compaction/src/types.ts:34`](../packages/compaction/compaction/src/types.ts)
 
+### `deliverables/*`
+
+<a id="deliverablespresented--log-only"></a>
+
+#### `deliverables/presented` — log-only
+
+```ts persistence-catalog
+/** Declared filesystem files from a successful final present result, including nested calls. */
+'deliverables/presented': { turn: number; callId: ToolCallId; files: PresentedFile[] }
+```
+
+Types: [ToolCallId](subsystems/core.md)
+
+Source: [`packages/fs/tool-present/src/types.ts:15`](../packages/fs/tool-present/src/types.ts)
+
 ### `external-tools/*`
 
 <a id="external-toolsresolved--log-only"></a>
@@ -428,7 +443,7 @@ Source: [`packages/preset/agent-presets/src/session.ts:34`](../packages/preset/a
 'feedback/message-delete': MessageFeedbackDelete
 ```
 
-Source: [`packages/feedback/message-feedback/src/types.ts:55`](../packages/feedback/message-feedback/src/types.ts)
+Source: [`packages/feedback/message-feedback/src/types.ts:58`](../packages/feedback/message-feedback/src/types.ts)
 
 <a id="feedbackmessage-put--log-only"></a>
 
@@ -439,7 +454,7 @@ Source: [`packages/feedback/message-feedback/src/types.ts:55`](../packages/feedb
 'feedback/message-put': MessageFeedbackPut
 ```
 
-Source: [`packages/feedback/message-feedback/src/types.ts:53`](../packages/feedback/message-feedback/src/types.ts)
+Source: [`packages/feedback/message-feedback/src/types.ts:56`](../packages/feedback/message-feedback/src/types.ts)
 
 <a id="feedbackrecord--log-only"></a>
 
@@ -450,10 +465,10 @@ Source: [`packages/feedback/message-feedback/src/types.ts:53`](../packages/feedb
  * One recorded human remark about this session. Log-only and independent
  * of its trigger; it never enters model context or derived history.
  */
-'feedback/record': { text: string }
+'feedback/record': FeedbackRecord
 ```
 
-Source: [`packages/feedback/command-feedback/src/index.ts:25`](../packages/feedback/command-feedback/src/index.ts)
+Source: [`packages/feedback/command-feedback/src/types.ts:40`](../packages/feedback/command-feedback/src/types.ts)
 
 ### `goal/*`
 
@@ -781,6 +796,20 @@ Source: [`packages/core/session/src/types.ts:289`](../packages/core/session/src/
 Source: [`packages/core/session/src/types.ts:287`](../packages/core/session/src/types.ts)
 
 ### `subagent/*`
+
+<a id="subagentcatalog--log-only"></a>
+
+#### `subagent/catalog` — log-only
+
+```ts persistence-catalog
+/**
+ * A direct child's complete discovery fact.
+ * @param data - versioned parent-owned catalog entry.
+ */
+'subagent/catalog': SubagentCatalogEvent
+```
+
+Source: [`packages/subagent/subagent/src/catalog.ts:40`](../packages/subagent/subagent/src/catalog.ts)
 
 <a id="subagentdescriptor--log-only"></a>
 

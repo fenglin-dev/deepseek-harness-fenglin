@@ -5,14 +5,9 @@
     - 'button "Switch subagent: event-sourcing researcher"': event-sourcing researcher
   - img
   - text: Standard mode
-  - button "Copy loaded conversation":
+  - button "More actions":
     - img
-  - button "More session actions":
-    - img
-  - button "Session log":
-    - text: Session log
-    - img
-  - button "Open the sidebar":
+  - button "Open right sidebar":
     - img
   - tablist:
     - tab "Chat" [selected]
