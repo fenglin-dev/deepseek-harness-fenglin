@@ -7,6 +7,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
   max-width: 720px;
   color: var(--dsw-alias-label-primary);
 }
@@ -63,22 +64,26 @@
 
 .rowHead {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
 }
 
 .rowIdentity {
   display: inline-flex;
+  flex: 1 1 180px;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
 .rowName {
+  min-width: 0;
   font-size: 14px;
   line-height: 22px;
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
 }
 
 /* Reads as an annotation on the name, not as a second name: caption size and
@@ -115,7 +120,9 @@
 
 .rowActions {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
   margin-left: auto;
 }
@@ -295,6 +302,7 @@
 
 .editorActions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
 }

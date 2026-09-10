@@ -380,7 +380,7 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
     case 'about': {
       const manifest = JSON.parse(await readFile(new URL('./harness-version.json', import.meta.url), 'utf8')) as { version: string }
       await dialog.showMessageBox({ type: 'info', title: menuCopy(menuLocale).about,
-        message: shellMessages(app.getLocale()).productName,
+        message: shellMessages(menuLocale).productName,
         detail: `${app.getVersion()}\nHarness ${manifest.version}\n\n${menuCopy(menuLocale).community}` })
       return
     }
@@ -512,7 +512,7 @@ function desktopCapabilities(): DesktopCapabilities {
   }
 }
 
-function desktopCopy() { return trayMessages(app.getLocale()) }
+function desktopCopy() { return trayMessages(menuLocale) }
 
 function dataHomeCopy() { return dataHomeMessages(app.getLocale()) }
 
@@ -2240,6 +2240,7 @@ async function startApplication(): Promise<void> {
       }
     }
     applicationMenu?.refresh()
+    refreshTrayMenu()
   })
   ipcMain.on('dsh:menu:result', (event, result: unknown) => {
     if (event.sender !== mainSurface?.renderer || typeof result !== 'object' || result === null) return
@@ -2311,9 +2312,7 @@ async function startApplication(): Promise<void> {
     reportError: (error) => {
       console.error('desktop: shutdown failed', error)
       showLoading('failed', {
-        message: app.getLocale().toLowerCase().startsWith('zh')
-          ? '后台进程回收未完成，已阻止退出和重启。请查看日志后重试退出。'
-          : 'Background process cleanup did not complete. Exit and restart were blocked. Inspect the logs, then retry quitting.',
+        message: menuCopy(menuLocale).shutdownFailed,
         logPath: harnessLogPath,
       }, 'shutdown')
     },

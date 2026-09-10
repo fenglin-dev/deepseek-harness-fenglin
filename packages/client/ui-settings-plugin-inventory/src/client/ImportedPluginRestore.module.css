@@ -6,6 +6,9 @@
   flex-direction: column;
   gap: 16px;
   width: 100%;
+  min-width: 0;
+  container-name: imported-plugin-restore;
+  container-type: inline-size;
   border: 0;
   border-radius: 14px;
   padding: 18px;
@@ -243,7 +246,7 @@
   justify-content: flex-end;
 }
 
-@media (max-width: 640px) {
+@container imported-plugin-restore (max-width: 520px) {
   .entries > li {
     grid-template-columns: 1fr;
   }

@@ -22,6 +22,7 @@
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 22px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);

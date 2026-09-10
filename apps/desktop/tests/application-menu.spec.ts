@@ -27,11 +27,13 @@ describe('platform application menus', () => {
     items.find(item => item.id === 'updates')?.click?.({} as never, undefined, {})
     expect(execute).toHaveBeenCalledWith('updates')
   })
-  it('uses the contributed Russian menu and falls back to English for untranslated locales', () => {
-    const russian = applicationMenuTemplate({ ...state, locale: 'ru-RU' }, vi.fn())
-    const french = applicationMenuTemplate({ ...state, locale: 'fr-FR' }, vi.fn())
-    expect(russian.find(item => item.id === 'file')?.label).toBe('Файл')
-    expect(french.find(item => item.id === 'file')?.label).toBe('File')
+  it.each([
+    ['ja-JP', 'ファイル'], ['ko-KR', '파일'], ['es-ES', 'Archivo'], ['fr-FR', 'Fichier'],
+    ['de-DE', 'Datei'], ['pt-BR', 'Arquivo'], ['ru-RU', 'Файл'],
+  ])('localizes the complete native menu for %s', (locale, fileLabel) => {
+    const menu = applicationMenuTemplate({ ...state, locale }, vi.fn())
+    expect(menu.find(item => item.id === 'file')?.label).toBe(fileLabel)
+    expect(menu.find(item => item.id === 'file')?.label).not.toBe('File')
   })
   it('disables disconnected navigation and guarded mutations but retains recovery help', () => {
     expect(commandEnabled('new-session', { ...state, ready: false })).toBe(false)

@@ -4,6 +4,8 @@
   gap: 14px;
   width: 100%;
   max-width: 760px;
+  container-name: plugin-inventory-settings;
+  container-type: inline-size;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -443,7 +445,7 @@
   }
 }
 
-@media (max-width: 680px) {
+@container plugin-inventory-settings (max-width: 560px) {
   .cards {
     grid-template-columns: minmax(0, 1fr);
   }

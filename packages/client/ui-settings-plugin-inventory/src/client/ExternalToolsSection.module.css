@@ -4,6 +4,9 @@
   display: flex;
   flex-direction: column;
   gap: 22px;
+  min-width: 0;
+  container-name: external-tools-settings;
+  container-type: inline-size;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -86,6 +89,7 @@
 
 .cardTop {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -178,7 +182,7 @@
   color: var(--dsw-alias-state-danger-primary);
 }
 
-@media (max-width: 680px) {
+@container external-tools-settings (max-width: 560px) {
   .grid {
     grid-template-columns: 1fr;
   }

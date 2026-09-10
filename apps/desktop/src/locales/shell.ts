@@ -1,4 +1,7 @@
 /** Bilingual copy for native dialogs and the community desktop shell. */
+import { desktopDictionary } from '../desktop-locale.ts'
+import { trayDictionaries, type TrayCopy } from './tray.ts'
+
 const en = {
   productName: 'Open DeepSeek Harness Desktop',
   chooseSource: 'Choose DSH configuration directory',
@@ -49,25 +52,8 @@ export function shellMessages(locale: string): typeof en {
 }
 
 /** Select tray-menu copy. @param locale - Electron locale. @returns The matching tray labels. */
-export function trayMessages(locale: string): {
-  open: string
-  openWeb: string
-  restart: string
-  openLog: string
-  launchAtLogin: string
-  notifications: string
-  quit: string
-  logErrorTitle: string
-} {
-  return locale.toLowerCase().startsWith('zh')
-    ? {
-      open: '打开窗口', openWeb: '在浏览器中打开', restart: '快速重启', openLog: '打开 Harness 日志', launchAtLogin: '开机自启',
-      notifications: '系统通知', quit: '退出', logErrorTitle: '无法打开日志',
-    }
-    : {
-      open: 'Open Window', openWeb: 'Open in Browser', restart: 'Quick Restart', openLog: 'Open Harness Log', launchAtLogin: 'Launch at Login',
-      notifications: 'Notifications', quit: 'Quit', logErrorTitle: 'Could Not Open Log',
-    }
+export function trayMessages(locale: string): TrayCopy {
+  return desktopDictionary(locale, trayDictionaries)
 }
 
 /** Select import-result copy. @param locale - Electron locale. @returns The matching import messages. */

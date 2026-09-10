@@ -1,6 +1,7 @@
 /** Shared native application commands and platform-specific menu presentation. */
 import type { MenuItemConstructorOptions } from 'electron'
 import { desktopDictionary } from './desktop-locale.ts'
+import { additionalApplicationMenuDictionaries } from './locales/application-menu-extra.ts'
 
 /** Fixed commands accepted by the desktop host; never executable renderer input. */
 export const DESKTOP_COMMANDS = [
@@ -34,8 +35,11 @@ const en = {
   unavailable: 'This action is unavailable while the client is starting, disconnected, or recovering.',
   busy: 'A plugin operation or recovery is in progress. Wait for it to finish before restarting or quitting.',
   tray: 'The system tray is unavailable. Cancel to keep the window open, or quit completely.',
+  shutdownFailed: 'Background process cleanup did not complete. Exit and restart were blocked. Inspect the logs, then retry quitting.',
   cancel: 'Cancel', community: 'Maintained by FLAQ AI. An independent community distribution, not an official DeepSeek product.',
 }
+/** Exact copy surface shared by every desktop-owned application menu locale. */
+export type ApplicationMenuCopy = typeof en
 const zh: typeof en = {
   app: 'Open DSH Desktop', file: '文件', edit: '编辑', view: '视图', tools: '工具', window: '窗口', help: '帮助', more: '更多',
   about: '关于 Open DSH Desktop', settings: '设置…', updates: '检查更新…', 'new-session': '新对话',
@@ -50,6 +54,7 @@ const zh: typeof en = {
   unavailable: '客户端正在启动、已断开连接或正在恢复，暂时无法执行此操作。',
   busy: '插件操作或恢复正在进行，请等待完成后再重启或退出。',
   tray: '系统托盘不可用。可以取消并保留窗口，或完整退出客户端。', cancel: '取消',
+  shutdownFailed: '后台进程回收未完成，已阻止退出和重启。请查看日志后重试退出。',
   community: '由 FLAQ AI 维护的社区独立发行版，并非 DeepSeek 官方产品。',
 }
 const ru: typeof en = {
@@ -66,11 +71,12 @@ const ru: typeof en = {
   unavailable: 'Действие недоступно, пока клиент запускается, отключён или восстанавливается.',
   busy: 'Идёт операция с плагинами или восстановление. Дождитесь завершения перед перезапуском или выходом.',
   tray: 'Системный трей недоступен. Отмените, чтобы оставить окно открытым, или полностью выйдите.',
+  shutdownFailed: 'Очистка фоновых процессов не завершена. Выход и перезапуск заблокированы. Проверьте журналы и повторите выход.',
   cancel: 'Отмена', community: 'Поддерживается FLAQ AI. Независимый общественный дистрибутив, не официальный продукт DeepSeek.',
 }
 /** Resolve native menu copy; unsupported languages fall back to English. @param locale - App locale. @returns Menu dictionary. */
 export function menuCopy(locale: string): typeof en {
-  return desktopDictionary(locale, { zh, en, ru })
+  return desktopDictionary(locale, { zh, en, ru, ...additionalApplicationMenuDictionaries })
 }
 
 /** Presentation state published by the trusted host. */

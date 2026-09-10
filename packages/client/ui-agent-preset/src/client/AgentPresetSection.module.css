@@ -2,6 +2,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
   max-width: 720px;
   color: var(--dsw-alias-label-primary);
 }
@@ -54,6 +55,7 @@
 }
 
 .card {
+  min-width: 0;
   border: 0.5px solid var(--dsw-alias-border-l4);
   border-radius: 20px;
   display: flex;
@@ -158,6 +160,7 @@
 /* The card body is the control that picks the preset. */
 .cardMain {
   flex: 1;
+  min-width: 0;
   appearance: none;
   border: 0;
   background: none;
@@ -183,6 +186,7 @@
 
 .cardHead {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   /* Anchors the broken badge's tooltip: the badge itself stays unpositioned so
@@ -193,14 +197,21 @@
 }
 
 .cardName {
+  flex: 1 1 120px;
+  min-width: 0;
   font-size: 15px;
   font-weight: 600;
   line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.cardHead > :not(.cardName) {
+  flex: none;
 }
 
 /* Placement only: the capsule geometry and palette come from `Tag`. */
 .inUse {
-  margin-left: auto;
+  margin-left: 0;
 }
 
 /* Bounded to four lines. A preset publishes its own description, so one long
