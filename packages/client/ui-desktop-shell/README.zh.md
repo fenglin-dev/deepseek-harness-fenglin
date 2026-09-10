@@ -30,7 +30,7 @@ kind: "package-reference"
 
 原生应用菜单导航使用现有工作区和设置服务。“新对话”保留这些服务原有的草稿行为；通用设置消费一次性的更新区域或数据目录选择请求。插件设置项缺失时报告错误，不安装任何内容。连接与语言订阅发布当前菜单就绪状态，并随插件释放。平台行为见[应用菜单](../../../apps/desktop/README.zh.md#application-menus)。
 
-社区构建还会在一个可逆 effect 中注册 `ja`、`ko`、`es`、`fr`、`de`、`pt-BR` 与 `ru` 作为可选语言。各功能包拥有自己的翻译 namespace，因此缺少的覆盖范围按 key 回退到英文；卸载本包会完整移除社区语言目录。当前 Profile 语言会报告给 Electron，用于原生菜单和恢复页文案；Electron 的启动缓存绝不写入 Profile 偏好。
+社区构建会注册 `ja`、`ko`、`es`、`fr`、`de`、`pt-BR` 与 `ru` 作为可选语言，并为当前 Client 的完整 namespace 范围提供静态翻译。中文和英文仍由各功能包拥有；未来新增但尚未写入社区字典的 key 会回退到英文。俄语中与 [`@ragnoryok1/dsh-client-locale-ru`](https://github.com/Ragnoryok1/dsh-client-locale-ru) 重叠的文案以该语言包为准，Desktop 独有文案则留在本包。卸载本包会完整移除社区语言目录及其字典。当前 Profile 语言会报告给 Electron，用于原生菜单和恢复页文案；Electron 的启动缓存绝不写入 Profile 偏好。
 
 Release 发现会把同一份状态投影到通用设置、设置面板标题栏，以及紧邻侧栏“设置”的蓝色操作按钮。只有存在更新时才显示两处更新操作；点击任意一处都会打开通用设置，并在面板完成布局后将更新行滚动到可见位置。源码构建中的开发更新模拟也使用同一投影。
 

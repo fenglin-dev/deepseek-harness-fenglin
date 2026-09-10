@@ -3,6 +3,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { LanguageRegistration } from '@deepseek-ai/dsh-client-locale/client'
 import { desktopLanguageTitles } from './locales.ts'
+import { COMMUNITY_TRANSLATIONS } from './community-translations/index.ts'
+import { COMMUNITY_SURFACE_TRANSLATIONS } from './community-translations/surfaces.ts'
 
 /** Additional languages offered by Open DSH Desktop. */
 export const DESKTOP_LANGUAGE_DEFINITIONS = [
@@ -28,6 +30,10 @@ export function registerDesktopLanguages(ctx: Context): () => void {
       disposers.push(ctx.locale.register('settings.locale', definition.id, {
         'language.title': desktopLanguageTitles[definition.id],
       }))
+      const dictionaries = { ...COMMUNITY_TRANSLATIONS[definition.id], ...COMMUNITY_SURFACE_TRANSLATIONS[definition.id] }
+      for (const [namespace, dictionary] of Object.entries(dictionaries)) {
+        disposers.push(ctx.locale.register(namespace, definition.id, dictionary))
+      }
     }
   } catch (error) {
     for (const dispose of disposers.reverse()) dispose()
