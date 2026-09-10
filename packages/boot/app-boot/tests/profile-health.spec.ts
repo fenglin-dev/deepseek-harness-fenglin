@@ -791,6 +791,37 @@ describe('profile shared Host dependency repair', () => {
     ])
   })
 
+  it('retains a distinct reason for a proven Loader lifecycle failure', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const { pluginDir } = stageProfile(home, {})
+    const result = quarantineProfilePluginAfterLoadFailure({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      runPackageManager: () => {
+        rmSync(pluginDir, { recursive: true, force: true })
+        return { exitCode: 0 }
+      },
+    }, 'fixture-plugin', {
+      diagnosticId: 'lifecycle-fixture',
+      code: 'loader.lifecycle-failed',
+      source: 'loader',
+      phase: 'apply',
+      severity: 'blocked',
+      attribution: { entryId: 'fixture', moduleName: 'fixture-plugin', rootPackage: 'fixture-plugin' },
+      actions: ['retry', 'isolate', 'export'],
+      evidence: ['failed to apply loader entry fixture (fixture-plugin)'],
+    }, 'loader-lifecycle-failed')
+
+    expect(result).toMatchObject({
+      status: 'quarantined',
+      quarantined: [{ packageName: 'fixture-plugin', reason: 'loader-lifecycle-failed' }],
+      issues: [{ code: 'loader.lifecycle-failed' }],
+    })
+  })
+
   it('refuses to quarantine a Loader module that is not a direct active Profile bundle', () => {
     const { anchor } = stageHarness()
     const home = temporaryDirectory('dsh-health-home-')

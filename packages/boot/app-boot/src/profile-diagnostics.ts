@@ -545,7 +545,7 @@ export function quarantineRemovalResidueDiagnostic(
  */
 export function quarantinedPluginDiagnostic(
   packageName: string,
-  reason: 'incompatible-host-version' | 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable' | 'loader-dependency-unavailable',
+  reason: 'incompatible-host-version' | 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable' | 'loader-dependency-unavailable' | 'loader-lifecycle-failed',
   hostCompatibility?: {
     readonly hostVersion: string
     readonly supportedHostVersions: readonly string[]
@@ -560,9 +560,11 @@ export function quarantinedPluginDiagnostic(
         ? 'pnpm.build-script-blocked'
         : reason === 'loader-dependency-unavailable'
           ? 'loader.dependency-unavailable'
-          : reason === 'client-module-unavailable' || reason === 'loader-module-unresolvable'
-            ? 'profile.module-resolution'
-            : 'profile.host-dependency-conflict'
+          : reason === 'loader-lifecycle-failed'
+            ? 'loader.lifecycle-failed'
+            : reason === 'client-module-unavailable' || reason === 'loader-module-unresolvable'
+              ? 'profile.module-resolution'
+              : 'profile.host-dependency-conflict'
   return {
     diagnosticId: randomUUID(),
     code,

@@ -111,6 +111,7 @@ const QUARANTINE_REASON_KEYS = {
   'client-module-unavailable': 'health.quarantine.reason.clientModuleUnavailable',
   'loader-module-unresolvable': 'health.quarantine.reason.loaderModuleUnresolvable',
   'loader-dependency-unavailable': 'health.quarantine.reason.loaderDependencyUnavailable',
+  'loader-lifecycle-failed': 'health.quarantine.reason.loaderLifecycleFailed',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 const QUARANTINE_SOLUTION_KEYS = {
@@ -122,6 +123,7 @@ const QUARANTINE_SOLUTION_KEYS = {
   'client-module-unavailable': 'health.quarantine.solution.client-module-unavailable',
   'loader-module-unresolvable': 'health.quarantine.solution.loader-module-unresolvable',
   'loader-dependency-unavailable': 'health.quarantine.solution.loader-dependency-unavailable',
+  'loader-lifecycle-failed': 'health.quarantine.solution.loader-lifecycle-failed',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 const QUARANTINE_RETRY_KEYS = {
@@ -133,6 +135,7 @@ const QUARANTINE_RETRY_KEYS = {
   'client-module-unavailable': 'health.quarantine.action.findUpdate',
   'loader-module-unresolvable': 'health.quarantine.action.findUpdate',
   'loader-dependency-unavailable': 'health.quarantine.action.findUpdate',
+  'loader-lifecycle-failed': 'health.quarantine.action.findUpdate',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 type DiagnosticIssue = PluginInventorySnapshot['dependencyHealth']['issues'][number]
@@ -861,7 +864,8 @@ export function PluginDiagnosticsSection({
                   {record.reason === 'incompatible-host-version'
                     || record.reason === 'client-module-unavailable'
                     || record.reason === 'loader-module-unresolvable'
-                    || record.reason === 'loader-dependency-unavailable' ? (
+                    || record.reason === 'loader-dependency-unavailable'
+                    || record.reason === 'loader-lifecycle-failed' ? (
                       <Button
                         variant="primary"
                         disabled={removal?.phase === 'running'}

@@ -35,12 +35,12 @@
 | `profile.host-dependency-conflict` | Profile 根插件把身份敏感 Host 包解析到另一份物理副本 | 展示完整依赖链。只有版本范围和已安装身份能证明安全收敛时才重连，否则隔离责任根插件。 |
 | `profile.orphaned-bundle` | 软件包不再是可管理依赖，但仍存在于 `dsh.profile.bundles` | 移除失效 bundle 引用，不重新安装用户已经卸载的插件。 |
 | `profile.quarantine-removal-residue` | 停用插件、活动 manifest 条目和持久隔离记录都已消失，但修复报告、诊断报告、lockfile importer 或不完整软件包目录仍引用它 | 只移除陈旧派生状态，不重装或再次隔离已消失的插件，并保留其他无关 incident。 |
-| `profile.module-resolution` | `failed to import loader entry`、`ERR_MODULE_NOT_FOUND`、`missed the module table`、模块未实体化或缺少 package factory | 遍历完整 cause 链并归属最深层 Loader entry。若最终 entry 与唯一一个直接启用的外部 Bundle 原始声明完全一致，但裸模块无法解析，则安装后立即以 `loader-module-unresolvable` 隔离该根包；用户改写或来源有歧义时只进入诊断安全模式，不自动移除。 |
+| `profile.module-resolution` | `failed to import loader entry`、`ERR_MODULE_NOT_FOUND`、`missed the module table`、模块未实体化或缺少 package factory | 遍历完整 cause 链并归属最深层 Loader entry。若最终 entry 与唯一一个直接启用的外部 Bundle 原始声明完全一致，但裸模块无法解析，则安装后立即以 `loader-module-unresolvable` 隔离该根包；用户改写或来源有歧义时只打开诊断模式，不自动移除。 |
 | `loader.dependency-unavailable` | 可解析的 Loader 模块导入不可用的软件包，或请求已安装依赖没有提供的命名导出 | 把故障归属到唯一声明最深层 Loader 行的直接启用 Bundle，并以 `loader-dependency-unavailable` 隔离其根包。Node 能提供依赖名和缺失导出名时一并保留。缺失 `@deepseek-ai/dsh-*` 包或导出表示 DSH 代际不匹配；界面提供卸载和查找兼容版本操作，但绝不把另一版内部 Host 安装进 Profile。 |
 | `loader.duplicate-entry` 与 `loader.duplicate-registration` | Loader id、配置路径、persona、route、prompt section、service 或进程全局单例重复 | 身份能证明是旧行时移除；否则标明冲突双方并隔离外部根，或要求手动修复配置。 |
-| `loader.lifecycle-failed` | `failed to apply loader entry`、import、mount、apply、activate 或 fiber 失败 | 沿 `cause` 走到最内层，归属 entry 与模块；只有重试或收敛无法修复外部根时才隔离。 |
-| `config.credentials-invalid` | `.credentials.yaml` 解析或字段类型错误，包括非字符串 `version` | 报告字段路径和期望类型，保持用户凭据文档不变；阻断启动时进入诊断安全模式。 |
-| `config.settings-invalid` | `settings.yaml` 或 JSON 解析失败，包括带行列位置的 `DUPLICATE_KEY` | 原文保持不动，安全模式改用安装方维护的空设置文件。界面提供打开文件或明确的“备份并重置”；后者先逐字节保留原文件，再重启 Harness。 |
+| `loader.lifecycle-failed` | 模块能够导入，但唯一归属的 Loader entry 在 apply 或注册服务时抛错 | 遍历 cause 与聚合错误，要求 entry 和模块精确匹配唯一的直接外部 Bundle，再以 `loader-lifecycle-failed` 隔离该责任根包。归属有歧义或用户 patch 修改过该行时保持不动并打开诊断模式。 |
+| `config.credentials-invalid` | `.credentials.yaml` 解析或字段类型错误，包括非字符串 `version` | 报告字段路径和期望类型，保持用户凭据文档不变；阻断启动时打开诊断模式。 |
+| `config.settings-invalid` | `settings.yaml` 或 JSON 解析失败，包括带行列位置的 `DUPLICATE_KEY` | 原文保持不动，内部诊断 Profile 改用安装方维护的空设置文件。界面提供打开文件或明确的“备份并重置”；后者先逐字节保留原文件，再重启 Harness。 |
 | `runtime.launch-invalid` | 内置 pnpm 或 Node 缺失、`DSH_PNPM_BIN` 无效、运行时路径错误，或 Harness 在 ready 前退出 | 校验结构化可执行文件与参数数组。包含空格或非 ASCII 字符的路径绝不经过拼接的 shell 命令。 |
 
 直接启用且声明 Session peer 依赖的外部 bundle，如果 JavaScript 遍历 `session.events`，可能产生 `profile.session-api-incompatible`。Doctor 和实时插件清单通过有界、只读的源码检查识别，不执行插件。警告指出根包及包内相对文件，但不能证明接收对象类型或代码实际执行失败；单独出现时不会触发修复、隔离或 Doctor 失败退出码。请查找兼容更新；若对话无法打开，可在插件管理中停用或卸载该插件。运行时 `session.events is not iterable` 错误归入同一诊断码。压缩后的别名、带保护的兼容代码以及其他接口差异仍需运行时证据；扫描未命中不代表兼容性认证。
@@ -74,16 +74,16 @@
 
 当调用方能证明文件职责时，Profile 解析错误会标记为 `profile-manifest`、`workspace`、`lockfile`、`profile-patch`、`home-patch` 或 `credentials`。未知用户文件会被保留，绝不进行推测性规范化。
 
-## 诊断安全模式
+## 诊断模式兜底
 
-桌面启动会设置允许受保护恢复的显式策略。客户端模块表导入失败会先归属到 Loader entry 与精确的直接外部 bundle。由于该故障发生在 Host ready 之后、客户端插件树建立之前，无框架浏览器内核会调用一个经过认证、参数封闭的恢复 Remote，并让加载页保持可见。Host 再次验证归属、活动 manifest 条目、软件包移除和最终依赖图后，CLI 保留可重试隔离记录，监督器在不加载该 bundle 的情况下重启普通 Profile。用户随后无感进入主界面，并能在诊断页看到被隔离插件及根因。彻底卸载这个已停用插件时，系统还会清理其陈旧 lockfile importer 和软件包残留，在不丢弃其他 incident 的前提下收敛对应修复与诊断记录，并最后删除隔离记录。旧版或中断的卸载若已经删除插件和隔离记录、却留下这些派生引用，系统会以 `profile.quarantine-removal-residue` 报告；启动修复与诊断操作只清理陈旧元数据，不会再次隔离已经消失的插件。其他确定性的 Profile、Loader、Cordis、凭据或运行时配置 incident 会写入脱敏 v2 incident，并输出一个稳定的可恢复标记。监督器随后立即重启一次，使用安装包自带的诊断 Profile；该 Profile 只加载随产品发布的模板 bundle，跳过外部 bundle 与用户 patch 层。
+桌面启动会设置允许受保护恢复的显式策略。客户端模块表导入失败会先归属到 Loader entry 与精确的直接外部 bundle。由于该故障发生在 Host ready 之后、客户端插件树建立之前，无框架浏览器内核会调用一个经过认证、参数封闭的恢复 Remote，并让加载页保持可见。Host 再次验证归属、活动 manifest 条目、软件包移除和最终依赖图后，CLI 保留可重试隔离记录，监督器在不加载该 bundle 的情况下重启普通 Profile。用户随后无感进入主界面，并能在诊断页看到被隔离插件及根因。彻底卸载这个已停用插件时，系统还会清理其陈旧 lockfile importer 和软件包残留，在不丢弃其他 incident 的前提下收敛对应修复与诊断记录，并最后删除隔离记录。旧版或中断的卸载若已经删除插件和隔离记录、却留下这些派生引用，系统会以 `profile.quarantine-removal-residue` 报告；启动修复与诊断操作只清理陈旧元数据，不会再次隔离已经消失的插件。其他确定性的 Profile、Loader、Cordis、凭据或运行时配置 incident 会写入脱敏 v2 incident，并输出一个稳定的可恢复标记。监督器随后启动一次安装包自带的诊断 Profile；该 Profile 只加载随产品发布的模板 bundle，跳过外部 bundle 与用户 patch 层。
 
-安全模式记录进入时间、跳过的 bundle 名称，以及是否跳过用户层。其裸模块解析以安装方维护的 `$DSH_HOME/profiles/node_modules` fallback 为锚点，不再使用活动 Profile 或 CLI 包。主界面的“诊断”页面保持可用，展示根因、证据、风险和受保护操作。修复成功后重新启动正常 Profile。启动最多执行一次普通尝试和一次安全模式尝试；若安装自带的诊断 Profile 也失败，监督器会立即停止，保留原始 Profile incident 作为主证据，并把安全模式失败追加为次级证据。
+诊断 Profile 记录进入时间、跳过的 bundle 名称，以及是否跳过用户层。其裸模块解析以安装方维护的 `$DSH_HOME/profiles/node_modules` fallback 为锚点，不再使用活动 Profile 或 CLI 包。桌面端绝不把这个最小 Profile 当作普通工作区打开；它就绪后只展示明确的“诊断模式”页面，提供插件卸载、快照回退、配置目录安全切换、诊断导出和打开本机日志。重新尝试会先停止诊断进程，再正常启动当前 Profile。启动最多执行一次普通尝试和一次诊断尝试；若安装自带的诊断 Profile 也失败，监督器会立即停止，保留原始 Profile incident 作为主证据，并把诊断失败追加为次级证据。
 
-诊断演练中心为这些规则提供固定场景。`@dsh-diagnostic-lab/legacy-session-api` 场景可在隔离 home 和当前 Profile 中使用且默认不勾选，用于验证 `profile.session-api-incompatible` 风险提示的归属，不调用旧接口辅助函数，也不隔离测试包。`@dsh-diagnostic-lab/loader-dependency-unavailable` 会在隔离 home 与当前 Profile 中验证安装后缺失软件包的归属和隔离。仅限当前 Profile 的 `@dsh-diagnostic-lab/loader-export-unavailable` 会从已安装的 settings Host 导入一个故意不存在的命名导出，恢复真实 Harness，并验证系统在回退安全模式前完成运行时隔离。损坏设置场景写入重复键，等待真实活动 Profile 报告 `config.settings-invalid` 与 `skippedUserSettings: true`，确认原始字节保持不变，并通过**全部恢复**逐字节还原演练前设置。测试包始终属于 `diagnostic` 资源，普通启动绝不会预装。
+诊断演练中心为这些规则提供固定场景。`@dsh-diagnostic-lab/legacy-session-api` 场景可在隔离 home 和当前 Profile 中使用且默认不勾选，用于验证 `profile.session-api-incompatible` 风险提示的归属，不调用旧接口辅助函数，也不隔离测试包。`@dsh-diagnostic-lab/loader-dependency-unavailable` 会在隔离 home 与当前 Profile 中验证安装后缺失软件包的归属和隔离。仅限当前 Profile 的 `@dsh-diagnostic-lab/loader-export-unavailable` 会从已安装的 settings Host 导入一个故意不存在的命名导出，恢复真实 Harness，并验证系统在诊断模式兜底前完成运行时隔离。损坏设置场景写入重复键，等待真实活动 Profile 报告 `config.settings-invalid` 与 `skippedUserSettings: true`，确认原始字节保持不变，并通过**全部恢复**逐字节还原演练前设置。测试包始终属于 `diagnostic` 资源，普通启动绝不会预装。
 
 隔离的 `plugin-transaction-interrupted` 演练会将无副作用的候选状态停留在 `checking-startup`，再运行独立 CLI，恢复旧依赖目录并移除已完成的日志。它不会停止活动 Harness，也不修改其 Profile。所有演练场景仍默认不选中。现有的缺失导出演练也覆盖依赖不可用核心 API 的插件，与仅提示风险的旧 Session API 用法保持区分。
 
 ## 导出
 
-`dsh/profile-diagnostic-export/v1` 包含 v2 问题、完整的机器可读规则清单与版本、平台、架构、Node 版本、所选 Profile 名称、安全模式摘要、隔离记录和当前 Loader entry 摘要。它不包含凭据正文、环境变量值、完整 diff、绝对用户路径、包管理器命令拼接或无界堆栈。当前导出只是某一时刻的支持资料，不是配置备份，也不是授权令牌。
+`dsh/profile-diagnostic-export/v1` 包含 v2 问题、完整的机器可读规则清单与版本、平台、架构、Node 版本、所选 Profile 名称、诊断 Profile 摘要、隔离记录和当前 Loader entry 摘要。它不包含凭据正文、环境变量值、完整 diff、绝对用户路径、包管理器命令拼接或无界堆栈。当前导出只是某一时刻的支持资料，不是配置备份，也不是授权令牌。

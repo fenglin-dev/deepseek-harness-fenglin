@@ -84,4 +84,20 @@ describe('desktop loading page', () => {
     expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:recovery-plugins:remove', plugin.packageName)")
     expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:recovery:export')")
   })
+
+  it('keeps the diagnostic Profile behind the recovery page instead of opening it as the app', async () => {
+    const main = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8')
+    const loadingPage = await readFile(new URL('../src/loading-page.ts', import.meta.url), 'utf8')
+    const diagnosticReady = main.slice(
+      main.indexOf('onDiagnosticReady:'),
+      main.indexOf('onState:', main.indexOf('onDiagnosticReady:')),
+    )
+
+    expect(diagnosticReady).toContain("showLoading('failed'")
+    expect(diagnosticReady).not.toContain('mainSurface.loadURL')
+    expect(main).toContain('if (supervisor?.isDiagnosticMode === true) {\n      await supervisor.stop()')
+    expect(loadingPage).toContain("recoveryTitle: '诊断模式'")
+    expect(loadingPage).toContain('当前仅开放诊断与恢复工具')
+    expect(loadingPage).toContain("'#retry': ['重新尝试启动', 'Retry startup']")
+  })
 })

@@ -146,6 +146,7 @@ export type ProfileQuarantineReason =
   | 'client-module-unavailable'
   | 'loader-module-unresolvable'
   | 'loader-dependency-unavailable'
+  | 'loader-lifecycle-failed'
 
 /** Durable information required to explain or retry an automatically isolated plugin. */
 export interface QuarantinedProfilePlugin {
@@ -1314,7 +1315,7 @@ export function quarantineProfilePluginAfterLoadFailure(
   options: ProfileRepairOptions,
   packageName: string,
   issue: ProfileDiagnostic,
-  reason: Extract<ProfileQuarantineReason, 'client-module-unavailable' | 'loader-module-unresolvable' | 'loader-dependency-unavailable'> = 'client-module-unavailable',
+  reason: Extract<ProfileQuarantineReason, 'client-module-unavailable' | 'loader-module-unresolvable' | 'loader-dependency-unavailable' | 'loader-lifecycle-failed'> = 'client-module-unavailable',
 ): ProfileRepairReport {
   const home = options.home ?? resolveDshHome()
   const profileDir = resolveProfileDir(options.profile, home)

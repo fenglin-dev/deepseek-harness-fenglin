@@ -46,6 +46,7 @@ import {
   watchUserPatches,
   writeProfileDiagnosticReport,
   type Profile,
+  type ProfileBundleEntryOwnership,
   type ProfileDiagnostic,
   type UnresolvableProfileBundleEntry,
   prepareDiagnosticSettingsDocument,
@@ -412,15 +413,19 @@ export interface RunProfileOptions {
 function startupFailurePhase(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   if (/pnpm|dependency|lockfile|node_modules|profile manifest/iu.test(message)) return 'preflight' as const
+  // The outer boot wrapper says "plugin tree failed to load" for every
+  // composition failure. Preserve the more specific Loader lifecycle stage
+  // before considering that generic import wording.
+  if (/failed to apply|apply loader entry/iu.test(message)) return 'apply' as const
   if (/cannot resolve|ERR_MODULE_NOT_FOUND|failed to (?:load|import)|missed the module table/iu.test(message)) {
     return 'import' as const
   }
-  if (/failed to apply|apply loader entry/iu.test(message)) return 'apply' as const
   if (/did not activate|pending \(waiting|activation/iu.test(message)) return 'activate' as const
   return 'compose' as const
 }
 
 const LOADER_IMPORT_FAILURE = /failed to import loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/giu
+const LOADER_ENTRY_FAILURE = /failed to (import|apply) loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/giu
 const CLIENT_MODULE_UNAVAILABLE = new RegExp(
   String.raw`client-modules:\s*require\([^\r\n]+\).*?`
   + String.raw`(?:missed the module table|not a materialized module|no registered package factory)`,
@@ -438,19 +443,54 @@ function boundedLoaderToken(value: string | undefined, maxLength: number): strin
 function startupErrorChain(error: unknown): string {
   const messages: string[] = []
   const seen = new Set<unknown>()
-  let current = error
-  while (!seen.has(current)) {
+  const visit = (current: unknown): void => {
+    if (current === undefined || seen.has(current)) return
     seen.add(current)
     if (current instanceof Error) {
       messages.push(current.message)
-      current = current.cause
-      if (current === undefined) break
-      continue
+      if (current instanceof AggregateError) {
+        for (const nested of current.errors) visit(nested)
+      }
+      visit(current.cause)
+      return
     }
     if (typeof current === 'string') messages.push(current)
-    break
   }
+  visit(error)
   return messages.join('\n')
+}
+
+function loaderEntryFailures(error: unknown): readonly {
+  stage: 'import' | 'apply'
+  entryId: string
+  moduleName: string
+}[] {
+  const found = new Map<string, { stage: 'import' | 'apply'; entryId: string; moduleName: string }>()
+  for (const match of startupErrorChain(error).matchAll(LOADER_ENTRY_FAILURE)) {
+    const stage = match[1]
+    const entryId = boundedLoaderToken(match[2], 512)
+    const moduleName = boundedLoaderToken(match[3], 512)
+    if ((stage !== 'import' && stage !== 'apply') || entryId === undefined || moduleName === undefined) continue
+    found.set(`${stage}\0${entryId}\0${moduleName}`, { stage, entryId, moduleName })
+  }
+  return [...found.values()]
+}
+
+/**
+ * Attribute the deepest Loader import or apply wrapper in a startup failure.
+ * Patch provenance must still prove the owning bundle before recovery mutates
+ * the Profile; the plugin's own exception text is never trusted for identity.
+ * @param error - startup exception and optional cause chain.
+ * @returns Stable Loader identity and lifecycle stage, when present.
+ */
+export function loaderEntryFailure(
+  error: unknown,
+): {
+  readonly stage: 'import' | 'apply'
+  readonly entryId: string
+  readonly moduleName: string
+} | undefined {
+  return loaderEntryFailures(error).at(-1)
 }
 
 /**
@@ -710,8 +750,11 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   try {
     return await runProfileAttempt(options)
   } catch (error) {
+    const entryFailures = options.safeMode === true ? [] : loaderEntryFailures(error)
+    const entryFailure = entryFailures.at(-1)
     const loaderFailure = options.safeMode === true ? undefined : loaderClientModuleFailure(error)
     let ownedFailure: UnresolvableProfileBundleEntry | undefined
+    let ownedEntry: ProfileBundleEntryOwnership | undefined
     try {
       const healthOptions = {
         binName: NAME,
@@ -720,21 +763,25 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       }
       ownedFailure = loaderFailure === undefined ? undefined : inspectUnresolvableProfileBundleEntries(healthOptions)
         .find(failure => failure.entryId === loaderFailure.entryId && failure.moduleName === loaderFailure.moduleName)
-      if (ownedFailure === undefined && loaderFailure !== undefined) {
+      const attributable = loaderFailure ?? entryFailure
+      if (ownedFailure === undefined && attributable !== undefined) {
         const owner = inspectProfileBundleEntryOwnership(
           healthOptions,
-          loaderFailure.entryId,
-          loaderFailure.moduleName,
+          attributable.entryId,
+          attributable.moduleName,
         )
-        const missingModule = loaderMissingDependency(error, loaderFailure.moduleName)
-        if (owner !== undefined && missingModule !== undefined) {
+        ownedEntry = owner
+        const missingModule = loaderFailure === undefined
+          ? undefined
+          : loaderMissingDependency(error, loaderFailure.moduleName)
+        if (owner !== undefined && loaderFailure !== undefined && missingModule !== undefined) {
           ownedFailure = {
             ...owner,
             failureKind: 'loader-dependency',
             missingModule,
             importerPackage: loaderFailure.moduleName,
           }
-        } else if (owner !== undefined
+        } else if (owner !== undefined && loaderFailure !== undefined
           && loaderFailure.dependencyModule !== undefined
           && loaderFailure.missingExport !== undefined) {
           ownedFailure = {
@@ -745,10 +792,30 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
           }
         }
       }
+      const ownerships = entryFailures
+        .map(failure => inspectProfileBundleEntryOwnership(
+          healthOptions,
+          failure.entryId,
+          failure.moduleName,
+        ))
+        .filter((owner): owner is ProfileBundleEntryOwnership => owner !== undefined)
+      const owners = new Set(ownerships.map(owner => owner.rootPackage))
+      if (owners.size === 1) {
+        ownedEntry = ownerships.find(owner => (
+          owner.entryId === loaderFailure?.entryId && owner.moduleName === loaderFailure.moduleName
+        )) ?? ownerships.at(-1)
+      } else if (owners.size > 1) {
+        // Several external bundles failed in the same Loader aggregate. There
+        // is no unique responsibility, so automatic startup quarantine must
+        // fail closed instead of choosing one by error ordering.
+        ownedEntry = undefined
+        ownedFailure = undefined
+      }
     } catch {
       ownedFailure = undefined
+      ownedEntry = undefined
     }
-    const externalBundle = ownedFailure?.rootPackage ?? (
+    const externalBundle = ownedFailure?.rootPackage ?? ownedEntry?.rootPackage ?? (
       loaderFailure !== undefined
         && loaderFailure.missingExport === undefined
         && configuredExternalBundles(options.profile).includes(loaderFailure.moduleName)
@@ -768,14 +835,14 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       phase: startupFailurePhase(error),
       value: issueValue,
       home: resolveDshHome(),
-      ...(loaderFailure === undefined
+      ...(entryFailure === undefined
         ? {}
         : {
           attribution: {
-            entryId: loaderFailure.entryId,
-            moduleName: loaderFailure.moduleName,
+            entryId: entryFailure.entryId,
+            moduleName: entryFailure.moduleName,
             ...(ownedFailure?.missingModule === undefined ? {} : { missingModule: ownedFailure.missingModule }),
-            ...(loaderFailure.missingExport === undefined ? {} : { missingExport: loaderFailure.missingExport }),
+            ...(loaderFailure?.missingExport === undefined ? {} : { missingExport: loaderFailure.missingExport }),
             ...(ownedFailure?.importerPackage === undefined ? {} : { importerPackage: ownedFailure.importerPackage }),
             ...(ownedFailure === undefined ? {} : { configKind: 'profile-patch' as const }),
             ...(externalBundle === undefined ? {} : { rootPackage: externalBundle }),
@@ -803,11 +870,13 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
             profile: options.profile,
             installAnchor: INSTALL_ANCHOR,
             runPackageManager: args => runProfilePackageManager(profileDir, args),
-          }, externalBundle, issue, ownedFailure === undefined
-            ? 'client-module-unavailable'
-            : ownedFailure.failureKind === 'loader-dependency'
-              ? 'loader-dependency-unavailable'
-              : 'loader-module-unresolvable')
+          }, externalBundle, issue, loaderFailure === undefined
+            ? 'loader-lifecycle-failed'
+            : ownedFailure === undefined
+              ? 'client-module-unavailable'
+              : ownedFailure.failureKind === 'loader-dependency'
+                ? 'loader-dependency-unavailable'
+                : 'loader-module-unresolvable')
           quarantined = outcome.status === 'quarantined'
         } catch {
           // Retain the original classified Loader incident when backup or repair fails.
@@ -827,7 +896,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
         process.stderr.write(`${NAME}: quarantined startup-incompatible plugin ${JSON.stringify({
           schema: 'dsh/profile-diagnostic/v2',
           packageName: externalBundle,
-          entryId: loaderFailure?.entryId,
+          entryId: entryFailure?.entryId,
           code: issue.code,
         })}\n`)
       }

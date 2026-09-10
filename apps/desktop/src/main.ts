@@ -1827,6 +1827,11 @@ async function startApplication(): Promise<void> {
       recoveryHarnessSuspended = false
       return { started: supervisor?.resume() ?? false }
     }
+    if (supervisor?.isDiagnosticMode === true) {
+      await supervisor.stop()
+      harnessOrigin = undefined
+      return { started: supervisor.resume() }
+    }
     const started = supervisor?.retry() ?? false
     if (!started && harnessOrigin !== undefined && mainSurface !== undefined && !mainSurface.window.isDestroyed()) {
       void mainSurface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))
@@ -2515,7 +2520,7 @@ async function startApplication(): Promise<void> {
       ...(heldMs === undefined ? [] : [`heldMs=${heldMs}`]),
       `lock=${profileMutationLock.lockPath}`,
     ].join(' ')
-    const warning = `runtime.profile-mutation-lock-busy: ${owner}; starting diagnostic safe mode without reading the active Profile`
+    const warning = `runtime.profile-mutation-lock-busy: ${owner}; opening Diagnostics without reading the active Profile`
     await retainStartupWarning(
       'runtime.profile-mutation-lock-busy',
       `profile-lock-check:${profileMutationLock.operationKind ?? profileMutationLock.state}`,
@@ -2524,7 +2529,7 @@ async function startApplication(): Promise<void> {
     await appendDesktopStartupLog(warning)
     publishStartupProgress({
       stage: 'checking-profile', progress: 34,
-      detail: 'profile-lock-safe-mode',
+      detail: 'profile-lock-diagnostics',
       state: 'degraded',
     })
   } else if (profileInitialized && !startupSafety.rollbackFailed) {
@@ -2786,8 +2791,8 @@ async function startApplication(): Promise<void> {
     environment: { ...harnessEnvironment },
     ...(profileMutationBlocked || startupSafety.rollbackFailed
       ? {
-        initialSafeMode: true,
-        initialSafeModeReason: profileMutationBlocked
+        initialDiagnosticMode: true,
+        initialDiagnosticReason: profileMutationBlocked
           ? 'The active Profile is owned by another plugin mutation operation.'
           : 'A startup plugin mutation could not be rolled back safely.',
       }
@@ -2816,6 +2821,25 @@ async function startApplication(): Promise<void> {
         body: `${notificationCopy.startupWarning.body}\n${startupWarnings.slice(0, 3).join('\n')}`,
       })
       desktopWebAccess?.openAutomatically(preferences.openBrowserOnStartup)
+    },
+    onDiagnosticReady: (url, failure) => {
+      recoveryHarnessSuspended = false
+      recoveryRestartRequired = false
+      harnessOrigin = new URL(url).origin
+      reportedDesktopReadiness.clear()
+      desktopReturnControl?.clear()
+      desktopWebAccess?.clear()
+      publishStartupProgress({
+        stage: 'starting-harness',
+        progress: 100,
+        detail: 'profile-diagnostics-ready',
+        state: 'degraded',
+      })
+      void appendDesktopStartupLog(
+        `Diagnostic mode is ready; the active Profile remains paused: ${failure.message}`,
+      )
+      showLoading('failed', { ...failure, logPath: harnessLogPath })
+      showNotification('failed', notificationCopy.failed)
     },
     onState: (state) => {
       if (state === 'restarting' || state === 'failed' || state === 'stopped') {

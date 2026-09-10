@@ -380,12 +380,12 @@ interface RecoveryCopy {
 
 const chineseCopy: RecoveryCopy = {
   startupTitle: '正在启动 DeepSeek Harness', startupDescription: '正在准备本地运行环境与预设插件。会话和凭据仅保存在本机。',
-  recoveryTitle: '启动暂时遇到问题', recoveryDescription: '已暂停启动，你可以选择任意一种修复方式，也可以不做修改直接继续。',
+  recoveryTitle: '诊断模式', recoveryDescription: '正常启动已暂停。当前仅开放诊断与恢复工具，请查看原因、日志或选择一种恢复方式。',
   paused: '启动已暂停', viewDetails: '查看错误详情', hideDetails: '收起错误详情', logs: '打开日志目录', logLabel: '日志：',
   slow: '启动时间较长，你可以打开 Harness 日志查看当前进度。',
   slowDetail: (task, elapsed, remaining) => remaining === undefined ? `${task} 已运行 ${elapsed} 秒。应用会自动降级或显示可恢复错误，不会无限等待。` : `${task} 已运行 ${elapsed} 秒，最迟约 ${remaining} 秒后自动降级。`,
   stages: { 'preparing-desktop': '正在准备桌面环境', 'preparing-runtime': '正在准备内置运行时', 'checking-profile': '正在检查插件兼容性', 'verifying-plugin': '正在校验插件', 'extracting-plugin': '正在解压插件', 'configuring-plugin': '正在配置插件', 'starting-harness': '正在启动 Harness', 'restarting-harness': '正在重新启动 Harness', ready: '启动完成' },
-  operations: { 'profile-read-only-check': '正在只读检查插件兼容性', 'profile-lock-wait': 'Profile 正被其他操作占用，等待其完成', 'profile-lock-safe-mode': 'Profile 正被其他操作占用，已转入安全诊断模式', 'profile-check-timeout': '兼容性检查已超时，已跳过异常步骤并继续启动', 'profile-repair': '正在修复 Profile', 'profile-initialize': '正在初始化全新 Profile', 'profile-initialize-failed': '全新 Profile 初始化失败' },
+  operations: { 'profile-read-only-check': '正在只读检查插件兼容性', 'profile-lock-wait': 'Profile 正被其他操作占用，等待其完成', 'profile-lock-diagnostics': 'Profile 正被其他操作占用，正在打开诊断模式', 'profile-diagnostics-ready': '诊断工具已就绪，正常 Profile 仍保持暂停', 'profile-check-timeout': '兼容性检查已超时，已跳过异常步骤并继续启动', 'profile-repair': '正在修复 Profile', 'profile-initialize': '正在初始化全新 Profile', 'profile-initialize-failed': '全新 Profile 初始化失败' },
   pluginLoading: '正在读取已安装插件…', pluginLoadFailed: '无法读取插件清单',
   pluginSource: source => ({ registry: '在线安装', bundled: '桌面预装', local: '本地来源', other: '其他来源' })[source],
   pluginAttention: code => code === undefined ? '诊断异常' : `诊断异常 · ${code}`,
@@ -400,12 +400,12 @@ const chineseCopy: RecoveryCopy = {
 
 const englishCopy: RecoveryCopy = {
   startupTitle: 'Starting DeepSeek Harness', startupDescription: 'Preparing the local runtime and preset plugins. Your sessions and credentials stay on this machine.',
-  recoveryTitle: 'Startup needs attention', recoveryDescription: 'Startup is paused. Choose any recovery option, or continue without making changes.',
+  recoveryTitle: 'Diagnostics mode', recoveryDescription: 'Normal startup is paused. Only diagnostic and recovery tools are available until you inspect the cause or choose a recovery option.',
   paused: 'Startup paused', viewDetails: 'View error details', hideDetails: 'Hide error details', logs: 'Open log folder', logLabel: 'Log: ',
   slow: 'Startup is taking longer than expected. Open the Harness log to inspect its progress.',
   slowDetail: (task, elapsed, remaining) => remaining === undefined ? `${task} has run for ${elapsed}s. The app will degrade or show a recoverable error instead of waiting forever.` : `${task} has run for ${elapsed}s and will degrade in about ${remaining}s at the latest.`,
   stages: { 'preparing-desktop': 'Preparing desktop environment', 'preparing-runtime': 'Preparing the embedded runtime', 'checking-profile': 'Checking plugin compatibility', 'verifying-plugin': 'Verifying plugin', 'extracting-plugin': 'Extracting plugin', 'configuring-plugin': 'Configuring plugin', 'starting-harness': 'Starting Harness', 'restarting-harness': 'Restarting Harness', ready: 'Startup complete' },
-  operations: { 'profile-read-only-check': 'Checking plugin compatibility without changes', 'profile-lock-wait': 'Waiting for the operation that owns the Profile', 'profile-lock-safe-mode': 'Another operation owns the Profile; using diagnostic safe mode', 'profile-check-timeout': 'Compatibility check timed out; skipped the step and continued startup', 'profile-repair': 'Repairing the Profile', 'profile-initialize': 'Initializing a new Profile', 'profile-initialize-failed': 'New Profile initialization failed' },
+  operations: { 'profile-read-only-check': 'Checking plugin compatibility without changes', 'profile-lock-wait': 'Waiting for the operation that owns the Profile', 'profile-lock-diagnostics': 'Another operation owns the Profile; opening Diagnostics', 'profile-diagnostics-ready': 'Diagnostic tools are ready; the normal Profile remains paused', 'profile-check-timeout': 'Compatibility check timed out; skipped the step and continued startup', 'profile-repair': 'Repairing the Profile', 'profile-initialize': 'Initializing a new Profile', 'profile-initialize-failed': 'New Profile initialization failed' },
   pluginLoading: 'Loading installed plugins…', pluginLoadFailed: 'Could not load the plugin list',
   pluginSource: source => ({ registry: 'Online install', bundled: 'Desktop preset', local: 'Local source', other: 'Other source' })[source],
   pluginAttention: code => code === undefined ? 'Diagnostic issue' : `Diagnostic issue · ${code}`,
@@ -430,7 +430,7 @@ function localizeRecoveryWorkspace(copy: RecoveryCopy): void {
     '#snapshot-title': ['回退插件快照', 'Roll back plugin snapshot'], '#snapshot-description': ['仅恢复插件依赖、版本、顺序和构建许可，不会改变会话、凭据和插件配置。', 'Only plugin dependencies, versions, order and build permissions are restored.'], '#snapshot-restore': ['恢复快照', 'Restore snapshot'],
     '#directory-title': ['切换配置目录', 'Switch data directory'], '#directory-description': ['选择另一套已有配置，或选择空文件夹创建新配置。', 'Choose another existing configuration, or select an empty folder to create a new one.'], '#switch-data-home': ['选择目录', 'Choose directory'],
     '#diagnostics-title': ['导出诊断', 'Export diagnostics'], '#diagnostics-description': ['导出脱敏的启动与插件摘要，或打开本机日志目录进一步检查。', 'Export a redacted startup and plugin summary, or open the local log folder for deeper inspection.'], '#export-diagnostics': ['导出报告', 'Export report'], '#open-logs': ['打开日志目录', 'Open log folder'],
-    '#safe-note': ['会话和凭据不会因进入修复模式而改变。', 'Sessions and credentials are not changed in recovery mode.'], '#footer-hint': ['可以不做任何修改，直接继续尝试启动。', 'You can continue without making any changes.'], '#exit': ['退出', 'Quit'], '#retry': ['继续', 'Continue'],
+    '#safe-note': ['诊断模式不会加载当前 Profile 的第三方插件，也不会修改会话和凭据。', 'Diagnostics mode does not load third-party plugins from the active Profile or modify sessions and credentials.'], '#footer-hint': ['“继续”会先关闭诊断环境，再重新尝试正常启动。', 'Continue closes the diagnostic environment before retrying normal startup.'], '#exit': ['退出', 'Quit'], '#retry': ['重新尝试启动', 'Retry startup'],
   }
   const chinese = copy === chineseCopy
   for (const [selector, values] of Object.entries(text)) element<HTMLElement>(selector).textContent = values[chinese ? 0 : 1]

@@ -26,12 +26,13 @@ export interface HarnessSupervisorOptions {
   logPath: string
   environment: NodeJS.ProcessEnv
   onReady(url: string): void
+  onDiagnosticReady(url: string, failure: HarnessFailure): void
   onState(state: HarnessState): void
   onFailure(failure: HarnessFailure): void
   /** Start directly with the installation-owned diagnostic Profile. */
-  initialSafeMode?: boolean
-  /** Primary reason retained if an explicitly selected safe mode also fails. */
-  initialSafeModeReason?: string
+  initialDiagnosticMode?: boolean
+  /** Primary reason retained if an explicitly selected diagnostic mode also fails. */
+  initialDiagnosticReason?: string
   /** Windows-only process-tree cleanup; omitted on Unix hosts. */
   terminateProcessTree?(processId: number, force: boolean): Promise<void>
   /** Test override for the bounded graceful shutdown interval. */
@@ -47,19 +48,19 @@ export class HarnessSupervisor {
   #restartCount = 0
   #preReadyExitCount = 0
   #failed = false
-  #safeMode = false
+  #diagnosticMode = false
   #primaryStartupFailure: string | undefined
   #stopping = false
 
   constructor(options: HarnessSupervisorOptions) {
     this.#options = options
-    this.#safeMode = options.initialSafeMode ?? false
-    this.#primaryStartupFailure = options.initialSafeModeReason
+    this.#diagnosticMode = options.initialDiagnosticMode ?? false
+    this.#primaryStartupFailure = options.initialDiagnosticReason
   }
 
   /** Whether readiness belongs to the installation-owned diagnostic Profile, not the active Profile. */
   get isDiagnosticMode(): boolean {
-    return this.#safeMode
+    return this.#diagnosticMode
   }
 
   #reportStartupFailure(message: string, logLine: string): void {
@@ -85,7 +86,7 @@ export class HarnessSupervisor {
       env: {
         ...this.#options.environment,
         ...this.#options.launch.environment,
-        ...(this.#safeMode ? { DSH_PROFILE_SAFE_MODE: '1' } : {}),
+        ...(this.#diagnosticMode ? { DSH_PROFILE_SAFE_MODE: '1' } : {}),
       },
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
@@ -106,7 +107,13 @@ export class HarnessSupervisor {
         this.#restartCount = 0
         this.#preReadyExitCount = 0
         this.#options.onState('ready')
-        this.#options.onReady(url)
+        if (this.#diagnosticMode) {
+          this.#options.onDiagnosticReady(url, {
+            message: this.#primaryStartupFailure ?? 'The active Profile could not start.',
+          })
+        } else {
+          this.#options.onReady(url)
+        }
       }
     })
     child.stderr.on('data', (chunk: Buffer) => {
@@ -130,12 +137,12 @@ export class HarnessSupervisor {
         return
       }
       if (!ready) {
-        if (safeModeEligible && !this.#safeMode) {
+        if (safeModeEligible && !this.#diagnosticMode) {
           this.#primaryStartupFailure = spawnError === undefined
             ? `Harness exited before becoming ready (code ${String(code)}, signal ${String(signal)}).`
             : `Harness could not start: ${spawnError.message}`
-          this.#safeMode = true
-          this.#log?.write('[desktop] Restarting Harness once with the installation-owned diagnostic profile.\n')
+          this.#diagnosticMode = true
+          this.#log?.write('[desktop] Opening Diagnostics with the installation-owned diagnostic profile.\n')
           this.#options.onState('restarting')
           this.#restartTimer = setTimeout(() => {
             this.#restartTimer = undefined
@@ -143,11 +150,11 @@ export class HarnessSupervisor {
           }, 0)
           return
         }
-        if (this.#safeMode) {
+        if (this.#diagnosticMode) {
           this.#failed = true
           const secondary = spawnError === undefined
-            ? `diagnostic safe mode exited before becoming ready (code ${String(code)}, signal ${String(signal)})`
-            : `diagnostic safe mode could not start: ${spawnError.message}`
+            ? `diagnostic mode exited before becoming ready (code ${String(code)}, signal ${String(signal)})`
+            : `diagnostic mode could not start: ${spawnError.message}`
           const message = `${this.#primaryStartupFailure ?? 'The active Profile could not start'} ${secondary}.`
           this.#reportStartupFailure(
             message,
@@ -184,7 +191,7 @@ export class HarnessSupervisor {
     this.#failed = false
     this.#restartCount = 0
     this.#preReadyExitCount = 0
-    this.#safeMode = false
+    this.#diagnosticMode = false
     this.#primaryStartupFailure = undefined
     this.start()
     return true
@@ -246,7 +253,7 @@ export class HarnessSupervisor {
     this.#failed = false
     this.#restartCount = 0
     this.#preReadyExitCount = 0
-    this.#safeMode = false
+    this.#diagnosticMode = false
     this.#primaryStartupFailure = undefined
     this.start()
     return true

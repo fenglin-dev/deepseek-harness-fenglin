@@ -167,7 +167,7 @@ const SCENARIOS: readonly DiagnosticLabScenario[] = [
   { id: 'loader-dependency-unavailable', title: 'Loader dependency unavailable', description: 'Installs a resolvable aggregate Loader whose published entry imports a missing internal Host dependency, then verifies root attribution and quarantine.', expectedCode: 'loader.dependency-unavailable', targets: ['isolated', 'active-profile'] },
   { id: 'loader-export-unavailable', title: 'Loader dependency export unavailable', description: 'Installs a Loader that expects an API export absent from the installed DSH generation, then verifies runtime attribution and quarantine before safe-mode fallback.', expectedCode: 'loader.dependency-unavailable', targets: ['active-profile'] },
   { id: 'legacy-session-api', title: 'Legacy Session API usage', description: 'Installs an inert offline plugin carrying the reproduced session.events pattern, then verifies advisory attribution without automatic quarantine.', expectedCode: 'profile.session-api-incompatible', targets: ['isolated', 'active-profile'] },
-  { id: 'settings-invalid', title: 'Invalid settings document', description: 'Writes a duplicate-key settings.yaml and verifies that diagnostic safe mode skips it without modifying the original document.', expectedCode: 'config.settings-invalid', targets: ['isolated', 'active-profile'] },
+  { id: 'settings-invalid', title: 'Invalid settings document', description: 'Writes a duplicate-key settings.yaml and verifies that Diagnostics skips it without modifying the original document.', expectedCode: 'config.settings-invalid', targets: ['isolated', 'active-profile'] },
   { id: 'client-module-unavailable', title: 'Packaged dsh-font client incompatibility', description: 'Installs the packaged dsh-font 1.1.0 fixture and verifies that the real browser boot path quarantines it without blocking the main UI.', expectedCode: 'profile.module-resolution', targets: ['active-profile'] },
   { id: 'module-resolution-missing', title: 'Missing plugin module', description: 'Attributes a missing module directory to the owning plugin.', expectedCode: 'profile.module-resolution', targets: ['isolated'] },
   { id: 'patch-invalid', title: 'Invalid Profile patch', description: 'Locates malformed Profile YAML without touching the user patch.', expectedCode: 'profile.patch-invalid', targets: ['isolated'] },
@@ -943,7 +943,7 @@ export class DiagnosticLabManager {
       await this.#step(scenarioId, 'repair')
       await this.#step(scenarioId, 'verify')
       if (sha256(await readFile(settingsPath)) !== fixture.checksum) {
-        throw new Error('safe mode modified the invalid user settings document')
+        throw new Error('diagnostic startup modified the invalid user settings document')
       }
       const safe = parseDocument(await readFile(safeSettingsPath, 'utf8'))
       if (safe.errors.length > 0 || safe.toJS() === null || typeof safe.toJS() !== 'object') {
@@ -1161,7 +1161,7 @@ export class DiagnosticLabManager {
       }
       await new Promise<void>((resolvePromise) => { setTimeout(resolvePromise, 200) })
     }
-    throw new Error('timed out waiting for invalid settings recovery to enter diagnostic safe mode')
+    throw new Error('timed out waiting for invalid settings recovery to enter diagnostic startup')
   }
 
   async #hasQuarantine(

@@ -410,7 +410,7 @@ describe('DiagnosticLabManager', () => {
       .toBe('{"name":"dsh-profile-web","private":true}\n')
   })
 
-  it('retains invalid settings in real safe mode and restores the exact original document', async () => {
+  it('retains invalid settings during real diagnostic startup and restores the exact original document', async () => {
     const b = await bench()
     const settingsPath = join(b.home, 'settings.yaml')
     const original = 'locale: zh\r\nui-theme:\r\n  preference: ocean\r\n'

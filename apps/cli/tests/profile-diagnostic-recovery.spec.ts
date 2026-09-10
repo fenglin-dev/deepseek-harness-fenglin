@@ -10,7 +10,12 @@ import {
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { INSTALL_ANCHOR } from '../src/install-anchor.ts'
-import { diagnosticProfileModuleBaseUrl, isDeterministicSafeModeFailure, loaderClientModuleFailure } from '../src/profile-boot.ts'
+import {
+  diagnosticProfileModuleBaseUrl,
+  isDeterministicSafeModeFailure,
+  loaderClientModuleFailure,
+  loaderEntryFailure,
+} from '../src/profile-boot.ts'
 
 describe('Profile diagnostic recovery policy', () => {
   it('anchors safe-mode imports at the installation-maintained profiles fallback', () => {
@@ -67,6 +72,32 @@ describe('Profile diagnostic recovery policy', () => {
     expect(loaderClientModuleFailure(
       new Error('failed to import loader entry 71626ed6 (dsh-font): plugin apply threw'),
     )).toBeUndefined()
+  })
+
+  it('attributes a Loader apply failure independently of plugin-authored text', () => {
+    const inner = new Error('failed to apply loader entry whale-widget (dsh-whale-widget): route registration exploded', {
+      cause: new Error('untrusted plugin detail'),
+    })
+    const outer = new Error('failed to apply loader entry include (cordis:include)', { cause: inner })
+    expect(loaderEntryFailure(outer)).toEqual({
+      stage: 'apply',
+      entryId: 'whale-widget',
+      moduleName: 'dsh-whale-widget',
+    })
+    expect(loaderEntryFailure(new Error('plugin claimed dsh-whale-widget failed'))).toBeUndefined()
+  })
+
+  it('finds a Loader lifecycle failure nested in an aggregate startup error', () => {
+    const failure = new AggregateError([
+      new Error('unrelated service cleanup failed'),
+      new Error('failed to apply loader entry whale-widget (dsh-whale-widget): controlled failure'),
+    ], 'plugin tree failed to load')
+
+    expect(loaderEntryFailure(failure)).toEqual({
+      stage: 'apply',
+      entryId: 'whale-widget',
+      moduleName: 'dsh-whale-widget',
+    })
   })
 
   it('selects the deepest Loader import from a generic module-resolution cause chain', () => {

@@ -11,7 +11,7 @@ afterEach(async () => {
 })
 
 describe('Harness supervisor startup failures', () => {
-  it('can start directly in diagnostic safe mode when a Profile mutation lock is unsafe', async () => {
+  it('can open Diagnostics directly when a Profile mutation lock is unsafe', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-initial-safe-mode-'))
     roots.push(root)
     const script = join(root, 'initial-safe-mode.mjs')
@@ -26,9 +26,10 @@ describe('Harness supervisor startup failures', () => {
       launch: { command: process.execPath, args: [script] },
       logPath: join(root, 'harness.log'),
       environment: { ...process.env },
-      initialSafeMode: true,
-      initialSafeModeReason: 'Profile mutation lock is busy.',
-      onReady: resolveReady,
+      initialDiagnosticMode: true,
+      initialDiagnosticReason: 'Profile mutation lock is busy.',
+      onReady: () => { throw new Error('diagnostic mode must not open the Harness UI') },
+      onDiagnosticReady: resolveReady,
       onState: () => {},
       onFailure: (failure) => { throw new Error(failure.message) },
     })
@@ -39,7 +40,7 @@ describe('Harness supervisor startup failures', () => {
     await supervisor.stop()
   }, 10_000)
 
-  it('enters the installation-owned diagnostic profile after one deterministic failure', async () => {
+  it('opens Diagnostics instead of the Harness UI after one deterministic failure', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-safe-mode-'))
     roots.push(root)
     const script = join(root, 'safe-mode.mjs')
@@ -59,7 +60,8 @@ describe('Harness supervisor startup failures', () => {
       launch: { command: process.execPath, args: [script] },
       logPath,
       environment: { ...process.env },
-      onReady: resolveReady,
+      onReady: () => { throw new Error('diagnostic mode must not open the Harness UI') },
+      onDiagnosticReady: resolveReady,
       onState: (state) => { states.push(state) },
       onFailure: (failure) => { throw new Error(failure.message) },
     })
@@ -67,7 +69,7 @@ describe('Harness supervisor startup failures', () => {
     await expect(ready).resolves.toBe('http://127.0.0.1:43124')
     expect(supervisor.isDiagnosticMode).toBe(true)
     expect(states).toContain('restarting')
-    expect(await readFile(logPath, 'utf8')).toContain('installation-owned diagnostic profile')
+    expect(await readFile(logPath, 'utf8')).toContain('Opening Diagnostics')
     await supervisor.stop()
   }, 10_000)
 
@@ -85,6 +87,7 @@ describe('Harness supervisor startup failures', () => {
       logPath,
       environment: { ...process.env },
       onReady: () => {},
+      onDiagnosticReady: () => {},
       onState: (state) => { states.push(state) },
       onFailure: resolveFailure,
     })
@@ -95,7 +98,7 @@ describe('Harness supervisor startup failures', () => {
     await supervisor.stop()
   }, 10_000)
 
-  it('attempts diagnostic safe mode only once and retains the normal failure as primary evidence', async () => {
+  it('attempts diagnostic mode only once and retains the normal failure as primary evidence', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-safe-mode-failure-'))
     roots.push(root)
     const script = join(root, 'fail-safe-mode.mjs')
@@ -120,13 +123,14 @@ describe('Harness supervisor startup failures', () => {
       logPath,
       environment: { ...process.env },
       onReady: () => {},
+      onDiagnosticReady: () => {},
       onState: () => {},
       onFailure: resolveFailure,
     })
 
     supervisor.start()
     await expect(failure).resolves.toEqual({
-      message: 'Harness exited before becoming ready (code 21, signal null). diagnostic safe mode exited before becoming ready (code 22, signal null).',
+      message: 'Harness exited before becoming ready (code 21, signal null). diagnostic mode exited before becoming ready (code 22, signal null).',
     })
     expect(await readFile(counter, 'utf8')).toBe('2')
     expect(await readFile(logPath, 'utf8')).toContain('one normal and one diagnostic attempt')
@@ -158,6 +162,7 @@ describe('Harness supervisor startup failures', () => {
       logPath: join(root, 'harness.log'),
       environment: { ...process.env },
       onReady: resolveReady,
+      onDiagnosticReady: () => {},
       onState: () => {},
       onFailure: () => { expect(supervisor.retry()).toBe(true) },
     })
@@ -179,6 +184,7 @@ describe('Harness supervisor startup failures', () => {
       logPath: join(root, 'harness.log'),
       environment: { ...process.env },
       onReady: () => {},
+      onDiagnosticReady: () => {},
       onState: () => {},
       onFailure: () => {},
       terminateProcessTree,
@@ -209,6 +215,7 @@ describe('Harness supervisor startup failures', () => {
       logPath: join(root, 'harness.log'),
       environment: { ...process.env },
       onReady: () => { readyCount += 1; resolveReady() },
+      onDiagnosticReady: () => {},
       onState: () => {},
       onFailure: (failure) => { throw new Error(failure.message) },
     })
