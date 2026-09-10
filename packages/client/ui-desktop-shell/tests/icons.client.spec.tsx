@@ -141,6 +141,13 @@ describe('icon settings crop and preview', () => {
     fireEvent.click(screen.getByText('Create my desktop shortcut'))
     await waitFor(() => { expect(bridge.createShortcut).toHaveBeenCalledTimes(1) })
   })
+  it('distinguishes a bounded shortcut scan from a permission failure', async () => {
+    const { bridge, status } = setup('win32')
+    status.results = [{ surface: 'desktop', status: 'scan-limit' }]
+    render(<DesktopIconSettings bridge={bridge} t={t} />)
+    expect(await screen.findByText(/Too many shortcuts; scanning stopped safely/)).toBeDefined()
+    expect(screen.queryByText(/check permissions/)).toBeNull()
+  })
   it('advertises modern ICO input on Windows and explains legacy ICO conversion', async () => {
     const { bridge } = setup('win32')
     vi.mocked(bridge.choose).mockRejectedValueOnce(new Error('icon.ico-unsupported'))

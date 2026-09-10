@@ -25,7 +25,7 @@ export interface IconSelection { id: string; preview: string; width: number; hei
 /** Independently reported OS surface result. */
 export interface IconSurfaceResult {
   surface: 'application' | 'tray' | 'desktop' | 'start-menu' | 'taskbar'
-  status: 'applied' | 'unavailable' | 'missing' | 'external' | 'repin' | 'unsupported'
+  status: 'applied' | 'unavailable' | 'scan-limit' | 'missing' | 'external' | 'repin' | 'unsupported'
   name?: string
 }
 

@@ -39,6 +39,28 @@ describe('owned current-user Windows shortcuts', () => {
     ])
     expect(write).toHaveBeenCalledWith(path, 'update', { ...original, icon: 'C:\\icons\\new.ico', iconIndex: 0 })
   })
+  it('does not recurse into large Desktop project trees before updating a top-level shortcut', () => {
+    const { options, add, write } = setup()
+    const project = join(options.desktop, 'project', 'node_modules')
+    mkdirSync(project, { recursive: true })
+    for (let index = 0; index < 2100; index++) writeFileSync(join(project, `entry-${index}.js`), '')
+    const path = add(options.desktop, 'DeepSeek Harness.lnk', { target: options.executable })
+    add(project, 'nested.lnk', { target: options.executable })
+
+    expect(updateIconShortcuts(options, 'C:\\icons\\new.ico')).toContainEqual({
+      surface: 'desktop', name: 'DeepSeek Harness.lnk', status: 'applied',
+    })
+    expect(write).toHaveBeenCalledTimes(1)
+    expect(write).toHaveBeenCalledWith(path, 'update', expect.objectContaining({ icon: 'C:\\icons\\new.ico' }))
+  })
+  it('reports a shortcut-count limit separately from file permission failures', () => {
+    const { options } = setup()
+    for (let index = 0; index <= 2000; index++) writeFileSync(join(options.startMenu, `${index}.lnk`), '')
+
+    expect(updateIconShortcuts(options, options.executable)).toContainEqual({
+      surface: 'start-menu', status: 'scan-limit',
+    })
+  })
   it('never modifies another installation, AppID, external icon, or symlink', () => {
     const { options, add, write, root } = setup()
     add(options.desktop, 'other.lnk', { target: 'C:\\other\\DeepSeek Harness.exe' })

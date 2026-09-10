@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, readdirSync } from 'node:fs'
+import type { Dirent } from 'node:fs'
 import { basename, join, win32 } from 'node:path'
 import type { ShortcutDetails } from 'electron'
 import type { IconSurfaceResult } from './icon-protocol.js'
@@ -15,6 +16,9 @@ export interface IconShortcutOptions {
 }
 
 const canonical = (path: string): string => win32.normalize(path.replace(/^"|"$/g, '')).toLowerCase()
+const MAX_SHORTCUTS_PER_SURFACE = 2000
+
+class ShortcutScanLimitError extends Error {}
 
 /**
  * Update icon fields on verified shortcuts, preserving every launch field and external icon choice.
@@ -33,17 +37,37 @@ export function updateIconShortcuts(options: IconShortcutOptions, icon: string, 
       && /^[a-f0-9]{64}\.ico$/i.test(win32.basename(link.icon))))
   for (const [surface, root] of [['desktop', options.desktop], ['start-menu', options.startMenu]] as const) {
     let matched = 0
-    let inspected = 0
-    const walk = (directory: string, depth: number): void => {
-      if (!existsSync(directory)) return
-      const stat = lstatSync(directory)
-      if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('icon.shortcut-directory')
-      for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        if (++inspected > 2000) throw new Error('icon.shortcut-limit')
+    const candidates: string[] = []
+    const recursive = surface === 'start-menu'
+    const walk = (directory: string, rootDirectory: boolean): void => {
+      let entries: Dirent[]
+      try {
+        if (!existsSync(directory)) return
+        const stat = lstatSync(directory)
+        if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('icon.shortcut-directory')
+        entries = readdirSync(directory, { withFileTypes: true })
+      } catch (error) {
+        if (rootDirectory) throw error
+        return
+      }
+      for (const entry of entries) {
         if (entry.isSymbolicLink()) continue
         const path = join(directory, entry.name)
-        if (entry.isDirectory() && depth < 4) { walk(path, depth + 1); continue }
+        if (entry.isDirectory()) {
+          if (recursive) walk(path, false)
+          continue
+        }
         if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.lnk')) continue
+        if (candidates.length >= MAX_SHORTCUTS_PER_SURFACE) throw new ShortcutScanLimitError('icon.shortcut-limit')
+        candidates.push(path)
+      }
+    }
+    try {
+      // Windows places user Desktop shortcuts at the Desktop root. Recursing
+      // there turns unrelated source trees into scan input; Start Menu groups
+      // are directories, so only that surface is traversed recursively.
+      walk(root, true)
+      for (const path of candidates) {
         let link: ShortcutDetails
         try { link = options.read(path) } catch { continue }
         if (!ownsTarget(link)) continue
@@ -55,11 +79,10 @@ export function updateIconShortcuts(options: IconShortcutOptions, icon: string, 
           results.push({ surface, name, status: updated ? 'applied' : 'unavailable' })
         } catch { results.push({ surface, name, status: 'unavailable' }) }
       }
-    }
-    try {
-      walk(root, 0)
       if (matched === 0) results.push({ surface, status: 'missing' })
-    } catch { results.push({ surface, status: 'unavailable' }) }
+    } catch (error) {
+      results.push({ surface, status: error instanceof ShortcutScanLimitError ? 'scan-limit' : 'unavailable' })
+    }
   }
   if (create) {
     const path = join(options.desktop, 'DeepSeek Harness.lnk')

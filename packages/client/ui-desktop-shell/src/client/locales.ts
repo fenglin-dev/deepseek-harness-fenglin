@@ -11,6 +11,7 @@ export const desktopLanguageTitles = {
   ru: 'Язык',
 } as const
 
+/** Simplified Chinese copy owned by the desktop shell. */
 export const zh = {
   'menu.unavailable': '此设置页面尚未加载或对应插件未安装。请在设置中检查插件；不会自动安装。',
   'close.linux': 'Linux 托盘可见性取决于桌面环境及其扩展。若看不到图标，可选择完整退出。',
@@ -57,6 +58,7 @@ export const zh = {
   'icons.surface.taskbar': '固定的任务栏入口',
   'icons.status.applied': '已应用',
   'icons.status.unavailable': '不可更新，请检查权限后重试',
+  'icons.status.scan-limit': '快捷方式数量过多，扫描已安全停止',
   'icons.status.missing': '未找到本应用快捷方式',
   'icons.status.external': '已保留系统外另行设置的图标或同名快捷方式',
   'icons.status.repin': '若图标未变化，请取消固定后重新固定',
@@ -210,6 +212,7 @@ export const en = {
   'icons.surface.taskbar': 'Pinned taskbar entry',
   'icons.status.applied': 'Applied',
   'icons.status.unavailable': 'Could not update; check permissions and retry',
+  'icons.status.scan-limit': 'Too many shortcuts; scanning stopped safely',
   'icons.status.missing': 'No shortcut for this installation found',
   'icons.status.external': 'Preserved an externally customized icon or conflicting shortcut',
   'icons.status.repin': 'If unchanged, unpin and pin the app again',
@@ -360,6 +363,7 @@ export const ru = {
   'icons.surface.taskbar': 'Закреплённый элемент панели задач',
   'icons.status.applied': 'Применено',
   'icons.status.unavailable': 'Не удалось обновить; проверьте права и повторите',
+  'icons.status.scan-limit': 'Слишком много ярлыков; сканирование безопасно остановлено',
   'icons.status.missing': 'Ярлык этой установки не найден',
   'icons.status.external': 'Сохранён значок, заданный вне приложения, или конфликтующий ярлык',
   'icons.status.repin': 'Если значок не изменился — открепите и закрепите приложение заново',
