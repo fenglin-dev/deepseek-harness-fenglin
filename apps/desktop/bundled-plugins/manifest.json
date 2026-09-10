@@ -14,12 +14,12 @@
     {
       "seedId": "xmanrui-dsh-im",
       "packageName": "@xmanrui/dsh-im",
-      "version": "4.17.1",
+      "version": "4.18.1",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "@xmanrui/dsh-im@4.17.1",
-      "archive": "xmanrui-dsh-im-4.17.1.tgz",
-      "integrity": "sha512-hAn0zvPl6+EsA5ZmGSECQtIzAY9IxePOfOCI3d5cxTP1dpzPrpYBW0TlLRv9fI+0A5hyVSEqqCkSKW8KL1cF2Q=="
+      "registrySpec": "@xmanrui/dsh-im@4.18.1",
+      "archive": "xmanrui-dsh-im-4.18.1.tgz",
+      "integrity": "sha512-M684m3qaFcA9pdrwG+fHcnBliuCLxx3EgJYMfJ+0GY1peEYxoZGNb7C/uN0CoPBn4p44A4+jJ1CuSt9s0O7FAg=="
     },
     {
       "seedId": "dsh-skill-picker",
