@@ -30,6 +30,7 @@ export interface ProviderDirectoryEntry {
   readonly settingsPath: readonly string[]
   readonly active: boolean
   readonly declared?: boolean
+  readonly error?: string
 }
 
 /**
@@ -51,6 +52,7 @@ export function joinProviderDirectory(
     settingsPath: [...entry.settingsPath],
     active: active.has(entry.provider),
     ...entry.declared === undefined ? {} : { declared: entry.declared },
+    ...entry.error === undefined ? {} : { error: entry.error },
   }))
   for (const provider of registered) {
     if (declared.has(provider.id)) continue
@@ -95,6 +97,8 @@ export interface ModelsSettingsState {
   credentialError: string | null
   /** Whether the settings provider accepts writes. */
   writable: boolean
+  /** Whether the selected Profile already has a settings document. */
+  hasDocument: boolean
   /** Every configurable provider joined with its configured/credential state. */
   rows: readonly ProviderRow[]
   /** Namespace views by ns, for the editor's schema/layers/secrets. */
@@ -149,7 +153,7 @@ function apiKeyEnvOf(
 export class ModelsSettingsStore {
   /** The snapshot the section renders from (uSES-safe store). */
   readonly store: SnapshotStore<ModelsSettingsState> = createSnapshotStore<ModelsSettingsState>({
-    status: 'idle', error: null, credentialError: null, writable: false, rows: [], namespaces: new Map(),
+    status: 'idle', error: null, credentialError: null, writable: false, hasDocument: false, rows: [], namespaces: new Map(),
   })
 
   /** Latest load wins; an older response never overwrites a newer one. */
@@ -192,6 +196,7 @@ export class ModelsSettingsStore {
     }
     const providers = joinProviderDirectory(registered.value, declared.value)
     const writable = mirrored.view.writable
+    const hasDocument = mirrored.view.hasDocument
     const views: readonly SettingsNamespaceView[] = mirrored.view.namespaces
     const namespaces = new Map(views.map(view => [view.ns, view]))
     const rows: ProviderRow[] = providers.map((entry) => {
@@ -227,6 +232,7 @@ export class ModelsSettingsStore {
       s.error = null
       s.credentialError = credentialError
       s.writable = writable
+      s.hasDocument = hasDocument
       s.rows = rows.map((row) => {
         const named = row.apiKeyEnv === undefined ? undefined : credentials[row.apiKeyEnv]
         const derived = row.apiKeyEnv !== undefined ? undefined : credentials[deriveKeyRef(row.entry.provider)]
