@@ -28,7 +28,8 @@ async function bench(): Promise<{
     | '@dsh-diagnostic-lab/scoped-loader-mismatch'
     | '@dsh-diagnostic-lab/loader-dependency-unavailable'
     | '@dsh-diagnostic-lab/loader-export-unavailable'
-    | '@dsh-diagnostic-lab/legacy-session-api') => Promise<void>>
+    | '@dsh-diagnostic-lab/legacy-session-api'
+    | '@dsh-diagnostic-lab/immutable-agent-input-mutation') => Promise<void>>
   runDoctor: Mock<(home: string) => Promise<{ status: string; issueCodes: string[]; output: string }>>
   runStartupTimeoutExercise: Mock<() => Promise<{
     actualCode: 'runtime.profile-check-timeout'
@@ -53,10 +54,12 @@ async function bench(): Promise<{
       | '@dsh-diagnostic-lab/scoped-loader-mismatch'
       | '@dsh-diagnostic-lab/loader-dependency-unavailable'
       | '@dsh-diagnostic-lab/loader-export-unavailable'
-      | '@dsh-diagnostic-lab/legacy-session-api',
+      | '@dsh-diagnostic-lab/legacy-session-api'
+      | '@dsh-diagnostic-lab/immutable-agent-input-mutation',
   ) => {
     if (packageName === 'dsh-font') return
-    if (packageName === '@dsh-diagnostic-lab/legacy-session-api') {
+    if (packageName === '@dsh-diagnostic-lab/legacy-session-api'
+      || packageName === '@dsh-diagnostic-lab/immutable-agent-input-mutation') {
       const profile = join(targetHome, 'profiles', 'web')
       const root = join(profile, 'node_modules', packageName)
       await mkdir(root, { recursive: true })
@@ -67,7 +70,9 @@ async function bench(): Promise<{
       await writeFile(join(root, 'package.json'), JSON.stringify({
         name: packageName, version: '1.0.0', peerDependencies: { '@deepseek-ai/dsh-session': '*' },
       }))
-      await writeFile(join(root, 'index.js'), 'for (const event of session.events) void event\n')
+      await writeFile(join(root, 'index.js'), packageName === '@dsh-diagnostic-lab/legacy-session-api'
+        ? 'for (const event of session.events) void event\n'
+        : "ctx.on('agent/pre-step', ({ messages }, next) => { for (const message of messages) for (const block of message.content) block.text = block.text.trim(); return next() })\n")
       return
     }
     await mkdir(join(targetHome, 'profiles', 'web'), { recursive: true })
@@ -108,6 +113,9 @@ async function bench(): Promise<{
       }
       if (manifest.dependencies?.['@dsh-diagnostic-lab/legacy-session-api'] !== undefined) {
         return { status: 'healthy', issueCodes: ['profile.session-api-incompatible'], output: '{}' }
+      }
+      if (manifest.dependencies?.['@dsh-diagnostic-lab/immutable-agent-input-mutation'] !== undefined) {
+        return { status: 'healthy', issueCodes: ['profile.immutable-agent-input-mutation'], output: '{}' }
       }
     }
     return { status: 'healthy', issueCodes: [], output: '{}' }
@@ -163,7 +171,7 @@ describe('DiagnosticLabManager', () => {
     expect(final.completedSteps).toBe(final.totalSteps)
     const directLoaderScenarios = scenarioIds.filter(id => (
       id === 'loader-package-name-mismatch' || id === 'loader-dependency-unavailable'
-      || id === 'legacy-session-api'
+      || id === 'legacy-session-api' || id === 'immutable-agent-input-mutation'
     )).length
     const settingsScenarios = scenarioIds.filter(id => id === 'settings-invalid').length
     const startupTimeoutScenarios = scenarioIds.filter(id => id === 'startup-operation-timeout').length
@@ -410,6 +418,25 @@ describe('DiagnosticLabManager', () => {
       .toBe('{"name":"dsh-profile-web","private":true}\n')
   })
 
+  it('retains the frozen agent-input mutation fixture as an attributed advisory', async () => {
+    const b = await bench()
+    const packageName = '@dsh-diagnostic-lab/immutable-agent-input-mutation'
+    const initial = b.manager.start({ scenarioIds: ['immutable-agent-input-mutation'], target: 'active-profile' })
+    const active = await waitForTerminal(b.manager, initial.runId)
+
+    expect(active).toMatchObject({ phase: 'active', recovery: 'retained' })
+    expect(active.results).toEqual([expect.objectContaining({
+      scenarioId: 'immutable-agent-input-mutation',
+      actualCode: 'profile.immutable-agent-input-mutation',
+      repaired: false,
+      disposition: 'retained',
+    })])
+    expect(b.installDiagnosticPlugin).toHaveBeenCalledWith(b.home, packageName)
+    expect(existsSync(join(b.home, 'quarantine', 'profile-plugins.json'))).toBe(false)
+
+    await expect(b.manager.restoreAll(initial.runId)).resolves.toMatchObject({ phase: 'restored' })
+  })
+
   it('retains invalid settings during real diagnostic startup and restores the exact original document', async () => {
     const b = await bench()
     const settingsPath = join(b.home, 'settings.yaml')
@@ -475,7 +502,8 @@ describe('DiagnosticLabManager', () => {
         | '@dsh-diagnostic-lab/scoped-loader-mismatch'
         | '@dsh-diagnostic-lab/loader-dependency-unavailable'
         | '@dsh-diagnostic-lab/loader-export-unavailable'
-        | '@dsh-diagnostic-lab/legacy-session-api',
+        | '@dsh-diagnostic-lab/legacy-session-api'
+        | '@dsh-diagnostic-lab/immutable-agent-input-mutation',
     ) => {
       expect(home).toBe(b.home)
       expect(packageName).toBe('dsh-font')

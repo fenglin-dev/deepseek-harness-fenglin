@@ -42,6 +42,7 @@ export type DiagnosticLabScenarioId =
   | 'loader-dependency-unavailable'
   | 'loader-export-unavailable'
   | 'legacy-session-api'
+  | 'immutable-agent-input-mutation'
   | 'settings-invalid'
   | 'module-resolution-missing'
   | 'patch-invalid'

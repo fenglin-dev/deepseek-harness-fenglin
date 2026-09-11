@@ -24,6 +24,7 @@ const SCENARIO_TITLES: Record<DiagnosticLabScenarioId, PluginInventoryLocaleKey>
   'loader-dependency-unavailable': 'lab.scenario.loaderDependency.title',
   'loader-export-unavailable': 'lab.scenario.loaderExport.title',
   'legacy-session-api': 'lab.scenario.legacySessionApi.title',
+  'immutable-agent-input-mutation': 'lab.scenario.immutableAgentInput.title',
   'settings-invalid': 'lab.scenario.settingsInvalid.title',
   'module-resolution-missing': 'lab.scenario.module.title',
   'patch-invalid': 'lab.scenario.patch.title',

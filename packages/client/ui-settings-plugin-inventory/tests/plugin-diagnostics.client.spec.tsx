@@ -48,6 +48,22 @@ describe('PluginDiagnosticsSection', () => {
     expect(screen.queryByRole('button', { name: en['health.quarantine.action.findUpdate'] })).toBeNull()
   })
 
+  it('explains a frozen agent-input mutation and names its attributed plugin', async () => {
+    render(<PluginDiagnosticsSection {...props({
+      entries: [],
+      dependencyHealth: {
+        lastRepair: null, safeMode: null, quarantined: [],
+        issues: [{
+          diagnosticId: '00000000-0000-4000-8000-000000000017',
+          code: 'profile.immutable-agent-input-mutation', source: 'profile', phase: 'preflight', severity: 'warning',
+          attribution: { rootPackage: '@fixture/frozen-input' }, actions: ['isolate', 'export'], evidence: [],
+        }],
+      },
+    } as unknown as PluginInventorySnapshot)} />)
+    expect(await screen.findByText(en['diagnostics.issue.immutableAgentInput'])).toBeTruthy()
+    expect(screen.getByText('@fixture/frozen-input')).toBeTruthy()
+  })
+
   it('shows declared Harness compatibility before offering a market update', async () => {
     render(<PluginDiagnosticsSection {...props({
       entries: [],

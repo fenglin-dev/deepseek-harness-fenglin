@@ -1,0 +1,4 @@
+- insert:
+  - id: diagnostic-immutable-agent-input-mutation
+    name: '@dsh-diagnostic-lab/immutable-agent-input-mutation'
+    config: {}

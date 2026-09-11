@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { classifyProfileDiagnostic, inspectProfileLegacySessionApi } from '../src/index.ts'
+import {
+  classifyProfileDiagnostic,
+  inspectProfileImmutableAgentInputMutation,
+  inspectProfileLegacySessionApi,
+} from '../src/index.ts'
 
 const homes: string[] = []
 afterEach(() => { for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true }) })
@@ -73,4 +77,52 @@ it('skips dependency source and over-budget files', () => {
   mkdirSync(join(root, 'node_modules'), { recursive: true })
   writeFileSync(join(root, 'node_modules', 'unrelated.js'), 'for (const event of session.events) {}')
   expect(inspectProfileLegacySessionApi({ binName: 'dsh', profile: 'web', home })).toEqual([])
+})
+
+it('attributes a pre-step frozen-message assignment without executing or quarantining the plugin', () => {
+  const { home, profile, root } = fixture(`
+    export function apply(ctx) {
+      ctx.on('agent/pre-step', async ({ messages }, next) => {
+        for (const message of messages) for (const block of message.content) block.text = block.text.trim()
+        return next()
+      })
+    }
+  `, true, false)
+  const before = readFileSync(join(profile, 'package.json'), 'utf8')
+  const issues = inspectProfileImmutableAgentInputMutation({ binName: 'dsh', profile: 'web', home })
+  expect(issues).toHaveLength(1)
+  expect(issues[0]).toMatchObject({
+    code: 'profile.immutable-agent-input-mutation',
+    severity: 'warning',
+    attribution: { rootPackage: '@fixture/arbitrary-plugin' },
+    actions: ['isolate', 'export'],
+  })
+  expect(JSON.stringify(issues)).not.toContain(root)
+  expect(readFileSync(join(profile, 'package.json'), 'utf8')).toBe(before)
+})
+
+it.each([
+  ["ctx.on('agent/pre-step', async ({ messages }, next) => next())", true],
+  ['block.text = rewrite(block.text)', true],
+  ["ctx.on('agent/pre-step', () => { const copy = { text: 'safe' }; return { ...copy } })", true],
+  ["ctx.on('agent/pre-step', ({ messages }) => ({ kind: 'enter', messages: messages.map(message => ({ ...message })) }))", false],
+] as const)('ignores incomplete, cloned, or inactive mutation evidence', (source, active) => {
+  const { home } = fixture(source, active, false)
+  expect(inspectProfileImmutableAgentInputMutation({ binName: 'dsh', profile: 'web', home })).toEqual([])
+})
+
+it('classifies the actual frozen-message TypeError as a plugin contract violation', () => {
+  const issue = classifyProfileDiagnostic({
+    source: 'cordis-runtime',
+    phase: 'runtime',
+    value: new TypeError("Cannot assign to read only property 'text' of object '#<Object>'"),
+    attribution: { rootPackage: '@fixture/arbitrary-plugin' },
+  })
+  expect(issue).toMatchObject({
+    code: 'profile.immutable-agent-input-mutation',
+    source: 'cordis-runtime',
+    severity: 'blocked',
+    attribution: { rootPackage: '@fixture/arbitrary-plugin' },
+    actions: ['isolate', 'export'],
+  })
 })

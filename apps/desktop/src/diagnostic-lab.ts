@@ -21,6 +21,7 @@ export type DiagnosticLabScenarioId =
   | 'loader-dependency-unavailable'
   | 'loader-export-unavailable'
   | 'legacy-session-api'
+  | 'immutable-agent-input-mutation'
   | 'settings-invalid'
   | 'module-resolution-missing'
   | 'patch-invalid'
@@ -138,7 +139,8 @@ export interface DiagnosticLabManagerOptions {
       | '@dsh-diagnostic-lab/scoped-loader-mismatch'
       | '@dsh-diagnostic-lab/loader-dependency-unavailable'
       | '@dsh-diagnostic-lab/loader-export-unavailable'
-      | '@dsh-diagnostic-lab/legacy-session-api',
+      | '@dsh-diagnostic-lab/legacy-session-api'
+      | '@dsh-diagnostic-lab/immutable-agent-input-mutation',
   ): Promise<void>
   runDoctor(home: string, repair: boolean): Promise<DiagnosticLabDoctorResult>
   /** Run the desktop-owned fake CLI that proves timeout cancellation and rollback. */
@@ -167,6 +169,7 @@ const SCENARIOS: readonly DiagnosticLabScenario[] = [
   { id: 'loader-dependency-unavailable', title: 'Loader dependency unavailable', description: 'Installs a resolvable aggregate Loader whose published entry imports a missing internal Host dependency, then verifies root attribution and quarantine.', expectedCode: 'loader.dependency-unavailable', targets: ['isolated', 'active-profile'] },
   { id: 'loader-export-unavailable', title: 'Loader dependency export unavailable', description: 'Installs a Loader that expects an API export absent from the installed DSH generation, then verifies runtime attribution and quarantine before safe-mode fallback.', expectedCode: 'loader.dependency-unavailable', targets: ['active-profile'] },
   { id: 'legacy-session-api', title: 'Legacy Session API usage', description: 'Installs an inert offline plugin carrying the reproduced session.events pattern, then verifies advisory attribution without automatic quarantine.', expectedCode: 'profile.session-api-incompatible', targets: ['isolated', 'active-profile'] },
+  { id: 'immutable-agent-input-mutation', title: 'Frozen agent input mutation', description: 'Installs an offline plugin that rewrites a frozen agent/pre-step text block, then verifies attribution and recovery guidance without automatic quarantine.', expectedCode: 'profile.immutable-agent-input-mutation', targets: ['isolated', 'active-profile'] },
   { id: 'settings-invalid', title: 'Invalid settings document', description: 'Writes a duplicate-key settings.yaml and verifies that Diagnostics skips it without modifying the original document.', expectedCode: 'config.settings-invalid', targets: ['isolated', 'active-profile'] },
   { id: 'client-module-unavailable', title: 'Packaged dsh-font client incompatibility', description: 'Installs the packaged dsh-font 1.1.0 fixture and verifies that the real browser boot path quarantines it without blocking the main UI.', expectedCode: 'profile.module-resolution', targets: ['active-profile'] },
   { id: 'module-resolution-missing', title: 'Missing plugin module', description: 'Attributes a missing module directory to the owning plugin.', expectedCode: 'profile.module-resolution', targets: ['isolated'] },
@@ -212,6 +215,7 @@ const FIXTURES: Record<DiagnosticLabScenarioId, ScenarioFixture> = {
   'loader-dependency-unavailable': { code: 'loader.dependency-unavailable', file: 'profile/loader-dependency-unavailable.json', content: '{"package":"@dsh-diagnostic-lab/loader-dependency-unavailable","version":"1.0.0"}\n', checksum: 'b9251b2ec6e6b2d834acb5b6d4c13b55a9ef6e8a53890012072ccdaf19cea6f0' },
   'loader-export-unavailable': { code: 'loader.dependency-unavailable', file: 'profile/loader-export-unavailable.json', content: '{"package":"@dsh-diagnostic-lab/loader-export-unavailable","version":"1.0.0","missingExport":"installDiagnosticLabMissingSettingsSection"}\n', checksum: '07cfd0d9fb335e2b0c42d65e13c705c63208acfd59b0738503b4218031eb3a37' },
   'legacy-session-api': { code: 'profile.session-api-incompatible', file: 'profile/legacy-session-api.json', content: '{"package":"@dsh-diagnostic-lab/legacy-session-api","version":"1.0.0","api":"session.events"}\n', checksum: 'c637f89d20491c43a334130c3bddd7461df741f63273fa470b6271e4604d9e9f' },
+  'immutable-agent-input-mutation': { code: 'profile.immutable-agent-input-mutation', file: 'profile/immutable-agent-input-mutation.json', content: '{"package":"@dsh-diagnostic-lab/immutable-agent-input-mutation","version":"1.0.0","event":"agent/pre-step","mutation":"block.text"}\n', checksum: 'fb4062b717630c065751abd6de5ec6361e6fbf6f1ca5f30201c6446904655495' },
   'settings-invalid': { code: 'config.settings-invalid', file: 'profile/settings-invalid.json', content: 'diagnostic-lab-duplicate: one\ndiagnostic-lab-duplicate: two\n', checksum: 'af6043d7e12cbf592177d0ca81872a8a0ef09e4cb1d15589e368b906076208a2' },
   'client-module-unavailable': { code: 'profile.module-resolution', file: 'profile/dsh-font.json', content: '{"package":"dsh-font","version":"1.1.0","source":"packaged-diagnostic"}\n', checksum: 'ff3cf467522316802d16c7ad88863be9becc9789b2e61f94b121c44e786ffec7' },
   'module-resolution-missing': { code: 'profile.module-resolution', file: 'profile/missing-module.json', content: '{"module":"@hecoococ/dsh-lab-missing","exists":false}\n', checksum: '089ed0ccd5e318ad94cae5ea48017bc946676bfa6f4a66e041740369fbc2f221', repairedContent: '{"disabled":true}\n' },
@@ -589,8 +593,8 @@ export class DiagnosticLabManager {
         } else if (scenarioId === 'loader-package-name-mismatch'
           || scenarioId === 'loader-dependency-unavailable') {
           await this.#runLoaderPluginScenario(runRoot, scenarioId)
-        } else if (scenarioId === 'legacy-session-api') {
-          await this.#runLegacySessionApiScenario(runRoot)
+        } else if (scenarioId === 'legacy-session-api' || scenarioId === 'immutable-agent-input-mutation') {
+          await this.#runAdvisoryPluginScenario(runRoot, scenarioId)
         } else if (scenarioId === 'startup-operation-timeout') {
           await this.#runStartupTimeoutScenario(runRoot)
         } else if (scenarioId === 'plugin-transaction-interrupted') {
@@ -663,10 +667,14 @@ export class DiagnosticLabManager {
     this.#replace(terminalSnapshot)
   }
 
-  /** Install the inert Session fixture and verify an advisory without mutation or quarantine. */
-  async #runLegacySessionApiScenario(runRoot: string): Promise<void> {
-    const scenarioId = 'legacy-session-api' as const
-    const packageName = '@dsh-diagnostic-lab/legacy-session-api' as const
+  /** Install one reviewed contract-violation fixture and verify an advisory without quarantine. */
+  async #runAdvisoryPluginScenario(
+    runRoot: string,
+    scenarioId: 'legacy-session-api' | 'immutable-agent-input-mutation',
+  ): Promise<void> {
+    const packageName = scenarioId === 'legacy-session-api'
+      ? '@dsh-diagnostic-lab/legacy-session-api' as const
+      : '@dsh-diagnostic-lab/immutable-agent-input-mutation' as const
     const fixture = FIXTURES[scenarioId]
     const active = this.#requireActive()
     const home = active.target === 'active-profile'
@@ -696,7 +704,7 @@ export class DiagnosticLabManager {
       actualCode = inspected.issueCodes.find(code => code === fixture.code)
       if (actualCode !== fixture.code) throw new Error(`expected ${fixture.code}, received ${actualCode}`)
       await this.#step(scenarioId, 'repair')
-      if (inspected.status !== 'healthy') throw new Error('advisory Session API warning changed Doctor health')
+      if (inspected.status !== 'healthy') throw new Error('advisory contract warning changed Doctor health')
       await this.#step(scenarioId, 'verify')
       const manifest = JSON.parse(await readFile(join(home, 'profiles', 'web', 'package.json'), 'utf8')) as {
         dependencies?: Record<string, unknown>
@@ -704,10 +712,10 @@ export class DiagnosticLabManager {
       }
       if (manifest.dependencies?.[packageName] === undefined
         || !manifest.dsh?.profile?.bundles?.includes(packageName)) {
-        throw new Error('advisory Session API warning unexpectedly removed the fixture plugin')
+        throw new Error('advisory contract warning unexpectedly removed the fixture plugin')
       }
       if (await this.#hasQuarantine(home, packageName, 'loader-dependency-unavailable', fixture.code)) {
-        throw new Error('advisory Session API warning unexpectedly quarantined the fixture plugin')
+        throw new Error('advisory contract warning unexpectedly quarantined the fixture plugin')
       }
       await this.#step(scenarioId, 'retain')
       this.#appendResult({

@@ -152,6 +152,7 @@ const DIAGNOSTIC_ACTION_KEYS = {
 } satisfies Record<DiagnosticIssue['actions'][number], PluginInventoryLocaleKey>
 
 function diagnosticIssueCopy(code: DiagnosticIssue['code']): PluginInventoryLocaleKey {
+  if (code === 'profile.immutable-agent-input-mutation') return 'diagnostics.issue.immutableAgentInput'
   if (code === 'profile.session-api-incompatible') return 'diagnostics.issue.sessionApi'
   if (code === 'profile.quarantine-removal-residue') return 'diagnostics.issue.quarantineRemovalResidue'
   if (code === 'profile.session-persistence-migration') return 'diagnostics.issue.sessionPersistenceMigration'

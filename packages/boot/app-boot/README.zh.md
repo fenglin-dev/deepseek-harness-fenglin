@@ -57,6 +57,8 @@ Profile 预检会在组合前收敛依赖身份与隔离状态。如果旧版或
 
 对于每个能唯一归属的外部 Loader 行，预检会在不执行模块的情况下解析声明模块，并检查入口文件中的静态裸导入。Loader 模块缺失时以 `loader-module-unresolvable` 隔离；Loader 模块可用但其导入依赖缺失时以 `loader-dependency-unavailable` 隔离，并在诊断中保留外层 Bundle、Loader entry、导入方与缺失包。如果 Node 在运行时证明已安装依赖缺少插件要求的命名导出，也会遵守同一唯一归属边界，保留依赖名和导出名后隔离不兼容插件。用户改写或来源有歧义的行绝不自动移除。诊断安全模式还会把 settings provider 指向应用维护的空文档，因此无效用户设置保持不动，也无法继续阻止诊断 UI 加载。
 
+提示性源码检查会标记这样的已启用外部 Bundle：其发布的 JavaScript 同时订阅 `agent/pre-step` 并直接给消息字段赋值。该事件发布深度冻结输入，因此真实出现的只读属性异常会分类为 `profile.immutable-agent-input-mutation`；仅靠源码得到的证据只会标出直接 Bundle，绝不会执行、修改或隔离插件。
+
 你的机器本地偏好同样位于 harness home 中：
 
 - **`.env`**——你的普通环境层：调用目录的文件优先于 harness home 的文件，两者都低于继承环境。决定进程如何启动的变量（`PATH`、`DSH_*`、`XDG_*` 等）会被文件拒绝：请改为导出。四个代理名（`HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY`）只从 harness home 的文件接受，绝不从调用目录的文件接受——后者随 clone 一起到来。对于只想加载某个目录 `.env` 的非产品 bin，文件缺失不影响启动，文件无法加载时输出一行带标签的警告。

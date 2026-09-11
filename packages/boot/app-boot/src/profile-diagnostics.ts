@@ -58,6 +58,7 @@ export type ProfileDiagnosticCode =
   | 'profile.orphaned-bundle'
   | 'profile.bundle-invalid'
   | 'profile.module-resolution'
+  | 'profile.immutable-agent-input-mutation'
   | 'profile.session-api-incompatible'
   | 'profile.session-persistence-migration'
   | 'loader.dependency-unavailable'
@@ -263,6 +264,10 @@ const RULES: readonly DiagnosticRule[] = [
       'not a materialized module',
       'no registered package factory',
     ].join('|'), 'iu'),
+  },
+  {
+    code: 'profile.immutable-agent-input-mutation', source: 'cordis-runtime', severity: 'blocked', actions: ['isolate', 'export'],
+    pattern: /immutable agent input mutation|Cannot assign to read only property ['"](?:text|content|messages)['"] of object/iu,
   },
   {
     code: 'profile.session-api-incompatible', source: 'profile', severity: 'blocked', actions: ['open-config', 'export'],

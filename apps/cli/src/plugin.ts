@@ -27,6 +27,7 @@ import {
   initProfile,
   inspectProfileDependencies,
   inspectProfileHostCompatibility,
+  inspectProfileImmutableAgentInputMutation,
   inspectProfileLegacySessionApi,
   inspectOrphanedProfileBundles,
   inspectUnresolvableProfileBundleEntries,
@@ -567,7 +568,10 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[], quie
         ],
       }
     }
-    const apiWarnings = inspectProfileLegacySessionApi({ binName: NAME, profile })
+    const apiWarnings = [
+      ...inspectProfileLegacySessionApi({ binName: NAME, profile }),
+      ...inspectProfileImmutableAgentInputMutation({ binName: NAME, profile }),
+    ]
     const normalized = !mutatesProfile
       && (outcome.conflicts.length > 0
         || (outcome.orphanedBundles?.length ?? 0) > 0

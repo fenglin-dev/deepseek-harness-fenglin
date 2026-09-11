@@ -205,7 +205,7 @@ The boundary is deliberate: **inspect before plugin execution, decide from the r
 
 The interrupted plugin transaction exercise verifies complete dependency rollback after candidate activation in an isolated directory, without changing the active Profile. All scenarios are unchecked by default. See the [diagnostic rules](docs/profile-diagnostics.md#diagnostic-safe-mode).
 
-Development and installed builds both provide Diagnostics Lab. Its bundled offline fault samples exercise shared-Host shadow copies, orphaned Bundles, scoped-root versus unscoped-Loader name mismatches, missing aggregate-plugin dependencies, installed dependencies that lack an API expected by a plugin, invalid `settings.yaml` documents, missing modules, invalid patches, duplicate Loader entries, lifecycle failures, blocked build approval, and interrupted repair while showing the complete inject, detect, repair, verify, and cleanup timeline.
+Development and installed builds both provide Diagnostics Lab. Its bundled offline fault samples exercise shared-Host shadow copies, orphaned Bundles, scoped-root versus unscoped-Loader name mismatches, missing aggregate-plugin dependencies, installed dependencies that lack an API expected by a plugin, plugins mutating frozen `agent/pre-step` input, invalid `settings.yaml` documents, missing modules, invalid patches, duplicate Loader entries, lifecycle failures, blocked build approval, and interrupted repair while showing the complete inject, detect, repair, verify, and cleanup timeline.
 
 <p align="center">
   <img src="./assets/readme/diagnostics-lab-sandbox-zh.png" width="900" alt="Select isolated sandbox scenarios in Diagnostics Lab">

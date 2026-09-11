@@ -118,6 +118,15 @@
       "installPolicy": "diagnostic",
       "archive": "dsh-diagnostic-lab-legacy-session-api-1.0.0.tgz",
       "integrity": "sha512-O20M5EU8zP0YhPBaZGK3+BJmGYlF0w1L5Bo6cUt3dgBxSuSH3Gb5dpz9JUwMH7epP0M0NIumYoLVMz4bnjiCQA=="
+    },
+    {
+      "seedId": "diagnostic-immutable-agent-input-mutation",
+      "packageName": "@dsh-diagnostic-lab/immutable-agent-input-mutation",
+      "version": "1.0.0",
+      "profile": "web",
+      "installPolicy": "diagnostic",
+      "archive": "dsh-diagnostic-lab-immutable-agent-input-mutation-1.0.0.tgz",
+      "integrity": "sha512-K7f22irpTUvxZ+sq7YCfOqsT3rRtlrYDlnOfOJlY0vlLA6tzZd5EVL67F5n+S7NX4VcDGdnDae+jCRj3sTASLQ=="
     }
   ]
 }
