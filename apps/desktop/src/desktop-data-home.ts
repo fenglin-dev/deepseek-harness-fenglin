@@ -5,6 +5,7 @@ import {
 } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parseDocument } from 'yaml'
+import { copyCommunityHome } from './community-data-copy.ts'
 import {
   extractImportedPluginRestorePlan,
   writeImportedPluginRestorePlan,
@@ -36,6 +37,7 @@ const RECOGNIZABLE_ENTRIES = Object.freeze([
 /** Stable paths selected before Electron acquires its single-instance lock. */
 export interface DesktopDataHomeLayout {
   readonly desktopRoot: string
+  readonly communityDesktopRoot: string
   readonly dshHome: string
   readonly officialDshHome: string
   readonly logs: string
@@ -61,7 +63,7 @@ export interface DesktopDataHomeSource {
 /** Durable first-run decision kept outside the selected Harness home. */
 export interface DesktopDataHomeSetup {
   readonly schema: typeof SETUP_SCHEMA
-  readonly mode: 'fresh' | 'created' | 'imported' | 'reused' | 'existing' | 'explicit'
+  readonly mode: 'fresh' | 'created' | 'imported' | 'copied' | 'reused' | 'existing' | 'explicit'
   readonly dshHome: string
   readonly source?: string
   readonly importedOnboardingReset?: string
@@ -136,7 +138,7 @@ export function resolveRecordedDesktopDataHome(
   if (setup?.mode === 'created'
     && setup.source === undefined
     && isAbsolute(setup.dshHome)) return setup.dshHome
-  if (setup?.mode === 'imported'
+  if ((setup?.mode === 'imported' || setup?.mode === 'copied')
     && typeof setup.source === 'string'
     && isAbsolute(setup.source)
     && isAbsolute(setup.dshHome)) return setup.dshHome
@@ -164,9 +166,10 @@ export function resolveDesktopDataHomeLayout(
   packaged: boolean,
   environment: Record<string, string | undefined>,
 ): DesktopDataHomeLayout {
-  const desktopRoot = packaged
-    ? join(appData, DESKTOP_DATA_DIRECTORY)
-    : join(appData, DESKTOP_DATA_DIRECTORY, 'development')
+  const installedDesktopRoot = join(appData, DESKTOP_DATA_DIRECTORY)
+  const developmentDesktopRoot = join(installedDesktopRoot, 'development')
+  const desktopRoot = packaged ? installedDesktopRoot : developmentDesktopRoot
+  const communityDesktopRoot = packaged ? developmentDesktopRoot : installedDesktopRoot
   const configured = environment.DSH_HOME?.trim()
   const explicitDshHome = configured !== undefined && configured.length > 0
   const dshHome = explicitDshHome
@@ -174,6 +177,7 @@ export function resolveDesktopDataHomeLayout(
     : join(desktopRoot, 'dsh-home')
   return {
     desktopRoot,
+    communityDesktopRoot,
     dshHome,
     officialDshHome: join(homeDirectory, '.dsh'),
     logs: join(desktopRoot, 'logs'),
@@ -233,6 +237,27 @@ export async function resolveDesktopDataHomeSource(candidate: string): Promise<D
   const nested = join(direct, '.dsh')
   const nestedEntries = await recognizedDesktopDataEntries(nested)
   return nestedEntries.length > 0 ? { path: nested, entries: nestedEntries } : undefined
+}
+
+/**
+ * Resolve a community desktop root or an actual DSH data directory.
+ * A present setup record is authoritative: invalid or missing recorded data never falls back to stale local data.
+ * @param candidate - Directory selected by the native picker.
+ * @returns Recognized actual data path, excluding desktop logs and caches, or undefined.
+ */
+export async function resolveCommunityDataHomeSource(candidate: string): Promise<DesktopDataHomeSource | undefined> {
+  const root = resolve(candidate)
+  const setupPath = join(root, 'data-home-setup.json')
+  if (await pathExists(setupPath)) {
+    const setup = await readDesktopDataHomeSetup(setupPath)
+    if (setup === undefined || !isAbsolute(setup.dshHome)) return undefined
+    const entries = await recognizedDesktopDataEntries(setup.dshHome)
+    return entries.length > 0 ? { path: resolve(setup.dshHome), entries } : undefined
+  }
+  const nested = join(root, 'dsh-home')
+  const entries = await recognizedDesktopDataEntries(nested)
+  if (entries.length > 0) return { path: nested, entries }
+  return resolveDesktopDataHomeSource(root)
 }
 
 /** Resolve an existing empty directory that can become a new Harness home.
@@ -450,36 +475,37 @@ export function resetImportedDesktopOnboarding(dshHome: string): Promise<boolean
 }
 
 /**
- * Atomically copy supported configuration and history without importing plugin runtimes.
- * @param officialDshHome - Existing official `~/.dsh` source.
+ * Atomically copy supported configuration and history without copying plugin runtimes.
+ * @param sourceDshHome - Existing official or community desktop DSH source.
  * @param targetDshHome - Empty repository-owned destination.
  * @returns Copied roots and any deliberately skipped symlinks.
  */
-export async function importOfficialDesktopData(
-  officialDshHome: string,
+async function copyIndependentDesktopData(
+  sourceDshHome: string,
   targetDshHome: string,
+  resetOnboarding: boolean,
 ): Promise<DesktopDataImportResult> {
-  if (desktopDataHomesOverlap(officialDshHome, targetDshHome)) {
+  if (desktopDataHomesOverlap(sourceDshHome, targetDshHome)) {
     throw new Error('desktop: source and isolated Harness homes must not overlap')
   }
   if (await hasDesktopData(targetDshHome)) {
-    throw new Error(`desktop: refusing to import into non-empty Harness home ${targetDshHome}`)
+    throw new Error(`desktop: refusing to copy into non-empty Harness home ${targetDshHome}`)
   }
-  const staging = join(dirname(targetDshHome), `.${basename(targetDshHome)}.import-${process.pid}-${Date.now()}`)
+  const staging = join(dirname(targetDshHome), `.${basename(targetDshHome)}.copy-${process.pid}-${Date.now()}`)
   const copied: string[] = []
   const skippedSymlinks: string[] = []
   await rm(staging, { recursive: true, force: true })
   await mkdir(staging, { recursive: true, mode: 0o700 })
   try {
     for (const entry of IMPORTABLE_ENTRIES) {
-      const source = join(officialDshHome, entry)
+      const source = join(sourceDshHome, entry)
       if (!await pathExists(source)) continue
       const skippedBefore = skippedSymlinks.length
       await copySafeTree(source, join(staging, entry), entry, skippedSymlinks)
       if (skippedSymlinks.length === skippedBefore) copied.push(entry)
     }
-    await resetImportedOnboardingSettings(join(staging, 'settings.yaml'))
-    const restorePlan = await extractImportedPluginRestorePlan(officialDshHome)
+    if (resetOnboarding) await resetImportedOnboardingSettings(join(staging, 'settings.yaml'))
+    const restorePlan = await extractImportedPluginRestorePlan(sourceDshHome)
     await writeImportedPluginRestorePlan(staging, restorePlan)
     if (await pathExists(targetDshHome)) await rm(targetDshHome, { recursive: true })
     await rename(staging, targetDshHome)
@@ -497,6 +523,23 @@ export async function importOfficialDesktopData(
   }
 }
 
+/** Convert supported official Harness data into an independent desktop configuration. */
+export function importOfficialDesktopData(
+  officialDshHome: string,
+  targetDshHome: string,
+): Promise<DesktopDataImportResult> {
+  return copyIndependentDesktopData(officialDshHome, targetDshHome, true)
+}
+
+/** Copy a compatible community desktop configuration without replaying first-run onboarding. */
+export async function copyCommunityDesktopData(
+  communityDshHome: string,
+  targetDshHome: string,
+): Promise<DesktopDataImportResult> {
+  const copied = await copyCommunityHome(communityDshHome, targetDshHome)
+  return { copied, skippedSymlinks: [], restorablePlugins: 0, pluginRestoreIssues: [] }
+}
+
 /**
  * Read a valid desktop data-home setup record.
  * @param path - Repository-owned setup record path.
@@ -509,6 +552,7 @@ export async function readDesktopDataHomeSetup(path: string): Promise<DesktopDat
       || (value.mode !== 'fresh'
         && value.mode !== 'created'
         && value.mode !== 'imported'
+        && value.mode !== 'copied'
         && value.mode !== 'reused'
         && value.mode !== 'existing'
         && value.mode !== 'explicit')
@@ -539,7 +583,7 @@ export async function writeDesktopDataHomeSetup(path: string, setup: DesktopData
 
 /**
  * Create a schema-valid setup record for the selected data mode.
- * @param mode - Fresh, created, imported, reused, existing, or explicit selection.
+ * @param mode - Fresh, created, imported, copied, reused, existing, or explicit selection.
  * @param dshHome - Absolute Harness home selected for this launch mode.
  * @param source - Optional official import source.
  * @returns A timestamped durable setup record.

@@ -79,12 +79,14 @@ import {
   desktopDataHomesOverlap,
   hasDesktopData,
   IMPORTED_ONBOARDING_RESET_VERSION,
+  copyCommunityDesktopData,
   importOfficialDesktopData,
   inspectDesktopDataHomeStatus,
   readDesktopDataHomeSetup,
   resetImportedDesktopOnboarding,
   resolveDesktopDataHomeSwitch,
   resolveDesktopDataHomeSource,
+  resolveCommunityDataHomeSource,
   resolveDesktopDataHomeRecoverySelection,
   resolveEmptyDesktopDataHome,
   resolveRecordedDesktopDataHome,
@@ -436,12 +438,14 @@ async function appendDesktopStartupLog(message: string): Promise<void> {
   await appendFile(harnessLogPath, `[desktop] ${new Date().toISOString()} ${message}\n`)
 }
 
-type DataHomeSelection = 'imported' | 'reused' | 'fresh'
+type DataHomeSelection = 'copied' | 'reused' | 'fresh'
+type ExistingDataHomeSourceKind = 'official' | 'community'
 
 type DataHomeChoice =
   | { readonly mode: 'fresh'; readonly target: string; readonly customTarget: boolean }
   | {
-    readonly mode: 'imported'
+    readonly mode: 'copied'
+    readonly sourceKind: ExistingDataHomeSourceKind
     readonly source: string
     readonly target: string
     readonly customTarget: boolean
@@ -454,7 +458,8 @@ type DataHomeChoiceRequest =
     readonly target: { readonly kind: 'default' } | { readonly kind: 'custom'; readonly selectionId: string }
   }
   | {
-    readonly mode: 'imported'
+    readonly mode: 'copied'
+    readonly sourceKind: ExistingDataHomeSourceKind
     readonly source: string
     readonly target: { readonly kind: 'default' } | { readonly kind: 'custom'; readonly selectionId: string }
   }
@@ -517,7 +522,7 @@ function desktopCopy() { return trayMessages(menuLocale) }
 function dataHomeCopy() { return dataHomeMessages(app.getLocale()) }
 
 function isDataHomeSelection(value: unknown): value is DataHomeSelection {
-  return value === 'imported' || value === 'reused' || value === 'fresh'
+  return value === 'copied' || value === 'reused' || value === 'fresh'
 }
 
 function isDataHomeChoiceRequest(value: unknown): value is DataHomeChoiceRequest {
@@ -526,8 +531,9 @@ function isDataHomeChoiceRequest(value: unknown): value is DataHomeChoiceRequest
   if (value.mode === 'reused') {
     return 'source' in value && typeof value.source === 'string' && value.source.trim().length > 0
   }
-  if (value.mode === 'imported'
-    && (!('source' in value) || typeof value.source !== 'string' || value.source.trim().length === 0)) return false
+  if (value.mode === 'copied'
+    && (!('source' in value) || typeof value.source !== 'string' || value.source.trim().length === 0
+      || !('sourceKind' in value) || (value.sourceKind !== 'official' && value.sourceKind !== 'community'))) return false
   if (!('target' in value) || typeof value.target !== 'object' || value.target === null
     || !('kind' in value.target)) return false
   if (value.target.kind === 'default') return true
@@ -547,9 +553,12 @@ function isDesktopDataHomeSwitchRequest(value: unknown): value is DesktopDataHom
 }
 
 async function showDataHomeChooser(
-  defaultSource: DesktopDataHomeSource | undefined,
-  defaultSourceUnreadable: boolean,
-  defaultSourceCandidate: string,
+  officialSource: DesktopDataHomeSource | undefined,
+  officialSourceUnreadable: boolean,
+  officialSourceCandidate: string,
+  communitySource: DesktopDataHomeSource | undefined,
+  communitySourceUnreadable: boolean,
+  communitySourceCandidate: string,
   defaultTarget: string,
 ): Promise<DataHomeChoice> {
   const chooser = new BrowserWindow({
@@ -644,14 +653,14 @@ async function showDataHomeChooser(
           target = resolvedTarget
           customTarget = true
         }
-        if (value.mode === 'imported' && source !== undefined && desktopDataHomesOverlap(source.path, target)) {
+        if (value.mode === 'copied' && source !== undefined && desktopDataHomesOverlap(source.path, target)) {
           event.sender.send('dsh:data-home:target-error', { status: 'overlap', path: target })
           return
         }
         if (value.mode === 'fresh') finish({ mode: 'fresh', target, customTarget })
         else {
           if (source === undefined) return
-          finish({ mode: 'imported', source: source.path, target, customTarget })
+          finish({ mode: 'copied', sourceKind: value.sourceKind, source: source.path, target, customTarget })
         }
       })().catch(fail)
     }
@@ -660,8 +669,9 @@ async function showDataHomeChooser(
     }
     ipcMain.on('dsh:data-home:selected', handleSelection)
     ipcMain.on('dsh:data-home:cancelled', handleCancellation)
-    ipcMain.handle('dsh:data-home:choose-source', async (event): Promise<DataHomeSourceResult> => {
+    ipcMain.handle('dsh:data-home:choose-source', async (event, origin: unknown): Promise<DataHomeSourceResult> => {
       if (event.sender !== chooser.webContents) throw new Error('desktop: invalid data-home source requester')
+      if (origin !== 'official' && origin !== 'community') throw new Error('desktop: invalid data-home source category')
       const result = await dialog.showOpenDialog(chooser, {
         title: shellMessages(app.getLocale()).chooseSource,
         properties: ['openDirectory'],
@@ -669,7 +679,7 @@ async function showDataHomeChooser(
       const candidate = result.filePaths[0]
       if (result.canceled || candidate === undefined) return { status: 'cancelled' }
       try {
-        const source = await resolveDesktopDataHomeSource(candidate)
+        const source = await (origin === 'community' ? resolveCommunityDataHomeSource(candidate) : resolveDesktopDataHomeSource(candidate))
         return source === undefined
           ? { status: 'invalid', path: candidate }
           : { status: 'valid', path: source.path, entries: source.entries }
@@ -706,11 +716,16 @@ async function showDataHomeChooser(
     })
     void chooser.loadFile(DATA_HOME_PAGE, { query: {
       locale: menuLocale,
-      selected: defaultSource === undefined ? 'fresh' : 'imported',
-      source: defaultSource?.path ?? '',
-      defaultSource: defaultSource?.path ?? '',
-      sourceCandidate: defaultSourceCandidate,
-      sourceStatus: defaultSourceUnreadable ? 'unreadable' : defaultSource === undefined ? 'missing' : 'valid',
+      selected: officialSource === undefined && communitySource === undefined ? 'fresh' : 'imported',
+      selectedSource: officialSource === undefined && communitySource !== undefined ? 'community' : 'official',
+      officialSource: officialSource?.path ?? '',
+      officialDefaultSource: officialSource?.path ?? '',
+      officialSourceCandidate,
+      officialSourceStatus: officialSourceUnreadable ? 'unreadable' : officialSource === undefined ? 'missing' : 'valid',
+      communitySource: communitySource?.path ?? '',
+      communityDefaultSource: communitySource?.path ?? '',
+      communitySourceCandidate,
+      communitySourceStatus: communitySourceUnreadable ? 'unreadable' : communitySource === undefined ? 'missing' : 'valid',
       defaultTarget,
       development: app.isPackaged ? 'false' : 'true',
     } }).catch(fail)
@@ -756,20 +771,34 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
   } catch {
     defaultSourceUnreadable = true
   }
+  let communitySource: DesktopDataHomeSource | undefined
+  let communitySourceUnreadable = false
+  try {
+    communitySource = await resolveCommunityDataHomeSource(layout.communityDesktopRoot)
+  } catch {
+    communitySourceUnreadable = true
+  }
 
   const copy = dataHomeCopy()
   const selection = await showDataHomeChooser(
     defaultSource,
     defaultSourceUnreadable,
     layout.officialDshHome,
+    communitySource,
+    communitySourceUnreadable,
+    layout.communityDesktopRoot,
     layout.dshHome,
   )
-  if (selection.mode === 'imported') {
+  if (selection.mode === 'copied') {
     try {
-      await importOfficialDesktopData(selection.source, selection.target)
+      if (selection.sourceKind === 'official') {
+        await importOfficialDesktopData(selection.source, selection.target)
+      } else {
+        await copyCommunityDesktopData(selection.source, selection.target)
+      }
       await writeDesktopDataHomeSetup(
         layout.setupFile,
-        desktopDataHomeSetup('imported', selection.target, selection.source),
+        desktopDataHomeSetup(selection.sourceKind === 'official' ? 'imported' : 'copied', selection.target, selection.source),
       )
       await dialog.showMessageBox({
         type: 'info', title: copy.completeTitle, message: copy.completeMessage,
@@ -1386,6 +1415,7 @@ async function startApplication(): Promise<void> {
   }
   applyStartupDockIcon()
   const dshHome = await prepareDesktopDshHome(DESKTOP_DATA_HOME)
+  const preserveCopiedPlugins = (await readDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile))?.mode === 'copied'
   activeMenuHome = dshHome
   const persistentServicesPath = join(app.getPath('userData'), 'managed-processes', 'persistent-services-v1.json')
   persistentServiceAuthority = new FilePersistentServiceAuthorizer(
@@ -2866,7 +2896,7 @@ async function startApplication(): Promise<void> {
   // client and event dispatcher both prove the resulting Profile can start.
   harnessEnvironment.DSH_PLUGIN_SNAPSHOT_BATCH = '1'
   try {
-    if (startupProfileMutationAllowed) {
+    if (startupProfileMutationAllowed && !preserveCopiedPlugins) {
       await bundledPluginInstaller.seedStartup((progress) => {
         publishStartupProgress(mapBundledPluginProgress(
           progress.entry.packageName,
@@ -2878,7 +2908,9 @@ async function startApplication(): Promise<void> {
       })
     } else {
       await appendDesktopStartupLog(
-        'Skipped bundled startup plugin mutations because Profile health was not proven safe for writes.',
+        preserveCopiedPlugins
+          ? 'Preserved copied community plugins without startup seeding.'
+          : 'Skipped bundled startup plugin mutations because Profile health was not proven safe for writes.',
       )
     }
   } finally {
@@ -2910,9 +2942,11 @@ async function startApplication(): Promise<void> {
     withMutation: operation => runManagedPluginMutation(operation),
   })
   try {
-    if (startupProfileMutationAllowed) await importedPluginRestoreManager.prepare()
+    if (startupProfileMutationAllowed && !preserveCopiedPlugins) await importedPluginRestoreManager.prepare()
     else await appendDesktopStartupLog(
-      'Skipped imported plugin restore preparation because Profile health was not proven safe for writes.',
+      preserveCopiedPlugins
+        ? 'Skipped imported plugin restore preparation to preserve the copied community deployment.'
+        : 'Skipped imported plugin restore preparation because Profile health was not proven safe for writes.',
     )
   } catch (error) {
     console.warn('desktop: imported plugin restore metadata is unavailable; startup will continue', error)
