@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { DESKTOP_LANGUAGE_DEFINITIONS, registerDesktopLanguages } from '../src/client/community-locales.ts'
 
 describe('community desktop locales', () => {
+  it('keeps Russian third overall and orders the remaining community locales by audience size', () => {
+    expect(DESKTOP_LANGUAGE_DEFINITIONS.map(({ id }) => id)).toEqual([
+      'ru', 'es', 'fr', 'pt-BR', 'de', 'ja', 'ko',
+    ])
+  })
+
   it('registers each locale namespace exactly once after merging desktop additions', () => {
     const registrations = new Set<string>()
     const ctx = {

@@ -5,7 +5,7 @@ import {
 
 describe('desktop locale resolution', () => {
   it('publishes the complete stable locale order', () => {
-    expect(DESKTOP_LOCALE_IDS).toEqual(['zh', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'pt-BR', 'ru'])
+    expect(DESKTOP_LOCALE_IDS).toEqual(['zh', 'en', 'ru', 'es', 'fr', 'pt-BR', 'de', 'ja', 'ko'])
   })
 
   it('matches exact, regional, underscore, and ordered browser tags', () => {

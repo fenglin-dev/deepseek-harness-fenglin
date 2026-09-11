@@ -9,8 +9,6 @@ import {
 import { copyFor, detailsFor } from './locales/data-home.ts'
 import { sourceCopyFor } from './locales/data-home-source.ts'
 
-document.documentElement.dataset.desktopChooser = 'true'
-
 type DataHomeMode = 'imported' | 'reused' | 'fresh'
 
 type DataHomeSourceResult =

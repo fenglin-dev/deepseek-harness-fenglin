@@ -1,7 +1,7 @@
 /** Shared locale selection for Electron-owned pages, menus, and notifications. */
 
 /** Locale ids exposed by the community desktop distribution. */
-export const DESKTOP_LOCALE_IDS = ['zh', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'pt-BR', 'ru'] as const
+export const DESKTOP_LOCALE_IDS = ['zh', 'en', 'ru', 'es', 'fr', 'pt-BR', 'de', 'ja', 'ko'] as const
 
 /** Locale id understood by desktop-owned UI. */
 export type DesktopLocaleId = typeof DESKTOP_LOCALE_IDS[number]
@@ -16,13 +16,13 @@ export interface DesktopLocaleDefinition {
 export const DESKTOP_LOCALES: readonly DesktopLocaleDefinition[] = Object.freeze([
   { id: 'zh', label: '\u4e2d\u6587' },
   { id: 'en', label: 'English' },
-  { id: 'ja', label: '\u65e5\u672c\u8a9e' },
-  { id: 'ko', label: '\ud55c\uad6d\uc5b4' },
+  { id: 'ru', label: '\u0420\u0443\u0441\u0441\u043a\u0438\u0439' },
   { id: 'es', label: 'Espa\u00f1ol' },
   { id: 'fr', label: 'Fran\u00e7ais' },
-  { id: 'de', label: 'Deutsch' },
   { id: 'pt-BR', label: 'Portugu\u00eas (Brasil)' },
-  { id: 'ru', label: '\u0420\u0443\u0441\u0441\u043a\u0438\u0439' },
+  { id: 'de', label: 'Deutsch' },
+  { id: 'ja', label: '\u65e5\u672c\u8a9e' },
+  { id: 'ko', label: '\ud55c\uad6d\uc5b4' },
 ])
 
 const exactIds = new Map(DESKTOP_LOCALE_IDS.map(id => [id.toLowerCase(), id] as const))

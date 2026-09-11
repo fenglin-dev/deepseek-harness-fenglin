@@ -10,13 +10,13 @@ import { ru } from './locales.ts'
 
 /** Additional languages offered by Open DSH Desktop. */
 export const DESKTOP_LANGUAGE_DEFINITIONS = [
-  { id: 'ja', label: '日本語', fallback: 'en' },
-  { id: 'ko', label: '한국어', fallback: 'en' },
+  { id: 'ru', label: 'Русский', fallback: 'en' },
   { id: 'es', label: 'Español', fallback: 'en' },
   { id: 'fr', label: 'Français', fallback: 'en' },
-  { id: 'de', label: 'Deutsch', fallback: 'en' },
   { id: 'pt-BR', label: 'Português (Brasil)', fallback: 'en' },
-  { id: 'ru', label: 'Русский', fallback: 'en' },
+  { id: 'de', label: 'Deutsch', fallback: 'en' },
+  { id: 'ja', label: '日本語', fallback: 'en' },
+  { id: 'ko', label: '한국어', fallback: 'en' },
 ] as const satisfies readonly LanguageRegistration[]
 
 /**

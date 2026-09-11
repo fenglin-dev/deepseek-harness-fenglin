@@ -71,7 +71,7 @@ describe('desktop data-home chooser', () => {
     expect(html).toContain('<link rel="icon" href="icon.png">')
     expect(html).toContain('<script src="data-home-preview.js" defer></script>')
     expect(preload).toContain("type DataHomeMode = 'imported' | 'reused' | 'fresh'")
-    expect(preload).toContain("document.documentElement.dataset.desktopChooser = 'true'")
+    expect(preload).not.toContain('document.documentElement.dataset.desktopChooser')
     expect(preload).toContain("ipcRenderer.invoke('dsh:data-home:choose-source', category)")
     expect(preload).toContain("ipcRenderer.invoke('dsh:data-home:choose-target')")
     expect(preload).toContain("ipcRenderer.send('dsh:data-home:selected', selected === 'fresh'")

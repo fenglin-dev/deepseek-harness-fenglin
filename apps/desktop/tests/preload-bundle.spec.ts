@@ -7,7 +7,7 @@ import { build } from 'tsdown'
 import { expect, it, vi } from 'vitest'
 import configs from '../tsdown.preload.config.ts'
 
-it('boots every bundled preload with only Electron available to sandbox require', async () => {
+it('boots every bundled preload before DOM globals are available with only Electron available to sandbox require', async () => {
   const outDir = await mkdtemp(join(tmpdir(), 'dsh-preload-bundle-'))
   try {
     if (!Array.isArray(configs)) throw new Error('Expected separate preload build configurations')

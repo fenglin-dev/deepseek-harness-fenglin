@@ -48,6 +48,15 @@ afterEach(() => {
 })
 
 describe('configuration source and operation flow', () => {
+  it('initializes the fresh-start details and controls when no source is detected', async () => {
+    await mount('zh', '')
+    expect(button('[data-source="fresh"]').ariaChecked).toBe('true')
+    expect(document.querySelector('#detail-title')?.textContent).toBe('全新开始')
+    expect(document.querySelector('#location-value')?.textContent).not.toBe('')
+    button('#continue').click()
+    expect(step()).toBe('destination')
+  })
+
   it('shows official and community detection together and selects the detected community source', async () => {
     await mount('zh', '', '/desktop/release/dsh-home')
     expect(document.querySelector('#official-source-status')?.textContent).toContain('未检测到')
