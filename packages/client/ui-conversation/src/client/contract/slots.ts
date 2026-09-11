@@ -142,7 +142,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'session'
       owner: ConversationHeaderActionOwnerProps
     }
-    /** Extra rows appended to the official Session actions menu. */
+    /** Extra rows appended to the official Session-log actions menu. */
     'conversation.session.header.menu.item': {
       kind: 'list'
       scope: 'session'
@@ -237,19 +237,19 @@ export interface ConversationHeaderActionOwnerProps {
   children?: never
 }
 
-/** One external row, optionally with a submenu, owned by the official Session actions menu. */
+/** One external row, optionally with a submenu, owned by the official Session-log menu. */
 export interface ConversationHeaderMenuContribution {
   /** Stable contribution identity, distinct from nested submenu item ids. */
   readonly id: string
   /** Lower values appear first in the extension group. */
   readonly order?: number
-  /** Menu row rendered after the official Session actions. */
+  /** Menu row rendered after the official Session-log action. */
   readonly item: MenuItem
   /** Handle the selected top-level or nested item id. */
   readonly onSelect: (id: string) => void
 }
 
-/** Registration face supplied only to children of the official Session actions entry. */
+/** Registration face supplied only to children of the official Session-log action. */
 export interface ConversationHeaderMenuItemOwnerProps {
   readonly registerMenuItem: (contribution: ConversationHeaderMenuContribution) => () => void
 }

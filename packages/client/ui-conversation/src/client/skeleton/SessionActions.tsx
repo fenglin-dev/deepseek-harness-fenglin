@@ -1,37 +1,26 @@
-/** Session-level copy, clear, and removal controls for the conversation Header. */
+/** Session-level copy and removal controls for the conversation Header. */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ConversationNode, PartialAssistant } from '../contract/records.ts'
 import type { ConversationSnapshot } from '../contract/snapshot.ts'
-import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  Button, IconCheckOutline16, IconCopyOutline16, IconEllipsisOutline16,
-  IconRefreshOutline16, IconTrashOutline16, Menu, Modal, Tooltip, writeClipboard,
+  Button, IconCheckOutline16, IconCopyOutline16, IconTrashOutline16, Modal, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './SessionActions.module.css'
-import type { ConversationHeaderMenuContribution } from '../contract/slots.ts'
 
-/** Session-scoped operations supplied by the conversation plugin. */
-export interface SessionActionsInjected {
+/** Session removal supplied to the official Session-log menu contribution. */
+export interface SessionRemovalMenuItemInjected {
   /** Hide the current Session while retaining its durable log. */
   archive: () => Promise<void>
-  /** Hide the current Session and open a blank Session in the same Workspace when possible. */
-  clearAndRestart: () => Promise<void>
-  /** Current Workspace identity retained before the Session is archived. */
-  workspaceId?: WorkspaceId | undefined
 }
 
-type SessionActionsProps = SessionActionsInjected
-  & PropsLocale<'conversation'>
+type SessionActionsProps = PropsLocale<'conversation'>
   & PropsRuntime<'conversation.session.header.utilities'>
-  & PropsRenderSlots<'conversation.session.header.menu.item'>
 
-type RegisteredMenuContribution = ConversationHeaderMenuContribution & { readonly token: symbol }
-
-type ConfirmAction = 'clear' | 'remove'
-
-const RESERVED_MENU_IDS = new Set(['clear', 'remove', 'danger-separator', 'extension-separator'])
+type SessionRemovalMenuItemProps = SessionRemovalMenuItemInjected
+  & PropsLocale<'conversation'>
+  & PropsRuntime<'conversation.session.header.menu.item'>
 
 type UserContent = Extract<ConversationNode, { kind: 'user' }>['content']
 
@@ -92,21 +81,15 @@ export function conversationTranscript(
 }
 
 /**
- * Render Session utility controls and confirmation dialogs.
- * @param props - standard Session hooks, localized copy, and persistence operations.
- * @returns Header actions and the active confirmation dialog.
+ * Render the independent transcript-copy utility.
+ * @param props - standard Session hooks and localized copy.
+ * @returns the copy action.
  */
 export function SessionActions({
-  useConversation, useSession, archive, clearAndRestart, workspaceId, renderSlot, t,
+  useConversation, t,
 }: SessionActionsProps): ReactNode {
   const snapshot = useConversation(value => value)
-  const running = useSession(value => value.running)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [confirmation, setConfirmation] = useState<ConfirmAction | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const [menuContributions, setMenuContributions] = useState<ReadonlyMap<string, RegisteredMenuContribution>>(new Map())
   const copyPending = useRef(false)
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const copyEpoch = useRef(0)
@@ -120,27 +103,6 @@ export function SessionActions({
     copyPending.current = false
     if (copyTimer.current !== null) clearTimeout(copyTimer.current)
   }, [])
-
-  const registerMenuItem = useCallback((contribution: ConversationHeaderMenuContribution): (() => void) => {
-    const ids = [contribution.item.id, ...(contribution.item.submenu?.map(item => item.id) ?? [])]
-    if (contribution.item.id !== contribution.id
-      || new Set(ids).size !== ids.length
-      || ids.some(id => RESERVED_MENU_IDS.has(id))) return () => {}
-    const token = Symbol(contribution.id)
-    setMenuContributions(current => new Map(current).set(contribution.id, { ...contribution, token }))
-    return () => {
-      setMenuContributions((current) => {
-        if (current.get(contribution.id)?.token !== token) return current
-        const next = new Map(current)
-        next.delete(contribution.id)
-        return next
-      })
-    }
-  }, [])
-
-  const extensions = useMemo(() => [...menuContributions.values()].sort((left, right) => (
-    (left.order ?? 0) - (right.order ?? 0) || left.id.localeCompare(right.id)
-  )), [menuContributions])
 
   const copy = (): void => {
     if (transcript === '' || copied || copyPending.current) return
@@ -158,121 +120,80 @@ export function SessionActions({
     })
   }
 
+  return (
+    <Tooltip label={copied ? t('copied') : t('session.actions.copy')} side="bottom">
+      <button
+        type="button"
+        className={css.iconButton}
+        aria-label={copied ? t('copied') : t('session.actions.copy')}
+        disabled={transcript === ''}
+        onClick={copy}
+      >
+        {copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}
+      </button>
+    </Tooltip>
+  )
+}
+
+/** Contribute only "Delete session" to the official Session-log actions menu. */
+export function SessionRemovalMenuItem({
+  useSession, registerMenuItem, archive, t,
+}: SessionRemovalMenuItemProps): ReactNode {
+  const running = useSession(value => value.running)
+  const [confirmation, setConfirmation] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => registerMenuItem({
+    id: 'conversation-session-remove',
+    order: 100,
+    item: {
+      id: 'conversation-session-remove',
+      label: t('session.actions.remove'),
+      icon: <IconTrashOutline16 />,
+      danger: true,
+      disabled: running,
+    },
+    onSelect: (id) => {
+      if (id === 'conversation-session-remove') setConfirmation(true)
+    },
+  }), [registerMenuItem, running, t])
+
+  const close = (): void => {
+    if (busy) return
+    setConfirmation(false)
+    setError(null)
+  }
+
   const confirm = (): void => {
-    if (confirmation === null || busy) return
+    if (busy) return
     setBusy(true)
     setError(null)
-    const operation = confirmation === 'clear' ? clearAndRestart : archive
-    void operation().catch((reason: unknown) => {
+    void archive().catch((reason: unknown) => {
       setError(reason instanceof Error ? reason.message : String(reason))
       setBusy(false)
     })
   }
 
-  const close = (): void => {
-    if (busy) return
-    setConfirmation(null)
-    setError(null)
-  }
-
   return (
-    <>
-      <Tooltip label={copied ? t('copied') : t('session.actions.copy')} side="bottom">
-        <button
-          type="button"
-          className={css.iconButton}
-          aria-label={copied ? t('copied') : t('session.actions.copy')}
-          disabled={transcript === ''}
-          onClick={copy}
-        >
-          {copied ? <IconCheckOutline16 /> : <IconCopyOutline16 />}
-        </button>
-      </Tooltip>
-      <Menu
-        open={menuOpen}
-        align="end"
-        portal
-        anchor={(
-          <Tooltip label={t('session.actions.more')} side="bottom">
-            <button
-              type="button"
-              className={css.iconButton}
-              aria-label={t('session.actions.more')}
-              aria-expanded={menuOpen}
-              onClick={() => { setMenuOpen(open => !open) }}
-            >
-              <IconEllipsisOutline16 />
-            </button>
-          </Tooltip>
-        )}
-        items={[
-          {
-            id: 'clear',
-            label: t('session.actions.clear'),
-            icon: <IconRefreshOutline16 />,
-            disabled: running,
-          },
-          { type: 'separator', id: 'danger-separator' },
-          {
-            id: 'remove',
-            label: t('session.actions.remove'),
-            icon: <IconTrashOutline16 />,
-            danger: true,
-            disabled: running,
-          },
-          ...(extensions.length === 0 ? [] : [
-            { type: 'separator' as const, id: 'extension-separator' },
-            ...extensions.map(extension => extension.item),
-          ]),
-        ]}
-        onSelect={(id) => {
-          setMenuOpen(false)
-          if (id === 'clear' || id === 'remove') {
-            setConfirmation(id)
-            return
-          }
-          const matches = extensions.filter(candidate => (
-            candidate.item.id === id || candidate.item.submenu?.some(item => item.id === id) === true
-          ))
-          if (matches.length === 1) matches[0]?.onSelect(id)
-        }}
-        onClose={() => { setMenuOpen(false) }}
-      />
-      {renderSlot('conversation.session.header.menu.item', { registerMenuItem })}
-      <Modal
-        open={confirmation !== null}
-        onClose={close}
-        closeLabel={t('session.actions.cancel')}
-        title={confirmation === 'clear'
-          ? t('session.actions.clear.title')
-          : t('session.actions.remove.title')}
-        description={confirmation === 'clear'
-          ? t(workspaceId === undefined
-            ? 'session.actions.clear.description.noWorkspace'
-            : 'session.actions.clear.description')
-          : t('session.actions.remove.description')}
-        footer={(
-          <>
-            <Button variant="outline" disabled={busy} onClick={close}>
-              {t('session.actions.cancel')}
-            </Button>
-            <Button
-              variant="outline"
-              className={confirmation === 'remove' ? css.dangerAction : undefined}
-              disabled={busy}
-              onClick={confirm}
-            >
-              {busy
-                ? t('session.actions.working')
-                : confirmation === 'clear'
-                  ? t('session.actions.clear.confirm')
-                  : t('session.actions.remove.confirm')}
-            </Button>
-          </>
-        )}
-      >
-        {error !== null && <div className={css.error} role="alert">{error}</div>}
-      </Modal>
-    </>
+    <Modal
+      open={confirmation}
+      onClose={close}
+      closeLabel={t('session.actions.cancel')}
+      title={t('session.actions.remove.title')}
+      description={t('session.actions.remove.description')}
+      footer={(
+        <>
+          <Button variant="outline" disabled={busy} onClick={close}>
+            {t('session.actions.cancel')}
+          </Button>
+          <Button variant="outline" className={css.dangerAction} disabled={busy} onClick={confirm}>
+            {busy ? t('session.actions.working') : t('session.actions.remove.confirm')}
+          </Button>
+        </>
+      )}
+    >
+      {error !== null && <div className={css.error} role="alert">{error}</div>}
+    </Modal>
   )
 }

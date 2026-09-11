@@ -18,14 +18,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-/** Boot the browser half over a real slot tree that declares the official menu extension list. */
+/** Boot the browser half over a real slot tree that declares the header list. */
 async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugin']> }> {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   ctx.slots.register({
     name: 'root',
     children: {
-      'conversation.session.header.menu.item': { kind: 'list', scope: 'session' },
+      'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
   ctx.provide('sessions', {})
@@ -36,7 +36,7 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
 }
 
 function headerEntryIds(ctx: Context): (string | undefined)[] {
-  return ctx.slots.entries('conversation.session.header.menu.item').map(entry => entry.options.id)
+  return ctx.slots.entries('conversation.session.header.utilities').map(entry => entry.options.id)
 }
 
 describe('open-in-app browser half', () => {
@@ -44,10 +44,10 @@ describe('open-in-app browser half', () => {
     expect(inject).toEqual(['sessions', 'slots', 'locale'])
   })
 
-  it('registers an official-menu contribution, and fiber teardown removes it (HMR safety)', async () => {
+  it('registers the header split button, and fiber teardown removes it (HMR safety)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ apps: [] }), { status: 200 })))
     const { ctx, fiber } = await bench()
-    const entry = ctx.slots.entries('conversation.session.header.menu.item')[0]
+    const entry = ctx.slots.entries('conversation.session.header.utilities')[0]
     expect(entry?.component).toBe(OpenInAppAction)
     expect(entry?.options).toMatchObject({ id: 'open-in-app' })
     await fiber.dispose()
@@ -65,7 +65,7 @@ describe('open-in-app browser half', () => {
     })
     vi.stubGlobal('fetch', fetcher)
     const { ctx, fiber } = await bench()
-    const entry = ctx.slots.entries('conversation.session.header.menu.item')[0]
+    const entry = ctx.slots.entries('conversation.session.header.utilities')[0]
     const injected = (entry?.inject as unknown as () => OpenInAppActionInjected)()
 
     await vi.waitFor(() => {
@@ -92,7 +92,7 @@ describe('open-in-app browser half', () => {
       return new Response('', { status: 502 })
     }))
     const { ctx, fiber } = await bench()
-    const entry = ctx.slots.entries('conversation.session.header.menu.item')[0]
+    const entry = ctx.slots.entries('conversation.session.header.utilities')[0]
     const injected = (entry?.inject as unknown as () => OpenInAppActionInjected)()
     await vi.waitFor(() => {
       expect(injected.hooks.openInAppApps.getSnapshot()).toEqual([])

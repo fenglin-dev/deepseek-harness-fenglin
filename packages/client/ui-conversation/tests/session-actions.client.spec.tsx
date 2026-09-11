@@ -10,16 +10,14 @@ import { EMPTY_CHAT_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
-import type { ConversationHeaderMenuItemOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ConversationHeaderMenuContribution } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { zh } from '../src/client/locales.ts'
 import {
-  conversationTranscript, SessionActions,
+  conversationTranscript, SessionActions, SessionRemovalMenuItem,
 } from '../src/client/skeleton/SessionActions.tsx'
 
 const SID = 'session-actions' as SessionId
-const WID = 'workspace-actions' as WorkspaceId
 const t = makeTranslate(zh, commonZh)
 
 const nodes = [
@@ -47,27 +45,32 @@ function sessionSnapshot(running = false): SessionSnapshot {
   }
 }
 
-function mount(running = false) {
+function mountCopy() {
   const conversation = createSnapshotStore(snapshot())
-  const session = createSnapshotStore(sessionSnapshot(running))
-  const archive = vi.fn(() => Promise.resolve())
-  const clearAndRestart = vi.fn(() => Promise.resolve())
-  let menuOwner: ConversationHeaderMenuItemOwnerProps | undefined
   const props = {
     sessionId: SID,
     useConversation: bindSnapshotSelector(conversation),
-    useSession: bindSnapshotSelector(session),
-    workspaceId: WID,
-    archive,
-    clearAndRestart,
-    renderSlot: (_key: string, owner: ConversationHeaderMenuItemOwnerProps) => {
-      menuOwner = owner
-      return null
-    },
     t,
   } as unknown as ComponentProps<typeof SessionActions>
   render(<SessionActions {...props} />)
-  return { archive, clearAndRestart, menuOwner: () => menuOwner! }
+}
+
+function mountRemoval(running = false) {
+  const session = createSnapshotStore(sessionSnapshot(running))
+  const archive = vi.fn(() => Promise.resolve())
+  let contribution: ConversationHeaderMenuContribution | undefined
+  const props = {
+    sessionId: SID,
+    useSession: bindSnapshotSelector(session),
+    archive,
+    registerMenuItem: (next: ConversationHeaderMenuContribution) => {
+      contribution = next
+      return () => { if (contribution === next) contribution = undefined }
+    },
+    t,
+  } as unknown as ComponentProps<typeof SessionRemovalMenuItem>
+  render(<SessionRemovalMenuItem {...props} />)
+  return { archive, contribution: () => contribution! }
 }
 
 afterEach(() => {
@@ -79,7 +82,7 @@ describe('SessionActions', () => {
   it('copies the loaded visible transcript with localized speaker labels', async () => {
     const writeText = vi.fn(() => Promise.resolve())
     vi.stubGlobal('navigator', { clipboard: { writeText } })
-    mount()
+    mountCopy()
 
     fireEvent.click(screen.getByRole('button', { name: '复制已加载对话' }))
     await waitFor(() => {
@@ -88,66 +91,20 @@ describe('SessionActions', () => {
     expect(screen.getByRole('button', { name: '复制成功' })).toBeTruthy()
   })
 
-  it('requires confirmation before clearing into a new Session', async () => {
-    const { clearAndRestart, archive } = mount()
-    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '清空并新建会话' }))
-
-    expect(screen.getByRole('dialog', { name: '清空当前会话？' }).textContent).toContain('同一工作区')
-    expect(clearAndRestart).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: '清空并新建' }))
-    await waitFor(() => { expect(clearAndRestart).toHaveBeenCalledTimes(1) })
-    expect(archive).not.toHaveBeenCalled()
-  })
-
-  it('explains retained audit logs before removing the Session', async () => {
-    const { archive } = mount()
-    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
+  it('contributes only Delete session and explains retained audit logs before removal', async () => {
+    const b = mountRemoval()
+    await waitFor(() => { expect(b.contribution().item.label).toBe('删除会话') })
+    expect(b.contribution().id).toBe('conversation-session-remove')
+    act(() => { b.contribution().onSelect('conversation-session-remove') })
 
     expect(screen.getByRole('dialog', { name: '删除当前会话？' }).textContent).toContain('底层日志不会被物理删除')
     fireEvent.click(screen.getByRole('button', { name: '删除会话' }))
-    await waitFor(() => { expect(archive).toHaveBeenCalledTimes(1) })
+    await waitFor(() => { expect(b.archive).toHaveBeenCalledTimes(1) })
   })
 
-  it('disables lifecycle actions while the agent is running', () => {
-    mount(true)
-    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }))
-    expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: '清空并新建会话' }).disabled).toBe(true)
-    expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: '删除会话' }).disabled).toBe(true)
-  })
-
-  it('appends registered extension rows after the official actions and dispatches them', () => {
-    const selected = vi.fn()
-    const b = mount()
-    let unregister = () => {}
-    act(() => {
-      unregister = b.menuOwner().registerMenuItem({
-        id: 'community-action',
-        item: { id: 'community-action', label: '社区操作' },
-        onSelect: selected,
-      })
-    })
-    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }))
-    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
-      '清空并新建会话', '删除会话', '社区操作',
-    ])
-    fireEvent.click(screen.getByRole('menuitem', { name: '社区操作' }))
-    expect(selected).toHaveBeenCalledWith('community-action')
-    act(() => { unregister() })
-  })
-
-  it('rejects extension ids that could impersonate an official action', () => {
-    const b = mount()
-    act(() => {
-      b.menuOwner().registerMenuItem({
-        id: 'clear',
-        item: { id: 'clear', label: '伪造清空' },
-        onSelect: vi.fn(),
-      })
-    })
-    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }))
-    expect(screen.queryByRole('menuitem', { name: '伪造清空' })).toBeNull()
+  it('disables only the contributed Delete session row while the agent is running', async () => {
+    const b = mountRemoval(true)
+    await waitFor(() => { expect(b.contribution().item.disabled).toBe(true) })
   })
 })
 

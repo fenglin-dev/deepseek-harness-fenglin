@@ -1,5 +1,5 @@
 ---
-description: "Web Session-header menu item: opens the session workspace directory in any locally installed application reported by the host."
+description: "Web Session-header \"Open In...\" split button: launches the remembered application on the session workspace directory and lists every application the host probed as installed."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package provides the browser surface of the open-in-app feature: an `Open locally` item at the bottom of the official Session actions menu, with a submenu listing every catalog application the host probed as installed. Choosing an application opens the current session's workspace directory (the summary's `cwd`) and remembers that choice. Availability, icons, and launches come from the host routes of [`dsh-host-open-in-app`](../../host/open-in-app/README.md); mount the two packages together. A session without a workspace directory, or a host where nothing nameable is installed, contributes no menu item.
+This package provides the browser surface of the open-in-app feature: a Session-header split button whose main button opens the current session's workspace directory (the summary's `cwd`) in the remembered application, and whose chevron lists every catalog application the host probed as installed. Availability, icons, and launches come from the host routes of [`dsh-host-open-in-app`](../../host/open-in-app/README.md); mount the two packages together. A session without a workspace directory, or a host where nothing nameable is installed, renders no button at all.
 
 ## Table of Contents
 
@@ -25,11 +25,11 @@ This package provides the browser surface of the open-in-app feature: an `Open l
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin in the Web composition beside [`dsh-host-open-in-app`](../../host/open-in-app/README.md); the pair composes the whole feature in two cordis.yml rows and this row takes no config. The official Session actions menu gains an `Open locally` submenu whenever the host probed at least one installed catalog application and the session has a known workspace directory.
+Mount this plugin in the Web composition beside [`dsh-host-open-in-app`](../../host/open-in-app/README.md); the pair composes the whole feature in two cordis.yml rows and this row takes no config. The Session header grows an "Open In..." split button whenever the host probed at least one installed catalog application and the session has a known workspace directory.
 
 ### What to expect
 
-The parent row shows the remembered application's icon — the real application icon wherever the host extracts one (macOS bundle icons, Windows executable icons, Linux theme icons), a generic glyph where it serves none — and opens a submenu of installed applications. Availability is read once per page from the host; the last chosen application persists in the browser (`dsh.open-in-app.choice`), and a choice that is no longer installed falls back to the first available entry. A launch that lasts longer than 250 ms disables the row, and a failed launch shows a temporary error label for two seconds. All copy lives in the bilingual `open-in-app` locale namespace; an application id the dictionaries cannot name is not offered.
+The main button shows the remembered application's icon — the real application icon wherever the host extracts one (macOS bundle icons, Windows executable icons, Linux theme icons), a generic glyph where it serves none — and a design-system tooltip ("Open locally"); clicking launches immediately. The chevron opens a dense menu of the installed applications with the remembered one marked by a filled row. Availability is read once per page from the host; the last chosen application persists in the browser (`dsh.open-in-app.choice`), and a choice that is no longer installed falls back to the first available entry. A launch that finishes quickly leaves the button untouched — the dimmed busy treatment appears only after 250 ms in flight — and a failed launch shows the error tooltip and a red outline for two seconds. All copy lives in the bilingual `open-in-app` locale namespace; an application id the dictionaries cannot name is not offered.
 
 -----
 
@@ -39,7 +39,7 @@ The parent row shows the remembered application's icon — the real application 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The plugin registers a contribution on `conversation.session.header.menu.item` through the standard slot/inject currency and registers the `open-in-app` dictionaries as one effect. The official conversation component owns the only ellipsis trigger, appends contributed rows below its built-in actions, and dispatches submenu selections back to this contribution. A page-lifetime controller ([`src/client/controller.ts`](src/client/controller.ts)) owns the once-per-page availability read, the persisted choice snapshot store, and the launch POST; the component receives both stores through the inject `hooks` compartment, so every Session header shares one truth. Route paths and wire payload types are inlined from the host package's browser-safe `@deepseek-ai/dsh-host-open-in-app/shared` subpath. In-flight launches are guarded by a ref — repeat selections during a launch are ignored whole — and the busy/error state is timer-driven around the `launch` promise. The node half is an empty `apply` that keeps the plugin on the host roster.
+The plugin registers the split button on `conversation.session.header.utilities` through the standard slot/inject currency and registers the `open-in-app` dictionaries as one effect. A page-lifetime controller ([`src/client/controller.ts`](src/client/controller.ts)) owns the once-per-page availability read, the persisted choice snapshot store, and the launch POST; the component receives both stores through the inject `hooks` compartment, so every Session header shares one truth. Route paths and wire payload types are inlined from the host package's browser-safe `@deepseek-ai/dsh-host-open-in-app/shared` subpath. In-flight launches are guarded by a ref — repeat clicks and menu picks during a launch are ignored whole (a pick would otherwise persist a choice the gesture never opened) — and the busy/error dress is timer-driven around the `launch` promise. The node half is an empty `apply` that keeps the plugin on the host roster.
 
 </details>
 
@@ -57,7 +57,7 @@ The plugin registers a contribution on `conversation.session.header.menu.item` t
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the menu item is browser chrome; nothing here reaches a model request.
+None, as the split button is browser chrome; nothing here reaches a model request.
 
 #### KV Cache effect
 
@@ -80,4 +80,4 @@ The feature-level decisions, including the split into the host package and this 
 
 </details>
 
-**Runtime invariant:** No companion is published. The plugin registers one dictionary effect and one Session-menu contribution whose disposal the HMR-safety spec proves; availability and choice live in the controller's snapshot stores with no second copy to diverge.
+**Runtime invariant:** No companion is published. The plugin registers one dictionary effect and one header-slot entry whose disposal the HMR-safety spec proves; availability and choice live in the controller's snapshot stores with no second copy to diverge.

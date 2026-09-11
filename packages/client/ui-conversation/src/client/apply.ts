@@ -2,7 +2,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { IWorkspaces } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { createSnapshotStore, type BoundActions } from '@deepseek-ai/dsh-client-store'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -31,7 +30,9 @@ import type { EnterBehaviorRowInjected } from './settings/EnterBehaviorRow.tsx'
 import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
 import { ConversationPanel } from './skeleton/ConversationPanel.tsx'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
-import { SessionActions, type SessionActionsInjected } from './skeleton/SessionActions.tsx'
+import {
+  SessionActions, SessionRemovalMenuItem, type SessionRemovalMenuItemInjected,
+} from './skeleton/SessionActions.tsx'
 import { InputBar } from './skeleton/InputBar.tsx'
 import { todoDockEntry } from './skeleton/TodoPanel.tsx'
 import { resolveActiveView } from './view-selection.ts'
@@ -47,7 +48,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Services required by the Conversation plugin. */
 export const inject = [
-  'slots', 'sessions', 'workspaces', 'fileUpload', 'uiSession', 'uiWorkspace', 'locale', 'settingsScope',
+  'slots', 'sessions', 'fileUpload', 'uiSession', 'uiWorkspace', 'locale', 'settingsScope',
 ]
 
 /** Conversation runtime configuration. */
@@ -120,7 +121,6 @@ function concreteConversation(ctx: Context): ConversationController {
  */
 export function apply(ctx: Context, config: Config = Config({})): void {
   const sessions = ctx.sessions
-  const workspaces = ctx.get('workspaces') as IWorkspaces
   const slots = ctx.slots
   // Schemastery's field default is materialized before Cordis calls apply.
   const maxConcurrentFileUploads = config.maxConcurrentFileUploads as number
@@ -408,22 +408,17 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     id: 'session-actions',
     order: -100,
     locale: NS,
-    children: {
-      'conversation.session.header.menu.item': { kind: 'list', scope: 'session' },
-    },
-    inject: (sessionId: SessionId): SessionActionsInjected => {
-      const workspaceId = workspaces.list.getSnapshot().items
-        .find(item => item.sessionIds.includes(sessionId))?.workspaceId
-      return {
-        ...(workspaceId === undefined ? {} : { workspaceId }),
-        archive: () => workspaceNavigation.archiveSession(sessionId),
-        clearAndRestart: async () => {
-          await workspaceNavigation.archiveSession(sessionId)
-          workspaceNavigation.startSession(workspaceId)
-        },
-      }
-    },
   }, SessionActions))
+
+  ctx.slots.inject('conversation.session.header.menu.item', () => ctx.slots.register({
+    name: 'conversation.session.header.menu.item',
+    id: 'conversation-session-remove',
+    order: 100,
+    locale: NS,
+    inject: (sessionId: SessionId): SessionRemovalMenuItemInjected => ({
+      archive: () => workspaceNavigation.archiveSession(sessionId),
+    }),
+  }, SessionRemovalMenuItem))
 
   ctx.plugin(ConversationController, {
     input: inputHub,

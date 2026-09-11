@@ -1232,8 +1232,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'conversation.session.header.menu.item',
     kind: 'list',
     scope: 'session',
-    summary: 'Extra rows appended to the official Session actions menu.',
-    doc: 'Extra rows appended to the official Session actions menu.',
+    summary: 'Extra rows appended to the official Session-log actions menu.',
+    doc: 'Extra rows appended to the official Session-log actions menu.',
     registerOptions: [
       {
         name: 'id',
@@ -1255,7 +1255,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Registration face supplied only to children of the official Session actions entry. */\nexport interface ConversationHeaderMenuItemOwnerProps {\n  readonly registerMenuItem: (contribution: ConversationHeaderMenuContribution) => () => void\n}',
+      '/** Registration face supplied only to children of the official Session-log action. */\nexport interface ConversationHeaderMenuItemOwnerProps {\n  readonly registerMenuItem: (contribution: ConversationHeaderMenuContribution) => () => void\n}',
     ],
     ownerPropsReferences: [
       'ConversationHeaderMenuContribution',
@@ -1279,10 +1279,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     keyDomain: '',
     hookContext: '',
     slotInject: '',
-    declaredBy: 'an entry in \'conversation.session.header.utilities\' (client-ui-conversation), so it exists while that entry is mounted',
+    declaredBy: 'an entry in \'conversation.session.header.utilities\' (session-log-export), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-open-in-app OpenInAppAction id \'open-in-app\'',
-      'session-log-export SessionLogDownloadHeaderAction id \'session-log-download\'',
+      'client-ui-conversation SessionRemovalMenuItem id \'conversation-session-remove\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.session.header.menu.item\', () => ctx.slots.register(\n      { name: \'conversation.session.header.menu.item\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -1340,6 +1339,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'conversation.session.header\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
       'client-ui-conversation SessionActions id \'session-actions\'',
+      'client-ui-open-in-app OpenInAppAction id \'open-in-app\'',
+      'session-log-export SessionLogDownloadHeaderAction id \'session-log-download\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.session.header.utilities\', () => ctx.slots.register(\n      { name: \'conversation.session.header.utilities\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
