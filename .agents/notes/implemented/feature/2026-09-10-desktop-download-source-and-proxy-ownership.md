@@ -16,7 +16,7 @@ Application updates select either the existing GitHub adapter or an independent 
 
 The official market does not expose a host-managed network-policy capability, so Desktop does not display npm or GitHub plugin download controls. Plugin operations retain the Profile, pnpm, Git, and market network configuration. The bundled `dshmarket` archive is the unmodified package published by its upstream maintainer.
 
-The CNB sync workflow mirrors only non-draft, non-prerelease GitHub Releases with a valid `SHA256SUMS`, verifies bytes before upload, verifies anonymous CNB assets, and publishes the index last. The workflow remains disabled until maintainers configure both `CNB_SYNC_ENABLED=true` and `CNB_TOKEN`; credentials stay in CI secrets and never ship to clients.
+The CNB sync workflow mirrors one explicitly selected non-draft, non-prerelease GitHub Release with a valid `SHA256SUMS`; scheduled runs select only GitHub's current latest Release. It verifies bytes before upload, verifies anonymous CNB assets, and publishes the index last. Manual cleanup requires exact CNB tag names and cannot delete the selected target. The workflow remains disabled until maintainers configure both `CNB_SYNC_ENABLED=true` and `CNB_TOKEN`; credentials stay in CI secrets and never ship to clients.
 
 ## Alternatives considered
 

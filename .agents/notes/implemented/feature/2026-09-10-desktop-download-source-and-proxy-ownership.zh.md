@@ -16,7 +16,7 @@ Electron 在 `userData` 下管理带版本的应用更新策略。渲染器只�
 
 官方市场尚未提供由宿主管理网络策略的能力，因此 Desktop 不显示 npm 或 GitHub 插件下载设置。插件操作继续使用 Profile、pnpm、Git 和市场的网络配置。预装的 `dshmarket` 归档是其上游维护者发布的未修改软件包。
 
-CNB 同步工作流只镜像具有有效 `SHA256SUMS` 的非草稿、非预发布 GitHub Release；它会在上传前校验字节，验证匿名 CNB 附件，并最后发布索引。只有维护者同时配置 `CNB_SYNC_ENABLED=true` 和 `CNB_TOKEN` 后工作流才会启用；凭据只保存在 CI Secret 中，不会进入客户端。
+CNB 同步工作流只镜像一个明确指定且具有有效 `SHA256SUMS` 的非草稿、非预发布 GitHub Release；定时任务也只选择 GitHub 当前的 latest Release。它会在上传前校验字节，验证匿名 CNB 附件，并最后发布索引。手动清理必须提供精确的 CNB 标签名，且不能删除当前选定的目标版本。只有维护者同时配置 `CNB_SYNC_ENABLED=true` 和 `CNB_TOKEN` 后工作流才会启用；凭据只保存在 CI Secret 中，不会进入客户端。
 
 ## Alternatives considered
 
