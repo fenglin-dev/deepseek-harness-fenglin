@@ -23,6 +23,10 @@ copyFileSync(
   fileURLToPath(new URL('../lib/data-home.html', import.meta.url)),
 )
 copyFileSync(
+  fileURLToPath(new URL('../src/data-home-preview.js', import.meta.url)),
+  fileURLToPath(new URL('../lib/data-home-preview.js', import.meta.url)),
+)
+copyFileSync(
   fileURLToPath(new URL('../src/titlebar.html', import.meta.url)),
   fileURLToPath(new URL('../lib/titlebar.html', import.meta.url)),
 )

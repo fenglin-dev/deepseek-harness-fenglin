@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   desktopDataHomeSetup,
   desktopDataHomesOverlap,
+  copyCommunityDesktopData,
   hasDesktopData,
   hasImportableDesktopData,
   importOfficialDesktopData,
@@ -16,6 +17,7 @@ import {
   resolveDesktopDataHomeSwitch,
   resolveDesktopDataHomeRecoverySelection,
   resolveDesktopDataHomeSource,
+  resolveCommunityDataHomeSource,
   resolveEmptyDesktopDataHome,
   resolveRecordedDesktopDataHome,
   resolveDesktopDataHomeLayout,
@@ -47,13 +49,51 @@ describe('desktop data home', () => {
     })).toThrow('must be an absolute path')
   })
 
+  it('resolves a community root to its data home, including Chinese paths and external setup pointers', async () => {
+    const root = await fixture()
+    const desktop = join(root, '社区 桌面')
+    const nested = join(desktop, 'dsh-home')
+    await mkdir(nested, { recursive: true })
+    await writeFile(join(nested, 'settings.yaml'), 'settings: {}')
+    expect((await resolveCommunityDataHomeSource(desktop))?.path).toBe(nested)
+    expect((await resolveCommunityDataHomeSource(nested))?.path).toBe(nested)
+    const external = join(root, '自定义 数据')
+    await mkdir(external)
+    await writeFile(join(external, '.credentials.yaml'), '{}')
+    await writeDesktopDataHomeSetup(join(desktop, 'data-home-setup.json'), desktopDataHomeSetup('created', external))
+    expect((await resolveCommunityDataHomeSource(desktop))?.path).toBe(external)
+    expect((await resolveCommunityDataHomeSource(desktop))?.entries).not.toContain('data-home-setup.json')
+  })
+
+  it('rejects malformed or missing recorded community homes instead of choosing a stale nested home', async () => {
+    const root = await fixture()
+    await mkdir(join(root, 'dsh-home'))
+    await writeFile(join(root, 'dsh-home/settings.yaml'), '{}')
+    const marker = join(root, 'data-home-setup.json')
+    await writeFile(marker, '{')
+    expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
+    await writeDesktopDataHomeSetup(marker, desktopDataHomeSetup('created', join(root, 'missing')))
+    expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
+    await writeDesktopDataHomeSetup(marker, desktopDataHomeSetup('created', 'relative-path'))
+    expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
+  })
+
+  it('does not treat desktop logs, caches or an empty folder as reusable community data', async () => {
+    const root = await fixture()
+    expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
+    await mkdir(join(root, 'logs'))
+    await writeFile(join(root, 'logs/harness.log'), 'example')
+    expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
+  })
   it('separates packaged and development data under the repository name', () => {
     const packaged = resolveDesktopDataHomeLayout('/app-data', '/home/user', true, {})
     const development = resolveDesktopDataHomeLayout('/app-data', '/home/user', false, {})
     expect(packaged.desktopRoot).toBe(join('/app-data', 'open-deepseek-harness-desktop'))
+    expect(packaged.communityDesktopRoot).toBe(join('/app-data', 'open-deepseek-harness-desktop', 'development'))
     expect(packaged.dshHome).toBe(join(packaged.desktopRoot, 'dsh-home'))
     expect(packaged.sessionData).toBe(join(packaged.desktopRoot, 'session-data'))
     expect(development.desktopRoot).toBe(join('/app-data', 'open-deepseek-harness-desktop', 'development'))
+    expect(development.communityDesktopRoot).toBe(join('/app-data', 'open-deepseek-harness-desktop'))
     expect(development.dshHome).toBe(join(development.desktopRoot, 'dsh-home'))
     expect(packaged.officialDshHome).toBe(join('/home/user', '.dsh'))
   })
@@ -105,6 +145,28 @@ describe('desktop data home', () => {
       profile: 'web', entries: [], allowBuilds: {},
     })
     expect(await hasDesktopData(target)).toBe(true)
+  })
+
+  it('copies a community desktop home without replaying its completed onboarding', async () => {
+    const root = await fixture()
+    const community = join(root, 'community', 'dsh-home')
+    const target = join(root, 'copied', 'dsh-home')
+    await mkdir(community, { recursive: true })
+    await writeFile(join(community, 'settings.yaml'), [
+      'locale: zh',
+      'ui-onboarding:',
+      '  welcomeNoticeVersion: 2026-08-19.1',
+      '',
+    ].join('\n'))
+
+    await copyCommunityDesktopData(community, target)
+
+    const settings = await readFile(join(target, 'settings.yaml'), 'utf8')
+    expect(settings).toContain('ui-onboarding')
+    expect(settings).toContain('welcomeNoticeVersion')
+    const setup = desktopDataHomeSetup('copied', target, community)
+    expect(setup.importedOnboardingReset).toBeUndefined()
+    expect(resolveRecordedDesktopDataHome(resolveDesktopDataHomeLayout(join(root, 'app'), root, true, {}), setup)).toBe(target)
   })
 
   it('refuses a non-empty destination and records setup atomically', async () => {

@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; script-src 'self'; style-src 'unsafe-inline'">
+    <link rel="icon" href="icon.png">
     <title>选择数据目录</title>
     <style>
       :root {
@@ -153,24 +154,30 @@
       .brand-copy small { color: #747983; font-size: 12px; font-weight: 550; letter-spacing: .01em; line-height: 1.2; }
       .content { display: grid; grid-template-columns: minmax(390px, 44%) 1fr; min-height: 0; }
       .choices-pane { border-right: 1px solid #e6e7ea; min-height: 0; overflow: auto; padding: 30px 38px 34px; }
+      .choice-title { flex-wrap: wrap; overflow-wrap: anywhere; }
+      .target-choice { font: inherit; color: inherit; text-align: left; }
       .source-panel {
         background: #f8f9fb;
         border: 1px solid #e1e3e8;
         border-radius: 13px;
-        margin-bottom: 14px;
-        padding: 15px 16px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin: 0 0 14px;
+        overflow: hidden;
       }
-      .source-heading { align-items: center; display: flex; gap: 9px; }
+      .source-entry { min-width: 0; padding: 13px; }
+      .source-entry + .source-entry { border-left: 1px solid #e1e3e8; }
+      .source-heading { align-items: flex-start; display: flex; gap: 8px; }
       .source-dot { background: #9ca1ab; border-radius: 50%; box-shadow: 0 0 0 4px rgb(156 161 171 / 12%); height: 8px; width: 8px; }
-      .source-panel[data-status="valid"] .source-dot { background: #299469; box-shadow: 0 0 0 4px rgb(41 148 105 / 12%); }
-      .source-panel[data-status="unreadable"] .source-dot { background: #c88614; box-shadow: 0 0 0 4px rgb(200 134 20 / 13%); }
-      .source-heading strong { font-size: 13px; font-weight: 650; }
-      .source-path { color: #5f646e; display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; margin: 9px 0 0 17px; overflow-wrap: anywhere; }
-      .source-summary { color: #747983; font-size: 12px; line-height: 1.45; margin: 7px 0 0 17px; }
-      .source-error { color: #bc433d; font-size: 12px; line-height: 1.45; margin: 8px 0 0 17px; }
-      .source-error[hidden], .source-path[hidden] { display: none; }
-      .source-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0 17px; }
-      .source-action { appearance: none; background: #fff; border: 1px solid #cfd3da; border-radius: 8px; color: #2e64ca; cursor: pointer; font-size: 12px; font-weight: 590; padding: 7px 10px; }
+      .source-entry[data-status="valid"] .source-dot { background: #299469; box-shadow: 0 0 0 4px rgb(41 148 105 / 12%); }
+      .source-entry[data-status="unreadable"] .source-dot { background: #c88614; box-shadow: 0 0 0 4px rgb(200 134 20 / 13%); }
+      .source-heading strong { font-size: 12px; font-weight: 650; line-height: 1.35; }
+      .source-path { color: #5f646e; display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.4; margin: 8px 0 0; overflow-wrap: anywhere; }
+      .source-summary { color: #747983; font-size: 11px; line-height: 1.4; margin: 6px 0 0; }
+      .source-error { color: #bc433d; font-size: 11px; line-height: 1.4; margin: 7px 0 0; }
+      .source-error[hidden], .source-path[hidden], .source-summary[hidden] { display: none; }
+      .source-actions { display: flex; margin: 10px 0 0; }
+      .source-action { appearance: none; background: #fff; border: 1px solid #cfd3da; border-radius: 8px; color: #2e64ca; cursor: pointer; font-size: 11px; font-weight: 590; padding: 7px 9px; width: 100%; }
       .source-action:hover { background: #f2f5fb; border-color: #b7c6e4; }
       .source-action:focus-visible { outline: 2px solid #4176e6; outline-offset: 2px; }
       .source-action[hidden] { display: none; }
@@ -191,7 +198,7 @@
         transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
         width: 100%;
       }
-      .choice[data-mode="imported"] {
+      .choice[data-source="official"] {
         --mode-accent: #4176e6;
         --mode-border: #b8ccfb;
         --mode-hover: #f7f9ff;
@@ -199,7 +206,7 @@
         --mode-surface-start: #eaf2ff;
         --mode-surface-end: #f8fbff;
       }
-      .choice[data-mode="reused"] {
+      .choice[data-source="community"] {
         --mode-accent: #c88614;
         --mode-border: #edce91;
         --mode-hover: #fffbf3;
@@ -207,7 +214,7 @@
         --mode-surface-start: #fff5dd;
         --mode-surface-end: #fffaf1;
       }
-      .choice[data-mode="fresh"] {
+      .choice[data-source="fresh"] {
         --mode-accent: #2d9565;
         --mode-border: #a9d9c2;
         --mode-hover: #f5fbf8;
@@ -249,9 +256,9 @@
         position: relative;
         transition: background 180ms ease;
       }
-      .detail[data-mode="imported"] { --detail-accent: #376fdc; --detail-dot: rgb(65 118 230 / 20%); --detail-surface: rgb(236 244 255 / 84%); }
-      .detail[data-mode="reused"] { --detail-accent: #ad700a; --detail-dot: rgb(200 134 20 / 20%); --detail-surface: rgb(255 247 228 / 86%); }
-      .detail[data-mode="fresh"] { --detail-accent: #237d54; --detail-dot: rgb(45 149 101 / 20%); --detail-surface: rgb(235 249 242 / 86%); }
+      .detail[data-source="official"] { --detail-accent: #376fdc; --detail-dot: rgb(65 118 230 / 20%); --detail-surface: rgb(236 244 255 / 84%); }
+      .detail[data-source="community"] { --detail-accent: #ad700a; --detail-dot: rgb(200 134 20 / 20%); --detail-surface: rgb(255 247 228 / 86%); }
+      .detail[data-source="fresh"] { --detail-accent: #237d54; --detail-dot: rgb(45 149 101 / 20%); --detail-surface: rgb(235 249 242 / 86%); }
       .detail::before {
         background-image: radial-gradient(circle, var(--detail-dot) 1px, transparent 1.5px);
         background-size: 11px 11px;
@@ -301,7 +308,7 @@
         transition: opacity 180ms ease, transform 260ms cubic-bezier(.22, .8, .24, 1), visibility 0s linear 0s;
         visibility: visible;
       }
-      .detail-stage[data-step="destination"] .facts {
+      .detail-stage:not([data-step="details"]) .facts {
         opacity: 0;
         pointer-events: none;
         transform: translateX(-18px);
@@ -312,7 +319,7 @@
       .fact:last-child { border-bottom: 0; }
       .fact dt { font-size: 14px; font-weight: 620; margin-bottom: 6px; }
       .fact dd { color: #696d76; font-size: 13px; line-height: 1.55; margin: 0; }
-      .destination-panel {
+      .destination-panel, .operation-panel {
         grid-area: stage;
         margin: 0;
         max-width: 680px;
@@ -322,6 +329,7 @@
         transition: opacity 160ms ease, transform 220ms ease, visibility 0s linear 220ms;
         visibility: hidden;
       }
+      .detail-stage[data-step="operation"] .operation-panel,
       .detail-stage[data-step="destination"] .destination-panel {
         opacity: 1;
         pointer-events: auto;
@@ -329,7 +337,7 @@
         transition: opacity 200ms ease 70ms, transform 280ms cubic-bezier(.22, .8, .24, 1) 50ms, visibility 0s linear 0s;
         visibility: visible;
       }
-      .destination-panel h2 { color: var(--detail-accent); font-size: 16px; margin: 0 0 8px; }
+      .destination-panel h2, .operation-panel h2 { color: var(--detail-accent); font-size: 16px; margin: 0 0 8px; }
       .destination-summary { color: #696d76; line-height: 1.55; margin: 0 0 18px; }
       .target-choices { display: grid; gap: 12px; }
       .target-choice {
@@ -404,12 +412,18 @@
       tbody th { background: #f7f8fa; color: #4f5560; font-weight: 620; }
       thead th { background: #fafbfc; font-weight: 650; text-align: center; }
       thead th[data-mode]::before { border-radius: 50%; content: ''; display: inline-block; height: 7px; margin-right: 7px; vertical-align: 1px; width: 7px; }
-      thead th[data-mode="imported"] { background: #f1f6ff; color: #315fae; }
-      thead th[data-mode="imported"]::before { background: #4f7fe5; }
-      thead th[data-mode="reused"] { background: #fff9ec; color: #93600b; }
-      thead th[data-mode="reused"]::before { background: #d99a2b; }
-      thead th[data-mode="fresh"] { background: #f0faf5; color: #267552; }
-      thead th[data-mode="fresh"]::before { background: #3ca477; }
+      thead th[data-source="official"] { background: #f1f6ff; color: #315fae; }
+      thead th[data-source="official"]::before { background: #4f7fe5; }
+      thead th[data-source="community"] { background: #fff9ec; color: #93600b; }
+      thead th[data-source="community"]::before { background: #d99a2b; }
+      thead th[data-source="fresh"] { background: #f0faf5; color: #267552; }
+      thead th[data-source="fresh"]::before { background: #3ca477; }
+      thead th[data-option="copy"], thead th[data-option="default"] { background: #f1f6ff; color: #315fae; }
+      thead th[data-option="copy"]::before, thead th[data-option="default"]::before { background: #4f7fe5; }
+      thead th[data-option="reuse"] { background: #fff9ec; color: #93600b; }
+      thead th[data-option="reuse"]::before { background: #d99a2b; }
+      thead th[data-option="custom"] { background: #f0faf5; color: #267552; }
+      thead th[data-option="custom"]::before { background: #3ca477; }
       .comparison-note { background: linear-gradient(135deg, #f6f7f9, #fafbfc); border: 1px solid #eceef1; border-radius: 12px; color: #62666f; font-size: 13px; line-height: 1.55; margin: 18px 0 0; padding: 12px 14px; }
       .comparison-footer { display: flex; justify-content: flex-end; margin-top: 20px; }
       @media (prefers-color-scheme: dark) {
@@ -417,7 +431,8 @@
         body { background: #191a1e; }
         .titlebar, .choice, .fact, .footer { border-color: #34363d; }
         .choices-pane { border-color: #34363d; }
-        .source-panel { background: #24262b; border-color: #3f424a; }
+        .source-panel, .source-entry + .source-entry { border-color: #3f424a; }
+        .source-panel { background: #24262b; }
         .source-path, .source-summary { color: #a8abb3; }
         .source-error { color: #f08a82; }
         .source-action { background: #292b31; border-color: #494c55; color: #a8c4f7; }
@@ -445,15 +460,15 @@
         .language-option[aria-selected="true"] { background: #26385d; color: #a8c4f7; }
         .language-code { color: #8d919c; }
         .language-option[aria-selected="true"] .language-code { color: #89a8e4; }
-        .choice[data-mode="imported"] { --mode-accent: #78a3f3; --mode-border: #40557c; --mode-hover: #202735; --mode-shadow: rgb(0 0 0 / 18%); --mode-surface-start: #202b43; --mode-surface-end: #1d2330; }
-        .choice[data-mode="reused"] { --mode-accent: #e0ae55; --mode-border: #66502c; --mode-hover: #2c281f; --mode-shadow: rgb(0 0 0 / 18%); --mode-surface-start: #33291d; --mode-surface-end: #27241f; }
-        .choice[data-mode="fresh"] { --mode-accent: #70bd96; --mode-border: #355f4b; --mode-hover: #202d28; --mode-shadow: rgb(0 0 0 / 18%); --mode-surface-start: #1d3228; --mode-surface-end: #1d2924; }
+        .choice[data-source="official"] { --mode-accent: #78a3f3; --mode-border: #40557c; --mode-hover: #202735; --mode-shadow: rgb(0 0 0 / 18%); --mode-surface-start: #202b43; --mode-surface-end: #1d2330; }
+        .choice[data-source="community"] { --mode-accent: #e0ae55; --mode-border: #66502c; --mode-hover: #2c281f; --mode-shadow: rgb(0 0 0 / 18%); --mode-surface-start: #33291d; --mode-surface-end: #27241f; }
+        .choice[data-source="fresh"] { --mode-accent: #70bd96; --mode-border: #355f4b; --mode-hover: #202d28; --mode-shadow: rgb(0 0 0 / 18%); --mode-surface-start: #1d3228; --mode-surface-end: #1d2924; }
         .choice:hover, .help-button:hover { color: #fff; }
         .radio { border-color: #747986; }
         .recommended { background: #26385d; color: #8eb4ff; }
-        .detail[data-mode="imported"] { --detail-accent: #91b5f7; --detail-dot: rgb(120 163 243 / 20%); --detail-surface: rgb(32 43 67 / 66%); }
-        .detail[data-mode="reused"] { --detail-accent: #e0ae55; --detail-dot: rgb(224 174 85 / 18%); --detail-surface: rgb(51 41 29 / 66%); }
-        .detail[data-mode="fresh"] { --detail-accent: #7bc3a0; --detail-dot: rgb(112 189 150 / 18%); --detail-surface: rgb(29 50 40 / 66%); }
+        .detail[data-source="official"] { --detail-accent: #91b5f7; --detail-dot: rgb(120 163 243 / 20%); --detail-surface: rgb(32 43 67 / 66%); }
+        .detail[data-source="community"] { --detail-accent: #e0ae55; --detail-dot: rgb(224 174 85 / 18%); --detail-surface: rgb(51 41 29 / 66%); }
+        .detail[data-source="fresh"] { --detail-accent: #7bc3a0; --detail-dot: rgb(112 189 150 / 18%); --detail-surface: rgb(29 50 40 / 66%); }
         .risk { background: #33291d; border-color: #725526; color: #f1b65d; }
         .overlay { background: rgb(0 0 0 / 58%); }
         .comparison { background: #222329; box-shadow: 0 20px 60px rgb(0 0 0 / 48%); }
@@ -462,14 +477,17 @@
         .comparison-table-wrap { background: #24262b; border-color: #3a3d45; box-shadow: 0 8px 24px rgb(0 0 0 / 18%); }
         th, td { border-color: #373a42; }
         tbody th, thead th { background: #292b31; color: #d6d8dd; }
-        thead th[data-mode="imported"] { background: #273148; color: #a8c4f7; }
-        thead th[data-mode="reused"] { background: #352d21; color: #e6bd76; }
-        thead th[data-mode="fresh"] { background: #22342c; color: #8bcaab; }
+        thead th[data-source="official"] { background: #273148; color: #a8c4f7; }
+        thead th[data-source="community"] { background: #352d21; color: #e6bd76; }
+        thead th[data-source="fresh"] { background: #22342c; color: #8bcaab; }
+        thead th[data-option="copy"], thead th[data-option="default"] { background: #273148; color: #a8c4f7; }
+        thead th[data-option="reuse"] { background: #352d21; color: #e6bd76; }
+        thead th[data-option="custom"] { background: #22342c; color: #8bcaab; }
         .comparison-note { background: linear-gradient(135deg, #292b31, #26282e); border-color: #373a42; }
         .action.primary { background: #f4f4f5; border-color: #f4f4f5; color: #191a1e; }
       }
       @media (prefers-reduced-motion: reduce) {
-        .choice, .detail, .detail-heading h1, .development-toggle, .language-trigger, .language-chevron, .target-choice, .facts, .destination-panel { transition: none; }
+        .choice, .detail, .detail-heading h1, .development-toggle, .language-trigger, .language-chevron, .target-choice, .facts, .destination-panel, .operation-panel { transition: none; }
       }
       @media (max-width: 860px) {
         .content { grid-template-columns: 1fr; overflow: auto; }
@@ -486,7 +504,7 @@
   <body>
     <main class="shell">
       <header class="titlebar">
-        <div class="brand"><img src="icon.png" alt=""><span class="brand-copy"><strong>DeepSeek Harness</strong><small data-copy="windowTitle">选择数据目录</small></span></div>
+        <div class="brand"><img src="icon.png" alt=""><span class="brand-copy"><strong>Open DeepSeek Harness Desktop</strong><small data-copy="windowTitle">选择数据目录</small></span></div>
         <div class="header-actions">
           <div id="development-tools" class="development-tools" hidden>
             <button id="simulate-missing-source" class="development-toggle" type="button" aria-pressed="false">开发：模拟未找到配置</button>
@@ -499,32 +517,42 @@
       </header>
       <section class="content">
         <div class="choices-pane">
-          <section id="source-panel" class="source-panel" data-status="missing" aria-live="polite">
-            <div class="source-heading"><span class="source-dot" aria-hidden="true"></span><strong id="source-status">未在默认位置检测到 DSH 配置</strong></div>
-            <code id="source-path" class="source-path" hidden></code>
-            <p id="source-summary" class="source-summary">如果你使用其他数据目录，可以手动选择。</p>
-            <p id="source-error" class="source-error" hidden></p>
-            <div class="source-actions">
-              <button id="choose-source" class="source-action" type="button">选择已有配置目录</button>
-              <button id="restore-default-source" class="source-action" type="button" hidden>恢复默认目录</button>
+          <section id="source-panel" class="source-panel" aria-live="polite">
+            <div id="official-source" class="source-entry" data-status="missing">
+              <div class="source-heading"><span class="source-dot" aria-hidden="true"></span><strong id="official-source-status">官方配置 · 未检测到</strong></div>
+              <code id="official-source-path" class="source-path" hidden></code>
+              <p id="official-source-summary" class="source-summary">可手动选择其他目录。</p>
+              <p id="official-source-error" class="source-error" hidden></p>
+              <div class="source-actions">
+                <button id="choose-official-source" class="source-action" type="button">选择官方目录</button>
+              </div>
+            </div>
+            <div id="community-source" class="source-entry" data-status="missing">
+              <div class="source-heading"><span class="source-dot" aria-hidden="true"></span><strong id="community-source-status">社区配置 · 未检测到</strong></div>
+              <code id="community-source-path" class="source-path" hidden></code>
+              <p id="community-source-summary" class="source-summary">可手动选择其他目录。</p>
+              <p id="community-source-error" class="source-error" hidden></p>
+              <div class="source-actions">
+                <button id="choose-community-source" class="source-action" type="button">选择社区目录</button>
+              </div>
             </div>
           </section>
           <div id="choices" class="choices" role="radiogroup" aria-label="数据目录模式">
-            <button class="choice" type="button" role="radio" aria-checked="true" data-mode="imported">
+            <button class="choice" type="button" role="radio" aria-checked="true" data-source="official">
               <span class="radio" aria-hidden="true"></span>
-              <span><span class="choice-title"><span data-copy="importTitle">导入到独立环境</span><span class="recommended" data-copy="recommended">推荐</span></span><span class="choice-description" data-copy="importSummary">复制用户数据和插件清单，进入后可选择恢复插件。</span><span class="choice-requirement" data-copy="sourceRequired" hidden>需要先选择已有配置目录。</span></span>
+              <span><span class="choice-title"><span data-copy="importTitle">使用官方 DeepSeek Harness 配置</span></span><span class="choice-description" data-copy="importSummary">选择官方配置，继续后可直接使用，或导入到独立环境。</span><span class="choice-requirement" data-copy="sourceRequired" hidden>需要先选择已有配置目录。</span></span>
             </button>
-            <button class="choice" type="button" role="radio" aria-checked="false" data-mode="reused">
+            <button class="choice" type="button" role="radio" aria-checked="false" data-source="community">
               <span class="radio" aria-hidden="true"></span>
-              <span><span class="choice-title" data-copy="reuseTitle">直接使用此配置</span><span class="choice-description" data-copy="reuseSummary">与所选目录共享设置、凭据、会话和插件。</span><span class="choice-requirement" data-copy="sourceRequired" hidden>需要先选择已有配置目录。</span></span>
+              <span><span class="choice-title" data-copy="reuseTitle">使用社区桌面版配置</span><span class="choice-description" data-copy="reuseSummary">直接使用或复制 Open DeepSeek Harness Desktop 的已有配置。</span><span class="choice-requirement" data-copy="sourceRequired" hidden>需要先选择已有配置目录。</span></span>
             </button>
-            <button class="choice" type="button" role="radio" aria-checked="false" data-mode="fresh">
+            <button class="choice" type="button" role="radio" aria-checked="false" data-source="fresh">
               <span class="radio" aria-hidden="true"></span>
               <span><span class="choice-title" data-copy="freshTitle">全新开始</span><span class="choice-description" data-copy="freshSummary">不导入任何现有数据。</span></span>
             </button>
           </div>
         </div>
-        <article id="detail" class="detail" data-mode="imported">
+        <article id="detail" class="detail" data-source="official">
           <div class="detail-heading"><h1 id="detail-title"></h1><button id="help" class="help-button" type="button" aria-label="查看三个选项的区别"><img src="question-outline-14.svg" alt=""></button></div>
           <p id="risk" class="risk" hidden></p>
           <div id="detail-stage" class="detail-stage" data-step="details">
@@ -534,6 +562,26 @@
               <div class="fact"><dt data-copy="pluginsLabel">已有插件</dt><dd id="plugins-value"></dd></div>
               <div class="fact"><dt data-copy="buildsLabel">构建权限</dt><dd id="builds-value"></dd></div>
             </dl>
+            <section id="operation-panel" class="operation-panel" aria-hidden="true" inert>
+              <h2 data-copy="operationTitle">选择使用方式</h2>
+              <p class="destination-summary" data-copy="operationSummary"></p>
+              <div class="target-choices" role="radiogroup" aria-labelledby="operation-heading">
+                <span id="operation-heading" data-copy="operationTitle" hidden></span>
+                <button class="target-choice" type="button" role="radio" aria-checked="true" data-operation="imported">
+                  <span class="target-radio" aria-hidden="true"></span>
+                  <span class="target-copy"><strong data-operation-copy="importTitle">导入到独立环境</strong><span id="copy-operation-summary"></span></span>
+                </button>
+                <button class="target-choice" type="button" role="radio" aria-checked="false" data-operation="reused">
+                  <span class="target-radio" aria-hidden="true"></span>
+                  <span class="target-copy"><strong data-operation-copy="reuseTitle">直接使用此配置</strong><span id="reuse-operation-summary"></span></span>
+                </button>
+              </div>
+              <dl>
+                <div class="fact"><dt data-copy="sharingLabel">共享范围</dt><dd id="operation-sharing"></dd></div>
+                <div class="fact"><dt data-copy="pluginsLabel">已有插件</dt><dd id="operation-plugins"></dd></div>
+                <div class="fact"><dt data-copy="buildsLabel">构建权限</dt><dd id="operation-builds"></dd></div>
+              </dl>
+            </section>
             <section id="destination-panel" class="destination-panel" aria-hidden="true">
               <h2 data-copy="destinationTitle">选择配置目录</h2>
               <p id="destination-summary" class="destination-summary"></p>
@@ -562,18 +610,14 @@
         <header class="comparison-header"><h2 id="comparison-title" data-copy="comparisonTitle">这三个选项有什么区别？</h2><button id="close-comparison" class="close" type="button" aria-label="关闭"><img src="close-outline-16.svg" alt=""></button></header>
         <div class="comparison-table-wrap">
           <table>
-            <thead><tr><th></th><th data-mode="imported" data-copy="importTitle">导入到独立环境</th><th data-mode="reused" data-copy="reuseTitle">直接使用此配置</th><th data-mode="fresh" data-copy="freshTitle">全新开始</th></tr></thead>
-            <tbody>
-              <tr><th data-copy="locationLabel">数据位置</th><td data-copy="compareImportLocation"></td><td data-copy="compareReuseLocation"></td><td data-copy="compareFreshLocation"></td></tr>
-              <tr><th data-copy="sharingLabel">是否共享</th><td data-copy="compareImportSharing"></td><td data-copy="compareReuseSharing"></td><td data-copy="compareFreshSharing"></td></tr>
-              <tr><th data-copy="pluginsLabel">已有插件</th><td data-copy="compareImportPlugins"></td><td data-copy="compareReusePlugins"></td><td data-copy="compareFreshPlugins"></td></tr>
-              <tr><th data-copy="suitableLabel">适合谁</th><td data-copy="compareImportSuitable"></td><td data-copy="compareReuseSuitable"></td><td data-copy="compareFreshSuitable"></td></tr>
-            </tbody>
+            <thead id="comparison-head"></thead>
+            <tbody id="comparison-body"></tbody>
           </table>
         </div>
         <p class="comparison-note" data-copy="comparisonNote"></p>
         <footer class="comparison-footer"><button id="acknowledge" class="action primary" type="button" data-copy="acknowledge">知道了</button></footer>
       </section>
     </div>
+    <script src="data-home-preview.js" defer></script>
   </body>
 </html>
