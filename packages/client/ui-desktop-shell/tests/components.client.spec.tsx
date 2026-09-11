@@ -27,6 +27,24 @@ const t = ((key: string, params?: Record<string, string | number>) => {
   return value
 }) as never
 
+const downloadSettings = {
+  schema: 'open-dsh-desktop/download-network/v1' as const, revision: 0,
+  application: { source: 'github' as const, proxy: { mode: 'system' as const, passwordSet: false } },
+  npm: { registry: 'existing' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
+  github: { download: 'original' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
+}
+
+function createDownloadNetworkBridge() {
+  const update = vi.fn(() => Promise.resolve({ ...downloadSettings, revision: 1 }))
+  const bridge: DesktopDownloadNetworkBridge = {
+    get: () => Promise.resolve(downloadSettings), update,
+    reset: () => Promise.resolve(downloadSettings), getTestStatus: () => Promise.resolve({ phase: 'idle' }),
+    test: target => Promise.resolve({ phase: 'succeeded', target, stage: 'metadata', elapsedMs: 12 }),
+    onSettings: () => () => {}, onTestStatus: () => () => {},
+  }
+  return { bridge, update }
+}
+
 function setup(releaseStatus: DesktopReleaseStatus = {
   phase: 'available', currentVersion: '0.1.0-rc.7', latestVersion: '0.1.0-rc.8',
   tagName: 'dsh-v0.1.0-rc.8',
@@ -83,6 +101,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
       updatePreferences,
       onPreferences: () => () => {},
       openLog: vi.fn(),
+      openSettingsDocument: vi.fn(() => Promise.resolve({ error: '' })),
       getCommandLine: () => Promise.resolve(commandLine),
       installCommandLine,
       removeCommandLine: vi.fn(() => Promise.resolve({
@@ -116,19 +135,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
 
 describe('desktop shell components', () => {
   it('keeps application download controls actionable while market-owned policies are unavailable', async () => {
-    const settings = {
-      schema: 'open-dsh-desktop/download-network/v1' as const, revision: 0,
-      application: { source: 'github' as const, proxy: { mode: 'system' as const, passwordSet: false } },
-      npm: { registry: 'existing' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
-      github: { download: 'original' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
-    }
-    const update = vi.fn(() => Promise.resolve({ ...settings, revision: 1 }))
-    const bridge: DesktopDownloadNetworkBridge = {
-      get: () => Promise.resolve(settings), update,
-      reset: () => Promise.resolve(settings), getTestStatus: () => Promise.resolve({ phase: 'idle' }),
-      test: target => Promise.resolve({ phase: 'succeeded', target, stage: 'metadata', elapsedMs: 12 }),
-      onSettings: () => () => {}, onTestStatus: () => () => {},
-    }
+    const { bridge, update } = createDownloadNetworkBridge()
     const longT = ((key: string, params?: Record<string, string | number>) => {
       let value = (en as Record<string, string>)[key] ?? key
       for (const [name, replacement] of Object.entries(params ?? {})) {
@@ -248,10 +255,9 @@ describe('desktop shell components', () => {
     const b = setup()
     render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
     await screen.findAllByText('Check for updates')
-    const updateTitle = screen.getAllByText('Check for updates').find(element => element.tagName === 'DIV')
-    expect(updateTitle).toBeDefined()
+    const updateRegion = screen.getByRole('region', { name: 'Check for updates' })
     const scrollIntoView = vi.fn()
-    Object.defineProperty(updateTitle!, 'scrollIntoView', { configurable: true, value: scrollIntoView })
+    Object.defineProperty(updateRegion, 'scrollIntoView', { configurable: true, value: scrollIntoView })
 
     act(() => { b.controller.navigate('updates') })
     expect(scrollIntoView).not.toHaveBeenCalled()
@@ -328,9 +334,12 @@ describe('desktop shell components', () => {
 
   it('toggles simulated current and available update states in development mode', async () => {
     const b = setup({ phase: 'unsupported' })
+    const network = createDownloadNetworkBridge()
     const openUpdates = vi.fn()
     render(<>
-      <DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />
+      <DesktopPreferencesRow {...({
+        controller: b.controller, downloadNetwork: network.bridge, t,
+      } as DesktopPreferencesRowProps)} />
       <DesktopUpdateBadge {...({ controller: b.controller, openUpdates, t } as DesktopUpdateBadgeProps)} />
       <DesktopSidebarUpdateButton {...({
         controller: b.controller, openUpdates, t, wide: true,
@@ -338,6 +347,10 @@ describe('desktop shell components', () => {
     </>)
 
     expect(await screen.findByText('Development mode: this is the latest version')).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Check for updates' }).contains(screen.getByText('Application updates'))).toBe(true)
+    fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'cnb' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => { expect(network.update).toHaveBeenCalledWith(expect.objectContaining({ target: 'application' })) })
     expect(screen.queryAllByRole('button', { name: 'Version 0.1.1-rc.3' })).toHaveLength(0)
     fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }))
     expect(screen.getByText('Development mode: simulated version 0.1.1-rc.3 is available')).toBeTruthy()

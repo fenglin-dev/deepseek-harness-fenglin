@@ -59,8 +59,7 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, d
   const [dataHomeOpen, setDataHomeOpen] = useState(false)
   const [dataHomeTarget, setDataHomeTarget] = useState<'desktop' | 'official' | 'custom' | 'create'>('desktop')
   const preferences = state.preferences
-  const updateRow = useRef<HTMLDivElement>(null)
-  const downloadNetworkRow = useRef<HTMLDivElement>(null)
+  const updateRow = useRef<HTMLElement>(null)
   useEffect(() => {
     if (state.preferences === null || state.capabilities === null || state.menuDestination === undefined) return
     if (state.menuDestination === 'data-home') {
@@ -72,8 +71,7 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, d
     let secondFrame = 0
     const firstFrame = window.requestAnimationFrame(() => {
       secondFrame = window.requestAnimationFrame(() => {
-        const target = state.menuDestination === 'download-network' ? downloadNetworkRow.current : updateRow.current
-        target?.scrollIntoView({ block: 'center' })
+        updateRow.current?.scrollIntoView({ block: 'center' })
         controller.navigate()
       })
     })
@@ -148,7 +146,6 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, d
 
   return (
     <section className={css.group}>
-      {downloadNetwork !== undefined && <div ref={downloadNetworkRow}><DownloadNetworkSettings bridge={downloadNetwork} t={t} /></div>}
       {icons !== undefined && ['darwin', 'win32'].includes(state.capabilities.platform) && <DesktopIconSettings bridge={icons} t={t} />}
       {processes !== undefined && openLog !== undefined && <ManagedProcessesRow bridge={processes} openLog={openLog} t={t} />}
       {desktopWebSupported && <><div className={css.row}>
@@ -317,75 +314,78 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, d
           onChange={(enabled) => { controller.setLaunchAtLogin(enabled) }}
         />
       </div>
-      <div className={css.row}>
-        <div className={css.text}>
-          <div ref={updateRow} className={css.title}>{t('release.title')}</div>
-          <div className={release.phase === 'error' ? css.error : css.description}>{releaseText}</div>
-          {release.phase === 'available'
+      <section ref={updateRow} aria-labelledby="desktop-release-settings-title">
+        {downloadNetwork !== undefined && <DownloadNetworkSettings bridge={downloadNetwork} t={t} />}
+        <div className={css.row}>
+          <div className={css.text}>
+            <div id="desktop-release-settings-title" className={css.title}>{t('release.title')}</div>
+            <div className={release.phase === 'error' ? css.error : css.description}>{releaseText}</div>
+            {release.phase === 'available'
             && state.capabilities.platform === 'darwin'
             && state.capabilities.packaged && (
-            <div className={css.description}>{t('release.macosInstallHint')}</div>
-          )}
-          {release.phase === 'available' && downloadText !== null && (
-            <div className={selectedDownload.phase === 'error' ? css.error : css.description}>{downloadText}</div>
-          )}
-          {selectedDownload.phase === 'downloading' && (
-            <progress
-              className={css.progress}
-              aria-label={t('release.download.progressLabel')}
-              value={selectedDownload.transferredBytes}
-              max={selectedDownload.totalBytes}
-            />
+              <div className={css.description}>{t('release.macosInstallHint')}</div>
+            )}
+            {release.phase === 'available' && downloadText !== null && (
+              <div className={selectedDownload.phase === 'error' ? css.error : css.description}>{downloadText}</div>
+            )}
+            {selectedDownload.phase === 'downloading' && (
+              <progress
+                className={css.progress}
+                aria-label={t('release.download.progressLabel')}
+                value={selectedDownload.transferredBytes}
+                max={selectedDownload.totalBytes}
+              />
+            )}
+          </div>
+          {release.phase === 'unsupported' ? (
+            <div className={css.actions}>
+              <Button
+                variant={state.simulatedReleaseAvailable ? 'primary' : 'outline'}
+                onClick={() => { controller.toggleSimulatedRelease() }}
+              >
+                {t(state.simulatedReleaseAvailable ? 'release.developmentOpen' : 'release.check')}
+              </Button>
+            </div>
+          ) : (
+            <div className={css.actions}>
+              <Button
+                variant="outline"
+                disabled={release.phase === 'checking' || downloadActive}
+                onClick={() => { void controller.checkRelease() }}
+              >
+                {t('release.check')}
+              </Button>
+              {selectedDownload.phase === 'error' && state.release.phase === 'available'
+              && controller.bridge.downloadNetwork !== undefined && (
+                <Button variant="outline" disabled={state.busy} onClick={() => { void controller.switchReleaseSource() }}>
+                  {t('release.download.switchSource')}
+                </Button>
+              )}
+              {release.phase === 'available' && (
+                installerDownloadSupported ? (
+                  selectedDownload.phase === 'ready' ? (
+                    <Button variant="primary" onClick={() => { void controller.openInstaller() }}>
+                      {t('release.download.open')}
+                    </Button>
+                  ) : downloadActive ? (
+                    <Button variant="outline" onClick={() => { void controller.cancelReleaseDownload() }}>
+                      {t('release.download.cancel')}
+                    </Button>
+                  ) : (
+                    <Button variant="primary" onClick={() => { void controller.downloadRelease() }}>
+                      {t(selectedDownload.phase === 'error' || selectedDownload.phase === 'cancelled'
+                        ? 'release.download.retry'
+                        : 'release.download.start')}
+                    </Button>
+                  )
+                ) : (
+                  <Button variant="primary" onClick={() => { void controller.openRelease() }}>{t('release.open')}</Button>
+                )
+              )}
+            </div>
           )}
         </div>
-        {release.phase === 'unsupported' ? (
-          <div className={css.actions}>
-            <Button
-              variant={state.simulatedReleaseAvailable ? 'primary' : 'outline'}
-              onClick={() => { controller.toggleSimulatedRelease() }}
-            >
-              {t(state.simulatedReleaseAvailable ? 'release.developmentOpen' : 'release.check')}
-            </Button>
-          </div>
-        ) : (
-          <div className={css.actions}>
-            <Button
-              variant="outline"
-              disabled={release.phase === 'checking' || downloadActive}
-              onClick={() => { void controller.checkRelease() }}
-            >
-              {t('release.check')}
-            </Button>
-            {selectedDownload.phase === 'error' && state.release.phase === 'available'
-              && controller.bridge.downloadNetwork !== undefined && (
-              <Button variant="outline" disabled={state.busy} onClick={() => { void controller.switchReleaseSource() }}>
-                {t('release.download.switchSource')}
-              </Button>
-            )}
-            {release.phase === 'available' && (
-              installerDownloadSupported ? (
-                selectedDownload.phase === 'ready' ? (
-                  <Button variant="primary" onClick={() => { void controller.openInstaller() }}>
-                    {t('release.download.open')}
-                  </Button>
-                ) : downloadActive ? (
-                  <Button variant="outline" onClick={() => { void controller.cancelReleaseDownload() }}>
-                    {t('release.download.cancel')}
-                  </Button>
-                ) : (
-                  <Button variant="primary" onClick={() => { void controller.downloadRelease() }}>
-                    {t(selectedDownload.phase === 'error' || selectedDownload.phase === 'cancelled'
-                      ? 'release.download.retry'
-                      : 'release.download.start')}
-                  </Button>
-                )
-              ) : (
-                <Button variant="primary" onClick={() => { void controller.openRelease() }}>{t('release.open')}</Button>
-              )
-            )}
-          </div>
-        )}
-      </div>
+      </section>
       {state.error !== null && <div className={css.error} role="alert">{state.error}</div>}
       <Modal
         open={dataHomeOpen}
