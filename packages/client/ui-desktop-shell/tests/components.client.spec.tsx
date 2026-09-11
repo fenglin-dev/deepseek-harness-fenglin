@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type {
-  DesktopBridge, DesktopCliStatus, DesktopReleaseDownloadStatus, DesktopReleaseStatus, DesktopWebStatus,
+  DesktopBridge, DesktopCliStatus, DesktopDownloadNetworkBridge, DesktopReleaseDownloadStatus, DesktopReleaseStatus, DesktopWebStatus,
 } from '../src/client/bridge.ts'
 import { DesktopShellController } from '../src/client/controller.ts'
 import { DesktopPreferencesRow, type DesktopPreferencesRowProps } from '../src/client/DesktopPreferencesRow.tsx'
@@ -14,6 +14,7 @@ import {
   DesktopBrowserReturnButton, type DesktopBrowserReturnButtonProps,
 } from '../src/client/DesktopBrowserReturnButton.tsx'
 import { en } from '../src/client/locales.ts'
+import { DownloadNetworkSettings } from '../src/client/DownloadNetworkSettings.tsx'
 
 afterEach(() => {
   cleanup()
@@ -114,6 +115,37 @@ function setup(releaseStatus: DesktopReleaseStatus = {
 }
 
 describe('desktop shell components', () => {
+  it('keeps application download controls actionable while market-owned policies are unavailable', async () => {
+    const settings = {
+      schema: 'open-dsh-desktop/download-network/v1' as const, revision: 0,
+      application: { source: 'github' as const, proxy: { mode: 'system' as const, passwordSet: false } },
+      npm: { registry: 'existing' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
+      github: { download: 'original' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
+    }
+    const update = vi.fn(() => Promise.resolve({ ...settings, revision: 1 }))
+    const bridge: DesktopDownloadNetworkBridge = {
+      get: () => Promise.resolve(settings), update,
+      reset: () => Promise.resolve(settings), getTestStatus: () => Promise.resolve({ phase: 'idle' }),
+      test: target => Promise.resolve({ phase: 'succeeded', target, stage: 'metadata', elapsedMs: 12 }),
+      onSettings: () => () => {}, onTestStatus: () => () => {},
+    }
+    const longT = ((key: string, params?: Record<string, string | number>) => {
+      let value = (en as Record<string, string>)[key] ?? key
+      for (const [name, replacement] of Object.entries(params ?? {})) {
+        value = value.replace(`{${name}}`, String(replacement))
+      }
+      return `${value} ${'übersetzter langer Text '.repeat(2)}`
+    }) as never
+    render(<DownloadNetworkSettings bridge={bridge} t={longT} />)
+    expect(await screen.findByText(/Downloads and proxies/u)).toBeTruthy()
+    fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'cnb' } })
+    fireEvent.click(screen.getAllByRole('button', { name: /Save/u })[0]!)
+    await waitFor(() => { expect(update).toHaveBeenCalledWith(expect.objectContaining({ target: 'application' })) })
+    expect(screen.getAllByRole('button', { name: /Test connection/u })).toHaveLength(1)
+    expect(screen.queryByText(/npm plugins/u)).toBeNull()
+    expect(screen.queryByText(/GitHub plugins/u)).toBeNull()
+  })
+
   it('returns from a browser to Desktop and permits retry after failure', async () => {
     const returnToDesktop = vi.fn()
       .mockRejectedValueOnce(new Error('closed'))

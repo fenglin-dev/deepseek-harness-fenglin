@@ -6,7 +6,8 @@ import { Button, IconChevronDownOutline14, Menu, Modal } from '@deepseek-ai/dsh-
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DEVELOPMENT_RELEASE_VERSION, type DesktopShellController } from './controller.ts'
 import type { DesktopIconsBridge } from './icon-protocol.ts'
-import type { DesktopProcessesBridge } from './bridge.ts'
+import type { DesktopDownloadNetworkBridge, DesktopProcessesBridge } from './bridge.ts'
+import { DownloadNetworkSettings } from './DownloadNetworkSettings.tsx'
 import { ManagedProcessesRow } from './ManagedProcessesRow.tsx'
 import { DesktopIconSettings } from './DesktopIconSettings.tsx'
 import css from './DesktopShell.module.css'
@@ -18,6 +19,7 @@ export type DesktopPreferencesRowProps = PropsRuntime<'settings.general.item'>
     icons?: DesktopIconsBridge | undefined
     processes?: DesktopProcessesBridge | undefined
     openLog?: (() => Promise<unknown>) | undefined
+    downloadNetwork?: DesktopDownloadNetworkBridge | undefined
   }
 
 function Toggle({ enabled, disabled, label, onChange }: {
@@ -48,7 +50,7 @@ function formatBytes(value: number): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function DesktopPreferencesRow({ controller, icons, processes, openLog, t }: DesktopPreferencesRowProps) {
+export function DesktopPreferencesRow({ controller, icons, processes, openLog, downloadNetwork, t }: DesktopPreferencesRowProps) {
   const subscribe = useCallback((listener: () => void) => controller.subscribe(listener), [controller])
   const getSnapshot = useCallback(() => controller.getSnapshot(), [controller])
   const state = useSyncExternalStore(subscribe, getSnapshot)
@@ -58,6 +60,7 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, t
   const [dataHomeTarget, setDataHomeTarget] = useState<'desktop' | 'official' | 'custom' | 'create'>('desktop')
   const preferences = state.preferences
   const updateRow = useRef<HTMLDivElement>(null)
+  const downloadNetworkRow = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (state.preferences === null || state.capabilities === null || state.menuDestination === undefined) return
     if (state.menuDestination === 'data-home') {
@@ -69,7 +72,8 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, t
     let secondFrame = 0
     const firstFrame = window.requestAnimationFrame(() => {
       secondFrame = window.requestAnimationFrame(() => {
-        updateRow.current?.scrollIntoView({ block: 'center' })
+        const target = state.menuDestination === 'download-network' ? downloadNetworkRow.current : updateRow.current
+        target?.scrollIntoView({ block: 'center' })
         controller.navigate()
       })
     })
@@ -144,6 +148,7 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, t
 
   return (
     <section className={css.group}>
+      {downloadNetwork !== undefined && <div ref={downloadNetworkRow}><DownloadNetworkSettings bridge={downloadNetwork} t={t} /></div>}
       {icons !== undefined && ['darwin', 'win32'].includes(state.capabilities.platform) && <DesktopIconSettings bridge={icons} t={t} />}
       {processes !== undefined && openLog !== undefined && <ManagedProcessesRow bridge={processes} openLog={openLog} t={t} />}
       {desktopWebSupported && <><div className={css.row}>
@@ -351,6 +356,12 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, t
             >
               {t('release.check')}
             </Button>
+            {selectedDownload.phase === 'error' && state.release.phase === 'available'
+              && controller.bridge.downloadNetwork !== undefined && (
+              <Button variant="outline" disabled={state.busy} onClick={() => { void controller.switchReleaseSource() }}>
+                {t('release.download.switchSource')}
+              </Button>
+            )}
             {release.phase === 'available' && (
               installerDownloadSupported ? (
                 selectedDownload.phase === 'ready' ? (

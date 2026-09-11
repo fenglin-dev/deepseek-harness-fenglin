@@ -9,7 +9,7 @@ import type {
 
 /** Immutable renderer state shared by the desktop settings and footer action. */
 export interface DesktopShellSnapshot {
-  menuDestination?: 'data-home' | 'updates' | undefined
+  menuDestination?: 'data-home' | 'updates' | 'download-network' | undefined
   capabilities: DesktopCapabilities | null
   preferences: DesktopPreferences | null
   release: DesktopReleaseStatus
@@ -51,7 +51,7 @@ export class DesktopShellController {
   /** Queue or consume a native-menu destination after General Settings mounts.
    * @param destination - Existing panel to reveal, or undefined to consume the request.
    */
-  navigate(destination?: 'data-home' | 'updates'): void { this.#publish({ menuDestination: destination }) }
+  navigate(destination?: 'data-home' | 'updates' | 'download-network'): void { this.#publish({ menuDestination: destination }) }
 
   /** Read the current immutable desktop state.
    * @returns the current snapshot.
@@ -234,6 +234,31 @@ export class DesktopShellController {
       this.#publish({ releaseDownload: await this.bridge.releases.startDownload() })
     } catch (error) {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  /** Explicitly move an update retry to the other configured source. */
+  async switchReleaseSource(): Promise<void> {
+    const network = this.bridge.downloadNetwork
+    if (network === undefined) return
+    this.#publish({ busy: true, error: null })
+    try {
+      const current = await network.get()
+      await network.update({
+        target: 'application',
+        application: {
+          source: current.application.source === 'github' ? 'cnb' : 'github',
+          proxy: current.application.proxy,
+        },
+      })
+      this.#publish({
+        releaseDownload: { phase: 'idle' },
+        release: await this.bridge.releases.check(),
+      })
+    } catch (error) {
+      this.#publish({ error: error instanceof Error ? error.message : String(error) })
+    } finally {
+      this.#publish({ busy: false })
     }
   }
 

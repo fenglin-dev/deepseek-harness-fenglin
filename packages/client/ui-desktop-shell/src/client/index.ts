@@ -86,7 +86,7 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item', id: 'desktop-shell', order: 75, locale: NS,
     inject: () => ({
-      controller, icons: bridge.icons, processes: bridge.processes,
+      controller, icons: bridge.icons, processes: bridge.processes, downloadNetwork: bridge.downloadNetwork,
       openLog: () => bridge.shell.openLog(),
     }),
   }, DesktopPreferencesRow))
@@ -95,6 +95,14 @@ export function apply(ctx: Context): void {
       inner.settingsNavigation.open({ sectionId: 'general' })
       controller.navigate('updates')
     }
+    inner.effect(() => {
+      const openDownloadNetwork = (): void => {
+        inner.settingsNavigation.open({ sectionId: 'general' })
+        controller.navigate('download-network')
+      }
+      window.addEventListener('open-dsh:download-network', openDownloadNetwork)
+      return () => { window.removeEventListener('open-dsh:download-network', openDownloadNetwork) }
+    }, 'ui-desktop-shell: market download settings navigation')
     inner.slots.inject('settings.action', () => inner.slots.register({
       name: 'settings.action', id: 'desktop-update', order: -20, locale: NS,
       inject: () => ({

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { DesktopBridge, DesktopPreferences, DesktopReleaseStatus } from '../src/client/bridge.ts'
+import type {
+  DesktopBridge, DesktopPreferences, DesktopReleaseStatus, DownloadNetworkSettings,
+} from '../src/client/bridge.ts'
 import { DesktopShellController } from '../src/client/controller.ts'
 
 function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVersion: '0.1.0-rc.7' }) {
@@ -14,6 +16,19 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
   const openInstaller = vi.fn(() => Promise.resolve({ error: '' }))
   const openDesktopWeb = vi.fn(() => Promise.resolve({ opened: true as const, hidden: true }))
   const enterRecoveryMode = vi.fn(() => Promise.resolve({ entered: true as const }))
+  let downloadNetwork: DownloadNetworkSettings = {
+    schema: 'open-dsh-desktop/download-network/v1' as const, revision: 0,
+    application: { source: 'github' as const, proxy: { mode: 'system' as const, passwordSet: false } },
+    npm: { registry: 'existing' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
+    github: { download: 'original' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
+  }
+  const updateDownloadNetwork = vi.fn((patch: Parameters<NonNullable<DesktopBridge['downloadNetwork']>['update']>[0]) => {
+    if (patch.application !== undefined) downloadNetwork = {
+      ...downloadNetwork, revision: downloadNetwork.revision + 1,
+      application: { ...patch.application, proxy: { ...patch.application.proxy, passwordSet: false } },
+    }
+    return Promise.resolve(downloadNetwork)
+  })
   const bridge: DesktopBridge = {
     shell: {
       getCapabilities: vi.fn(() => Promise.resolve({
@@ -64,6 +79,15 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
       openInstaller,
       onDownloadStatus: vi.fn(() => () => {}),
     },
+    downloadNetwork: {
+      get: vi.fn(() => Promise.resolve(downloadNetwork)),
+      update: updateDownloadNetwork,
+      reset: vi.fn(() => Promise.resolve(downloadNetwork)),
+      getTestStatus: vi.fn(() => Promise.resolve({ phase: 'idle' as const })),
+      test: vi.fn(() => Promise.resolve({ phase: 'succeeded' as const, target: 'application' as const,
+        stage: 'metadata' as const, elapsedMs: 1 })),
+      onSettings: vi.fn(() => () => {}), onTestStatus: vi.fn(() => () => {}),
+    },
     desktopWeb: {
       getStatus: vi.fn(() => Promise.resolve({ phase: 'ready' as const })),
       open: openDesktopWeb,
@@ -71,7 +95,9 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
     },
   }
   const controller = new DesktopShellController(bridge)
-  return { bridge, controller, openDownload, startDownload, openInstaller, openDesktopWeb, enterRecoveryMode }
+  return {
+    bridge, controller, openDownload, startDownload, openInstaller, openDesktopWeb, enterRecoveryMode, updateDownloadNetwork,
+  }
 }
 
 describe('DesktopShellController', () => {
@@ -116,5 +142,15 @@ describe('DesktopShellController', () => {
     await b.controller.switchDataHome({ kind: 'official' })
     expect(b.controller.getSnapshot().restartPending).toBe(true)
     b.controller.dispose()
+  })
+
+  it('switches update sources only after an explicit retry action', async () => {
+    const b = bench()
+    await b.controller.switchReleaseSource()
+    expect(b.updateDownloadNetwork).toHaveBeenCalledOnce()
+    const patch = b.updateDownloadNetwork.mock.calls[0]?.[0]
+    expect(patch?.target).toBe('application')
+    expect(patch?.application?.source).toBe('cnb')
+    expect(b.controller.getSnapshot().release.phase).toBe('available')
   })
 })

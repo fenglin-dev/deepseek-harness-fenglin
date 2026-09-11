@@ -3,6 +3,53 @@ import type { DesktopIconsBridge } from './icon-protocol.ts'
 
 /** Closing hides the window in the tray or quits the desktop application. */
 export type CloseBehavior = 'tray' | 'quit'
+/** Desktop download policy whose credentials never enter the renderer. */
+export type DownloadNetworkTarget = 'application' | 'npm' | 'github'
+/** Allowed connection policies for one download target. */
+export type DownloadProxyMode = 'existing' | 'system' | 'direct' | 'custom'
+
+/** Redacted proxy selection visible to the desktop settings UI. */
+export interface DownloadProxySettings {
+  mode: DownloadProxyMode
+  url?: string
+  username?: string
+  passwordSet: boolean
+}
+
+/** Current application, npm, and GitHub download policy. */
+export interface DownloadNetworkSettings {
+  schema: 'open-dsh-desktop/download-network/v1'
+  revision: number
+  application: { source: 'github' | 'cnb'; proxy: DownloadProxySettings }
+  npm: { registry: 'existing' | 'npmjs' | 'npmmirror' | 'custom'; registryUrl?: string; proxy: DownloadProxySettings }
+  github: { download: 'original' | 'custom'; acceleratorUrl?: string; proxy: DownloadProxySettings }
+}
+
+/** One validated per-target settings update. */
+export interface DownloadNetworkPatch {
+  target: DownloadNetworkTarget
+  application?: { source: 'github' | 'cnb'; proxy: Omit<DownloadProxySettings, 'passwordSet'>; password?: string }
+  npm?: { registry: DownloadNetworkSettings['npm']['registry']; registryUrl?: string; proxy: Omit<DownloadProxySettings, 'passwordSet'>; password?: string }
+  github?: { download: 'original' | 'custom'; acceleratorUrl?: string; proxy: Omit<DownloadProxySettings, 'passwordSet'>; password?: string }
+}
+
+/** Bounded metadata or download probe reported by the main process. */
+export type DownloadNetworkTestStatus =
+  | { phase: 'idle' }
+  | { phase: 'testing'; target: DownloadNetworkTarget; stage: 'metadata' | 'download' }
+  | { phase: 'succeeded'; target: DownloadNetworkTarget; stage: 'metadata' | 'download'; elapsedMs: number }
+  | { phase: 'failed'; target: DownloadNetworkTarget; stage: 'metadata' | 'download'; message: string }
+
+/** Narrow desktop bridge for managing local download routing. */
+export interface DesktopDownloadNetworkBridge {
+  get(): Promise<DownloadNetworkSettings>
+  update(patch: DownloadNetworkPatch): Promise<DownloadNetworkSettings>
+  reset(target: DownloadNetworkTarget): Promise<DownloadNetworkSettings>
+  getTestStatus(): Promise<DownloadNetworkTestStatus>
+  test(target: DownloadNetworkTarget): Promise<DownloadNetworkTestStatus>
+  onSettings(callback: (settings: DownloadNetworkSettings) => void): () => void
+  onTestStatus(callback: (status: DownloadNetworkTestStatus) => void): () => void
+}
 
 /** Persisted preference values exposed by the desktop main process. */
 export interface DesktopPreferences {
@@ -196,6 +243,7 @@ export interface DesktopBridge {
   }
   shell: DesktopShellBridge
   releases: DesktopReleasesBridge
+  downloadNetwork?: DesktopDownloadNetworkBridge
   desktopWeb: DesktopWebBridge
   icons?: DesktopIconsBridge
   processes?: DesktopProcessesBridge
@@ -210,6 +258,7 @@ export function readDesktopBridge(): DesktopBridge | null {
   const candidate = (globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop as {
     shell?: DesktopShellBridge
     releases?: DesktopReleasesBridge
+    downloadNetwork?: DesktopDownloadNetworkBridge
     desktopWeb?: DesktopWebBridge
     icons?: DesktopIconsBridge
     processes?: DesktopProcessesBridge
@@ -218,6 +267,7 @@ export function readDesktopBridge(): DesktopBridge | null {
   return candidate?.shell === undefined || candidate.releases === undefined || candidate.desktopWeb === undefined
     ? null
     : { shell: candidate.shell, releases: candidate.releases, desktopWeb: candidate.desktopWeb,
+      ...(candidate.downloadNetwork === undefined ? {} : { downloadNetwork: candidate.downloadNetwork }),
       ...(candidate.menu === undefined ? {} : { menu: candidate.menu }),
       ...(candidate.icons === undefined ? {} : { icons: candidate.icons }),
       ...(candidate.processes === undefined ? {} : { processes: candidate.processes }) }
