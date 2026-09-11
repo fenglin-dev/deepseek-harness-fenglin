@@ -106,7 +106,7 @@ describe('ui-desktop-shell apply', () => {
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(b.locale.getLocale().locales.map(language => language.id)).toEqual([
-      'zh', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'pt-BR', 'ru',
+      'zh', 'en', 'ru', 'es', 'fr', 'pt-BR', 'de', 'ja', 'ko',
     ])
     b.locale.setLocale('ru')
     expect(b.locale.bind('settings.locale')('language.title')).toBe('Язык')
