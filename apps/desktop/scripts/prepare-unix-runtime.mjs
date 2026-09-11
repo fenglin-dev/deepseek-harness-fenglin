@@ -34,7 +34,7 @@ const targets = {
     ],
   },
   'linux-x64': {
-    nodeSha256: '58a5ff5cc8f2200e458bea22e329d5c1994aa1b111d499ca46ec2411d58239ca',
+    nodeSha256: '6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff',
     nativePackages: [
       '@koromix/koffi-linux-x64',
       '@img/sharp-linux-x64/sharp.node',
@@ -50,7 +50,7 @@ const runtimeName = `desktop-runtime-${target}`
 const staging = join(repositoryRoot, '.artifacts', runtimeName)
 const archive = join(repositoryRoot, '.artifacts', `${runtimeName}.tar.gz`)
 const runtimeMarker = '.desktop-runtime-v3'
-const nodeVersion = '24.17.0'
+const nodeVersion = '24.21.0'
 const pnpmVersion = '11.7.0'
 const nodeArchiveName = `node-v${nodeVersion}-${target}.tar.gz`
 const nodeArchiveSha256 = targetConfig.nodeSha256
