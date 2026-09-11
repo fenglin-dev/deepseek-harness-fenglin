@@ -8,6 +8,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { preparePrebuiltProfile } from './prepare-prebuilt-profile.mjs'
+import { nodeArchiveSha256ByTarget, nodeVersion } from './node-runtime-pins.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = resolve(desktopRoot, '../..')
@@ -15,10 +16,9 @@ const outputRoot = join(repositoryRoot, '.artifacts', 'desktop-runtime-win-x64')
 const harnessRoot = join(outputRoot, 'harness')
 const runtimeRoot = join(outputRoot, 'runtime', 'win32-x64')
 const downloads = join(repositoryRoot, '.artifacts', 'downloads')
-const nodeVersion = '24.17.0'
 const pnpmVersion = '11.7.0'
 const nodeArchiveName = `node-v${nodeVersion}-win-x64.zip`
-const nodeArchiveSha256 = 'f2aa33b35b75aca5f3f7b85675a6f6423201053e9381911e64961f3bda2528ab'
+const nodeArchiveSha256 = nodeArchiveSha256ByTarget['win32-x64']
 const nodeArchive = join(downloads, nodeArchiveName)
 const nodeExecutable = join(runtimeRoot, 'node.exe')
 const pnpmCommand = join(runtimeRoot, 'pnpm.cmd')
