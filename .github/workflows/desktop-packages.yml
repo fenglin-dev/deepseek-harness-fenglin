@@ -11,7 +11,6 @@ on:
         default: all
         options:
           - all
-          - macos
           - windows-x64
           - linux-x64
       refresh_plugins:
@@ -60,65 +59,6 @@ jobs:
         with:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
-          if-no-files-found: error
-          retention-days: 14
-
-  macos:
-    name: macOS ${{ matrix.arch }}
-    if: ${{ inputs.target == 'all' || inputs.target == 'macos' }}
-    needs: bundled-plugins
-    env:
-      DSH_BUNDLED_PLUGINS_REFRESH: '0'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-15
-          - arch: x64
-            runner: macos-15-intel
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.PRIMARY_NODE_VERSION }}
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Use resolved bundled plugin snapshot
-        run: |
-          node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: bundled-plugin-snapshot
-          path: apps/desktop/bundled-plugins
-
-      - name: Build macOS package
-        run: pnpm run package:desktop:macos:${{ matrix.arch }}
-
-      - name: Verify macOS Helper lookup regression
-        run: node --test apps/desktop/scripts/smoke-macos-package.test.mjs
-
-      - name: Smoke final macOS DMG and ZIP
-        run: >-
-          node apps/desktop/scripts/smoke-macos-package.mjs
-          .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.dmg
-          .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.zip
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-macos-${{ matrix.arch }}
-          path: |
-            .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.dmg
-            .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -215,11 +155,10 @@ jobs:
 
   checksums:
     name: SHA-256 checksums
-    needs: [macos, windows, linux]
+    needs: [windows, linux]
     if: >-
       ${{ always() && (
-        (inputs.target == 'all' && needs.macos.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success') ||
-        (inputs.target == 'macos' && needs.macos.result == 'success') ||
+        (inputs.target == 'all' && needs.windows.result == 'success' && needs.linux.result == 'success') ||
         (inputs.target == 'windows-x64' && needs.windows.result == 'success') ||
         (inputs.target == 'linux-x64' && needs.linux.result == 'success')
       ) }}

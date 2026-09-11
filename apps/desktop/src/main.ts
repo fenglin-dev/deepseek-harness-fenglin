@@ -380,6 +380,7 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
       await desktopWebAccess.open()
       return
     case 'restart': requestDesktopRestart(); return
+    case 'reload': mainSurface?.renderer.reload(); return
     case 'quit':
       if (lifecycle === undefined) { quitReleased = true; app.quit() }
       else await lifecycle.requestQuit()
@@ -401,9 +402,9 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
         detail: `${app.getVersion()}\nHarness ${manifest.version}\n\n${menuCopy(menuLocale).community}` })
       return
     }
-    case 'docs': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop#readme'); return
-    case 'repository': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop'); return
-    case 'feedback': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop/issues'); return
+    case 'docs': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin#readme'); return
+    case 'repository': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin'); return
+    case 'feedback': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin/issues'); return
     default: throw new Error(`desktop: unhandled menu command ${command}`)
   }
 }
@@ -1478,6 +1479,7 @@ async function startApplication(): Promise<void> {
   let harnessEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: dshHome,
+    PNPM_HOME: join(dshHome, 'pnpm-home'),
     DSH_DESKTOP_APPLICATION_VERSION: app.getVersion(),
     DSH_DESKTOP_PNPM_VERSION: DESKTOP_PNPM_VERSION,
     DSH_PROFILE_SAFE_MODE_ON_FAILURE: '1',

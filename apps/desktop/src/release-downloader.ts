@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { DesktopReleaseStatus } from './release-checker.ts'
 import { fetchCnbReleaseIndex } from './cnb-release-source.ts'
 
-const REPOSITORY = 'flaqai/open-deepseek-harness-desktop'
+const REPOSITORY = 'fenglin-dev/deepseek-harness-fenglin'
 const API_RELEASE_PREFIX = `https://api.github.com/repos/${REPOSITORY}/releases/tags/`
 const RELEASE_DOWNLOAD_PREFIX = `/${REPOSITORY}/releases/download/`
 const CHECKSUM_ASSET = 'SHA256SUMS'

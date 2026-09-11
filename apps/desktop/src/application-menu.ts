@@ -7,7 +7,7 @@ import { additionalApplicationMenuDictionaries } from './locales/application-men
 export const DESKTOP_COMMANDS = [
   'about', 'settings', 'updates', 'new-session', 'open-config', 'open-web', 'close', 'quit',
   'undo', 'redo', 'cut', 'copy', 'paste', 'select-all', 'zoom-in', 'zoom-out', 'zoom-reset',
-  'fullscreen', 'market', 'plugin-restore', 'diagnostics', 'snapshots', 'external-tools',
+  'fullscreen', 'reload', 'market', 'plugin-restore', 'diagnostics', 'snapshots', 'external-tools',
   'phone', 'im', 'data-home', 'restart', 'show', 'minimize', 'maximize',
   'docs', 'repository', 'feedback', 'logs', 'devtools', 'emoji',
 ] as const
@@ -25,7 +25,7 @@ const en = {
   'new-session': 'New Conversation', 'open-config': 'Open Configuration File', 'open-web': 'Open in Browser', close: 'Close Window', quit: 'Quit Completely',
   undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', 'select-all': 'Select All',
   'zoom-in': 'Zoom In', 'zoom-out': 'Zoom Out', 'zoom-reset': 'Actual Size', fullscreen: 'Enter Full Screen',
-  'leave-fullscreen': 'Exit Full Screen', market: 'Plugin Market', 'plugin-restore': 'Plugin Recovery',
+  'leave-fullscreen': 'Exit Full Screen', reload: 'Reload', market: 'Plugin Market', 'plugin-restore': 'Plugin Recovery',
   diagnostics: 'Diagnostics', snapshots: 'Plugin Snapshots', 'external-tools': 'External Tools',
   phone: 'Phone Access', im: 'IM Bots', 'data-home': 'Switch Data Directory…', restart: 'Quick Restart',
   show: 'Show Main Window', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore',
@@ -45,7 +45,7 @@ const zh: typeof en = {
   about: '关于 Open DSH Desktop', settings: '设置…', updates: '检查更新…', 'new-session': '新对话',
   'open-config': '打开配置文件', 'open-web': '在浏览器中打开', close: '关闭窗口', quit: '完整退出', undo: '撤销', redo: '重做', cut: '剪切',
   copy: '复制', paste: '粘贴', 'select-all': '全选', 'zoom-in': '放大', 'zoom-out': '缩小', 'zoom-reset': '实际大小',
-  fullscreen: '进入全屏', 'leave-fullscreen': '退出全屏', market: '插件市场', 'plugin-restore': '插件恢复',
+  fullscreen: '进入全屏', 'leave-fullscreen': '退出全屏', reload: '重新加载', market: '插件市场', 'plugin-restore': '插件恢复',
   diagnostics: '诊断中心', snapshots: '插件快照', 'external-tools': '外部工具', phone: '手机访问', im: 'IM 机器人',
   'data-home': '切换配置目录…', restart: '快速重启', show: '显示主窗口', minimize: '最小化', maximize: '最大化',
   restore: '还原', docs: '使用文档', repository: '项目仓库', feedback: '反馈问题', logs: '打开日志目录',
@@ -102,6 +102,7 @@ export function commandEnabled(command: DesktopCommand, state: DesktopMenuState)
   if ((CLIENT_COMMANDS as readonly string[]).includes(command)) return state.ready && !state.busy
   // Loading and titlebar pages share file://; never write that origin's zoom preference.
   if (command === 'zoom-in' || command === 'zoom-out' || command === 'zoom-reset') return state.ready
+  if (command === 'reload') return state.ready
   if (command === 'open-web') return state.ready && (state.platform === 'darwin' || state.platform === 'win32')
   if (command === 'quit' || command === 'restart') return !state.busy
   if (command === 'devtools') return state.development
@@ -123,6 +124,7 @@ export function applicationMenuTemplate(
     undo: 'CmdOrCtrl+Z', redo: mac ? 'Command+Shift+Z' : 'Ctrl+Y', cut: 'CmdOrCtrl+X', copy: 'CmdOrCtrl+C',
     paste: 'CmdOrCtrl+V', 'select-all': 'CmdOrCtrl+A', 'zoom-in': 'CmdOrCtrl+Plus',
     'zoom-out': 'CmdOrCtrl+-', 'zoom-reset': 'CmdOrCtrl+0', fullscreen: mac ? 'Control+Command+F' : 'F11',
+    reload: 'CmdOrCtrl+R',
   }
   const item = (command: DesktopCommand): MenuItemConstructorOptions => ({
     id: command,
@@ -145,7 +147,7 @@ export function applicationMenuTemplate(
       ...(!mac ? [item('settings'), separator] : []), item('close'), ...(!mac ? [item('quit')] : [])]),
     group('edit', [item('undo'), item('redo'), separator, item('cut'), item('copy'), item('paste'), item('select-all'),
       ...(mac ? [separator, item('emoji')] : [])]),
-    group('view', [item('zoom-in'), item('zoom-out'), item('zoom-reset'), separator, item('fullscreen'),
+    group('view', [item('zoom-in'), item('zoom-out'), item('zoom-reset'), separator, item('fullscreen'), item('reload'),
       ...(state.development ? [separator, item('devtools')] : [])]),
     group('tools', ['market', 'plugin-restore', 'diagnostics', 'snapshots', 'external-tools', 'phone', 'im', 'data-home', 'restart'].map(command => item(command as DesktopCommand))),
     group('window', [item('show'), item('minimize'), item('maximize')]),

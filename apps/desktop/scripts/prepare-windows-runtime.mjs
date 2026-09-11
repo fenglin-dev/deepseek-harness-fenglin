@@ -296,6 +296,37 @@ async function stagePackageManager() {
   await writeFile(pnpmCommand, '@echo off\r\n"%~dp0node.exe" "%~dp0node_modules\\pnpm\\bin\\pnpm.mjs" %*\r\n')
 }
 
+/**
+ * Patch pnpm's bundled undici fetch to use Node.js globalThis.fetch.
+ *
+ * pnpm 11.7.0 bundles undici 7.27.2, which has a connection timeout bug
+ * on Windows that causes UND_ERR_CONNECT_TIMEOUT when installing plugins.
+ * Node.js 24's built-in undici (via globalThis.fetch) works correctly.
+ * This patch replaces pnpm's undici fetch with globalThis.fetch
+ * and removes the unsupported dispatcher parameter.
+ */
+async function patchPnpmUndiciFetch() {
+  const pnpmDist = join(runtimeRoot, 'node_modules', 'pnpm', 'dist', 'pnpm.mjs')
+  if (!existsSync(pnpmDist)) {
+    console.warn('prepare-windows-runtime: pnpm.mjs not found, skipping undici fetch patch')
+    return
+  }
+  const content = await readFile(pnpmDist, 'utf8')
+  const oldLine = 'const res = await (0, import_undici2.fetch)(urlString, { ...fetchOpts, signal, dispatcher });'
+  const newLine = 'const res = await globalThis.fetch(urlString, { ...fetchOpts, signal });'
+  if (content.includes(newLine)) {
+    console.log('prepare-windows-runtime: pnpm undici fetch patch already applied')
+    return
+  }
+  if (!content.includes(oldLine)) {
+    console.warn('prepare-windows-runtime: could not find pnpm undici fetch line, patch may need updating')
+    return
+  }
+  const patched = content.replace(oldLine, newLine)
+  await writeFile(pnpmDist, patched, 'utf8')
+  console.log('prepare-windows-runtime: patched pnpm undici fetch to use globalThis.fetch')
+}
+
 async function smokeHarness() {
   const entry = join(harnessRoot, 'lib', 'bin.js')
   const smokeHome = join(outputRoot, 'smoke-home')
@@ -433,4 +464,5 @@ await pruneForeignNativePackages()
 await pruneRuntimeBloat()
 await stageNodeRuntime()
 await stagePackageManager()
+await patchPnpmUndiciFetch()
 await verifyRuntime()
