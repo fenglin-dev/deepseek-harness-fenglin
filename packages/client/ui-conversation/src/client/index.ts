@@ -54,6 +54,7 @@ export type {
   ComposerFileAttachment, ComposerImageAttachment, DraftFileUpload, DraftFileUploads,
   ComposerBarInjected, ComposerBarOwnerProps, ComposerBarProps, ComposerChainProps,
   ConversationHeaderActionOwnerProps, ConversationHeaderCornerOwnerProps, ConversationHeaderLineageOwnerProps,
+  ConversationHeaderMenuContribution, ConversationHeaderMenuItemOwnerProps,
   ConversationInjected, ConversationSessionHeaderInjected, ConversationSessionHeaderSlotProps,
   ConversationSessionInjected, ConversationSessionSlotProps, ConversationSlotProps,
   ConversationStore, ConvViewOwnerProps, ConvViewProps, EmptyWorkspaceOwnerProps,

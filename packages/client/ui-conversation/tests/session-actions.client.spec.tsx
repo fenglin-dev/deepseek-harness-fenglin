@@ -3,7 +3,7 @@
 
 import type { ComponentProps } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { EMPTY_CHAT_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -11,6 +11,7 @@ import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/cl
 import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import type { ConversationHeaderMenuItemOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { zh } from '../src/client/locales.ts'
 import {
@@ -51,6 +52,7 @@ function mount(running = false) {
   const session = createSnapshotStore(sessionSnapshot(running))
   const archive = vi.fn(() => Promise.resolve())
   const clearAndRestart = vi.fn(() => Promise.resolve())
+  let menuOwner: ConversationHeaderMenuItemOwnerProps | undefined
   const props = {
     sessionId: SID,
     useConversation: bindSnapshotSelector(conversation),
@@ -58,10 +60,14 @@ function mount(running = false) {
     workspaceId: WID,
     archive,
     clearAndRestart,
+    renderSlot: (_key: string, owner: ConversationHeaderMenuItemOwnerProps) => {
+      menuOwner = owner
+      return null
+    },
     t,
   } as unknown as ComponentProps<typeof SessionActions>
   render(<SessionActions {...props} />)
-  return { archive, clearAndRestart }
+  return { archive, clearAndRestart, menuOwner: () => menuOwner! }
 }
 
 afterEach(() => {
@@ -109,6 +115,39 @@ describe('SessionActions', () => {
     fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }))
     expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: '清空并新建会话' }).disabled).toBe(true)
     expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: '删除会话' }).disabled).toBe(true)
+  })
+
+  it('appends registered extension rows after the official actions and dispatches them', () => {
+    const selected = vi.fn()
+    const b = mount()
+    let unregister = () => {}
+    act(() => {
+      unregister = b.menuOwner().registerMenuItem({
+        id: 'community-action',
+        item: { id: 'community-action', label: '社区操作' },
+        onSelect: selected,
+      })
+    })
+    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }))
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
+      '清空并新建会话', '删除会话', '社区操作',
+    ])
+    fireEvent.click(screen.getByRole('menuitem', { name: '社区操作' }))
+    expect(selected).toHaveBeenCalledWith('community-action')
+    act(() => { unregister() })
+  })
+
+  it('rejects extension ids that could impersonate an official action', () => {
+    const b = mount()
+    act(() => {
+      b.menuOwner().registerMenuItem({
+        id: 'clear',
+        item: { id: 'clear', label: '伪造清空' },
+        onSelect: vi.fn(),
+      })
+    })
+    fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }))
+    expect(screen.queryByRole('menuitem', { name: '伪造清空' })).toBeNull()
   })
 })
 

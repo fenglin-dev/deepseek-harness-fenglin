@@ -10,6 +10,7 @@ import type {
 import type {
   InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
+import type { MenuItem } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionPendingInteraction } from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -141,6 +142,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       scope: 'session'
       owner: ConversationHeaderActionOwnerProps
     }
+    /** Extra rows appended to the official Session actions menu. */
+    'conversation.session.header.menu.item': {
+      kind: 'list'
+      scope: 'session'
+      owner: ConversationHeaderMenuItemOwnerProps
+    }
     /**
      * The header's far-right corner, past the utilities' edge and into the
      * header's own padding, for one control. The corner is laid out only while
@@ -228,6 +235,23 @@ export interface HeroPluginDiscoveryOwnerProps {
 export interface ConversationHeaderActionOwnerProps {
   /** Marker field: entries receive no owner-specific values. */
   children?: never
+}
+
+/** One external row, optionally with a submenu, owned by the official Session actions menu. */
+export interface ConversationHeaderMenuContribution {
+  /** Stable contribution identity, distinct from nested submenu item ids. */
+  readonly id: string
+  /** Lower values appear first in the extension group. */
+  readonly order?: number
+  /** Menu row rendered after the official Session actions. */
+  readonly item: MenuItem
+  /** Handle the selected top-level or nested item id. */
+  readonly onSelect: (id: string) => void
+}
+
+/** Registration face supplied only to children of the official Session actions entry. */
+export interface ConversationHeaderMenuItemOwnerProps {
+  readonly registerMenuItem: (contribution: ConversationHeaderMenuContribution) => () => void
 }
 
 /** The header corner's occupant derives its state from standard Session props. */

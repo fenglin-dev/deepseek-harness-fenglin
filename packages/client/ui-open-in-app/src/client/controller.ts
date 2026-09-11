@@ -1,4 +1,4 @@
-/** Browser availability/choice state and the launch carrier for the split button. */
+/** Browser availability/choice state and the launch carrier for the Session-menu item. */
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {

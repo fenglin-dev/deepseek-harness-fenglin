@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-open-in-app",
-  "description": "Web Session-header \"Open In...\" split button opening the session workspace directory in a locally installed application",
+  "description": "Web Session-header menu contribution for opening the session workspace directory in a locally installed application",
   "version": "0.1.5-rc.2",
   "publishConfig": {
     "access": "public"

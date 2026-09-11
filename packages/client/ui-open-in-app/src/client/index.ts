@@ -1,9 +1,9 @@
 /**
- * Browser half of open-in-app: one Session-header split button opening the
- * session's workspace directory (the summary's `cwd`) in the remembered
- * installed application. Availability arrives once per page from the host
- * apps route; the last choice persists in the browser through the controller's
- * persisted snapshot store.
+ * Browser half of open-in-app: one contribution to the official Session menu
+ * whose submenu opens the session workspace directory (the summary's `cwd`)
+ * in an installed application. Availability arrives once per page from the
+ * host apps route; the last choice persists in the browser through the
+ * controller's persisted snapshot store.
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -28,15 +28,15 @@ export type { OpenInAppActionInjected, OpenInAppActionProps } from './OpenInAppA
 export const inject = ['sessions', 'slots', 'locale']
 
 /**
- * Client plugin body: register the dictionaries and the header split button.
+ * Client plugin body: register the dictionaries and the Session-menu item.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
   const controller = new OpenInAppController()
   void controller.load()
   ctx.effect(() => ctx.locale.register(NS, { zh, en, ja, ko, es, fr, de, 'pt-BR': ptBR, ru }), 'open-in-app: dictionaries')
-  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-    name: 'conversation.session.header.utilities',
+  ctx.slots.inject('conversation.session.header.menu.item', () => ctx.slots.register({
+    name: 'conversation.session.header.menu.item',
     id: 'open-in-app',
     order: -10,
     locale: NS,

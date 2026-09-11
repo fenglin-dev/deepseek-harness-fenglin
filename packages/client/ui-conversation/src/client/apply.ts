@@ -408,6 +408,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     id: 'session-actions',
     order: -100,
     locale: NS,
+    children: {
+      'conversation.session.header.menu.item': { kind: 'list', scope: 'session' },
+    },
     inject: (sessionId: SessionId): SessionActionsInjected => {
       const workspaceId = workspaces.list.getSnapshot().items
         .find(item => item.sessionIds.includes(sessionId))?.workspaceId

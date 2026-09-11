@@ -1,15 +1,16 @@
 /** Session-level copy, clear, and removal controls for the conversation Header. */
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ConversationNode, PartialAssistant } from '../contract/records.ts'
 import type { ConversationSnapshot } from '../contract/snapshot.ts'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   Button, IconCheckOutline16, IconCopyOutline16, IconEllipsisOutline16,
   IconRefreshOutline16, IconTrashOutline16, Menu, Modal, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './SessionActions.module.css'
+import type { ConversationHeaderMenuContribution } from '../contract/slots.ts'
 
 /** Session-scoped operations supplied by the conversation plugin. */
 export interface SessionActionsInjected {
@@ -24,8 +25,13 @@ export interface SessionActionsInjected {
 type SessionActionsProps = SessionActionsInjected
   & PropsLocale<'conversation'>
   & PropsRuntime<'conversation.session.header.utilities'>
+  & PropsRenderSlots<'conversation.session.header.menu.item'>
+
+type RegisteredMenuContribution = ConversationHeaderMenuContribution & { readonly token: symbol }
 
 type ConfirmAction = 'clear' | 'remove'
+
+const RESERVED_MENU_IDS = new Set(['clear', 'remove', 'danger-separator', 'extension-separator'])
 
 type UserContent = Extract<ConversationNode, { kind: 'user' }>['content']
 
@@ -91,7 +97,7 @@ export function conversationTranscript(
  * @returns Header actions and the active confirmation dialog.
  */
 export function SessionActions({
-  useConversation, useSession, archive, clearAndRestart, workspaceId, t,
+  useConversation, useSession, archive, clearAndRestart, workspaceId, renderSlot, t,
 }: SessionActionsProps): ReactNode {
   const snapshot = useConversation(value => value)
   const running = useSession(value => value.running)
@@ -100,6 +106,7 @@ export function SessionActions({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [menuContributions, setMenuContributions] = useState<ReadonlyMap<string, RegisteredMenuContribution>>(new Map())
   const copyPending = useRef(false)
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const copyEpoch = useRef(0)
@@ -113,6 +120,27 @@ export function SessionActions({
     copyPending.current = false
     if (copyTimer.current !== null) clearTimeout(copyTimer.current)
   }, [])
+
+  const registerMenuItem = useCallback((contribution: ConversationHeaderMenuContribution): (() => void) => {
+    const ids = [contribution.item.id, ...(contribution.item.submenu?.map(item => item.id) ?? [])]
+    if (contribution.item.id !== contribution.id
+      || new Set(ids).size !== ids.length
+      || ids.some(id => RESERVED_MENU_IDS.has(id))) return () => {}
+    const token = Symbol(contribution.id)
+    setMenuContributions(current => new Map(current).set(contribution.id, { ...contribution, token }))
+    return () => {
+      setMenuContributions((current) => {
+        if (current.get(contribution.id)?.token !== token) return current
+        const next = new Map(current)
+        next.delete(contribution.id)
+        return next
+      })
+    }
+  }, [])
+
+  const extensions = useMemo(() => [...menuContributions.values()].sort((left, right) => (
+    (left.order ?? 0) - (right.order ?? 0) || left.id.localeCompare(right.id)
+  )), [menuContributions])
 
   const copy = (): void => {
     if (transcript === '' || copied || copyPending.current) return
@@ -192,13 +220,25 @@ export function SessionActions({
             danger: true,
             disabled: running,
           },
+          ...(extensions.length === 0 ? [] : [
+            { type: 'separator' as const, id: 'extension-separator' },
+            ...extensions.map(extension => extension.item),
+          ]),
         ]}
         onSelect={(id) => {
           setMenuOpen(false)
-          setConfirmation(id === 'clear' ? 'clear' : 'remove')
+          if (id === 'clear' || id === 'remove') {
+            setConfirmation(id)
+            return
+          }
+          const matches = extensions.filter(candidate => (
+            candidate.item.id === id || candidate.item.submenu?.some(item => item.id === id) === true
+          ))
+          if (matches.length === 1) matches[0]?.onSelect(id)
         }}
         onClose={() => { setMenuOpen(false) }}
       />
+      {renderSlot('conversation.session.header.menu.item', { registerMenuItem })}
       <Modal
         open={confirmation !== null}
         onClose={close}
