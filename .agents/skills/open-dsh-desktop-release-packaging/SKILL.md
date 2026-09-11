@@ -1,6 +1,6 @@
 ---
 name: open-dsh-desktop-release-packaging
-description: Prepare, build, monitor, download, verify, and optionally publish Open DeepSeek Harness Desktop releases. Use for release or packaging branches, Windows-first cross-platform runs, packaging-fix retries, local artifact handoff, bilingual Release notes, or publishing the exact verified installers. Default to local handoff; tags, uploads, and public Releases require fresh explicit authorization.
+description: Prepare, build, monitor, download, verify, and optionally publish Open DeepSeek Harness Desktop releases to GitHub and CNB. Use for release or packaging branches, Windows-first cross-platform runs, packaging-fix retries, local artifact handoff, bilingual Release notes, or publishing the exact verified installers. Default to local handoff; tags, uploads, and public Releases require fresh explicit authorization.
 ---
 
 # Open DSH Desktop release packaging
@@ -15,16 +15,16 @@ Choose the requested endpoint before starting:
 
 - download and verify only;
 - download, verify, and prepare bilingual Release notes;
-- download, verify, prepare notes, and publish after review.
+- download, verify, prepare notes, and publish to GitHub plus CNB after review.
 
-When the request does not choose one, use download-only. For either notes or publication, also read [references/release-publication.md](references/release-publication.md).
+When the request does not choose one, use download-only. For either notes or publication, also read [references/release-publication.md](references/release-publication.md) and [references/release-notes.md](references/release-notes.md).
 
 Treat these as separate authorizations:
 
 - editing or committing the release version;
 - pushing release or packaging-fix branches;
 - creating or pushing a tag;
-- creating a GitHub Release or uploading public assets.
+- creating a GitHub Release or uploading public assets to GitHub and CNB.
 
 An earlier permission to push a packaging-fix branch does not authorize a tag or Release.
 
@@ -38,6 +38,9 @@ An earlier permission to push a packaging-fix branch does not authorize a tag or
 - The local handoff directory is exactly `release/<version>/`. It is flat and contains exactly seven installers plus `SHA256SUMS`; it contains no platform subdirectories, run metadata, snapshot metadata, or other files.
 - A GitHub Release page shows ten entries because GitHub adds source ZIP and TAR archives to the eight uploaded files. Do not download those generated source archives into the local handoff directory or upload replacements for them.
 - A green build is not a downloaded deliverable. Download the named artifacts, verify the CI checksums, and report exact local paths.
+- CNB publication is downstream of the verified GitHub Release: the repository sync workflow mirrors the seven installers and writes the anonymous checksum-bearing update index. It is one authorized dual-target operation, but it is not atomic across providers.
+- Before asking for final publication authorization, verify `CNB_SYNC_ENABLED=true`, confirm the `CNB_TOKEN` secret name is configured, and confirm the sync workflow is available on the default branch. A draft or GitHub prerelease is intentionally ineligible for CNB distribution; resolve the intended Release state before publishing.
+- Do not call publication complete until the CNB sync run succeeds and the anonymous index exposes the exact tag, installer names, sizes, and SHA-256 values from the verified local set. A GitHub success followed by a CNB failure is a partial publication, not a success.
 - macOS qualification requires the final DMG and ZIP to pass `apps/desktop/scripts/smoke-macos-package.mjs` on each matching native runner before upload. Follow the macOS startup checks in the runbook; valid signatures and matching checksums alone do not establish launchability.
 - Never adopt a partial file from `gh` temporary storage or pair a resumable signed URL with a guessed artifact filename. A ZIP central directory can look plausible while its payload belongs to another artifact.
 
@@ -53,10 +56,10 @@ For an explicitly requested macOS-only repair, use `target=macos` and `refresh_p
 6. After all three targets succeed, download them together with [scripts/download-desktop-release.sh](scripts/download-desktop-release.sh). The helper uses a stable system-temporary staging directory, resumes verified artifact IDs, compares the three source SHAs and bundled-plugin snapshots, then atomically creates the flat `release/<version>/` directory. Do not replace it with an ad-hoc downloader.
 7. Re-run [scripts/verify-release-directory.sh](scripts/verify-release-directory.sh) before handoff. It rejects a missing installer, an extra file, a nested directory, an incorrect checksum, or a malformed ZIP.
 8. Confirm the Git checkout is clean and report the three accepted workflow runs and the helper's common source SHA and snapshot digest.
-9. If notes were requested, prepare `.artifacts/release-notes/<tag>.md` from the verified release delta and stop for review. If publication was requested, show the final tag, SHA, title, notes, assets, and checksums, then obtain fresh explicit authorization immediately before running the publication helper with `--publish`.
+9. If notes were requested, derive and fill the tag, title, and complete Chinese and English body according to [references/release-notes.md](references/release-notes.md), write `.artifacts/release-notes/<tag>.md`, and stop for review. Do not hand the user an empty template or ask them to reconstruct the change list. If publication was requested, show the final tag, SHA, title, notes, assets, checksums, GitHub destination, CNB destination, and intended Release state, then obtain fresh explicit authorization immediately before running the dual-target publication flow in the publication reference.
 
 Do not run Playwright or `test:web` as part of this workflow unless the user separately requests them or a packaging failure specifically requires them.
 
 ## Completion report
 
-Lead with the outcome. Include the release and fix branch names, final commit, commits created, exact checks run, workflow run links, local artifact directory, per-file checksum result, and any non-blocking workflow warning. State explicitly whether `master`, tags, or a GitHub Release were pushed or created. For publication, also report the notes path, public URL, tag target, prerelease/latest state, and remote digest verification.
+Lead with the outcome. Include the release and fix branch names, final commit, commits created, exact checks run, workflow run links, local artifact directory, per-file checksum result, and any non-blocking workflow warning. State explicitly whether `master`, tags, or a public Release was pushed or created. For publication, report the notes path, GitHub and CNB URLs, tag target, prerelease/latest state, CNB sync run and index revision, and remote identity verification for both providers. If only one provider completed, call the result partial and name the remaining recovery action.

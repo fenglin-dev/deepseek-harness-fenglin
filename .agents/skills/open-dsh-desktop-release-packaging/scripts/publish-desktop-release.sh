@@ -2,16 +2,33 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 [--publish] <owner/repo> <source-sha> <tag> <title> <notes-file> <release-directory>" >&2
+  echo "usage: $0 [--publish] --release-state <stable|prerelease> <owner/repo> <source-sha> <tag> <title> <notes-file> <release-directory>" >&2
   exit 2
 }
 
 publish=0
-if [[ ${1:-} == --publish ]]; then
-  publish=1
-  shift
-fi
+release_state=
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --publish)
+      publish=1
+      shift
+      ;;
+    --release-state)
+      [[ $# -ge 2 ]] || usage
+      release_state=$2
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*) usage ;;
+    *) break ;;
+  esac
+done
 [[ $# -eq 6 ]] || usage
+[[ "$release_state" == stable || "$release_state" == prerelease ]] || usage
 
 repository=$1
 source_sha=$2
@@ -79,11 +96,11 @@ else
 fi
 
 prerelease=0
-case "$version" in *-*) prerelease=1 ;; esac
+if [[ "$release_state" == prerelease ]]; then prerelease=1; fi
 
 echo "Release publication plan"
-printf '  repository: %s\n  source SHA: %s\n  tag: %s\n  title: %s\n  notes: %s\n  assets:\n' \
-  "$repository" "$source_sha" "$tag" "$title" "$notes_file"
+printf '  repository: %s\n  source SHA: %s\n  tag: %s\n  title: %s\n  release state: %s\n  notes: %s\n  assets:\n' \
+  "$repository" "$source_sha" "$tag" "$title" "$release_state" "$notes_file"
 for filename in "${assets[@]}"; do
   printf '    %s  %s\n' "$(shasum -a 256 "$release_directory/$filename" | awk '{ print $1 }')" "$release_directory/$filename"
 done

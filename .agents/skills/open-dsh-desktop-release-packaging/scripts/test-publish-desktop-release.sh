@@ -40,8 +40,8 @@ printf '%q ' "$@" >> "$FAKE_GH_LOG"
 printf '\n' >> "$FAKE_GH_LOG"
 sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 tag=${FAKE_TAG:-odsh-v0.1.2-rc.9}
-title=${FAKE_TITLE:-Open DeepSeek Harness Desktop v0.1.2-rc.9}
-prerelease=${FAKE_PRERELEASE:-true}
+title=${FAKE_TITLE:-v0.1.2-rc.9}
+prerelease=${FAKE_PRERELEASE:-false}
 if [[ $1 == api && $2 == repos/test/repository/commits/$sha ]]; then echo "$sha"; exit 0; fi
 if [[ $1 == api && $2 == repos/test/repository ]]; then exit 0; fi
 if [[ $1 == api && $2 == repos/test/repository/releases/latest ]]; then echo "$tag"; exit 0; fi
@@ -80,55 +80,72 @@ export FAKE_GH_PUBLISHED="$temporary/published"
 export FAKE_RELEASE_DIRECTORY="$release_directory"
 export ODSH_VERIFY_DMG=0
 sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-common=(test/repository "$sha" odsh-v0.1.2-rc.9 "Open DeepSeek Harness Desktop v0.1.2-rc.9" "$notes_file" "$release_directory")
+common=(test/repository "$sha" odsh-v0.1.2-rc.9 "v0.1.2-rc.9" "$notes_file" "$release_directory")
 
-"$script_directory/publish-desktop-release.sh" "${common[@]}" > "$temporary/dry-run.log"
+"$script_directory/publish-desktop-release.sh" --release-state stable "${common[@]}" > "$temporary/dry-run.log"
 [[ ! -e "$FAKE_GH_PUBLISHED" ]]
 ! grep -q 'release create' "$FAKE_GH_LOG"
 grep -q 'no tag, asset, or Release was created' "$temporary/dry-run.log"
+grep -q 'release state: stable' "$temporary/dry-run.log"
 
 : > "$FAKE_GH_LOG"
-"$script_directory/publish-desktop-release.sh" --publish "${common[@]}" > "$temporary/publish.log"
+"$script_directory/publish-desktop-release.sh" --publish --release-state stable "${common[@]}" > "$temporary/publish.log"
 grep -q 'release create' "$FAKE_GH_LOG"
+grep -q -- '--latest' "$FAKE_GH_LOG"
+! grep -q -- '--prerelease' "$FAKE_GH_LOG"
+grep -q 'published verified Release' "$temporary/publish.log"
+
+rm -f "$FAKE_GH_PUBLISHED"
+: > "$FAKE_GH_LOG"
+FAKE_PRERELEASE=true \
+  "$script_directory/publish-desktop-release.sh" --publish --release-state prerelease \
+  "${common[@]}" > "$temporary/prerelease.log"
 grep -q -- '--prerelease' "$FAKE_GH_LOG"
 grep -q -- '--latest=false' "$FAKE_GH_LOG"
-grep -q 'published verified Release' "$temporary/publish.log"
+grep -q 'release state: prerelease' "$temporary/prerelease.log"
 
 stable_directory="$temporary/0.1.3"
 cp -R "$release_directory" "$stable_directory"
 rm -f "$FAKE_GH_PUBLISHED"
 : > "$FAKE_GH_LOG"
 FAKE_TAG=odsh-v0.1.3 \
-FAKE_TITLE='Open DeepSeek Harness Desktop v0.1.3' \
+FAKE_TITLE='v0.1.3' \
 FAKE_PRERELEASE=false \
 FAKE_RELEASE_DIRECTORY="$stable_directory" \
-  "$script_directory/publish-desktop-release.sh" --publish test/repository "$sha" odsh-v0.1.3 \
-  'Open DeepSeek Harness Desktop v0.1.3' "$notes_file" "$stable_directory" > "$temporary/stable.log"
+  "$script_directory/publish-desktop-release.sh" --publish --release-state stable \
+  test/repository "$sha" odsh-v0.1.3 'v0.1.3' "$notes_file" "$stable_directory" > "$temporary/stable.log"
 grep -q -- '--latest' "$FAKE_GH_LOG"
 ! grep -q -- '--prerelease' "$FAKE_GH_LOG"
 grep -q 'published verified Release' "$temporary/stable.log"
 
 rm -f "$FAKE_GH_PUBLISHED"
-if FAKE_GH_EXISTING=1 "$script_directory/publish-desktop-release.sh" "${common[@]}" >/dev/null 2>&1; then
+if "$script_directory/publish-desktop-release.sh" "${common[@]}" >/dev/null 2>&1; then
+  echo "missing release state should have been rejected" >&2
+  exit 1
+fi
+
+if FAKE_GH_EXISTING=1 "$script_directory/publish-desktop-release.sh" \
+  --release-state stable "${common[@]}" >/dev/null 2>&1; then
   echo "existing Release should have been rejected" >&2
   exit 1
 fi
 
-if FAKE_BAD_DIGEST=1 "$script_directory/publish-desktop-release.sh" --publish "${common[@]}" >/dev/null 2>&1; then
+if FAKE_BAD_DIGEST=1 "$script_directory/publish-desktop-release.sh" \
+  --publish --release-state stable "${common[@]}" >/dev/null 2>&1; then
   echo "remote digest mismatch should have been rejected" >&2
   exit 1
 fi
 rm -f "$FAKE_GH_PUBLISHED"
 
 mv "$release_directory/DeepSeek-Harness-linux-x64.rpm" "$temporary/missing.rpm"
-if "$script_directory/publish-desktop-release.sh" "${common[@]}" >/dev/null 2>&1; then
+if "$script_directory/publish-desktop-release.sh" --release-state stable "${common[@]}" >/dev/null 2>&1; then
   echo "missing asset should have been rejected" >&2
   exit 1
 fi
 mv "$temporary/missing.rpm" "$release_directory/DeepSeek-Harness-linux-x64.rpm"
 
 printf 'extra\n' > "$release_directory/unexpected.txt"
-if "$script_directory/publish-desktop-release.sh" "${common[@]}" >/dev/null 2>&1; then
+if "$script_directory/publish-desktop-release.sh" --release-state stable "${common[@]}" >/dev/null 2>&1; then
   echo "extra asset should have been rejected" >&2
   exit 1
 fi
@@ -137,14 +154,14 @@ rm "$release_directory/unexpected.txt"
 cp "$release_directory/SHA256SUMS" "$temporary/checksums.good"
 printf '0%.0s' {1..64} > "$release_directory/SHA256SUMS"
 printf '  DeepSeek-Harness-linux-x64.deb\n' >> "$release_directory/SHA256SUMS"
-if "$script_directory/publish-desktop-release.sh" "${common[@]}" >/dev/null 2>&1; then
+if "$script_directory/publish-desktop-release.sh" --release-state stable "${common[@]}" >/dev/null 2>&1; then
   echo "invalid checksum set should have been rejected" >&2
   exit 1
 fi
 mv "$temporary/checksums.good" "$release_directory/SHA256SUMS"
 
-if "$script_directory/publish-desktop-release.sh" test/repository "$sha" odsh-v9.9.9 \
-  "Open DeepSeek Harness Desktop v0.1.2-rc.9" "$notes_file" "$release_directory" >/dev/null 2>&1; then
+if "$script_directory/publish-desktop-release.sh" --release-state stable \
+  test/repository "$sha" odsh-v9.9.9 "v0.1.2-rc.9" "$notes_file" "$release_directory" >/dev/null 2>&1; then
   echo "mismatched tag should have been rejected" >&2
   exit 1
 fi
