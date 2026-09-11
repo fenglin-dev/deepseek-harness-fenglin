@@ -6,6 +6,38 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 
+const OPEN_DOCUMENT_TIMEOUT_MS = 10_000
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+type DesktopDocumentOpen = () => Promise<{ error: string }>
+
+function desktopDocumentOpen(): DesktopDocumentOpen | undefined {
+  const desktop = (globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop
+  const shell = (desktop as { shell?: unknown } | undefined)?.shell
+  if (shell === null || typeof shell !== 'object') return undefined
+  const open = (shell as { openSettingsDocument?: unknown }).openSettingsDocument
+  return typeof open === 'function'
+    ? () => open.call(shell) as ReturnType<DesktopDocumentOpen>
+    : undefined
+}
+
+async function withOpenTimeout<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => { reject(new Error('settings document open timed out')) }, OPEN_DOCUMENT_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
 /** Browser state of the Host-owned settings document. */
 export interface SettingsDocumentState {
   /** Metadata-loading phase; unavailable means the provider has no local document or the read failed. */
@@ -51,8 +83,9 @@ export class SettingsDocumentStore {
   }
 
   /**
-   * Open the loaded document once; concurrent gestures collapse behind the in-flight action.
-   * @returns after the native-open request settles, or immediately when unavailable/already opening.
+   * Open the loaded document through Electron's fixed operation when present, otherwise through the Host.
+   * Concurrent gestures collapse behind the in-flight action; rejection and a ten-second timeout become visible error state.
+   * @returns after the open request settles, or immediately when unavailable/already opening.
    */
   async open(): Promise<void> {
     const current = this.store.getSnapshot()
@@ -62,11 +95,19 @@ export class SettingsDocumentStore {
       state.error = null
     })
     try {
-      const result = await this.ctx.remote.settings.openSettingsDocument()
+      const desktopOpen = desktopDocumentOpen()
+      if (desktopOpen !== undefined) {
+        const result = await withOpenTimeout(desktopOpen())
+        if (result.error !== '') this.store.update((state) => { state.error = result.error })
+        return
+      }
+      const result = await withOpenTimeout(this.ctx.remote.settings.openSettingsDocument())
       if (!result.ok) {
         const { message } = result.error
         this.store.update((state) => { state.error = message })
       }
+    } catch (error: unknown) {
+      this.store.update((state) => { state.error = errorMessage(error) })
     } finally {
       this.store.update((state) => { state.opening = false })
     }

@@ -128,6 +128,12 @@ async function openWslPath(path: string, signal: AbortSignal, run: PathOpenerRun
   await openWindowsPath(windowsPath, signal, run, 'powershell.exe')
 }
 
+/** Resolve the inbox Windows Notepad without depending on file associations or PATH. */
+function windowsNotepadPath(env: NodeJS.ProcessEnv): string {
+  const systemRoot = env.SystemRoot ?? env.WINDIR ?? 'C:\\Windows'
+  return win32.join(systemRoot, 'System32', 'notepad.exe')
+}
+
 /** Dispatch one shell-free platform command for the requested open intent. */
 async function openNativePathWithIntent(
   path: string,
@@ -149,6 +155,10 @@ async function openNativePathWithIntent(
   }
 
   if (platform === 'win32') {
+    if (intent === 'text-editor') {
+      await run(windowsNotepadPath(env), [path], signal)
+      return
+    }
     await openWindowsPath(path, signal, run, windowsPowerShellPath(env))
     return
   }
@@ -200,8 +210,9 @@ export function openNativePath(
 }
 
 /**
- * Open a text document for editing; macOS bypasses the file-type association
- * so a YAML association with a browser cannot consume the gesture.
+ * Open a text document for editing. macOS requests its text-editor intent and
+ * Windows uses the inbox Notepad, so YAML file associations cannot consume or
+ * silently discard the gesture.
  * @param path - absolute or host-resolvable text-document path.
  * @param signal - caller/connection lifetime; abort terminates the native command.
  * @param internals - Platform and runner hooks for deterministic tests.

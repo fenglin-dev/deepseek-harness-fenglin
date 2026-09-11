@@ -215,6 +215,7 @@ export interface DesktopShellBridge {
   updatePreferences(patch: Partial<DesktopPreferences>): Promise<DesktopPreferences>
   onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
   openLog(): Promise<{ kind: 'file' | 'directory'; error: string }>
+  openSettingsDocument(): Promise<{ error: string }>
   getCommandLine(): Promise<DesktopCliStatus>
   installCommandLine(force: boolean): Promise<DesktopCliStatus>
   removeCommandLine(): Promise<DesktopCliStatus>

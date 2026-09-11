@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
@@ -21,6 +21,10 @@ function opened(): RemoteResult<{ opened: true }> {
 function describeFailed(message: string) {
   return { ok: false as const, error: new RemoteError('gateway/internal', message, {}) }
 }
+
+afterEach(() => {
+  delete (globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop
+})
 
 describe('SettingsDocumentStore', () => {
   it('loads provider metadata and asks the settings domain to open its document', async () => {
@@ -75,6 +79,57 @@ describe('SettingsDocumentStore', () => {
     expect(controller.store.getSnapshot()).toMatchObject({
       status: 'ready', opening: false, error: 'no default editor',
     })
+  })
+
+  it('reports a rejected native-open request instead of leaving a silent click', async () => {
+    const controller = derivedDocumentStore({
+      settings: {
+        describe: () => Promise.resolve(response(true)),
+        openSettingsDocument: () => Promise.reject(new Error('connection closed')),
+      },
+    })
+    await controller.load()
+    await controller.open()
+    expect(controller.store.getSnapshot()).toMatchObject({
+      status: 'ready', opening: false, error: 'connection closed',
+    })
+  })
+
+  it('uses the Electron fixed operation instead of asking the Harness process to open the file', async () => {
+    const desktopOpen = vi.fn(async () => ({ error: '' }))
+    ;(globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop = {
+      shell: { openSettingsDocument: desktopOpen },
+    }
+    const hostOpen = vi.fn(() => Promise.resolve(opened()))
+    const controller = derivedDocumentStore({
+      settings: { describe: () => Promise.resolve(response(true)), openSettingsDocument: hostOpen },
+    })
+    await controller.load()
+    await controller.open()
+    expect(desktopOpen).toHaveBeenCalledOnce()
+    expect(hostOpen).not.toHaveBeenCalled()
+  })
+
+  it('recovers the button with visible error state when an open request does not settle', async () => {
+    vi.useFakeTimers()
+    try {
+      const controller = derivedDocumentStore({
+        settings: {
+          describe: () => Promise.resolve(response(true)),
+          openSettingsDocument: () => new Promise(() => {}),
+        },
+      })
+      await controller.load()
+      const opening = controller.open()
+      expect(controller.store.getSnapshot().opening).toBe(true)
+      await vi.advanceTimersByTimeAsync(10_000)
+      await opening
+      expect(controller.store.getSnapshot()).toMatchObject({
+        status: 'ready', opening: false, error: 'settings document open timed out',
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('recovers availability via a mirror refresh after a failed first read', async () => {

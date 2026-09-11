@@ -49,6 +49,7 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
       }),
       onPreferences: vi.fn(() => () => {}),
       openLog: vi.fn(),
+      openSettingsDocument: vi.fn(() => Promise.resolve({ error: '' })),
       getCommandLine: vi.fn(() => Promise.resolve({
         phase: 'uninstalled' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
       })),

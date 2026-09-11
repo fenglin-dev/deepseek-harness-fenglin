@@ -101,14 +101,14 @@ describe('native path opener', () => {
     )
   })
 
-  it('uses the Windows desktop association for text documents', async () => {
+  it('uses the inbox Windows text editor without relying on a YAML file association', async () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
     await openNativeTextFile('C:\\work\\settings.yaml', signal(), {
       platform: 'win32', env: { WINDIR: 'E:\\WinDir' }, run,
     })
     expect(run).toHaveBeenCalledWith(
-      'E:\\WinDir\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
-      ['-NoProfile', '-Command', "Invoke-Item -LiteralPath 'C:\\work\\settings.yaml'"],
+      'E:\\WinDir\\System32\\notepad.exe',
+      ['C:\\work\\settings.yaml'],
       expect.any(AbortSignal),
     )
   })

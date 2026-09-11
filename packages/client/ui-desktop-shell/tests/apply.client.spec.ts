@@ -33,6 +33,7 @@ function installBridge(): ReturnType<typeof vi.fn> {
         closeBehavior: 'tray', notificationsEnabled: true, launchAtLoginEnabled: false, openBrowserOnStartup: false,
       })),
       updatePreferences: vi.fn(), onPreferences: vi.fn(() => () => {}), openLog: vi.fn(),
+      openSettingsDocument: vi.fn(() => Promise.resolve({ error: '' })),
       getCommandLine: vi.fn(() => Promise.resolve({
         phase: 'uninstalled', commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
       })),

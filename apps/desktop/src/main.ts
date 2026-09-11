@@ -416,8 +416,10 @@ async function openSettingsDocument(): Promise<{ error: string }> {
     if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error
     return { error: await shell.openPath(dshHome) }
   }
+  const error = await shell.openPath(settingsPath)
+  if (error === '') return { error }
   shell.showItemInFolder(settingsPath)
-  return { error: '' }
+  return { error }
 }
 let preferencesStore: DesktopPreferencesStore | undefined
 let preferences: DesktopPreferences = { ...DEFAULT_DESKTOP_PREFERENCES }
