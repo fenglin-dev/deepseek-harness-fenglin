@@ -14,22 +14,22 @@
     {
       "seedId": "xmanrui-dsh-im",
       "packageName": "@xmanrui/dsh-im",
-      "version": "4.18.1",
+      "version": "4.19.2",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "@xmanrui/dsh-im@4.18.1",
-      "archive": "xmanrui-dsh-im-4.18.1.tgz",
-      "integrity": "sha512-M684m3qaFcA9pdrwG+fHcnBliuCLxx3EgJYMfJ+0GY1peEYxoZGNb7C/uN0CoPBn4p44A4+jJ1CuSt9s0O7FAg=="
+      "registrySpec": "@xmanrui/dsh-im@4.19.2",
+      "archive": "xmanrui-dsh-im-4.19.2.tgz",
+      "integrity": "sha512-JUJQ/GX5Pv8Br2TgdpO/cuyu0NRHygQjZcvgSq53MQboA5e+udXFHjSjtnK0jq+O7P3Cb/kGSdub1h14kTzKCw=="
     },
     {
       "seedId": "dsh-skill-picker",
       "packageName": "dsh-skill-picker",
-      "version": "0.5.7",
+      "version": "0.5.9",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dsh-skill-picker@0.5.7",
-      "archive": "dsh-skill-picker-0.5.7.tgz",
-      "integrity": "sha512-FbhoGF+u9ZnakaG0vQV2GyepR6Pl5zSmMevY5FnVSsL5lT3wtXDdb0DqTfo9W+rSqFYv9bGZjUf1elUO9fCWvg=="
+      "registrySpec": "dsh-skill-picker@0.5.9",
+      "archive": "dsh-skill-picker-0.5.9.tgz",
+      "integrity": "sha512-gmry19MqaNRaIIbidQ1sg/WQIRkHraPkJaEmNomO5BViKEnw4/aHNR1cOqDY+VpqvviC7r3txJsNbM0ArnzASw=="
     },
     {
       "seedId": "dsh-better-sidebar",
@@ -47,12 +47,12 @@
     {
       "seedId": "dsh-pocket",
       "packageName": "dsh-pocket",
-      "version": "2.10.3",
+      "version": "2.10.6",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dsh-pocket@2.10.3",
-      "archive": "dsh-pocket-2.10.3.tgz",
-      "integrity": "sha512-3z60cvEuriyFM5lEIl3z5yIMU3UojChnsEJodD2TTRU2QU3VmOqwE9iurTCgDZS8tWgpW8sffmHDDGHXcUBC7g=="
+      "registrySpec": "dsh-pocket@2.10.6",
+      "archive": "dsh-pocket-2.10.6.tgz",
+      "integrity": "sha512-yqybeWWutozi1yBLDpSs6ien9SndFPVNK6HlmhJf8q0AOLauzcLntmFyGQ0/v3EzS3V8ftM4yvqcc/o6LcGcGA=="
     },
     {
       "seedId": "ychris12138-dsh-usage-stats",
@@ -67,12 +67,12 @@
     {
       "seedId": "dsh-smooth-stream",
       "packageName": "dsh-smooth-stream",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dsh-smooth-stream@0.6.0",
-      "archive": "dsh-smooth-stream-0.6.0.tgz",
-      "integrity": "sha512-qGxi0pe5YUt+N0yMkXtrGiVyG2X23NN5h8MDfutiUvyjXNjyAvizo+y+VD7kDlWMKO+qD6Do4CD3DsU9bZ8YnQ=="
+      "registrySpec": "dsh-smooth-stream@0.6.1",
+      "archive": "dsh-smooth-stream-0.6.1.tgz",
+      "integrity": "sha512-gikVy5Wo5O7wUMOnd6cLCP/NA1fy+XOrhAiWoucjTDoLrfwu/88mK6jltv7Uv1jD4hf68j80oUArS9KnPQztCw=="
     },
     {
       "seedId": "diagnostic-dsh-font",

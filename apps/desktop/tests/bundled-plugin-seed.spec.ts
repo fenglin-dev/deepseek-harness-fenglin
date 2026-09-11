@@ -95,7 +95,7 @@ describe('bundled plugin seed', () => {
     expect(manifest.plugins.find(entry => entry.packageName === '@ychris12138/dsh-usage-stats'))
       .toMatchObject({ version: '0.3.2', installPolicy: 'startup' })
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-smooth-stream'))
-      .toMatchObject({ version: '0.6.0', installPolicy: 'startup' })
+      .toMatchObject({ version: '0.6.1', installPolicy: 'startup' })
     expect(new Set(manifest.plugins.map(entry => entry.seedId)).size).toBe(manifest.plugins.length)
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-better-sidebar')?.approvedBuilds)
       .toEqual(['node-pty'])
