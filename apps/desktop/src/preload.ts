@@ -41,6 +41,9 @@ import type { StartupDiagnosticIncident } from './startup-diagnostics.ts'
 import type { DesktopProcessSnapshot } from './process-observer.ts'
 import type { PersistentServiceSummary } from '@deepseek-ai/dsh-subprocess/persistent'
 import type { DesktopWebOpenResult, DesktopWebStatus } from './desktop-web-access.ts'
+import type {
+  DownloadNetworkPatch, DownloadNetworkSettings, DownloadNetworkTarget, DownloadNetworkTestStatus,
+} from './download-network-settings.ts'
 
 /** Renderer-visible update methods; no generic process or filesystem access is exposed. */
 export interface DesktopUpdateBridge {
@@ -96,6 +99,17 @@ export interface DesktopReleasesBridge {
   cancelDownload(): Promise<DesktopReleaseDownloadStatus>
   openInstaller(): Promise<{ error: string }>
   onDownloadStatus(callback: (status: DesktopReleaseDownloadStatus) => void): () => void
+}
+
+/** Validated routing settings for desktop-owned downloads. */
+export interface DesktopDownloadNetworkBridge {
+  get(): Promise<DownloadNetworkSettings>
+  update(patch: DownloadNetworkPatch): Promise<DownloadNetworkSettings>
+  reset(target: DownloadNetworkTarget): Promise<DownloadNetworkSettings>
+  getTestStatus(): Promise<DownloadNetworkTestStatus>
+  test(target: DownloadNetworkTarget): Promise<DownloadNetworkTestStatus>
+  onSettings(callback: (settings: DownloadNetworkSettings) => void): () => void
+  onTestStatus(callback: (status: DownloadNetworkTestStatus) => void): () => void
 }
 
 /** URL-free access to the main process's authenticated local Web handoff. */
@@ -233,6 +247,24 @@ const releasesBridge: DesktopReleasesBridge = {
     const listener = (_event: Electron.IpcRendererEvent, next: DesktopReleaseDownloadStatus): void => { callback(next) }
     ipcRenderer.on('dsh:desktop:release-download-status', listener)
     return () => { ipcRenderer.removeListener('dsh:desktop:release-download-status', listener) }
+  },
+}
+
+const downloadNetworkBridge: DesktopDownloadNetworkBridge = {
+  get: () => ipcRenderer.invoke('dsh:desktop:download-network:get') as Promise<DownloadNetworkSettings>,
+  update: patch => ipcRenderer.invoke('dsh:desktop:download-network:update', patch) as Promise<DownloadNetworkSettings>,
+  reset: target => ipcRenderer.invoke('dsh:desktop:download-network:reset', target) as Promise<DownloadNetworkSettings>,
+  getTestStatus: () => ipcRenderer.invoke('dsh:desktop:download-network:test:get') as Promise<DownloadNetworkTestStatus>,
+  test: target => ipcRenderer.invoke('dsh:desktop:download-network:test', target) as Promise<DownloadNetworkTestStatus>,
+  onSettings(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, settings: DownloadNetworkSettings): void => { callback(settings) }
+    ipcRenderer.on('dsh:desktop:download-network', listener)
+    return () => { ipcRenderer.removeListener('dsh:desktop:download-network', listener) }
+  },
+  onTestStatus(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, status: DownloadNetworkTestStatus): void => { callback(status) }
+    ipcRenderer.on('dsh:desktop:download-network:test-status', listener)
+    return () => { ipcRenderer.removeListener('dsh:desktop:download-network:test-status', listener) }
   },
 }
 
@@ -385,6 +417,7 @@ contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
   shell: Object.freeze(shellBridge),
   icons: Object.freeze(iconsBridge),
   releases: Object.freeze(releasesBridge),
+  downloadNetwork: Object.freeze(downloadNetworkBridge),
   desktopWeb: Object.freeze(desktopWebBridge),
   bundledPlugins: Object.freeze(bundledPluginsBridge),
   externalTools: Object.freeze(externalToolsBridge),

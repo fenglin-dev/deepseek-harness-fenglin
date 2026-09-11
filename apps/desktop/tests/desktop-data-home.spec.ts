@@ -12,6 +12,7 @@ import {
   IMPORTED_ONBOARDING_RESET_VERSION,
   readDesktopDataHomeSetup,
   resetImportedDesktopOnboarding,
+  resolveDesktopApplicationDataRoot,
   resolveDesktopDataHomeSwitch,
   resolveDesktopDataHomeRecoverySelection,
   resolveDesktopDataHomeSource,
@@ -34,6 +35,18 @@ afterEach(async () => {
 })
 
 describe('desktop data home', () => {
+  it('allows an absolute application-data override only for isolated development launches', () => {
+    expect(resolveDesktopApplicationDataRoot('/app-data', false, {
+      DSH_DESKTOP_DEV_APP_DATA: '/tmp/isolated-desktop-data',
+    })).toBe('/tmp/isolated-desktop-data')
+    expect(resolveDesktopApplicationDataRoot('/app-data', true, {
+      DSH_DESKTOP_DEV_APP_DATA: '/tmp/isolated-desktop-data',
+    })).toBe('/app-data')
+    expect(() => resolveDesktopApplicationDataRoot('/app-data', false, {
+      DSH_DESKTOP_DEV_APP_DATA: 'relative/path',
+    })).toThrow('must be an absolute path')
+  })
+
   it('separates packaged and development data under the repository name', () => {
     const packaged = resolveDesktopDataHomeLayout('/app-data', '/home/user', true, {})
     const development = resolveDesktopDataHomeLayout('/app-data', '/home/user', false, {})

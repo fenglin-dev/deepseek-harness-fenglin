@@ -33,6 +33,27 @@ const RECOGNIZABLE_ENTRIES = Object.freeze([
   'profiles/web/pnpm-workspace.yaml',
 ])
 
+/**
+ * Resolve an optional application-data root used only by isolated development launches.
+ * Installed applications always retain Electron's platform application-data root.
+ * @param appData - Electron's platform application-data root.
+ * @param packaged - Whether this is an installed application.
+ * @param environment - Launch environment containing an optional development override.
+ * @returns The normalized application-data root.
+ */
+export function resolveDesktopApplicationDataRoot(
+  appData: string,
+  packaged: boolean,
+  environment: Record<string, string | undefined>,
+): string {
+  const configured = environment.DSH_DESKTOP_DEV_APP_DATA?.trim()
+  if (packaged || configured === undefined || configured.length === 0) return appData
+  if (!isAbsolute(configured)) {
+    throw new Error('DSH_DESKTOP_DEV_APP_DATA must be an absolute path.')
+  }
+  return resolve(configured)
+}
+
 /** Stable paths selected before Electron acquires its single-instance lock. */
 export interface DesktopDataHomeLayout {
   readonly desktopRoot: string

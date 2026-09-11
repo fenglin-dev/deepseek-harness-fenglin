@@ -7,6 +7,7 @@ import {
   DesktopReleaseDownloader, installerAssetName, isAllowedReleaseAssetApiUrl, isAllowedReleaseAssetUrl, isAllowedReleaseTag,
   readReleaseChecksum, type ReleaseFetch,
 } from '../src/release-downloader.ts'
+import { CNB_UPDATE_INDEX_URL } from '../src/cnb-release-source.ts'
 
 const tag = 'odsh-v0.1.0-rc.8'
 const installerName = 'DeepSeek-Harness-macos-arm64.dmg'
@@ -80,6 +81,41 @@ afterEach(async () => {
 })
 
 describe('desktop Release downloader', () => {
+  it('downloads and revalidates an independently indexed CNB installer', async () => {
+    const directory = await temporaryDirectory()
+    const installer = Buffer.from('verified CNB installer')
+    const checksum = createHash('sha256').update(installer).digest('hex')
+    const cnbUrl = `https://cnb.cool/hecoococ/open-deepseek-harness-desktop/-/releases/download/${tag}/${installerName}`
+    const index = {
+      schema: 'open-dsh-desktop/cnb-update-index/v1', revision: 1,
+      generatedAt: new Date(Date.now() - 1_000).toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      releases: [{
+        version: '0.1.0-rc.8', tagName: tag, publishedAt: '2026-08-20T00:00:00Z', withdrawn: false,
+        releaseUrl: `https://cnb.cool/hecoococ/open-deepseek-harness-desktop/-/releases/tag/${tag}`,
+        assets: [{ name: installerName, size: installer.byteLength, sha256: checksum, url: cnbUrl }],
+      }],
+    }
+    const fetchMock = vi.fn<ReleaseFetch>(input => Promise.resolve(
+      requestUrl(input) === CNB_UPDATE_INDEX_URL
+        ? new Response(JSON.stringify(index))
+        : new Response(installer),
+    ))
+    const openPath = vi.fn(() => Promise.resolve(''))
+    const manager = new DesktopReleaseDownloader({
+      platform: 'darwin', arch: 'arm64', downloadDirectory: directory,
+      getRelease: () => ({ ...releaseStatus(), source: 'cnb' }),
+      openPath, systemFetch: fetchMock,
+    })
+
+    await expect(manager.start()).resolves.toEqual({
+      phase: 'ready', version: '0.1.0-rc.8', fileName: installerName,
+    })
+    await expect(manager.open()).resolves.toEqual({ error: '' })
+    expect(fetchMock.mock.calls.filter(([input]) => requestUrl(input) === CNB_UPDATE_INDEX_URL)).toHaveLength(2)
+    expect(openPath).toHaveBeenCalledOnce()
+  })
+
   it('selects only the installer format the host can open', () => {
     expect(installerAssetName('darwin', 'arm64')).toBe(installerName)
     expect(installerAssetName('win32', 'x64')).toBe('DeepSeek-Harness-windows-x64.exe')

@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process'
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { rebindProfilePnpmStore } from './profile-pnpm-store.ts'
 import type { ProfilePackageManagerResult } from '@deepseek-ai/dsh-app-boot'
 import { packageNetworkDiagnostic } from './package-network-diagnostic.ts'
@@ -192,6 +192,41 @@ export function resolvePnpmInvocation(environment: NodeJS.ProcessEnv, args: read
   }
 }
 
+/** Resolve desktop-owned package download settings for one pnpm operation. */
+export function profilePackageDownloadEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const resolved = { ...environment }
+  const networkFile = environment.DSH_DESKTOP_DOWNLOAD_NETWORK_FILE?.trim()
+  let networkRevision: number | undefined
+  if (networkFile !== undefined && networkFile !== '') {
+    try {
+      const raw = JSON.parse(readFileSync(networkFile, 'utf8')) as { revision?: unknown; npm?: { registry?: unknown; registryUrl?: unknown } }
+      if (Number.isSafeInteger(raw.revision) && Number(raw.revision) >= 0) networkRevision = Number(raw.revision)
+      const registry = raw.npm?.registry === 'npmjs' ? 'https://registry.npmjs.org'
+        : raw.npm?.registry === 'npmmirror' ? 'https://registry.npmmirror.com'
+          : raw.npm?.registry === 'custom' && typeof raw.npm.registryUrl === 'string' ? raw.npm.registryUrl : undefined
+      if (registry !== undefined) resolved.npm_config_registry = registry
+    } catch {
+      // The desktop validates and atomically replaces this file. Preserve the inherited registry if it cannot be read.
+    }
+  }
+  const packageProxy = environment.DSH_DESKTOP_PACKAGE_PROXY_URL?.trim()
+  if (packageProxy !== undefined && packageProxy !== '') {
+    let operationProxy = packageProxy
+    if (networkRevision !== undefined) {
+      const parsed = new URL(packageProxy)
+      parsed.username = `plugins-${networkRevision}`
+      operationProxy = parsed.href.replace(/\/$/u, '')
+    }
+    resolved.npm_config_proxy = operationProxy
+    resolved.npm_config_https_proxy = operationProxy
+    resolved.npm_config_noproxy = ''
+    resolved.HTTP_PROXY = operationProxy
+    resolved.HTTPS_PROXY = operationProxy
+    resolved.NO_PROXY = ''
+  }
+  return resolved
+}
+
 /**
  * Run pnpm in one profile and retain bounded diagnostics for automatic repair.
  * @param profileDir - profile working directory.
@@ -202,9 +237,10 @@ export function runProfilePackageManager(
   profileDir: string,
   args: readonly string[],
 ): ProfilePackageManagerResult {
-  const tracked = profilePackageManagerLeaseEnvironment(profileDir, process.env)
+  const packageEnvironment = profilePackageDownloadEnvironment(process.env)
+  const tracked = profilePackageManagerLeaseEnvironment(profileDir, packageEnvironment)
   const storeDir = tracked.pnpm_config_store_dir ?? join(resolveDshHome(), '.pnpm-store')
-  const invocation = resolvePnpmInvocation(process.env, ['--store-dir', storeDir, ...args])
+  const invocation = resolvePnpmInvocation(packageEnvironment, ['--store-dir', storeDir, ...args])
   const inherited = Object.fromEntries(Object.entries(tracked)
     .filter(([key]) => !/^(?:pnpm|npm)_config_store_dir$/iu.test(key)))
   const environment = {

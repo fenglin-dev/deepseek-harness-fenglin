@@ -4,6 +4,7 @@ import { createHash, type Hash } from 'node:crypto'
 import { mkdir, open, rename, rm, type FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { DesktopReleaseStatus } from './release-checker.ts'
+import { fetchCnbReleaseIndex } from './cnb-release-source.ts'
 
 const REPOSITORY = 'flaqai/open-deepseek-harness-desktop'
 const API_RELEASE_PREFIX = `https://api.github.com/repos/${REPOSITORY}/releases/tags/`
@@ -13,6 +14,7 @@ const MAX_CHECKSUM_BYTES = 1024 * 1024
 const MAX_RELEASE_METADATA_BYTES = 5 * 1024 * 1024
 const DEFAULT_HEADER_TIMEOUT_MS = 15_000
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000
+const CNB_WITHDRAWAL_RECHECK_MS = 60_000
 const REQUEST_HEADERS = { 'User-Agent': 'DeepSeek-Harness-Desktop' } as const
 
 /** A fetch-compatible transport owned by the Electron main process. */
@@ -372,6 +374,7 @@ export class DesktopReleaseDownloader {
   #running: Promise<DesktopReleaseDownloadStatus> | undefined
   #abortController: AbortController | undefined
   #readyPath: string | undefined
+  #readyRelease: Extract<DesktopReleaseStatus, { phase: 'available' }> | undefined
   readonly #listeners = new Set<(status: DesktopReleaseDownloadStatus) => void>()
   readonly #apiFetch: ReleaseFetch
   readonly #systemFetch: ReleaseFetch
@@ -415,6 +418,7 @@ export class DesktopReleaseDownloader {
     if (release.phase === 'idle' || release.phase === 'checking') return
     if (release.phase !== 'available' || (statusVersion !== undefined && !selected)) {
       this.#readyPath = undefined
+      this.#readyRelease = undefined
       this.#publish({ phase: 'idle' })
     }
   }
@@ -433,7 +437,9 @@ export class DesktopReleaseDownloader {
     const controller = new AbortController()
     this.#abortController = controller
     this.#publish({ phase: 'resolving', version: release.latestVersion })
-    this.#running = this.#download(release.latestVersion, release.tagName, this.#assetName, controller.signal)
+    this.#running = (release.source === 'cnb'
+      ? this.#downloadCnb(release.latestVersion, release.tagName, this.#assetName, controller.signal)
+      : this.#download(release.latestVersion, release.tagName, this.#assetName, controller.signal))
       .catch((error: unknown) => {
         if (isAbortError(error)) return this.#publish({ phase: 'cancelled', version: release.latestVersion })
         return this.#publish({ phase: 'error', version: release.latestVersion, message: errorMessage(error) })
@@ -461,6 +467,13 @@ export class DesktopReleaseDownloader {
   async open(): Promise<{ error: string }> {
     if (this.#status.phase !== 'ready' || this.#readyPath === undefined) {
       return { error: 'The installer has not finished downloading.' }
+    }
+    if (this.#readyRelease?.source === 'cnb') {
+      const readyRelease = this.#readyRelease
+      const index = await fetchCnbReleaseIndex(this.#systemFetch)
+      const current = index.releases.find(entry => entry.version === readyRelease.latestVersion
+        && entry.tagName === readyRelease.tagName)
+      if (current === undefined || current.withdrawn) return { error: 'The CNB Release is no longer available for in-app updates.' }
     }
     return { error: await this.options.openPath(this.#readyPath) }
   }
@@ -593,7 +606,13 @@ export class DesktopReleaseDownloader {
     }
   }
 
-  async #downloadInstaller(asset: ReleaseAsset, version: string, partialPath: string, signal: AbortSignal): Promise<string> {
+  async #downloadInstaller(
+    asset: ReleaseAsset,
+    version: string,
+    partialPath: string,
+    signal: AbortSignal,
+    fallback = true,
+  ): Promise<string> {
     const file = await open(partialPath, 'wx')
     const accumulator: DownloadAccumulator = {
       transferredBytes: 0,
@@ -605,6 +624,7 @@ export class DesktopReleaseDownloader {
         await this.#downloadInstallerAttempt('system-network', this.#systemFetch, asset.browserUrl, asset, version, file, accumulator, signal)
       } catch (error) {
         throwIfUserCancelled(signal)
+        if (!fallback) throw error
         if (!(error instanceof ReleaseTransportError) || !error.retryable) throw error
         logTransportFailure(error)
         const resumeFromBytes = accumulator.transferredBytes
@@ -672,8 +692,65 @@ export class DesktopReleaseDownloader {
       await rename(partialPath, finalPath)
       completed = true
       this.#readyPath = finalPath
+      const release = this.options.getRelease()
+      this.#readyRelease = release.phase === 'available' ? release : undefined
       return this.#publish({ phase: 'ready', version, fileName })
     } finally {
+      if (!completed) await rm(partialPath, { force: true })
+    }
+  }
+
+  async #downloadCnb(version: string, tag: string, fileName: string, signal: AbortSignal): Promise<DesktopReleaseDownloadStatus> {
+    throwIfUserCancelled(signal)
+    const index = await fetchCnbReleaseIndex(this.#systemFetch)
+    throwIfUserCancelled(signal)
+    const entry = index.releases.find(candidate => candidate.version === version && candidate.tagName === tag)
+    if (entry === undefined || entry.withdrawn) throw new Error('CNB Release is no longer available for in-app updates.')
+    const candidate = entry.assets.find(asset => asset.name === fileName)
+    if (candidate === undefined) throw new Error(`CNB Release ${version} does not contain ${fileName}.`)
+    const asset: ReleaseAsset = { id: 1, name: candidate.name, size: candidate.size,
+      browserUrl: candidate.url, apiUrl: candidate.url, sha256: candidate.sha256 }
+    const versionDirectory = join(this.options.downloadDirectory, version)
+    const finalPath = join(versionDirectory, fileName)
+    const partialPath = `${finalPath}.part`
+    await mkdir(versionDirectory, { recursive: true })
+    await rm(partialPath, { force: true })
+    const transferController = new AbortController()
+    const cancelTransfer = (): void => { transferController.abort() }
+    signal.addEventListener('abort', cancelTransfer, { once: true })
+    let withdrawalError: Error | undefined
+    let recheckRunning = false
+    const recheck = async (): Promise<void> => {
+      if (recheckRunning || transferController.signal.aborted) return
+      recheckRunning = true
+      try {
+        const currentIndex = await fetchCnbReleaseIndex(this.#systemFetch)
+        const current = currentIndex.releases.find(release => release.version === version && release.tagName === tag)
+        if (current === undefined || current.withdrawn) {
+          withdrawalError = new Error('CNB Release was withdrawn while downloading.')
+          transferController.abort()
+        }
+      } catch {
+        // A transient recheck failure cannot validate withdrawal and does not replace the active verified transfer.
+      } finally { recheckRunning = false }
+    }
+    const recheckTimer = setInterval(() => { void recheck() }, CNB_WITHDRAWAL_RECHECK_MS)
+    let completed = false
+    try {
+      let actualChecksum: string
+      try { actualChecksum = await this.#downloadInstaller(asset, version, partialPath, transferController.signal, false) }
+      catch (error) { throw withdrawalError ?? error }
+      if (actualChecksum !== candidate.sha256) throw new Error('CNB Release installer failed SHA-256 verification.')
+      await rm(finalPath, { force: true })
+      await rename(partialPath, finalPath)
+      completed = true
+      this.#readyPath = finalPath
+      const release = this.options.getRelease()
+      this.#readyRelease = release.phase === 'available' ? release : undefined
+      return this.#publish({ phase: 'ready', version, fileName })
+    } finally {
+      clearInterval(recheckTimer)
+      signal.removeEventListener('abort', cancelTransfer)
       if (!completed) await rm(partialPath, { force: true })
     }
   }

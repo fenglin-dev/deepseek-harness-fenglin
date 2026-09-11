@@ -359,6 +359,12 @@ function profileCommandEnvironment(environment: NodeJS.ProcessEnv = process.env)
     && environment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR.trim() !== '') {
     forwarded.DSH_DESKTOP_BUNDLED_PLUGINS_DIR = environment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR
   }
+  for (const name of [
+    'DSH_DESKTOP_PACKAGE_PROXY_URL', 'DSH_DESKTOP_DOWNLOAD_NETWORK_FILE', 'npm_config_registry',
+  ] as const) {
+    const value = environment[name]
+    if (value !== undefined && value.trim() !== '') forwarded[name] = value
+  }
   return forwarded
 }
 

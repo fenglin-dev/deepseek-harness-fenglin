@@ -1,5 +1,7 @@
 /** GitHub Release discovery without downloading or installing application files. */
 
+import type { ReleaseFetch } from './release-downloader.ts'
+
 const RELEASES_ENDPOINT = 'https://api.github.com/repos/flaqai/open-deepseek-harness-desktop/releases?per_page=30'
 const RELEASE_URL_PREFIX = 'https://github.com/flaqai/open-deepseek-harness-desktop/releases/'
 const RELEASE_CHECK_TIMEOUT_MS = 15_000
@@ -19,6 +21,7 @@ export type DesktopReleaseStatus =
     tagName: string
     publishedAt: string
     releaseUrl: string
+    source?: 'github' | 'cnb'
   }
   | { phase: 'error'; currentVersion: string; message: string }
 
@@ -127,7 +130,7 @@ export function selectRelease(currentVersion: string, releases: readonly GitHubR
  * @returns GitHub Release metadata.
  */
 export async function fetchGitHubReleases(
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: ReleaseFetch = fetch,
   timeoutMs = RELEASE_CHECK_TIMEOUT_MS,
 ): Promise<readonly GitHubRelease[]> {
   const controller = new AbortController()
@@ -165,6 +168,7 @@ export class DesktopReleaseChecker {
   constructor(
     readonly currentVersion: string,
     readonly fetchReleases: () => Promise<readonly GitHubRelease[]> = fetchGitHubReleases,
+    readonly fetchStatus?: () => Promise<DesktopReleaseStatus>,
   ) {
     this.#status = { phase: 'idle', currentVersion }
   }
@@ -197,8 +201,9 @@ export class DesktopReleaseChecker {
     if (this.#running !== undefined) return this.#running
     const previous = this.#status
     if (!background) this.#publish({ phase: 'checking', currentVersion: this.currentVersion })
-    this.#running = this.fetchReleases()
-      .then(releases => this.#publish(selectRelease(this.currentVersion, releases)))
+    this.#running = (this.fetchStatus?.() ?? this.fetchReleases()
+      .then(releases => selectRelease(this.currentVersion, releases)))
+      .then(status => this.#publish(status))
       .catch((error: unknown) => background
         ? previous
         : this.#publish({

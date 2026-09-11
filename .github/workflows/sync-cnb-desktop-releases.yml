@@ -1,0 +1,50 @@
+name: Sync desktop Releases to CNB
+
+on:
+  release:
+    types: [published, edited, unpublished, deleted]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-cnb-desktop-releases
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: ${{ vars.CNB_SYNC_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+      - name: Prepare CNB index checkout
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+        run: |
+          git config --global credential.helper store
+          printf 'https://cnb:%s@cnb.cool\n' "$CNB_TOKEN" > ~/.git-credentials
+          chmod 600 ~/.git-credentials
+          git clone --depth 1 https://cnb.cool/hecoococ/open-deepseek-harness-desktop.git /tmp/cnb-desktop
+      - name: Mirror verified assets and build index
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+        run: node scripts/sync-cnb-desktop-releases.mjs /tmp/cnb-desktop/desktop-update-v1.json
+      - name: Publish anonymous index to the CNB master branch
+        run: |
+          cd /tmp/cnb-desktop
+          git config user.name open-dsh-release-bot
+          git config user.email actions@users.noreply.github.com
+          git add desktop-update-v1.json
+          git diff --cached --quiet && exit 0
+          git commit -m 'sync: refresh desktop update index'
+          git push origin HEAD:master
+      - name: Remove temporary CNB credentials
+        if: always()
+        run: rm -f ~/.git-credentials

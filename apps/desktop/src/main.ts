@@ -7,7 +7,8 @@ import { homedir, tmpdir, userInfo } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, Notification, session, shell, Tray,
+  app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, Notification, safeStorage, session, shell, Tray,
+  type Session,
   type MenuItemConstructorOptions, type MessageBoxOptions, type WebContents, type WebPreferences,
 } from 'electron'
 import { appendBundledPluginFailure, verifyBundledPluginArchive } from './bundled-plugin-seed.ts'
@@ -49,8 +50,16 @@ import {
   createDesktopPreferencesStore, DEFAULT_DESKTOP_PREFERENCES, parseDesktopPreferencesPatch,
   type DesktopPreferences, type DesktopPreferencesStore,
 } from './preferences.ts'
-import { DesktopReleaseChecker, isAllowedReleaseUrl, type DesktopReleaseStatus } from './release-checker.ts'
-import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus } from './release-downloader.ts'
+import { DesktopReleaseChecker, fetchGitHubReleases, isAllowedReleaseUrl, type DesktopReleaseStatus } from './release-checker.ts'
+import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus, type ReleaseFetch } from './release-downloader.ts'
+import { fetchCnbReleaseIndex, isAllowedCnbUrl, selectCnbRelease } from './cnb-release-source.ts'
+import {
+  DownloadNetworkSettingsStore, type DownloadNetworkSettings, type DownloadNetworkTarget,
+  type DownloadNetworkTestStatus,
+} from './download-network-settings.ts'
+import {
+  pluginDownloadEnvironment, startPluginDownloadProxy, type PluginDownloadProxy,
+} from './plugin-download-proxy.ts'
 import { SourceUpdater } from './source-updater.ts'
 import { DesktopIconManager, type DesktopIconImages } from './desktop-icons.ts'
 import { loadDefaultApplicationIcon } from './icon-image.ts'
@@ -83,6 +92,7 @@ import {
   inspectDesktopDataHomeStatus,
   readDesktopDataHomeSetup,
   resetImportedDesktopOnboarding,
+  resolveDesktopApplicationDataRoot,
   resolveDesktopDataHomeSwitch,
   resolveDesktopDataHomeSource,
   resolveDesktopDataHomeRecoverySelection,
@@ -175,8 +185,13 @@ const SNAPSHOT_COMMAND_TIMEOUT_MS = 15_000
 const IMPORTED_PLUGIN_INSTALL_TIMEOUT_MS = 10 * 60_000
 const BOOTABLE_SNAPSHOT_DELAY_MS = 30_000
 const DEFAULT_SOURCE_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-const DESKTOP_DATA_HOME = resolveDesktopDataHomeLayout(
+const DESKTOP_APPLICATION_DATA_ROOT = resolveDesktopApplicationDataRoot(
   app.getPath('appData'),
+  app.isPackaged,
+  process.env,
+)
+const DESKTOP_DATA_HOME = resolveDesktopDataHomeLayout(
+  DESKTOP_APPLICATION_DATA_ROOT,
   homedir(),
   app.isPackaged,
   process.env,
@@ -411,6 +426,11 @@ let harnessLogPath = ''
 let releaseChecker: DesktopReleaseChecker | undefined
 let releaseDownloader: DesktopReleaseDownloader | undefined
 let stopReleaseChecks: (() => void) | undefined
+let downloadNetworkStore: DownloadNetworkSettingsStore | undefined
+let downloadNetworkProxy: PluginDownloadProxy | undefined
+let applicationDownloadSession: Session | undefined
+let pluginDownloadSession: Session | undefined
+let downloadNetworkTestStatus: DownloadNetworkTestStatus = { phase: 'idle' }
 let externalToolCompatibility: ExternalToolCompatibilityManager | undefined
 let bundledPluginInstaller: BundledPluginInstaller | undefined
 let bundledPluginCooldown: BundledPluginStartupCooldown | undefined
@@ -1412,6 +1432,17 @@ async function startApplication(): Promise<void> {
     dshHome,
     (error) => { console.warn('desktop: could not read theme preference; following the system appearance', error) },
   ))
+  const downloadNetworkFile = join(app.getPath('userData'), 'download-network-v1.json')
+  downloadNetworkStore = new DownloadNetworkSettingsStore(
+    downloadNetworkFile,
+    {
+      available: () => safeStorage.isEncryptionAvailable(),
+      encrypt: value => safeStorage.encryptString(value),
+      decrypt: value => safeStorage.decryptString(value),
+    },
+    (error) => { console.error('desktop: could not read download network settings; using defaults', error) },
+  )
+  downloadNetworkProxy = await startPluginDownloadProxy(downloadNetworkStore)
   let harnessEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: dshHome,
@@ -1420,6 +1451,8 @@ async function startApplication(): Promise<void> {
     DSH_PROFILE_SAFE_MODE_ON_FAILURE: '1',
     DSH_DESKTOP_PERSISTENT_SERVICES: persistentServicesPath,
     DSH_DESKTOP_PERSISTENT_PROFILE: persistentProfileFingerprint(dshHome),
+    DSH_DESKTOP_DOWNLOAD_NETWORK_FILE: downloadNetworkFile,
+    ...pluginDownloadEnvironment(downloadNetworkStore, downloadNetworkProxy.pluginUrl),
   }
   try {
     const resolvedProxy = await resolveSystemProxyEnvironment(
@@ -1453,25 +1486,104 @@ async function startApplication(): Promise<void> {
     sourceRoot: process.env.DSH_DESKTOP_SOURCE_ROOT ?? DEFAULT_SOURCE_ROOT,
     nodeCommand: process.env.DSH_DESKTOP_NODE_BIN ?? 'node',
   })
-  releaseChecker = app.isPackaged ? new DesktopReleaseChecker(app.getVersion()) : undefined
-  releaseDownloader = releaseChecker === undefined ? undefined : new DesktopReleaseDownloader({
-    platform: process.platform,
-    arch: process.arch,
-    downloadDirectory: join(app.getPath('userData'), 'updates'),
-    getRelease: () => releaseChecker?.status ?? { phase: 'unsupported' },
-    openPath: path => shell.openPath(path),
-    systemFetch: (input, init) => net.fetch(input, init),
+  const applicationFetch = async (): Promise<ReleaseFetch> => {
+    const mode = downloadNetworkStore?.read().application.proxy.mode ?? 'system'
+    if (mode === 'system') return (input, init) => net.fetch(input, init)
+    applicationDownloadSession ??= session.fromPartition('dsh-download-network', { cache: false })
+    if (downloadNetworkProxy === undefined) throw new Error('Application download proxy is unavailable')
+    const proxyRules = downloadNetworkProxy.applicationProxyRules
+    await applicationDownloadSession.setProxy(mode === 'direct'
+      ? { mode: 'direct' }
+      : { mode: 'fixed_servers', proxyRules })
+    await applicationDownloadSession.closeAllConnections()
+    return (input, init) => applicationDownloadSession?.fetch(input, init) ?? Promise.reject(new Error('Application download session is unavailable'))
+  }
+  const pluginFetch = async (): Promise<ReleaseFetch> => {
+    if (downloadNetworkProxy === undefined) throw new Error('Plugin download proxy is unavailable')
+    pluginDownloadSession ??= session.fromPartition('dsh-plugin-download-network', { cache: false })
+    await pluginDownloadSession.setProxy({ mode: 'fixed_servers', proxyRules: downloadNetworkProxy.pluginProxyRules })
+    await pluginDownloadSession.closeAllConnections()
+    return (input, init) => pluginDownloadSession?.fetch(input, init) ?? Promise.reject(new Error('Plugin download session is unavailable'))
+  }
+  app.on('login', (event, webContents, _details, authInfo, callback) => {
+    if (!authInfo.isProxy || authInfo.host !== '127.0.0.1' || downloadNetworkProxy === undefined) return
+    const credentials = webContents.session === applicationDownloadSession
+      ? downloadNetworkProxy.applicationProxyCredentials
+      : webContents.session === pluginDownloadSession
+        ? downloadNetworkProxy.pluginProxyCredentials
+        : undefined
+    if (credentials === undefined) return
+    event.preventDefault()
+    callback(credentials.username, credentials.password)
   })
+  const publishDownloadNetworkTest = (status: DownloadNetworkTestStatus): DownloadNetworkTestStatus => {
+    downloadNetworkTestStatus = status
+    mainSurface?.send('dsh:desktop:download-network:test-status', status)
+    return status
+  }
+  const testDownloadNetwork = async (target: DownloadNetworkTarget): Promise<DownloadNetworkTestStatus> => {
+    const startedAt = Date.now()
+    publishDownloadNetworkTest({ phase: 'testing', target, stage: 'metadata' })
+    try {
+      if (target === 'application') {
+        const fetcher = await applicationFetch()
+        if (downloadNetworkStore?.read().application.source === 'cnb') await fetchCnbReleaseIndex(fetcher)
+        else await fetchGitHubReleases(fetcher)
+      } else {
+        const settings = downloadNetworkStore?.read()
+        const fetcher = await pluginFetch()
+        const url = target === 'npm'
+          ? `${settings === undefined ? 'https://registry.npmjs.org' : settings.npm.registry === 'npmmirror'
+            ? 'https://registry.npmmirror.com' : settings.npm.registry === 'custom'
+              ? settings.npm.registryUrl : 'https://registry.npmjs.org'}/dshmarket/latest`
+          : settings?.github.download === 'custom' && settings.github.acceleratorUrl !== undefined
+            ? `${settings.github.acceleratorUrl}/https://github.com/deepseek-ai/deepseek-harness/info/refs?service=git-upload-pack`
+            : 'https://github.com/deepseek-ai/deepseek-harness/info/refs?service=git-upload-pack'
+        publishDownloadNetworkTest({ phase: 'testing', target, stage: 'download' })
+        const response = await fetcher(url, { headers: { 'User-Agent': 'DeepSeek-Harness-Desktop' } })
+        if (!response.ok) throw new Error(`${target} metadata returned HTTP ${response.status}`)
+        const reader = response.body?.getReader()
+        if (reader !== undefined) { await reader.read(); await reader.cancel() }
+      }
+      const stage = target === 'application' ? 'metadata' : 'download'
+      return publishDownloadNetworkTest({ phase: 'succeeded', target, stage, elapsedMs: Date.now() - startedAt })
+    } catch (error) {
+      const stage = downloadNetworkTestStatus.phase === 'testing' && downloadNetworkTestStatus.target === target
+        ? downloadNetworkTestStatus.stage : 'metadata'
+      return publishDownloadNetworkTest({ phase: 'failed', target, stage,
+        message: error instanceof Error ? error.message : String(error) })
+    }
+  }
+  const configureReleaseServices = async (): Promise<void> => {
+    stopReleaseChecks?.(); stopReleaseChecks = undefined
+    await releaseDownloader?.dispose()
+    if (!app.isPackaged) { releaseChecker = undefined; releaseDownloader = undefined; return }
+    const fetcher = await applicationFetch()
+    const applicationSettings = downloadNetworkStore?.read().application
+    const source = applicationSettings?.source ?? 'github'
+    releaseChecker = source === 'cnb'
+      ? new DesktopReleaseChecker(app.getVersion(), undefined, async () => {
+        return selectCnbRelease(app.getVersion(), await fetchCnbReleaseIndex(fetcher))
+      })
+      : new DesktopReleaseChecker(app.getVersion(), () => fetchGitHubReleases(fetcher))
+    releaseDownloader = new DesktopReleaseDownloader({
+      platform: process.platform, arch: process.arch,
+      downloadDirectory: join(app.getPath('userData'), 'updates'),
+      getRelease: () => releaseChecker?.status ?? { phase: 'unsupported' },
+      openPath: path => shell.openPath(path), systemFetch: fetcher,
+      ...(applicationSettings?.proxy.mode === 'system' ? {} : { apiFetch: fetcher }),
+    })
+    releaseChecker.subscribe((status) => {
+      releaseDownloader?.resetForRelease(status)
+      mainSurface?.send('dsh:desktop:release-status', status)
+    })
+    releaseDownloader.subscribe((status) => { mainSurface?.send('dsh:desktop:release-download-status', status) })
+    stopReleaseChecks = releaseChecker.startPolling()
+  }
+  await configureReleaseServices()
   externalToolCompatibility = new ExternalToolCompatibilityManager({
     cacheDirectory: join(app.getPath('userData'), 'external-tool-compatibility'),
     desktopVersion: app.getVersion(),
-  })
-  releaseChecker?.subscribe((status) => {
-    releaseDownloader?.resetForRelease(status)
-    mainSurface?.send('dsh:desktop:release-status', status)
-  })
-  releaseDownloader?.subscribe((status) => {
-    mainSurface?.send('dsh:desktop:release-download-status', status)
   })
   ipcMain.handle('dsh:desktop:capabilities', (event) => {
     assertMainRenderer(event.sender)
@@ -1701,6 +1813,46 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return updatePreferences(patch)
   })
+  ipcMain.handle('dsh:desktop:download-network:get', (event): DownloadNetworkSettings => {
+    assertMainRenderer(event.sender)
+    if (downloadNetworkStore === undefined) throw new Error('desktop: download network settings are unavailable')
+    return downloadNetworkStore.read()
+  })
+  ipcMain.handle('dsh:desktop:download-network:update', async (event, patch: unknown): Promise<DownloadNetworkSettings> => {
+    assertMainRenderer(event.sender)
+    if (downloadNetworkStore === undefined || downloadNetworkProxy === undefined) throw new Error('desktop: download network settings are unavailable')
+    const previous = downloadNetworkStore.read()
+    const next = downloadNetworkStore.update(patch)
+    delete harnessEnvironment.npm_config_registry
+    Object.assign(harnessEnvironment, pluginDownloadEnvironment(downloadNetworkStore, downloadNetworkProxy.pluginUrl))
+    mainSurface?.send('dsh:desktop:download-network', next)
+    if (previous.application.source !== next.application.source
+      || JSON.stringify(previous.application.proxy) !== JSON.stringify(next.application.proxy)) {
+      await configureReleaseServices()
+      mainSurface?.send('dsh:desktop:release-status', releaseChecker?.status ?? { phase: 'unsupported' })
+      mainSurface?.send('dsh:desktop:release-download-status', releaseDownloader?.status ?? { phase: 'unsupported' })
+    }
+    return next
+  })
+  ipcMain.handle('dsh:desktop:download-network:reset', async (event, target: unknown): Promise<DownloadNetworkSettings> => {
+    assertMainRenderer(event.sender)
+    if (!['application', 'npm', 'github'].includes(String(target))) throw new TypeError('desktop: invalid download network target')
+    if (downloadNetworkStore === undefined || downloadNetworkProxy === undefined) throw new Error('desktop: download network settings are unavailable')
+    const next = downloadNetworkStore.reset(target as DownloadNetworkTarget)
+    delete harnessEnvironment.npm_config_registry
+    Object.assign(harnessEnvironment, pluginDownloadEnvironment(downloadNetworkStore, downloadNetworkProxy.pluginUrl))
+    mainSurface?.send('dsh:desktop:download-network', next)
+    if (target === 'application') await configureReleaseServices()
+    return next
+  })
+  ipcMain.handle('dsh:desktop:download-network:test:get', (event): DownloadNetworkTestStatus => {
+    assertMainRenderer(event.sender); return downloadNetworkTestStatus
+  })
+  ipcMain.handle('dsh:desktop:download-network:test', (event, target: unknown) => {
+    assertMainRenderer(event.sender)
+    if (!['application', 'npm', 'github'].includes(String(target))) throw new TypeError('desktop: invalid download network test target')
+    return testDownloadNetwork(target as DownloadNetworkTarget)
+  })
   ipcMain.handle('dsh:desktop:web:get', (event) => {
     assertMainRenderer(event.sender)
     return desktopWebAccess?.status() ?? { phase: 'starting' }
@@ -1810,7 +1962,7 @@ async function startApplication(): Promise<void> {
   })
   ipcMain.handle('dsh:desktop:releases:open', async (event, releaseUrl: unknown) => {
     assertMainRenderer(event.sender)
-    if (typeof releaseUrl !== 'string' || !isAllowedReleaseUrl(releaseUrl)) {
+    if (typeof releaseUrl !== 'string' || (!isAllowedReleaseUrl(releaseUrl) && !isAllowedCnbUrl(releaseUrl))) {
       throw new TypeError('desktop: invalid Release URL')
     }
     return { error: await shell.openExternal(releaseUrl).then(() => '') }
@@ -2278,7 +2430,7 @@ async function startApplication(): Promise<void> {
       showLoading('restarting')
       const outcomes: PromiseSettledResult<unknown>[] = []
       outcomes.push(...await Promise.allSettled([
-        releaseDownloader?.dispose(), oneShotOperations.dispose(), profileTransactionManager?.dispose(),
+        releaseDownloader?.dispose(), downloadNetworkProxy?.close(), oneShotOperations.dispose(), profileTransactionManager?.dispose(),
       ]))
       const taskFailures = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
       if (taskFailures.length > 0) {
@@ -3212,8 +3364,6 @@ async function startApplication(): Promise<void> {
     console.error('desktop: plugin snapshot startup recovery failed; retaining the failure for manual recovery', error)
   }
   supervisor.start()
-
-  stopReleaseChecks = releaseChecker?.startPolling()
 
   app.on('activate', () => {
     lifecycle?.showWindow()
