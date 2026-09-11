@@ -62,7 +62,7 @@ const ru: typeof en = {
   about: 'Об Open DSH Desktop', settings: 'Настройки…', updates: 'Проверить обновления…', 'new-session': 'Новый диалог',
   'open-config': 'Открыть файл конфигурации', 'open-web': 'Открыть в браузере', close: 'Закрыть окно', quit: 'Полностью выйти', undo: 'Отменить', redo: 'Повторить', cut: 'Вырезать',
   copy: 'Копировать', paste: 'Вставить', 'select-all': 'Выбрать всё', 'zoom-in': 'Увеличить', 'zoom-out': 'Уменьшить', 'zoom-reset': 'Реальный размер',
-  fullscreen: 'Во весь экран', 'leave-fullscreen': 'Выйти из полноэкранного режима', market: 'Плагины', 'plugin-restore': 'Восстановление плагинов',
+  fullscreen: 'Во весь экран', 'leave-fullscreen': 'Выйти из полноэкранного режима', reload: 'Перезагрузить', market: 'Плагины', 'plugin-restore': 'Восстановление плагинов',
   diagnostics: 'Диагностика', snapshots: 'Снимки плагинов', 'external-tools': 'Внешние инструменты', phone: 'Доступ с телефона', im: 'IM-боты',
   'data-home': 'Сменить каталог данных…', restart: 'Быстрый перезапуск', show: 'Показать главное окно', minimize: 'Свернуть', maximize: 'Развернуть',
   restore: 'Восстановить', docs: 'Документация', repository: 'Репозиторий проекта', feedback: 'Сообщить о проблеме', logs: 'Открыть каталог журналов',
