@@ -9,6 +9,7 @@ import { en as sidebarPdf } from '../../ui-sidebar-documentpreview/src/client/pd
 import { en as documentHtml } from '../../ui-sidebar-documentpreview/src/client/html/locales.ts'
 import { en as sidebarCodePreview } from '../../ui-sidebar-documentpreview/src/client/code/locales.ts'
 import { en as sidebarImage } from '../../ui-sidebar-documentpreview/src/client/image/locales.ts'
+import { en as feedback } from '../../ui-message-feedback/src/client/locales.ts'
 
 const localeIds = ['ja', 'ko', 'es', 'fr', 'de', 'pt-BR', 'ru'] as const
 type TranslationDictionary = Record<string, string>
@@ -39,6 +40,13 @@ function placeholders(value: string): string[] {
 }
 
 describe('community desktop translations', () => {
+  it('translates every current feedback field in all desktop locales', () => {
+    for (const locale of localeIds) {
+      for (const key of Object.keys(feedback)) {
+        expect(translations[locale].feedback?.[key], `${locale}:feedback.${key}`).toBeTruthy()
+      }
+    }
+  })
   it('keeps every bundled locale on the same namespace and key surface', () => {
     const reference = translations.ja
     const namespaces = Object.keys(reference).sort()

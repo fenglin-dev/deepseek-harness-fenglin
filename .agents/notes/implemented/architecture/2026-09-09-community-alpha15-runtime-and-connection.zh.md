@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-集成目标为 `dsh-v0.1.5-alpha.1`，提交为 `5dda764ed3aa172535a7967b06ff95d9cbfe536a`。外部 Harness 运行时使用 Node `24.17.0`；Electron 保持 `43.2.0`，pnpm 保持 `11.7.0`。macOS 安装包要求 `13.5`，与外部 Node 二进制的部署要求一致。更新外部运行时不改变 Electron 内嵌的 Node。
+集成目标为 `dsh-v0.1.5-rc.2`，提交为 `fb2c4b9e698e30edb738bca4cf0618587db7d203`。外部 Harness 运行时使用 Node `24.17.0`；Electron 保持 `43.2.0`，pnpm 保持 `11.7.0`。macOS 安装包要求 `13.5`，与外部 Node 二进制的部署要求一致。更新外部运行时不改变 Electron 内嵌的 Node。
 
 社区桌面保留回环 `dsh web` 启动器、共享 Profile、浏览器认证、自定义桌面桥接和 GitHub 安装包下载器。上游独立桌面的更新协调器和云发布脚本不作为社区发布入口。官方右侧 Sidebar 与 V3 迁移链继续由上游拥有。
 

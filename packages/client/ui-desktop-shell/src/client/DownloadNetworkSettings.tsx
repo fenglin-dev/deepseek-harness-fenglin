@@ -32,7 +32,7 @@ function ProxyFields({ target, proxy, password, t, onProxy, onPassword }: {
       <option value="custom">{t('network.proxy.custom')}</option>
     </select></label>
     {proxy.mode === 'custom' && <>
-      <label><span>{t('network.proxy.url')}</span><input value={proxy.url ?? ''} placeholder="http://127.0.0.1:7890" onChange={(event) => {
+      <label><span>{t('network.proxy.url')}</span><input value={proxy.url ?? ''} placeholder={t('network.proxy.url')} onChange={(event) => {
         onProxy({ ...proxy, url: event.target.value })
       }} /></label>
       <label><span>{t('network.proxy.username')}</span><input value={proxy.username ?? ''} autoComplete="username" onChange={(event) => {
@@ -148,7 +148,7 @@ export function DownloadNetworkSettings({
           setDraft({ ...draft, github: { ...draft.github, download: event.target.value as 'original' | 'custom' } })
         }}>
           <option value="original">{t('network.github.download.original')}</option><option value="custom">{t('network.github.download.custom')}</option>
-        </select></label>{draft.github.download === 'custom' && <label><span>{t('network.github.accelerator')}</span><input value={draft.github.acceleratorUrl ?? ''} placeholder="https://example.test" onChange={(event) => {
+        </select></label>{draft.github.download === 'custom' && <label><span>{t('network.github.accelerator')}</span><input value={draft.github.acceleratorUrl ?? ''} placeholder={t('network.github.accelerator')} onChange={(event) => {
           setDraft({ ...draft, github: { ...draft.github, acceleratorUrl: event.target.value } })
         }} /></label>}</div>
         <ProxyFields target="github" proxy={draft.github.proxy} password={passwords.github} t={t}

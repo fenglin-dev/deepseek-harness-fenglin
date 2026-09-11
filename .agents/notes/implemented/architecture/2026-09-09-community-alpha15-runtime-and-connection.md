@@ -10,7 +10,7 @@ Upstream `0.1.5-alpha.1` separates the desktop carrier from the Web server and a
 
 ## Decision
 
-The integration target is `dsh-v0.1.5-alpha.1` at `5dda764ed3aa172535a7967b06ff95d9cbfe536a`. The external Harness runtime is Node `24.17.0`; Electron remains `43.2.0` and pnpm remains `11.7.0`. The macOS installer requires `13.5`, matching the external Node binary's deployment requirement. Updating the external runtime does not change Electron's embedded Node.
+The integration target is `dsh-v0.1.5-rc.2` at `fb2c4b9e698e30edb738bca4cf0618587db7d203`. The external Harness runtime is Node `24.17.0`; Electron remains `43.2.0` and pnpm remains `11.7.0`. The macOS installer requires `13.5`, matching the external Node binary's deployment requirement. Updating the external runtime does not change Electron's embedded Node.
 
 Community Desktop retains the loopback `dsh web` launcher, shared Profile, browser authentication, custom desktop bridge, and GitHub installer downloader. Upstream's standalone desktop update coordinator and cloud release scripts are not community release entry points. The official right Sidebar and V3 migration chain remain upstream-owned.
 

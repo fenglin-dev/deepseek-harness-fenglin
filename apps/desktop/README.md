@@ -6,7 +6,7 @@ English | [中文](README.zh.md)
 
 ## Runtime and session compatibility
 
-This integration uses Harness 0.1.5-alpha.1 and external Node 24.17.0, while Electron remains pinned to 43.2.0 and pnpm to 11.7.0. Packaged macOS builds require macOS 13.5 or later; this records the embedded Node binary's minimum rather than promising compatibility from Electron alone.
+This integration uses Harness 0.1.5-rc.2 and external Node 24.17.0, while Electron remains pinned to 43.2.0 and pnpm to 11.7.0. Packaged macOS builds require macOS 13.5 or later; this records the embedded Node binary's minimum rather than promising compatibility from Electron alone.
 
 Session history follows the complete V0 → V1 → V2 → V3 migration chain. Migration preserves older generation files and writes validated successors, but old clients cannot be assumed to understand newly written V3 data. Plugin snapshots do not include sessions and cannot undo a session-format upgrade. Validate upgrades using an isolated copy of the data directory before reusing important history.
 
