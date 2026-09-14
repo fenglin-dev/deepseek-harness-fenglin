@@ -13,6 +13,9 @@ export const desktopLanguageTitles = {
 
 /** Simplified Chinese copy owned by the desktop shell. */
 export const zh = {
+  'logs.openDirectory': '打开日志文件目录',
+  'logs.openDirectory.opening': '正在打开…',
+  'logs.openDirectory.error': '无法打开日志目录',
   'network.loading': '正在读取下载设置…',
   'network.title': '下载与代理',
   'network.description': '当前仅管理应用更新。插件下载设置将在官方市场支持宿主管理的网络策略后开放。',
@@ -229,6 +232,9 @@ export type DesktopShellKey = keyof typeof zh
 
 /** English dictionary checked against the Chinese key source. */
 export const en = {
+  'logs.openDirectory': 'Open log folder',
+  'logs.openDirectory.opening': 'Opening…',
+  'logs.openDirectory.error': 'Could not open the log folder',
   'network.loading': 'Loading download settings…',
   'network.title': 'Downloads and proxies',
   'network.description': 'Currently manages application updates only. Plugin download controls require host-managed network-policy support from the official market.',
@@ -442,6 +448,9 @@ export const en = {
 
 /** Russian dictionary checked against the English key source. */
 export const ru = {
+  'logs.openDirectory': 'Открыть папку журналов',
+  'logs.openDirectory.opening': 'Открываем…',
+  'logs.openDirectory.error': 'Не удалось открыть папку журналов',
   'network.loading': 'Загружаем настройки скачивания…',
   'network.title': 'Загрузки и прокси',
   'network.description': 'Сейчас управляет только обновлениями приложения. Настройки загрузки плагинов появятся после поддержки сетевой политики хоста в официальном магазине.',

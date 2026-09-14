@@ -1933,6 +1933,11 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return openHarnessLog()
   })
+  ipcMain.handle('dsh:desktop:log-directory:open', async (event): Promise<{ error: string }> => {
+    assertMainRenderer(event.sender)
+    await mkdir(DESKTOP_DATA_HOME.logs, { recursive: true, mode: 0o700 })
+    return { error: await shell.openPath(DESKTOP_DATA_HOME.logs) }
+  })
   ipcMain.handle('dsh:desktop:settings:open', async (event): Promise<{ error: string }> => {
     assertMainRenderer(event.sender)
     return openSettingsDocument()

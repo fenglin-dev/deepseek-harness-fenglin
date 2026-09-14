@@ -1800,6 +1800,9 @@ const dictionaries: Record<string, Record<string, string>> = {
     'dialog.commandFailed': "Impossible de démarrer l'exportation de la session.",
   },
   'desktop-shell': {
+    'logs.openDirectory': 'Ouvrir le dossier des journaux',
+    'logs.openDirectory.opening': 'Ouverture…',
+    'logs.openDirectory.error': 'Impossible d’ouvrir le dossier des journaux',
     'menu.unavailable': "Cette page de paramètres est indisponible ou son plugin n'est pas installé. Vérifiez les plugins dans Paramètres ; rien n'a été installé automatiquement.",
     'close.linux': "La visibilité de la barre système sous Linux dépend de votre environnement de bureau et de vos extensions. Choisissez Quitter le client si l'icône n'est pas visible.",
     'web.title': 'Utiliser dans un navigateur',

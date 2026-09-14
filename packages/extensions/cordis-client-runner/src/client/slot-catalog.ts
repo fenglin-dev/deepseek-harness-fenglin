@@ -1658,6 +1658,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'sidebar.settings\' (client-ui-settings-general), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-desktop-shell DesktopLogDirectoryAction id \'desktop-log-directory\'',
       'client-ui-desktop-shell DesktopUpdateBadge id \'desktop-update\'',
       'client-ui-settings-general SettingsDocumentAction id \'open-document\'',
     ],
