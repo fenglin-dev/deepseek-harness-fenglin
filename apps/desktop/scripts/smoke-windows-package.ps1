@@ -83,6 +83,8 @@ $required = @(
 foreach ($path in $required) {
   if (-not (Test-Path $path)) { throw "Installed package is missing $path" }
 }
+& node (Join-Path $PSScriptRoot 'verify-prebuilt-profile.mjs') (Join-Path $installRoot 'resources')
+if ($LASTEXITCODE -ne 0) { throw 'Installed prebuilt Profile verification failed' }
 $registeredUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $registeredEntries = @($registeredUserPath.Split(';') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 if (-not ($registeredEntries | Where-Object { [string]::Equals($_.TrimEnd('\', '/'), $cliDirectory.TrimEnd('\', '/'), [StringComparison]::OrdinalIgnoreCase) })) {
