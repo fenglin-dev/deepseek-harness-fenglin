@@ -1,7 +1,14 @@
 /** Host plugin inventory and controlled profile-plugin installation. */
 
 import { randomUUID } from 'node:crypto'
-import { extname } from 'node:path'
+import {
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { extname, join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
@@ -44,6 +51,8 @@ import type {
   PluginInventoryEntry,
   PluginInventorySnapshot,
   PluginInstallId,
+  PluginInstallOutputRead,
+  PluginInstallOutputRequest,
   PluginInstallRequest,
   PluginInstallSnapshot,
   PluginQuarantineRequest,
@@ -53,6 +62,7 @@ import type {
   ExternalToolId,
   ExternalToolToggleRequest,
 } from './types.ts'
+import { InstallProgressTracker } from './install-progress.ts'
 
 export type * from './types.ts'
 
@@ -101,11 +111,68 @@ export interface Config {
 interface InstallJob {
   snapshot: PluginInstallSnapshot
   target: string
+  readonly progress: InstallProgressTracker
+  progressFile?: string
   steps: readonly {
     readonly args: readonly string[]
     readonly acceptedExitCodes?: readonly number[]
   }[]
   quarantineId?: string
+}
+
+const INSTALL_PROGRESS_DIRECTORY = '.desktop-install-progress'
+const INSTALL_PROGRESS_MAX_AGE_MS = 24 * 60 * 60 * 1000
+const INSTALL_PROGRESS_FILE = /^[0-9a-f-]{36}\.ndjson$/u
+
+function progressDirectory(environment: NodeJS.ProcessEnv = process.env): string | undefined {
+  const home = environment.DSH_HOME?.trim()
+  return home === undefined || home === '' ? undefined : join(home, INSTALL_PROGRESS_DIRECTORY)
+}
+
+function ensureProgressDirectory(environment: NodeJS.ProcessEnv = process.env): string | undefined {
+  const directory = progressDirectory(environment)
+  if (directory === undefined) return undefined
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const metadata = lstatSync(directory)
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+    throw new Error('pluginInventory: install progress directory is not a real directory')
+  }
+  return directory
+}
+
+function createProgressFile(installId: PluginInstallId): string | undefined {
+  try {
+    const directory = ensureProgressDirectory()
+    if (directory === undefined) return undefined
+    const path = join(directory, `${String(installId)}.ndjson`)
+    writeFileSync(path, '', { flag: 'wx', mode: 0o600 })
+    return path
+  } catch {
+    // Progress observation is optional and must never block the guarded install.
+    return undefined
+  }
+}
+
+function cleanupStaleProgressFiles(now = Date.now()): void {
+  const directory = progressDirectory()
+  if (directory === undefined) return
+  let names: string[]
+  try {
+    names = readdirSync(directory)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    if (!INSTALL_PROGRESS_FILE.test(name)) continue
+    const path = join(directory, name)
+    try {
+      const metadata = lstatSync(path)
+      if (metadata.isFile() && !metadata.isSymbolicLink()
+        && now - metadata.mtimeMs > INSTALL_PROGRESS_MAX_AGE_MS) unlinkSync(path)
+    } catch {
+      // Another installer or cleanup pass may have removed the exact file.
+    }
+  }
 }
 
 const CLIENT_LOADER_ENTRY_ID = /^[A-Za-z0-9._~-]{1,128}$/u
@@ -392,6 +459,19 @@ export class PluginInventoryGateway extends TypertRemoteService {
     this.terminationGraceMs = config.installTerminationGraceMs ?? DEFAULT_INSTALL_TERMINATION_GRACE_MS
     this.profile = config.profile ?? 'web'
     validateProfile(this.profile)
+    cleanupStaleProgressFiles()
+    ctx.effect(() => () => {
+      for (const job of this.jobs.values()) {
+        if (job.progressFile === undefined) continue
+        try {
+          unlinkSync(job.progressFile)
+        } catch {
+          // Windows may keep the sidecar open until the managed installer exits;
+          // bounded startup cleanup is the final fallback for that case.
+        }
+        delete job.progressFile
+      }
+    }, 'pluginInventory.installProgressFiles()')
     ctx.inject(['agentPresets'], (presetCtx) => {
       const dispose = presetCtx.agentPresets.registerExternalToolProjector((agent, tool) => {
         const fiber = agent.ctx.plugin(ToolSubagent, EXTERNAL_TOOL_CONFIGS[tool])
@@ -586,6 +666,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const job: InstallJob = {
       snapshot,
       target,
+      progress: new InstallProgressTracker(this.outputMaxBytes),
       steps: [{ args: ['doctor', '--retry', request.quarantineId] }],
       quarantineId: request.quarantineId,
     }
@@ -624,6 +705,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const job: InstallJob = {
       snapshot,
       target,
+      progress: new InstallProgressTracker(this.outputMaxBytes),
       steps: [
         { args: ['approve-build-key', record.buildApprovalKey], acceptedExitCodes: [0] },
         { args: ['doctor', '--retry', request.quarantineId] },
@@ -672,6 +754,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const job: InstallJob = {
       snapshot,
       target,
+      progress: new InstallProgressTracker(this.outputMaxBytes),
       steps: [
         { args: ['approve-build-key', diagnostic.buildApprovalKey], acceptedExitCodes: [0] },
         { args: ['add', packageSpec] },
@@ -731,8 +814,14 @@ export class PluginInventoryGateway extends TypertRemoteService {
       packageSpec: request.packageSpec,
       command: `dsh plugin --profile ${request.profile} add ${request.packageSpec}`,
       phase: 'running',
+      installProgress: { stage: 'preparing' },
     }
-    const job: InstallJob = { snapshot, target, steps: [{ args: ['add', request.packageSpec] }] }
+    const job: InstallJob = {
+      snapshot,
+      target,
+      progress: new InstallProgressTracker(this.outputMaxBytes),
+      steps: [{ args: ['add', request.packageSpec] }],
+    }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
     void this.runInstall(job)
@@ -759,7 +848,12 @@ export class PluginInventoryGateway extends TypertRemoteService {
       command: `dsh plugin --profile ${request.profile} remove ${request.packageName}`,
       phase: 'running',
     }
-    const job: InstallJob = { snapshot, target, steps: [{ args: ['remove', request.packageName] }] }
+    const job: InstallJob = {
+      snapshot,
+      target,
+      progress: new InstallProgressTracker(this.outputMaxBytes),
+      steps: [{ args: ['remove', request.packageName] }],
+    }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
     void this.runInstall(job)
@@ -811,7 +905,21 @@ export class PluginInventoryGateway extends TypertRemoteService {
    */
   @Remote('getInstall')
   getInstall(installId: PluginInstallId): PluginInstallSnapshot {
-    return this.expectJob(installId).snapshot
+    const job = this.expectJob(installId)
+    this.refreshInstallProgress(job)
+    return job.snapshot
+  }
+
+  /**
+   * Read bounded live output without retransmitting earlier terminal text.
+   * @param request - Host-issued install id and the preceding opaque byte offset.
+   * @returns Sanitized incremental output and the cursor for the next read.
+   */
+  @Remote('getInstallOutput')
+  getInstallOutput(request: PluginInstallOutputRequest): PluginInstallOutputRead {
+    const job = this.expectJob(request.installId)
+    this.refreshInstallProgress(job)
+    return job.progress.read(request.offset, job.snapshot.phase !== 'running')
   }
 
   /** Resolve one known job or fail loud for stale and fabricated ids. */
@@ -819,6 +927,13 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const job = this.jobs.get(installId)
     if (job === undefined) throw new Error(`pluginInventory: unknown install ${installId}`)
     return job
+  }
+
+  private refreshInstallProgress(job: InstallJob): void {
+    if (job.progressFile !== undefined) job.progress.refresh(job.progressFile)
+    if (job.snapshot.phase === 'running') {
+      job.snapshot = { ...job.snapshot, installProgress: job.progress.progress }
+    }
   }
 
   /** Resolve one durable quarantine record or reject a stale client selection. */
@@ -835,6 +950,9 @@ export class PluginInventoryGateway extends TypertRemoteService {
       const outputs: string[] = []
       let exitCode: number | null = 1
       const environment = profileCommandEnvironment()
+      const progressFile = createProgressFile(job.snapshot.installId)
+      if (progressFile !== undefined) job.progressFile = progressFile
+      if (job.progressFile !== undefined) environment.DSH_DESKTOP_INSTALL_PROGRESS_FILE = job.progressFile
       const staged = environment.DSH_DESKTOP_MUTATION_OWNER_PID !== undefined
       const steps: InstallJob['steps'] = staged && job.steps.length > 1
         ? [{ args: ['batch', JSON.stringify(job.steps)] }] : job.steps
@@ -854,6 +972,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
           graceMs: this.terminationGraceMs,
         })
         const outcome = await handle.done
+        this.refreshInstallProgress(job)
         exitCode = outcome.exitCode
         const stdout = handle.collected.stdout?.readFrom(0).text.trim() ?? ''
         const stderr = handle.collected.stderr?.readFrom(0).text.trim() ?? ''
@@ -873,22 +992,40 @@ export class PluginInventoryGateway extends TypertRemoteService {
           : repair?.status === 'repaired'
             ? 'repaired'
             : 'succeeded'
+      job.progress.appendDiagnostic(diagnostic)
+      job.progress.settle(phase === 'succeeded' || phase === 'repaired')
       job.snapshot = {
         ...job.snapshot,
         phase,
         exitCode,
+        installProgress: phase === 'succeeded' || phase === 'repaired'
+          ? { stage: 'verifying', percent: 100 }
+          : job.progress.progress,
         ...(diagnostic !== '' && (exitCode !== 0 || repair !== undefined) ? { diagnostic } : {}),
       }
       if (!staged && job.quarantineId !== undefined && (phase === 'succeeded' || phase === 'repaired')) {
         clearQuarantinedProfilePlugin(job.quarantineId)
       }
     } catch (error) {
+      const diagnostic = error instanceof Error ? error.message : String(error)
+      job.progress.appendDiagnostic(diagnostic)
+      job.progress.settle(false)
       job.snapshot = {
         ...job.snapshot,
         phase: 'failed',
-        diagnostic: error instanceof Error ? error.message : String(error),
+        installProgress: job.progress.progress,
+        diagnostic,
       }
     } finally {
+      this.refreshInstallProgress(job)
+      if (job.progressFile !== undefined) {
+        try {
+          unlinkSync(job.progressFile)
+        } catch {
+          // The CLI or an earlier cleanup may already have removed the exact file.
+        }
+        delete job.progressFile
+      }
       this.activeTargets.delete(job.target)
     }
   }
@@ -909,6 +1046,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const job: InstallJob = {
       snapshot,
       target,
+      progress: new InstallProgressTracker(this.outputMaxBytes),
       steps: [{
         args: [
           'doctor', '--quarantine-client-module',

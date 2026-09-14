@@ -194,6 +194,13 @@ export function apply(ctx: ClientContext): void {
   const externalToolsInjected = (): ExternalToolsSectionInjected => ({
     list,
     getInstall,
+    getInstallOutput: async (installId, offset) => {
+      const result = await ctx.remote.pluginInventory.getInstallOutput({ installId, offset })
+      if (!result.ok) {
+        throw new Error(`pluginInventory.getInstallOutput failed: ${result.error.code}: ${result.error.message}`)
+      }
+      return result.value
+    },
     installExternalTool: async toolId => startControlledInstall(await resolveExternalToolInstallRequest(toolId)),
     externalTools: async () => {
       const result = await ctx.remote.pluginInventory.externalTools()

@@ -628,6 +628,11 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[], quie
   const result = runProfilePackageManager(
     dir,
     packageManagerArgs.map(argument => anchorPathSpec(argument, process.cwd())),
+    {
+      ...(process.env.DSH_DESKTOP_INSTALL_PROGRESS_FILE === undefined
+        ? {}
+        : { progressFile: process.env.DSH_DESKTOP_INSTALL_PROGRESS_FILE }),
+    },
   )
   if (result.diagnostic !== undefined) process.stderr.write(`${result.diagnostic}\n`)
   const exitCode = result.exitCode ?? 1
