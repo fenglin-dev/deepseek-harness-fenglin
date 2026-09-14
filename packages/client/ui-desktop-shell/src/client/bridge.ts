@@ -21,7 +21,7 @@ export interface DownloadNetworkSettings {
   schema: 'open-dsh-desktop/download-network/v1'
   revision: number
   application: { source: 'github' | 'cnb'; proxy: DownloadProxySettings }
-  npm: { registry: 'existing' | 'npmjs' | 'npmmirror' | 'custom'; registryUrl?: string; proxy: DownloadProxySettings }
+  npm: { registry: 'npmjs' | 'npmmirror' | 'custom'; registryUrl?: string; proxy: DownloadProxySettings }
   github: { download: 'original' | 'custom'; acceleratorUrl?: string; proxy: DownloadProxySettings }
 }
 

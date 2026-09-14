@@ -1599,7 +1599,7 @@ async function startApplication(): Promise<void> {
         const settings = downloadNetworkStore?.read()
         const fetcher = await pluginFetch()
         const url = target === 'npm'
-          ? `${settings === undefined ? 'https://registry.npmjs.org' : settings.npm.registry === 'npmmirror'
+          ? `${settings === undefined ? 'https://registry.npmmirror.com' : settings.npm.registry === 'npmmirror'
             ? 'https://registry.npmmirror.com' : settings.npm.registry === 'custom'
               ? settings.npm.registryUrl : 'https://registry.npmjs.org'}/dshmarket/latest`
           : settings?.github.download === 'custom' && settings.github.acceleratorUrl !== undefined

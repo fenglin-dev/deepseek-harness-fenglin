@@ -33,7 +33,7 @@ const t = ((key: string, params?: Record<string, string | number>) => {
 const downloadSettings = {
   schema: 'open-dsh-desktop/download-network/v1' as const, revision: 0,
   application: { source: 'github' as const, proxy: { mode: 'system' as const, passwordSet: false } },
-  npm: { registry: 'existing' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
+  npm: { registry: 'npmmirror' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
   github: { download: 'original' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
 }
 
@@ -152,7 +152,7 @@ describe('desktop shell components', () => {
     expect(openLogDirectory).toHaveBeenCalledTimes(2)
   })
 
-  it('keeps application download controls actionable while market-owned policies are unavailable', async () => {
+  it('shows the desktop-owned npm registry choices while market-owned GitHub policy is unavailable', async () => {
     const { bridge, update } = createDownloadNetworkBridge()
     const longT = ((key: string, params?: Record<string, string | number>) => {
       let value = (en as Record<string, string>)[key] ?? key
@@ -166,8 +166,12 @@ describe('desktop shell components', () => {
     fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'cnb' } })
     fireEvent.click(screen.getAllByRole('button', { name: /Save/u })[0]!)
     await waitFor(() => { expect(update).toHaveBeenCalledWith(expect.objectContaining({ target: 'application' })) })
-    expect(screen.getAllByRole('button', { name: /Test connection/u })).toHaveLength(1)
-    expect(screen.queryByText(/npm plugins/u)).toBeNull()
+    expect(screen.getAllByRole('button', { name: /Test connection/u })).toHaveLength(2)
+    const registries = screen.getAllByRole('combobox').find(select =>
+      Array.from(select.querySelectorAll('option')).some(option => option.value === 'npmmirror'))!
+    expect((registries as HTMLSelectElement).value).toBe('npmmirror')
+    expect(Array.from(registries.querySelectorAll('option')).map(option => option.value))
+      .toEqual(['npmmirror', 'npmjs', 'custom'])
     expect(screen.queryByText(/GitHub plugins/u)).toBeNull()
   })
 
@@ -367,7 +371,7 @@ describe('desktop shell components', () => {
     expect(await screen.findByText('Development mode: this is the latest version')).toBeTruthy()
     expect(screen.getByRole('region', { name: 'Check for updates' }).contains(screen.getByText('Application updates'))).toBe(true)
     fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'cnb' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0]!)
     await waitFor(() => { expect(network.update).toHaveBeenCalledWith(expect.objectContaining({ target: 'application' })) })
     expect(screen.queryAllByRole('button', { name: 'Version 0.1.1-rc.3' })).toHaveLength(0)
     fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }))

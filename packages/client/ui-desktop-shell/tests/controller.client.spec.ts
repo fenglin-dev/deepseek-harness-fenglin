@@ -19,7 +19,7 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
   let downloadNetwork: DownloadNetworkSettings = {
     schema: 'open-dsh-desktop/download-network/v1' as const, revision: 0,
     application: { source: 'github' as const, proxy: { mode: 'system' as const, passwordSet: false } },
-    npm: { registry: 'existing' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
+    npm: { registry: 'npmmirror' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
     github: { download: 'original' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
   }
   const updateDownloadNetwork = vi.fn((patch: Parameters<NonNullable<DesktopBridge['downloadNetwork']>['update']>[0]) => {
