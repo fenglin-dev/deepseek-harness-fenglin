@@ -1,5 +1,5 @@
 appId: ai.flaq.deepseek-harness
-productName: DeepSeek Harness
+productName: Open DeepSeek Harness Desktop
 asar: true
 npmRebuild: false
 directories:
@@ -35,7 +35,7 @@ mac:
     - "prebuilt-profile/"
   minimumSystemVersion: "13.5"
   extendInfo:
-    CFBundleDisplayName: Open DSH Desktop
+    CFBundleDisplayName: Open DeepSeek Harness Desktop
     NSMicrophoneUsageDescription: DeepSeek Harness uses the microphone only after you approve a voice-input or recording request.
     NSCameraUsageDescription: DeepSeek Harness uses the camera only after you approve a camera request.
     NSLocationWhenInUseUsageDescription: DeepSeek Harness uses your location only after you approve a location request.

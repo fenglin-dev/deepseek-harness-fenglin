@@ -167,6 +167,7 @@ import { shellMessages, trayMessages, dataHomeMessages } from './locales/shell.t
 import { DesktopReturnControl } from './desktop-return-control.ts'
 import { createDesktopLocaleStore, type DesktopLocaleStore } from './desktop-locale-store.ts'
 import { resolveDesktopLocale } from './desktop-locale.ts'
+import { DESKTOP_PRODUCT_NAME, desktopWindowTitle } from './product-name.ts'
 import {
   FilePersistentServiceAuthorizer,
   FilePersistentServiceRuntimeRegistry,
@@ -174,7 +175,7 @@ import {
   type PersistentServiceSummary,
 } from '@deepseek-ai/dsh-subprocess/persistent'
 
-const APP_NAME = 'DeepSeek Harness'
+const APP_NAME = DESKTOP_PRODUCT_NAME
 const DESKTOP_WEB_SUPPORTED = process.platform === 'darwin' || process.platform === 'win32'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
 const WINDOW_ICON = fileURLToPath(new URL('./icon.png', import.meta.url))
@@ -207,7 +208,8 @@ const DESKTOP_DATA_HOME = resolveDesktopDataHomeLayout(
   process.env,
 )
 
-app.setName('Open DSH Desktop')
+app.setName(DESKTOP_PRODUCT_NAME)
+process.title = DESKTOP_PRODUCT_NAME
 app.setPath('userData', DESKTOP_DATA_HOME.desktopRoot)
 app.setPath('sessionData', DESKTOP_DATA_HOME.sessionData)
 app.setAppLogsPath(DESKTOP_DATA_HOME.logs)
@@ -1389,13 +1391,13 @@ function createWindow(): BrowserWindow {
   const { window } = surface
   configureNavigation(surface.renderer)
   surface.renderer.on('page-title-updated', (_event, title) => {
-    if (title !== '') surface.sendTitlebar('dsh:window:title', title)
+    surface.sendTitlebar('dsh:window:title', desktopWindowTitle(title))
   })
   if (surface.titlebarRenderer !== undefined) {
     const syncTitlebarState = (): void => {
       surface.layout()
       surface.sendTitlebar('dsh:window:maximized', window.isMaximized())
-      surface.sendTitlebar('dsh:window:title', surface.renderer.getTitle() || APP_NAME)
+      surface.sendTitlebar('dsh:window:title', desktopWindowTitle(surface.renderer.getTitle()))
       surface.sendTitlebar('dsh:window:theme', nativeTheme.shouldUseDarkColors)
     }
     window.on('maximize', syncTitlebarState)

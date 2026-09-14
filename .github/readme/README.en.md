@@ -394,11 +394,11 @@ The Release also includes `SHA256SUMS`. Verify downloads before installation; on
 ### macOS
 
 1. Download the package matching your Mac processor and open the `.dmg`.
-2. Drag `DeepSeek Harness.app` into the Applications folder.
+2. Drag `Open DeepSeek Harness Desktop.app` into the Applications folder.
 3. Current open-source builds use ad-hoc signing and are not notarized. If Gatekeeper blocks the first launch, use **System Settings → Privacy & Security → Open Anyway**. Alternatively, after confirming the download came from this repository, run:
 
    ```bash
-   xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness.app"
+   xattr -dr com.apple.quarantine "/Applications/Open DeepSeek Harness Desktop.app"
    ```
 
 > [!CAUTION]

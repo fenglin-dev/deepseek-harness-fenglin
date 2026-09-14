@@ -369,13 +369,13 @@ Release 同时提供 `SHA256SUMS`。安装前建议校验下载文件；只有�
 ### macOS
 
 1. 下载与 Mac 处理器相符的 `.dmg`。
-2. 将 `DeepSeek Harness.app` 拖入“应用程序”文件夹。
+2. 将 `Open DeepSeek Harness Desktop.app` 拖入“应用程序”文件夹。
 3. 当前开源构建使用 ad-hoc 签名且未经 Apple 公证。若 Gatekeeper 阻止首次打开，请前往**系统设置 → 隐私与安全性 → 仍要打开**。
 
 也可以在确认文件来自本仓库后执行：
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness.app"
+xattr -dr com.apple.quarantine "/Applications/Open DeepSeek Harness Desktop.app"
 ```
 
 > [!CAUTION]
@@ -479,10 +479,10 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 
 ### 加入交流群
 
-欢迎扫码加入 Open DSH Desktop 交流群，与其他用户和插件作者交流使用经验、问题排查与功能建议。
+欢迎扫码加入 Open DeepSeek Harness Desktop 交流群，与其他用户和插件作者交流使用经验、问题排查与功能建议。
 
 <p align="center">
-  <img src="./assets/readme/wechat-group-qr-2026-09-13.jpg" width="360" alt="Open DSH Desktop 微信交流群二维码">
+  <img src="./assets/readme/wechat-group-qr-2026-09-13.jpg" width="360" alt="Open DeepSeek Harness Desktop 微信交流群二维码">
   <br>
   <sub>当前二维码有效期至 2026 年 9 月 13 日；过期后请关注 README 中更新的二维码</sub>
 </p>
