@@ -80,6 +80,7 @@ export class InstallProgressTracker {
   private pending = ''
   private resolved = 0
   private acquired = 0
+  private imported = 0
   private resolutionDone = false
   private stage: PluginInstallProgressStage = 'preparing'
 
@@ -87,8 +88,8 @@ export class InstallProgressTracker {
 
   /** Current coarse stage and truthful determinate counters, when available. */
   get progress(): PluginInstallProgress {
-    if (this.stage === 'downloading' && this.resolutionDone && this.resolved > 0) {
-      const completed = Math.min(this.acquired, this.resolved)
+    if ((this.stage === 'downloading' || this.stage === 'installing') && this.resolutionDone && this.resolved > 0) {
+      const completed = Math.min(this.stage === 'installing' ? this.imported : this.acquired, this.resolved)
       return {
         stage: this.stage,
         percent: Math.min(99, Math.floor(completed / this.resolved * 100)),
@@ -204,16 +205,24 @@ export class InstallProgressTracker {
       else if (log.stage === 'resolution_done') {
         this.resolutionDone = true
         this.setStage('downloading', 'Downloading dependencies…')
-      } else if (log.stage === 'importing_started') this.setStage('installing', 'Installing dependencies…')
+        this.appendProgress()
+      } else if (log.stage === 'importing_started') {
+        this.setStage('installing', 'Installing dependencies…')
+        this.appendProgress()
+      }
       else if (log.stage === 'importing_done') this.setStage('verifying', 'Verifying installation…')
       return
     }
     if (name === 'pnpm:progress') {
-      if (log.status === 'resolved') this.resolved += 1
-      else if (log.status === 'fetched' || log.status === 'found_in_store') this.acquired += 1
-      if (this.resolutionDone && this.stage === 'downloading' && this.resolved > 0) {
-        const progress = this.progress
-        this.append(`Progress: ${String(progress.completed ?? 0)}/${String(progress.total ?? this.resolved)} dependencies ready (${String(progress.percent ?? 0)}%).\n`)
+      if (log.status === 'resolved') {
+        this.resolved += 1
+        if (this.stage === 'downloading') this.appendProgress()
+      } else if (log.status === 'fetched' || log.status === 'found_in_store') {
+        this.acquired += 1
+        if (this.stage === 'downloading') this.appendProgress()
+      } else if (log.status === 'imported') {
+        this.imported += 1
+        if (this.stage === 'installing') this.appendProgress()
       }
       return
     }
@@ -247,7 +256,16 @@ export class InstallProgressTracker {
     this.stage = 'preparing'
     this.resolved = 0
     this.acquired = 0
+    this.imported = 0
     this.resolutionDone = false
+  }
+
+  private appendProgress(): void {
+    if (!this.resolutionDone || this.resolved === 0) return
+    if (this.stage !== 'downloading' && this.stage !== 'installing') return
+    const progress = this.progress
+    const label = this.stage === 'installing' ? 'installed' : 'ready'
+    this.append(`Progress: ${String(progress.completed ?? 0)}/${String(progress.total ?? this.resolved)} dependencies ${label} (${String(progress.percent ?? 0)}%).\n`)
   }
 
   private append(value: string): void {

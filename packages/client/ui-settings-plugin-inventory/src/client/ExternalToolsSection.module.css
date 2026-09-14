@@ -188,6 +188,63 @@
   isolation: isolate;
 }
 
+.installSplit {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 210px;
+  min-height: 32px;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 8px;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.pauseButton,
+.stopButton {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.pauseButton {
+  flex-direction: column;
+  padding: 4px 10px;
+}
+
+.stopButton {
+  padding: 6px 10px;
+  border-left: 0.5px solid color-mix(in srgb, currentColor 35%, transparent);
+}
+
+.pauseButton:hover:not(:disabled),
+.pauseButton:focus-visible,
+.stopButton:hover:not(:disabled),
+.stopButton:focus-visible {
+  background: color-mix(in srgb, var(--dsw-alias-interactive-bg-hover) 34%, transparent);
+}
+
+.pauseButton:disabled,
+.stopButton:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.progressCopy {
+  font-size: 10px;
+  line-height: 13px;
+  opacity: 0.82;
+}
+
 .installFill {
   position: absolute;
   z-index: 0;
@@ -200,11 +257,6 @@
 .installFill[data-indeterminate='true'] {
   width: 42%;
   animation: install-progress-scan 1.25s ease-in-out infinite;
-}
-
-.installLabel {
-  position: relative;
-  z-index: 1;
 }
 
 .visualProgress {

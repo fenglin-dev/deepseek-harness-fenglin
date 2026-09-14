@@ -1,7 +1,7 @@
 /** Host-selected pnpm execution for profile dependency maintenance. */
 
 import { spawnSync } from 'node:child_process'
-import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
   closeSync,
@@ -33,9 +33,23 @@ interface ProgressFile {
   readonly startOffset: number
 }
 
-function openProgressFile(path: string): ProgressFile {
+function installProgressHome(profileDir: string, environment: NodeJS.ProcessEnv = process.env): string {
+  const selectedHome = resolveDshHome(undefined, environment)
+  const origin = environment.DSH_PLUGIN_TRANSACTION_ORIGIN?.trim()
+  if (origin === undefined || origin === '') return selectedHome
+  const originHome = resolve(origin)
+  const candidateParts = relative(originHome, selectedHome).split(sep)
+  if (candidateParts.length !== 4 || candidateParts[0] !== 'plugin-transactions'
+    || candidateParts[1] !== basename(profileDir) || !/^[a-f0-9-]{36}$/u.test(candidateParts[2] ?? '')
+    || candidateParts[3] !== 'candidate') {
+    throw new Error(`${NAME}: desktop install progress origin does not own the staged Profile`)
+  }
+  return originHome
+}
+
+function openProgressFile(path: string, profileDir: string): ProgressFile {
   if (!isAbsolute(path)) throw new Error(`${NAME}: desktop install progress file must be absolute`)
-  const expectedDirectory = resolve(resolveDshHome(), '.desktop-install-progress')
+  const expectedDirectory = resolve(installProgressHome(profileDir), '.desktop-install-progress')
   if (resolve(dirname(path)) !== expectedDirectory || !/^[0-9a-f-]{36}\.ndjson$/iu.test(path.slice(expectedDirectory.length + 1))) {
     throw new Error(`${NAME}: desktop install progress file is outside the managed directory`)
   }
@@ -321,7 +335,7 @@ export function runProfilePackageManager(
   let completedRetries = 0
   while (true) {
     const startedAt = performance.now()
-    const progress = options.progressFile === undefined ? undefined : openProgressFile(options.progressFile)
+    const progress = options.progressFile === undefined ? undefined : openProgressFile(options.progressFile, profileDir)
     if (progress !== undefined) writeProgressMarker(progress, { stage: 'attempt-started', attempt: completedRetries + 1 })
     const result = spawnSync(invocation.command, invocation.args, {
       cwd: profileDir,
@@ -357,7 +371,7 @@ export function runProfilePackageManager(
         `${NAME}: pnpm hit transient Windows node_modules rename contention; retrying in ${String(delayMs)} ms (${String(completedRetries)}/${String(WINDOWS_PNPM_RENAME_RETRY_DELAYS_MS.length)})`,
       )
       if (options.progressFile !== undefined) {
-        const retryProgress = openProgressFile(options.progressFile)
+        const retryProgress = openProgressFile(options.progressFile, profileDir)
         try {
           writeProgressMarker(retryProgress, {
             stage: 'retrying',

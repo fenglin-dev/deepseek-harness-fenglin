@@ -72,6 +72,9 @@ export interface ExternalToolsSectionInjected {
   installExternalTool: (toolId: InstallableExternalToolId) => Promise<PluginInstallSnapshot>
   getInstall: (installId: PluginInstallId) => Promise<PluginInstallSnapshot>
   getInstallOutput: (installId: PluginInstallId, offset: number) => Promise<PluginInstallOutputRead>
+  pauseInstall: (installId: PluginInstallId) => Promise<PluginInstallSnapshot>
+  cancelInstall: (installId: PluginInstallId) => Promise<PluginInstallSnapshot>
+  restart: () => Promise<boolean>
 }
 
 /** Full props assembled by the Settings section slot. */
@@ -106,6 +109,9 @@ function progressCopy(progress: PluginInstallProgress | undefined, t: ExternalTo
     return t('external.progress.downloading').replace('{percent}', String(progress.percent))
   }
   if (progress?.stage === 'downloading') return t('external.progress.downloadingUnknown')
+  if (progress?.stage === 'installing' && progress.percent !== undefined) {
+    return t('external.progress.installingPercent').replace('{percent}', String(progress.percent))
+  }
   if (progress?.stage === 'installing') return t('external.progress.installing')
   if (progress?.stage === 'verifying') return t('external.progress.verifying')
   return t('external.progress.preparing')
@@ -113,11 +119,16 @@ function progressCopy(progress: PluginInstallProgress | undefined, t: ExternalTo
 
 /** Render the dedicated connection center in Settings navigation. */
 export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNode {
-  const { list, externalTools, setExternalTool, installExternalTool, getInstall, getInstallOutput, t } = props
+  const { list, externalTools, setExternalTool, installExternalTool, getInstall, getInstallOutput, restart, t } = props
   const [request, setRequest] = useState(0)
   const [state, setState] = useState<PageState>({ phase: 'loading' })
   const [installs, setInstalls] = useState<Readonly<Record<string, PluginInstallSnapshot>>>({})
   const [busyTool, setBusyTool] = useState<ExternalToolId | null>(null)
+  const [restartingTool, setRestartingTool] = useState<ToolDefinition['id'] | null>(null)
+  const [controllingInstall, setControllingInstall] = useState<{
+    readonly toolId: ToolDefinition['id']
+    readonly action: 'pause' | 'cancel'
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [progressTool, setProgressTool] = useState<ToolDefinition['id'] | null>(null)
   const [transcripts, setTranscripts] = useState<Readonly<Record<string, TranscriptState>>>({})
@@ -224,6 +235,37 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
     }
   }
 
+  const restartToEnable = async (tool: ToolDefinition): Promise<void> => {
+    setRestartingTool(tool.id)
+    setError(null)
+    try {
+      if (!(await restart())) setError(t('external.restart.failed'))
+    } catch {
+      setError(t('external.restart.failed'))
+    } finally {
+      setRestartingTool(null)
+    }
+  }
+
+  const controlInstall = async (
+    tool: ToolDefinition,
+    installId: PluginInstallId,
+    action: 'pause' | 'cancel',
+  ): Promise<void> => {
+    setControllingInstall({ toolId: tool.id, action })
+    setError(null)
+    try {
+      const snapshot = action === 'pause'
+        ? await props.pauseInstall(installId)
+        : await props.cancelInstall(installId)
+      setInstalls(previous => ({ ...previous, [tool.id]: snapshot }))
+    } catch {
+      setError(t('external.install.controlFailed'))
+    } finally {
+      setControllingInstall(null)
+    }
+  }
+
   if (state.phase === 'loading') return <p className={css.pageStatus}>{t('external.loading')}</p>
   if (state.phase === 'failed') {
     return (
@@ -262,6 +304,8 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
           const restarting = installState?.phase === 'succeeded'
             || installState?.phase === 'repaired'
           const installing = installState?.phase === 'running'
+          const paused = installState?.phase === 'paused'
+          const cancelled = installState?.phase === 'cancelled'
           return (
             <li key={tool.id} className={css.card} data-connected={active && enabled ? 'true' : undefined}>
               <div className={css.cardTop}>
@@ -277,9 +321,13 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
                         ? t('external.status.connected')
                         : restarting
                           ? t('external.status.restart')
-                          : active
-                            ? t('external.status.ready')
-                            : t('external.status.notInstalled')}
+                          : paused
+                            ? t('external.status.paused')
+                            : cancelled
+                              ? t('external.status.cancelled')
+                              : active
+                                ? t('external.status.ready')
+                                : t('external.status.notInstalled')}
                 </span>
               </div>
               <div className={css.cardBody}>
@@ -303,36 +351,71 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
                     >
                       {t('external.action.viewProgress')}
                     </Button>
-                    <Button
-                      variant="primary"
-                      className={css.installButton}
-                      disabled={installing || restarting || running !== undefined}
-                      onClick={() => { void install(tool) }}
-                    >
-                      {installing ? (
-                        <>
-                          <span
-                            className={css.installFill}
-                            style={{ '--install-progress': `${String(installState.installProgress?.percent ?? 100)}%` } as CSSProperties}
-                            data-indeterminate={installState.installProgress?.percent === undefined ? 'true' : undefined}
-                            aria-hidden="true"
-                          />
-                          <span className={css.installLabel}>{progressCopy(installState.installProgress, t)}</span>
-                          <span
-                            className={css.visualProgress}
-                            role="progressbar"
-                            aria-label={progressCopy(installState.installProgress, t)}
-                            aria-valuemin={0}
-                            aria-valuemax={100}
-                            aria-valuenow={installState.installProgress?.percent}
-                          />
-                        </>
-                      ) : restarting
-                        ? t('external.action.restart')
-                        : tool.community === true
-                          ? t('external.action.installCommunity')
-                          : t('external.action.install')}
-                    </Button>
+                    {installing ? (
+                      <div
+                        className={css.installSplit}
+                        role="group"
+                        aria-label={t('external.action.downloadControls')}
+                      >
+                        <span
+                          className={css.installFill}
+                          style={{ '--install-progress': `${String(installState.installProgress?.percent ?? 100)}%` } as CSSProperties}
+                          data-indeterminate={installState.installProgress?.percent === undefined ? 'true' : undefined}
+                          aria-hidden="true"
+                        />
+                        <button
+                          type="button"
+                          className={css.pauseButton}
+                          disabled={controllingInstall !== null}
+                          onClick={() => { void controlInstall(tool, installState.installId, 'pause') }}
+                        >
+                          <span>{controllingInstall?.toolId === tool.id && controllingInstall.action === 'pause'
+                            ? t('external.action.pausing')
+                            : t('external.action.pause')}</span>
+                          <span className={css.progressCopy}>{progressCopy(installState.installProgress, t)}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={css.stopButton}
+                          disabled={controllingInstall !== null}
+                          onClick={() => { void controlInstall(tool, installState.installId, 'cancel') }}
+                        >
+                          {controllingInstall?.toolId === tool.id && controllingInstall.action === 'cancel'
+                            ? t('external.action.stopping')
+                            : t('external.action.stop')}
+                        </button>
+                        <span
+                          className={css.visualProgress}
+                          role="progressbar"
+                          aria-label={progressCopy(installState.installProgress, t)}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={installState.installProgress?.percent}
+                        />
+                      </div>
+                    ) : (
+                      <Button
+                        variant="primary"
+                        className={css.installButton}
+                        disabled={restartingTool !== null || running !== undefined}
+                        onClick={() => {
+                          if (restarting) void restartToEnable(tool)
+                          else void install(tool)
+                        }}
+                      >
+                        {restarting
+                          ? restartingTool === tool.id
+                            ? t('external.action.restarting')
+                            : t('external.action.restart')
+                          : paused
+                            ? t('external.action.resume')
+                            : cancelled
+                              ? t('external.action.retryDownload')
+                              : tool.community === true
+                                ? t('external.action.installCommunity')
+                                : t('external.action.install')}
+                      </Button>
+                    )}
                   </>
                 ) : tool.community === true ? (
                   <Button variant="outline" disabled>{t('external.action.pluginInstalled')}</Button>

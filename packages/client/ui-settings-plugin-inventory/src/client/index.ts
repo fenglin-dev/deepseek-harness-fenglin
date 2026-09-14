@@ -36,6 +36,7 @@ import {
   getDesktopDiagnosticLabRun,
   getPluginInstall,
   listDesktopDiagnosticLabScenarios,
+  restartDesktopApplication,
   startDesktopDiagnosticLab,
   subscribeDesktopDiagnosticLab,
   startPluginInstall,
@@ -193,7 +194,18 @@ export function apply(ctx: ClientContext): void {
   })
   const externalToolsInjected = (): ExternalToolsSectionInjected => ({
     list,
+    restart: restartDesktopApplication,
     getInstall,
+    pauseInstall: async (installId) => {
+      const result = await ctx.remote.pluginInventory.pauseInstall(installId)
+      if (!result.ok) throw new Error(`pluginInventory.pauseInstall failed: ${result.error.code}: ${result.error.message}`)
+      return result.value
+    },
+    cancelInstall: async (installId) => {
+      const result = await ctx.remote.pluginInventory.cancelInstall(installId)
+      if (!result.ok) throw new Error(`pluginInventory.cancelInstall failed: ${result.error.code}: ${result.error.message}`)
+      return result.value
+    },
     getInstallOutput: async (installId, offset) => {
       const result = await ctx.remote.pluginInventory.getInstallOutput({ installId, offset })
       if (!result.ok) {

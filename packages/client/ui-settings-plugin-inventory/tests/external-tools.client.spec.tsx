@@ -33,6 +33,9 @@ function props(overrides: Partial<ExternalToolsSectionInjected> = {}): ExternalT
     installExternalTool: async () => { throw new Error('unexpected install') },
     getInstall: async () => { throw new Error('unexpected install poll') },
     getInstallOutput: async () => { throw new Error('unexpected output poll') },
+    pauseInstall: async () => { throw new Error('unexpected pause') },
+    cancelInstall: async () => { throw new Error('unexpected cancel') },
+    restart: async () => false,
     ...overrides,
   } as ExternalToolsSectionProps
 }
@@ -78,6 +81,30 @@ describe('ExternalToolsSection download progress', () => {
     await screen.findByRole('heading', { name: en['external.title'] })
     fireEvent.click(screen.getByRole('button', { name: en['external.action.installCommunity'] }))
     await waitFor(() => { expect(installExternalTool).toHaveBeenCalledWith('workbuddy') })
+  })
+
+  it('waits for the user to restart after install and uses the restart action instead of reinstalling', async () => {
+    const installExternalTool = vi.fn(async (): Promise<PluginInstallSnapshot> => ({
+      installId: '00000000-0000-4000-8000-000000000004' as PluginInstallId,
+      profile: 'web',
+      packageSpec: '@deepseek-ai/dsh-subagent-codex',
+      command: 'dsh plugin --profile web add @deepseek-ai/dsh-subagent-codex',
+      phase: 'succeeded',
+      exitCode: 0,
+      installProgress: { stage: 'verifying', percent: 100 },
+    }))
+    const restart = vi.fn(async () => true)
+    render(<ExternalToolsSection {...props({ installExternalTool, restart })} />)
+
+    await screen.findByRole('heading', { name: en['external.title'] })
+    fireEvent.click(screen.getAllByRole('button', { name: en['external.action.install'] })[0]!)
+    const restartButton = await screen.findByRole('button', { name: en['external.action.restart'] })
+    expect(restartButton.hasAttribute('disabled')).toBe(false)
+    expect(restart).not.toHaveBeenCalled()
+
+    fireEvent.click(restartButton)
+    await waitFor(() => { expect(restart).toHaveBeenCalledOnce() })
+    expect(installExternalTool).toHaveBeenCalledOnce()
   })
 
   it('shows an in-button percentage and preserves a viewable terminal after completion', async () => {
@@ -126,6 +153,63 @@ describe('ExternalToolsSection download progress', () => {
     await waitFor(() => { expect(getInstall).toHaveBeenCalledWith(installId) }, { timeout: 1_500 })
     expect(screen.getAllByRole('button', { name: en['external.action.viewProgress'] })[0]?.hasAttribute('disabled')).toBe(false)
     expect(getInstallOutput).toHaveBeenCalledWith(installId, 0)
+  })
+
+  it('splits a running download into pause and stop controls and resumes only on request', async () => {
+    const installId = '00000000-0000-4000-8000-000000000005' as PluginInstallId
+    const running: PluginInstallSnapshot = {
+      installId,
+      profile: 'web',
+      packageSpec: '@deepseek-ai/dsh-subagent-codex',
+      command: 'dsh plugin --profile web add @deepseek-ai/dsh-subagent-codex',
+      phase: 'running',
+      installProgress: { stage: 'downloading', percent: 41, completed: 7, total: 17 },
+    }
+    const paused: PluginInstallSnapshot = { ...running, phase: 'paused' }
+    const installExternalTool = vi.fn(async () => running)
+    const pauseInstall = vi.fn(async () => paused)
+    render(<ExternalToolsSection {...props({
+      installExternalTool,
+      pauseInstall,
+      getInstall: async () => running,
+    })} />)
+
+    await screen.findByRole('heading', { name: en['external.title'] })
+    fireEvent.click(screen.getAllByRole('button', { name: en['external.action.install'] })[0]!)
+    expect(await screen.findByRole('group', { name: en['external.action.downloadControls'] })).toBeTruthy()
+    expect(screen.getByRole('button', { name: new RegExp(en['external.action.pause'], 'u') })).toBeTruthy()
+    expect(screen.getByRole('button', { name: en['external.action.stop'] })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(en['external.action.pause'], 'u') }))
+    await waitFor(() => { expect(pauseInstall).toHaveBeenCalledWith(installId) })
+    expect(await screen.findByText(en['external.status.paused'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en['external.action.resume'] }))
+    await waitFor(() => { expect(installExternalTool).toHaveBeenCalledTimes(2) })
+  })
+
+  it('stops a running download and offers a fresh download without resuming automatically', async () => {
+    const installId = '00000000-0000-4000-8000-000000000006' as PluginInstallId
+    const running: PluginInstallSnapshot = {
+      installId,
+      profile: 'web',
+      packageSpec: '@deepseek-ai/dsh-subagent-claude-code',
+      command: 'dsh plugin --profile web add @deepseek-ai/dsh-subagent-claude-code',
+      phase: 'running',
+      installProgress: { stage: 'resolving' },
+    }
+    const cancelInstall = vi.fn(async (): Promise<PluginInstallSnapshot> => ({ ...running, phase: 'cancelled' }))
+    render(<ExternalToolsSection {...props({
+      installExternalTool: async () => running,
+      cancelInstall,
+      getInstall: async () => running,
+    })} />)
+
+    await screen.findByRole('heading', { name: en['external.title'] })
+    fireEvent.click(screen.getAllByRole('button', { name: en['external.action.install'] })[1]!)
+    fireEvent.click(await screen.findByRole('button', { name: en['external.action.stop'] }))
+    await waitFor(() => { expect(cancelInstall).toHaveBeenCalledWith(installId) })
+    expect(await screen.findByText(en['external.status.cancelled'])).toBeTruthy()
+    expect(screen.getByRole('button', { name: en['external.action.retryDownload'] })).toBeTruthy()
   })
 
   it('keeps the existing failure diagnostic after the progress dialog is opened', async () => {

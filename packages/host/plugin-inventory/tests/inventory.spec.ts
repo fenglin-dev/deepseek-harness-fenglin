@@ -132,6 +132,8 @@ describe('PluginInventoryGateway', () => {
       { method: 'getDependencyDoctor', invocation: { kind: 'direct' } },
       { method: 'getInstall', invocation: { kind: 'direct' } },
       { method: 'getInstallOutput', invocation: { kind: 'direct' } },
+      { method: 'pauseInstall', invocation: { kind: 'direct' } },
+      { method: 'cancelInstall', invocation: { kind: 'direct' } },
     ])
   })
 
@@ -574,6 +576,46 @@ describe('PluginInventoryGateway', () => {
     expect(inventory.getInstallOutput({ installId: started.installId, offset: first.nextOffset }).settled).toBe(true)
     expect(progressFile).toBeDefined()
     expect(existsSync(progressFile!)).toBe(false)
+  })
+
+  it('pauses and stops installs only after their managed process ranges exit', async () => {
+    const { inventory, subprocess } = await harness()
+    const outcomes: Array<ReturnType<typeof Promise.withResolvers<{ exitCode: number | null; signal: 'SIGTERM' }>>> = []
+    const terminated: boolean[] = []
+    const rangeExited: boolean[] = []
+    const baseSpawn = subprocess.spawn.bind(subprocess)
+    subprocess.spawn = (spec) => {
+      const base = baseSpawn(spec)
+      const outcome = Promise.withResolvers<{ exitCode: number | null; signal: 'SIGTERM' }>()
+      const index = outcomes.push(outcome) - 1
+      terminated[index] = false
+      rangeExited[index] = false
+      return {
+        ...base,
+        done: outcome.promise,
+        terminate: () => {
+          terminated[index] = true
+          outcome.resolve({ exitCode: null, signal: 'SIGTERM' })
+        },
+        waitForExit: async () => {
+          expect(terminated[index]).toBe(true)
+          rangeExited[index] = true
+          return true
+        },
+      }
+    }
+
+    const paused = inventory.startInstall({ profile: 'web', packageSpec: 'pause-plugin' })
+    await expect(inventory.pauseInstall(paused.installId)).resolves.toMatchObject({ phase: 'paused' })
+    expect(rangeExited[0]).toBe(true)
+    const resumed = inventory.startInstall({ profile: 'web', packageSpec: 'pause-plugin' })
+    expect(resumed.installId).not.toBe(paused.installId)
+    await inventory.cancelInstall(resumed.installId)
+
+    const stopped = inventory.startInstall({ profile: 'web', packageSpec: 'stop-plugin' })
+    await expect(inventory.cancelInstall(stopped.installId)).resolves.toMatchObject({ phase: 'cancelled' })
+    expect(rangeExited.at(-1)).toBe(true)
+    expect(inventory.getInstallOutput({ installId: stopped.installId, offset: 0 }).text).toContain('stopped by user')
   })
 
   it('removes an active install sidecar when the Host service is disposed', async () => {

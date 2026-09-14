@@ -30,7 +30,7 @@ import {
   type ProfileDiagnostic,
   type ProfileDiagnosticReport,
 } from '@deepseek-ai/dsh-app-boot'
-import type {} from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
@@ -112,6 +112,9 @@ interface InstallJob {
   snapshot: PluginInstallSnapshot
   target: string
   readonly progress: InstallProgressTracker
+  handle?: SubprocessHandle
+  completion?: Promise<void>
+  requestedControl?: 'pause' | 'cancel'
   progressFile?: string
   steps: readonly {
     readonly args: readonly string[]
@@ -672,7 +675,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
-    void this.runInstall(job)
+    this.launchInstall(job)
     return snapshot
   }
 
@@ -714,7 +717,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
-    void this.runInstall(job)
+    this.launchInstall(job)
     return snapshot
   }
 
@@ -762,7 +765,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
-    void this.runInstall(job)
+    this.launchInstall(job)
     return snapshot
   }
 
@@ -824,7 +827,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
-    void this.runInstall(job)
+    this.launchInstall(job)
     return snapshot
   }
 
@@ -856,7 +859,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
-    void this.runInstall(job)
+    this.launchInstall(job)
     return snapshot
   }
 
@@ -922,6 +925,27 @@ export class PluginInventoryGateway extends TypertRemoteService {
     return job.progress.read(request.offset, job.snapshot.phase !== 'running')
   }
 
+  /**
+   * Pause one running install after its managed process range is empty.
+   * Resuming starts the same request again and lets pnpm reuse its cache.
+   * @param installId - id returned by {@link startInstall}.
+   * @returns settled paused state, or the existing terminal state.
+   */
+  @Remote('pauseInstall')
+  async pauseInstall(installId: PluginInstallId): Promise<PluginInstallSnapshot> {
+    return this.controlInstall(installId, 'pause')
+  }
+
+  /**
+   * Stop one running install after its managed process range is empty.
+   * @param installId - id returned by {@link startInstall}.
+   * @returns settled cancelled state, or the existing terminal state.
+   */
+  @Remote('cancelInstall')
+  async cancelInstall(installId: PluginInstallId): Promise<PluginInstallSnapshot> {
+    return this.controlInstall(installId, 'cancel')
+  }
+
   /** Resolve one known job or fail loud for stale and fabricated ids. */
   private expectJob(installId: PluginInstallId): InstallJob {
     const job = this.jobs.get(installId)
@@ -934,6 +958,28 @@ export class PluginInventoryGateway extends TypertRemoteService {
     if (job.snapshot.phase === 'running') {
       job.snapshot = { ...job.snapshot, installProgress: job.progress.progress }
     }
+  }
+
+  private launchInstall(job: InstallJob): void {
+    const completion = this.runInstall(job)
+    job.completion = completion
+    void completion
+  }
+
+  private async controlInstall(
+    installId: PluginInstallId,
+    control: 'pause' | 'cancel',
+  ): Promise<PluginInstallSnapshot> {
+    const job = this.expectJob(installId)
+    if (job.snapshot.phase !== 'running') return job.snapshot
+    job.requestedControl = control
+    const handle = job.handle
+    if (handle !== undefined) {
+      handle.terminate()
+      await handle.waitForExit()
+    }
+    await job.completion
+    return job.snapshot
   }
 
   /** Resolve one durable quarantine record or reject a stale client selection. */
@@ -957,6 +1003,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
       const steps: InstallJob['steps'] = staged && job.steps.length > 1
         ? [{ args: ['batch', JSON.stringify(job.steps)] }] : job.steps
       for (const [index, step] of steps.entries()) {
+        if (job.requestedControl !== undefined) break
         const handle = this.ctx.subprocess.spawn({
           argv: [
             ...launcher,
@@ -971,7 +1018,9 @@ export class PluginInventoryGateway extends TypertRemoteService {
           },
           graceMs: this.terminationGraceMs,
         })
+        job.handle = handle
         const outcome = await handle.done
+        delete job.handle
         this.refreshInstallProgress(job)
         exitCode = outcome.exitCode
         const stdout = handle.collected.stdout?.readFrom(0).text.trim() ?? ''
@@ -981,6 +1030,19 @@ export class PluginInventoryGateway extends TypertRemoteService {
         if (accepted !== undefined && !accepted.includes(exitCode ?? -1)) break
       }
       const diagnostic = outputs.join('\n')
+      const requestedControl = job.requestedControl
+      if (requestedControl !== undefined) {
+        const message = requestedControl === 'pause' ? 'Download paused by user.' : 'Download stopped by user.'
+        job.progress.appendDiagnostic(message)
+        job.progress.settle(false)
+        job.snapshot = {
+          ...job.snapshot,
+          phase: requestedControl === 'pause' ? 'paused' : 'cancelled',
+          exitCode,
+          installProgress: job.progress.progress,
+        }
+        return
+      }
       const repair = parseRepairReport(diagnostic)
       const repairSucceeded = repair?.status === 'repaired' && exitCode === 10
         || repair?.status === 'quarantined' && exitCode === 11
@@ -1007,6 +1069,19 @@ export class PluginInventoryGateway extends TypertRemoteService {
         clearQuarantinedProfilePlugin(job.quarantineId)
       }
     } catch (error) {
+      delete job.handle
+      const requestedControl = job.requestedControl
+      if (requestedControl !== undefined) {
+        const message = requestedControl === 'pause' ? 'Download paused by user.' : 'Download stopped by user.'
+        job.progress.appendDiagnostic(message)
+        job.progress.settle(false)
+        job.snapshot = {
+          ...job.snapshot,
+          phase: requestedControl === 'pause' ? 'paused' : 'cancelled',
+          installProgress: job.progress.progress,
+        }
+        return
+      }
       const diagnostic = error instanceof Error ? error.message : String(error)
       job.progress.appendDiagnostic(diagnostic)
       job.progress.settle(false)

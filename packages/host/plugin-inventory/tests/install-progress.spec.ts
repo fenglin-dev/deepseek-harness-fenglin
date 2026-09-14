@@ -58,6 +58,24 @@ describe('InstallProgressTracker', () => {
     expect(tracker.read(0, false).text).toContain('Starting download attempt 2')
   })
 
+  it('keeps determinate progress visible while pnpm imports cached or downloaded dependencies', () => {
+    const path = progressFile()
+    const tracker = new InstallProgressTracker(64 * 1024)
+    appendFileSync(path, [
+      record('pnpm:progress', { status: 'resolved' }),
+      record('pnpm:progress', { status: 'resolved' }),
+      record('pnpm:progress', { status: 'found_in_store' }),
+      record('pnpm:stage', { stage: 'resolution_done' }),
+      record('pnpm:stage', { stage: 'importing_started' }),
+      record('pnpm:progress', { status: 'imported' }),
+    ].join(''))
+    tracker.refresh(path)
+
+    expect(tracker.progress).toEqual({ stage: 'installing', percent: 50, completed: 1, total: 2 })
+    expect(tracker.read(0, false).text).toContain('dependencies ready (50%)')
+    expect(tracker.read(0, false).text).toContain('dependencies installed (50%)')
+  })
+
   it('returns incremental output and marks cursors that fell behind the retained cap', () => {
     const path = progressFile()
     const tracker = new InstallProgressTracker(48)

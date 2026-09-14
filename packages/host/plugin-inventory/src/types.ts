@@ -244,7 +244,14 @@ export interface PluginUninstallRequest {
 }
 
 /** Observable lifecycle of one package-manager process. */
-export type PluginInstallPhase = 'running' | 'succeeded' | 'repaired' | 'quarantined' | 'failed'
+export type PluginInstallPhase =
+  | 'running'
+  | 'paused'
+  | 'cancelled'
+  | 'succeeded'
+  | 'repaired'
+  | 'quarantined'
+  | 'failed'
 
 /** User-visible stage within one running package-manager operation. */
 export type PluginInstallProgressStage = 'preparing' | 'resolving' | 'downloading' | 'installing' | 'verifying'
