@@ -13,6 +13,9 @@ import {
 import {
   DesktopBrowserReturnButton, type DesktopBrowserReturnButtonProps,
 } from '../src/client/DesktopBrowserReturnButton.tsx'
+import {
+  DesktopLogDirectoryAction, type DesktopLogDirectoryActionProps,
+} from '../src/client/DesktopLogDirectoryAction.tsx'
 import { en } from '../src/client/locales.ts'
 import { DownloadNetworkSettings } from '../src/client/DownloadNetworkSettings.tsx'
 
@@ -101,6 +104,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
       updatePreferences,
       onPreferences: () => () => {},
       openLog: vi.fn(),
+      openLogDirectory: vi.fn(() => Promise.resolve({ error: '' })),
       openSettingsDocument: vi.fn(() => Promise.resolve({ error: '' })),
       getCommandLine: () => Promise.resolve(commandLine),
       installCommandLine,
@@ -134,6 +138,20 @@ function setup(releaseStatus: DesktopReleaseStatus = {
 }
 
 describe('desktop shell components', () => {
+  it('opens the fixed desktop log directory and permits retry after an error', async () => {
+    const openLogDirectory = vi.fn()
+      .mockResolvedValueOnce({ error: 'permission denied' })
+      .mockResolvedValueOnce({ error: '' })
+    render(<DesktopLogDirectoryAction {...({ openLogDirectory, t } as DesktopLogDirectoryActionProps)} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open log folder' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not open the log folder')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open log folder' }))
+    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+    expect(openLogDirectory).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps application download controls actionable while market-owned policies are unavailable', async () => {
     const { bridge, update } = createDownloadNetworkBridge()
     const longT = ((key: string, params?: Record<string, string | number>) => {

@@ -8,7 +8,7 @@
   <strong>开箱即用、依赖安全的 DeepSeek Harness 社区桌面版</strong>
 </p>
 
-语言：简体中文（默认） · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Português](README.pt-BR.md)
+语言：简体中文（默认） · [English](.github/readme/README.en.md) · [日本語](.github/readme/README.ja.md) · [한국어](.github/readme/README.ko.md) · [Español](.github/readme/README.es.md) · [Français](.github/readme/README.fr.md) · [Deutsch](.github/readme/README.de.md) · [Português](.github/readme/README.pt-BR.md)
 
 > [!IMPORTANT]
 >
