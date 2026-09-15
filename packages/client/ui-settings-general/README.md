@@ -67,6 +67,8 @@ On a loopback page, the Client loads the provider's `hasDocument` capability thr
 
 The settings panel reserves the desktop title-bar inset before centering its fixed-height surface. Its content and navigation columns scroll independently; the navigation title remains fixed while contributed section rows keep their full height and scroll inside the remaining rail space.
 
+At 680px and below, Settings becomes an edge-to-edge `100dvh` surface. The first page shows the complete section list; selecting a section opens a detail page with a 44px Back control, while both levels retain a 44px Close control. Safe-area padding and wrapping header actions keep long localized labels inside a 320px viewport.
+
 ### Host half
 
 The Host half registers `ui-onboarding` and `ui-settings-navigation` in the user-settings seam. The welcome step contributed by ui-settings-models reads and writes its `welcomeNoticeVersion` through the existing public settings boundary. The shell writes only the ordered `settings.section` ids; it never rewrites a feature's canonical registration order.

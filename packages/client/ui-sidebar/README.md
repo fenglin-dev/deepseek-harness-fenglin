@@ -39,6 +39,8 @@ Plugins add an icon component to the root-scoped `sidebar.panellist` list with a
 
 During a live collapse, the expanded content fades out at its current width, the upper controls share one fade and leftward translation into the 56px rail, and the layout's column slide ends the motion. A page that starts collapsed renders the rail statically, and reduced-motion mode disables both transitions. The bottom-pinned `sidebar.settings` control shares the fade timing but has no horizontal translation.
 
+In phone drawer presentation, a fixed 44px menu control opens navigation over a mask. Focus moves into and remains within the drawer, Escape and mask activation dismiss it, and focus returns to the menu control. Starting or selecting a Session, selecting a Workspace or global page, and opening Settings dismiss the drawer through the owner callback.
+
 ### Scrollbars
 
 Scrollbars in the column are a pointer affordance: the shell rebinds the scrollbar indirection to `transparent` whenever the pointer is outside the column and keeps the thumb drawn for 2s after the pointer leaves, so a list nobody is pointing at carries no bar. The reservation that keeps rows from moving belongs to the scrolling region (ui-workspace), so revealing a thumb never reflows.

@@ -27,6 +27,8 @@ This package provides the Web GUI's three-column AppFrame, edge-column widths, a
 
 The root slot composes the sidebar, main content, and right column. The sidebar spans 264–420px, defaults to 280px, and retains a 56px rail when collapsed; below 1024px it collapses automatically, and opening the right panel collapses a manually expanded sidebar. The right panel first opens at 45% of the viewport, then retains the user's pixel preference, capped at 70%. To protect 400px for the center, the frame first reduces the right panel to 300px, then reports insufficient room so its occupant closes it, and only then compresses the center further. Dragging has no transition delay; the right handle is absent while closed or fullscreen.
 
+At 680px and below, the frame switches the sidebar owner to `drawer` presentation. The center keeps the complete viewport width, resize handles disappear, and the sidebar opens over inert, accessibility-hidden content at `min(88vw, 320px)`. This transient drawer state never overwrites the saved desktop sidebar width; crossing back to 681px restores the compact-column behavior.
+
 Global panels occupy the root-scoped `main` keyed slot; `conversation` is the reserved key for the Conversation. `ctx.layout.selectPanel(id)` selects a registered panel, and `null` selects the Conversation without changing the current Session. No global panel is registered by the shipped composition.
 
 ### Theme presentation
