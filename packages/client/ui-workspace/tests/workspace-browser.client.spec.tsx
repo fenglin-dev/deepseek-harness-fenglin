@@ -78,6 +78,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
   const props: WorkspaceBrowserProps = {
     wide: true,
     expandSidebar: vi.fn(),
+    dismissSidebar: vi.fn(),
     useSessions: hook(sessionState([])),
     useSessionPendingInteraction: hook(noPendingInteraction),
     usePanelInfo, useResource,
@@ -274,7 +275,7 @@ describe('WorkspaceBrowser', () => {
 
   it('expands a group on click and opens a session row', () => {
     const open = vi.fn()
-    mount({
+    const b = mount({
       useSessions: hook(sessionState([summary('alpha-s', 1)])),
       useWorkspaces: hook(workspaceState([workspace('alpha', ['alpha-s'])])),
       open,
@@ -282,6 +283,7 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByText('alpha'))
     fireEvent.click(screen.getByText('alpha-s'))
     expect(open).toHaveBeenCalledWith(sid('alpha-s'))
+    expect(b.props.dismissSidebar).toHaveBeenCalledOnce()
     // Collapse hides the row again.
     fireEvent.click(screen.getByText('alpha'))
     expect(screen.queryByText('alpha-s')).toBeNull()
@@ -518,6 +520,7 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().groupExpansion).toEqual({ alpha: true })
     expect(screen.getByText('alpha-s')).toBeTruthy()
     expect(startSession).toHaveBeenCalledWith(wid('alpha'))
+    expect(b.props.dismissSidebar).toHaveBeenCalledOnce()
   })
 
   it('auto-expands the Ungrouped bucket for a loose current session; its header has no menu and its ＋ is inert', () => {

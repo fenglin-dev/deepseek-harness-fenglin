@@ -840,6 +840,7 @@ export function WorkspaceBrowser({
   wide,
   usePanelInfo,
   expandSidebar,
+  dismissSidebar,
   useSessions,
   useSessionPendingInteraction,
   useWorkspaces,
@@ -929,11 +930,20 @@ export function WorkspaceBrowser({
   const wsPlusRef = useRef<HTMLButtonElement>(null)
   const composingRef = useRef(false)
 
+  const startAndDismiss = (workspaceId?: WorkspaceId): void => {
+    startSession(workspaceId)
+    dismissSidebar()
+  }
+  const openAndDismiss = (sessionId: SessionId): void => {
+    open(sessionId)
+    dismissSidebar()
+  }
+
   const openSearchResult = (sessionId: SessionId): void => {
     setRevealSessionId(sessionId)
     setQuery('')
     setSearchExpanded(false)
-    open(sessionId)
+    openAndDismiss(sessionId)
   }
   const acknowledgeSessionReveal = (sessionId: SessionId): void => {
     setRevealSessionId(current => current === sessionId ? undefined : current)
@@ -1227,7 +1237,7 @@ export function WorkspaceBrowser({
           side="right"
           onPick={(workspaceId) => {
             setWsPickerOpen(false)
-            startSession(workspaceId)
+            startAndDismiss(workspaceId)
           }}
           onClose={() => { setWsPickerOpen(false) }}
         />
@@ -1274,7 +1284,7 @@ export function WorkspaceBrowser({
               <FlatList
                 usePanelInfo={usePanelInfo}
                 useSessions={useSessions} useSessionPendingInteraction={useSessionPendingInteraction}
-                open={open} forkSession={forkSession}
+                open={openAndDismiss} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
                 archivedSessionIds={archivedSessionIds}
                 orderBy={orderBy}
@@ -1304,8 +1314,8 @@ export function WorkspaceBrowser({
                 syncSessionOrderAccount={actions.syncSessionOrderAccount}
                 setSessionOrder={actions.setSessionOrder}
                 archivedSessionIds={archivedSessionIds}
-                startSession={startSession}
-                open={open}
+                startSession={startAndDismiss}
+                open={openAndDismiss}
                 insertWorkspaceBefore={insertWorkspaceBefore}
                 insertSessionBefore={insertSessionBefore}
                 orderBy={orderBy}

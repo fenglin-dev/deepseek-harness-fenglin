@@ -200,9 +200,44 @@ describe('AppFrame', () => {
   it('renders owner props for the default sidebar and prospective right panel', () => {
     const { frame, rightOwner, sidebarOwner, slotCalls } = mountFrame()
     expect(tracks(frame)).toEqual([280, 0])
-    expect(sidebarOwner()).toEqual({ collapsed: false, width: 280 })
+    const sidebar = sidebarOwner()
+    expect(sidebar).toMatchObject({ collapsed: false, width: 280, presentation: 'column' })
+    expect(typeof sidebar.dismiss).toBe('function')
     expect(rightOwner()).toEqual({ width: 864, viewportWidth: 1920, canShow: true })
     expect(slotCalls.find(c => c.key === 'main')).toEqual({ key: 'main', props: {}, options: { entryKey: 'conversation' } })
+  })
+
+  it('gives a 320px phone the full center track and an inert overlay boundary', () => {
+    frameWidth = 320
+    const { frame, instance, sidebarOwner, getByTestId } = mountFrame(320)
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(sidebarOwner()).toMatchObject({
+      collapsed: true, width: 281.6, presentation: 'drawer',
+    })
+    expect(frame.querySelector('[data-side="sidebar"]')).toBeNull()
+    act(() => { instance.actions.toggleSidebar() })
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(sidebarOwner()).toMatchObject({ collapsed: false, presentation: 'drawer' })
+    expect(getByTestId('main-content').parentElement?.hasAttribute('inert')).toBe(true)
+    expect(getByTestId('main-content').parentElement?.getAttribute('aria-hidden')).toBe('true')
+    act(() => { sidebarOwner().dismiss() })
+    expect(getByTestId('main-content').parentElement?.hasAttribute('inert')).toBe(false)
+  })
+
+  it.each([375, 390, 430, 667, 680])('keeps the sidebar overlay-only at %ipx', (width) => {
+    frameWidth = width
+    const { frame, sidebarOwner } = mountFrame(width)
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(sidebarOwner()).toMatchObject({
+      collapsed: true, presentation: 'drawer', width: Math.min(width * 0.88, 320),
+    })
+  })
+
+  it('returns to the compact column immediately above the phone breakpoint', () => {
+    frameWidth = 681
+    const { frame, sidebarOwner } = mountFrame(681)
+    expect(tracks(frame)).toEqual([56, 0])
+    expect(sidebarOwner()).toMatchObject({ collapsed: true, presentation: 'column', width: 56 })
   })
 
   it('renders the main, sidebar, and root-scoped rightbar outlets without a current Session', () => {
@@ -225,7 +260,9 @@ describe('AppFrame', () => {
     const { frame, instance, sidebarOwner, getByTestId } = mountFrame()
     act(() => { instance.actions.toggleSidebar() })
     expect(tracks(frame)).toEqual([56, 0])
-    expect(sidebarOwner()).toEqual({ collapsed: true, width: 56 })
+    const sidebar = sidebarOwner()
+    expect(sidebar).toMatchObject({ collapsed: true, width: 56, presentation: 'column' })
+    expect(typeof sidebar.dismiss).toBe('function')
     expect(getByTestId('sidebar-content')).toBeTruthy()
     expect(frame.querySelector('[data-side="sidebar"]')).toBeNull()
   })
@@ -262,7 +299,7 @@ describe('AppFrame normal width concessions', () => {
   })
 
   it('shrinks the right panel to 300px, drops its track, and only then squeezes center', () => {
-    const { frame, instance, rightOwner } = mountFrame()
+    const { frame, instance, rightOwner, sidebarOwner } = mountFrame()
     act(() => { instance.actions.setSidebar(420); instance.actions.openRightbar(true, false) })
     resize(1200)
     expect(tracks(frame)).toEqual([420, 380])
@@ -276,6 +313,9 @@ describe('AppFrame normal width concessions', () => {
     expect(instance.getSnapshot().layoutInfo).toMatchObject({ rightbarShown: true, rightbar: 864 })
     act(() => { instance.actions.closeRightbar() })
     resize(455)
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(sidebarOwner()).toMatchObject({ collapsed: true, presentation: 'drawer', width: 320 })
+    resize(681)
     expect(tracks(frame)).toEqual([56, 0])
     resize(1920)
     expect(tracks(frame)).toEqual([420, 0])
