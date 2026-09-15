@@ -4,7 +4,7 @@ import {
   closeSync, copyFileSync, cpSync, constants, existsSync, fsyncSync, lstatSync, mkdirSync, openSync,
   readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 'node:path'
 import { dump, load } from 'js-yaml'
 import { relocateProfilePluginMetadata } from './profile-plugin-relocation.ts'
 import {
@@ -175,6 +175,93 @@ function relocateGeneratedMetadata(candidate: string, home: string, profile: str
   }
 }
 
+type PathApi = Pick<typeof posix, 'basename' | 'isAbsolute' | 'relative' | 'resolve' | 'sep'>
+
+function isWindowsAbsolute(path: string): boolean {
+  return /^[A-Za-z]:[\\/]/u.test(path) || /^\\\\/u.test(path)
+}
+
+function pathApiFor(root: string, target: string): PathApi | undefined {
+  if (isWindowsAbsolute(root) && win32.isAbsolute(target)) return win32
+  if (posix.isAbsolute(root) && posix.isAbsolute(target)) return posix
+  return undefined
+}
+
+function directArchiveName(root: string, target: string): string | undefined {
+  const pathApi = pathApiFor(root, target)
+  if (pathApi === undefined) return undefined
+  const child = pathApi.relative(pathApi.resolve(root), pathApi.resolve(target))
+  if (child === '' || pathApi.isAbsolute(child) || child === '..' || child.startsWith(`..${pathApi.sep}`)
+    || child !== pathApi.basename(child) || !child.endsWith('.tgz')) return undefined
+  return child
+}
+
+function joinArchivePath(directory: string, archive: string): string {
+  if (isWindowsAbsolute(directory)) return win32.join(directory, archive)
+  if (posix.isAbsolute(directory)) return posix.join(directory, archive)
+  return join(directory, archive)
+}
+
+function rewriteArchiveLocator(text: string, targetDirectory: string, locate: (path: string) => string | undefined): string {
+  const match = /^(.*?@)?file:(.*?\.tgz)(\(.*\))?$/u.exec(text)
+  if (match?.[2] === undefined) return text
+  const archive = locate(match[2])
+  return archive === undefined ? text : `${match[1] ?? ''}file:${joinArchivePath(targetDirectory, archive)}${match[3] ?? ''}`
+}
+
+function mapArchiveLocators(value: unknown, rewrite: (text: string) => string): unknown {
+  if (typeof value === 'string') return rewrite(value)
+  if (Array.isArray(value)) return value.map(child => mapArchiveLocators(child, rewrite))
+  if (value === null || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [rewrite(key), mapArchiveLocators(child, rewrite)]))
+}
+
+/**
+ * Move direct archive locators between controlled directories across native or normalized path separators.
+ * @param value - Parsed manifest or pnpm metadata.
+ * @param sourceDirectory - Directory that currently owns the archive files.
+ * @param targetDirectory - Directory that will own the archive files.
+ * @returns Equivalent data with direct `.tgz` locators moved and unrelated local sources unchanged.
+ */
+export function relocateProfilePluginArchiveReferences(
+  value: unknown, sourceDirectory: string, targetDirectory: string,
+): unknown {
+  const rewrite = (text: string): string => rewriteArchiveLocator(
+    text, targetDirectory, path => directArchiveName(sourceDirectory, path),
+  )
+  return mapArchiveLocators(value, rewrite)
+}
+
+function staleTransactionArchiveName(home: string, profile: string, target: string): string | undefined {
+  const root = join(home, 'plugin-transactions', profile)
+  const pathApi = pathApiFor(root, target)
+  if (pathApi === undefined) return undefined
+  const child = pathApi.relative(pathApi.resolve(root), pathApi.resolve(target))
+  const parts = child.split(pathApi.sep)
+  if (parts.length !== 4 || !ID.test(parts[0] ?? '') || parts[1] !== 'candidate' || parts[2] !== 'bundled-plugins') return undefined
+  const archive = parts[3]
+  return archive !== undefined && archive === pathApi.basename(archive) && archive.endsWith('.tgz') ? archive : undefined
+}
+
+function repairStaleTransactionArchives(candidate: string, home: string, profile: string): void {
+  const activeArchives = join(home, 'bundled-plugins')
+  const rewrite = (text: string): string => rewriteArchiveLocator(text, activeArchives, (path) => {
+    const archive = staleTransactionArchiveName(home, profile, path)
+    if (archive === undefined) return undefined
+    const retained = join(activeArchives, archive)
+    return existsSync(retained) && lstatSync(retained).isFile() ? archive : undefined
+  })
+  for (const name of ['package.json', 'pnpm-lock.yaml']) {
+    const path = join(candidate, 'profiles', profile, name)
+    if (!existsSync(path)) continue
+    const parsed: unknown = name.endsWith('.json') ? JSON.parse(readFileSync(path, 'utf8')) : load(readFileSync(path, 'utf8'))
+    const moved = mapArchiveLocators(parsed, rewrite)
+    if (JSON.stringify(parsed) !== JSON.stringify(moved)) {
+      writeAtomic(path, name.endsWith('.json') ? `${JSON.stringify(moved, null, 2)}\n` : dump(moved, { lineWidth: -1, noRefs: true }))
+    }
+  }
+}
+
 function retainCandidateArchives(candidate: string, home: string, profile: string): void {
   const directory = join(candidate, 'bundled-plugins')
   if (!existsSync(directory)) return
@@ -192,23 +279,13 @@ function retainCandidateArchives(candidate: string, home: string, profile: strin
   // Only candidate-owned bundled archives move. User local/Git specs remain literal.
   const manifest = join(candidate, 'profiles', profile, 'package.json')
   const parsed: unknown = JSON.parse(readFileSync(manifest, 'utf8'))
-  const visit = (value: unknown): unknown => {
-    if (typeof value === 'string' && value.startsWith(`file:${directory}${sep}`)) {
-      const archive = value.slice(`file:${directory}${sep}`.length)
-      if (archive !== '' && !archive.includes('/') && !archive.includes('\\') && archive.endsWith('.tgz')) {
-        return `file:${join(home, 'bundled-plugins', archive)}`
-      }
-    }
-    if (Array.isArray(value)) return value.map(visit)
-    if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, visit(child)]))
-    return value
-  }
-  const moved = visit(parsed)
+  const activeArchives = join(home, 'bundled-plugins')
+  const moved = relocateProfilePluginArchiveReferences(parsed, directory, activeArchives)
   if (JSON.stringify(parsed) !== JSON.stringify(moved)) writeAtomic(manifest, `${JSON.stringify(moved, null, 2)}\n`)
   const lock = join(candidate, 'profiles', profile, 'pnpm-lock.yaml')
   if (existsSync(lock)) {
     const parsedLock: unknown = load(readFileSync(lock, 'utf8'))
-    const movedLock = visit(parsedLock)
+    const movedLock = relocateProfilePluginArchiveReferences(parsedLock, directory, activeArchives)
     if (JSON.stringify(parsedLock) !== JSON.stringify(movedLock)) writeAtomic(lock, dump(movedLock, { lineWidth: -1, noRefs: true }))
   }
 }
@@ -318,6 +395,7 @@ export function prepareProfilePluginTransaction(home: string, profile: string, p
       if (entry.isFile() && entry.name.endsWith('.tgz')) copyRegular(join(archives, entry.name), join(candidate, 'bundled-plugins', entry.name))
     }
   }
+  repairStaleTransactionArchives(candidate, home, profile)
   for (const name of ['package.json', 'pnpm-workspace.yaml']) {
     const path = join(paths.profile, name)
     if (!existsSync(path)) continue

@@ -167,6 +167,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when no configured root supplies that id.'],
       },
       {
+        signature: 'async prepare(id?: string): Promise<AgentPreset>',
+        description: 'Resolve and mount one preset without creating or changing a Session. A runtime mount failure remains on the roster until the composition file changes, and the later Agent mount reuses a successful standing mount.',
+        parameters: [{ name: 'id', description: 'preset id, or the configured default when omitted.' }],
+        returns: 'the resolved preset after its standing composition is usable.',
+      },
+      {
+        signature: '@Remote(\'preflight\') async preflight(agentPreset: string, signal: AbortSignal): Promise<string>',
+        description: 'Validate one picker choice before a Session is created.',
+        parameters: [{ name: 'agentPreset', description: 'preset selected by the user.' }, { name: 'signal', description: 'caller cancellation while validation is in flight.' }],
+        returns: 'the validated preset id.',
+      },
+      {
         signature: 'async mount(agentCtx: Context, id?: string): Promise<AgentPreset>',
         description: 'Compose one agent from a preset: ensure the preset\'s standing mount, then parent the agent\'s scope key to it so the mount\'s registrations and listeners cover this agent.\n\nCall from the agent factory\'s `setup(agentCtx)`; a rejection there rolls the agent creation back, so a broken preset never yields a half-composed session.',
         parameters: [{ name: 'agentCtx', description: 'the agent\'s scope context.' }, { name: 'id', description: 'the preset id, or `undefined` for {@link defaultId}.' }],

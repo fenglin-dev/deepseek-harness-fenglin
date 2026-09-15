@@ -23,7 +23,7 @@
 
 ## 插件变更
 
-由社区桌面托管时，修改插件的命令会验证同磁盘候选状态，再将激活工作交给桌面进程。`batch` 将构建授权与重试保留在同一个事务中；`transaction status`、`activate`、`commit` 和 `rollback` 只操作经过校验的日志 ID 与插件受管状态。调用方持有现有 Profile 锁，pnpm 在执行软件包代码前登记工作进程 PID。独立 CLI 命令保留普通同步行为。就绪与回滚行为见[桌面说明](../desktop/README.zh.md#plugin-changes)。
+由社区桌面托管时，修改插件的命令会验证同磁盘候选状态，再将激活工作交给桌面进程。`batch` 将构建授权与重试保留在同一个事务中；`transaction status`、`activate`、`commit` 和 `rollback` 只操作经过校验的日志 ID 与插件受管状态。候选目录拥有的内置插件归档引用会跨本机分隔符和 pnpm 规范化分隔符迁回持久桌面 home；后续事务只在对应保留归档存在时修复旧版指向已删除候选目录的引用。调用方持有现有 Profile 锁，pnpm 在执行软件包代码前登记工作进程 PID。独立 CLI 命令保留普通同步行为。就绪与回滚行为见[桌面说明](../desktop/README.zh.md#plugin-changes)。
 
 Profile 插件操作将 pnpm 缓存保存在 `$DSH_HOME/.pnpm-store`（默认 `~/.dsh/.pnpm-store`），修复和快照恢复也使用该位置。使用相同 store 格式的本地依赖树保留已安装文件和构建结果，只原子更新缓存位置记录。共享旧缓存不会被移动或删除。不同 store 格式与外置虚拟依赖目录仍由 pnpm 执行兼容性检查。未缓存的包仍需要原始本地归档或联网获取；更改缓存位置不会让离线快照自动变得完整。
 

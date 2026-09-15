@@ -379,7 +379,18 @@ export class ApiSessionAgentController {
     if (presets === undefined) {
       return { setup: (_agentCtx, agent) => { this.installSelection(agent) } }
     }
-    const resolvedId = (await presets.resolve(presetId)).id
+    const requestedDefault = presetId === undefined ? presets.defaultId : undefined
+    let resolved
+    try {
+      resolved = await presets.prepare(presetId)
+    } catch (error: unknown) {
+      if (presetId !== undefined || requestedDefault === 'standard') throw error
+      resolved = await presets.prepare('standard')
+      this.ctx.logger.warn(
+        `api-session: default agent preset "${requestedDefault}" failed; using "standard": ${String(error)}`,
+      )
+    }
+    const resolvedId = resolved.id
     return {
       agentPreset: resolvedId,
       setup: async (agentCtx, agent) => {

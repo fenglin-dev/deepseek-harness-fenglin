@@ -95,6 +95,10 @@ async function bench() {
   // because the double is a plain provided object rather than a Service.
   const agentPresets = {
     list: () => { calls.push('list'); return Promise.resolve(ROSTER) },
+    preflight: (agentPreset: string) => {
+      calls.push(`preflight:${agentPreset}`)
+      return Promise.resolve({ ok: true as const, value: agentPreset })
+    },
     read: () => Promise.resolve({
       ok: true as const,
       value: { agentPreset: 'standard', trust: 'system', content: '' },
@@ -568,12 +572,40 @@ describe('ui-agent-preset apply', () => {
 })
 
 describe('AgentPresetSeatController reconciliation', () => {
+  it('opens on standard when the configured default is already broken', async () => {
+    const controller = new AgentPresetSeatController({
+      remote: {
+        agentPresets: {
+          list: () => Promise.resolve({
+            ok: true as const,
+            value: {
+              presets: [
+                { id: 'data-agent', trust: 'user' as const, isDefault: true, broken: 'persona.prefix is required' },
+                { id: 'standard', trust: 'system' as const, isDefault: false },
+              ],
+              authorable: true,
+            },
+          }),
+        },
+      },
+    } as never, () => undefined)
+
+    await controller.load()
+
+    expect(controller.store.getSnapshot()).toMatchObject({
+      current: 'standard',
+      options: [{ id: 'standard', trust: 'system' }],
+      error: null,
+    })
+  })
+
   it('uses the deployment default without a Session and clears it for an uncomposed Session', async () => {
     const state: { current?: { id: SessionId; blank: boolean } } = {}
     const controller = new AgentPresetSeatController({
       remote: {
         agentPresets: {
           list: () => Promise.resolve(ROSTER_ONE),
+          preflight: (id: string) => Promise.resolve({ ok: true as const, value: id }),
         },
       },
     } as never, () => state.current)
@@ -592,7 +624,12 @@ describe('AgentPresetSeatController reconciliation', () => {
       ok: false as const, error: new RemoteError('gateway/internal', 'selection rejected', {}),
     })
     const controller = new AgentPresetSeatController({
-      remote: { agentPresets: { select } },
+      remote: {
+        agentPresets: {
+          preflight: (id: string) => Promise.resolve({ ok: true as const, value: id }),
+          select,
+        },
+      },
     } as never, () => ({ id: SessionId('uncomposed'), blank: true }))
 
     await controller.select('minimal')
@@ -607,6 +644,7 @@ describe('AgentPresetSeatController reconciliation', () => {
     const controller = new AgentPresetSeatController({
       remote: {
         agentPresets: {
+          preflight: (id: string) => Promise.resolve({ ok: true as const, value: id }),
           select: () => Promise.resolve({
             ok: false as const,
             error: new RemoteError(
@@ -623,5 +661,88 @@ describe('AgentPresetSeatController reconciliation', () => {
     // roster's own "preset X failed to mount" frame would say it twice.
     expect(await controller.select('broken')).toBe(reason)
     expect(controller.store.getSnapshot().error).toBe(reason)
+  })
+
+  it('clears busy state without condemning a preset when preflight transport throws', async () => {
+    const controller = new AgentPresetSeatController({
+      remote: {
+        agentPresets: {
+          preflight: () => Promise.reject(new Error('transport closed')),
+        },
+      },
+    } as never, () => undefined)
+    controller.store.set({
+      options: [
+        { id: 'standard', trust: 'system' },
+        { id: 'data-agent', trust: 'user' },
+      ],
+      current: 'standard',
+      error: null,
+      busy: false,
+      introduce: false,
+    })
+
+    expect(await controller.select('data-agent')).toBe('transport closed')
+    expect(controller.store.getSnapshot()).toMatchObject({
+      busy: false,
+      current: 'standard',
+      error: 'transport closed',
+      options: [
+        { id: 'standard', trust: 'system' },
+        { id: 'data-agent', trust: 'user' },
+      ],
+    })
+  })
+
+  it('removes a preset only when preflight proves its composition invalid', async () => {
+    const controller = new AgentPresetSeatController({
+      remote: {
+        agentPresets: {
+          preflight: () => Promise.resolve({
+            ok: false as const,
+            error: new RemoteError('agent-preset/invalid', 'invalid preset', {
+              agentPreset: 'data-agent',
+              reason: 'persona.prefix is required',
+            }),
+          }),
+        },
+      },
+    } as never, () => undefined)
+    controller.store.set({
+      options: [
+        { id: 'standard', trust: 'system' },
+        { id: 'data-agent', trust: 'user' },
+      ],
+      current: 'standard',
+      error: null,
+      busy: false,
+      introduce: false,
+    })
+
+    expect(await controller.select('data-agent')).toBe('persona.prefix is required')
+    expect(controller.store.getSnapshot()).toMatchObject({
+      busy: false,
+      current: 'standard',
+      error: 'persona.prefix is required',
+      options: [{ id: 'standard', trust: 'system' }],
+    })
+  })
+
+  it('clears busy state when the switch transport throws after preflight', async () => {
+    const controller = new AgentPresetSeatController({
+      remote: {
+        agentPresets: {
+          preflight: (id: string) => Promise.resolve({ ok: true as const, value: id }),
+          select: () => Promise.reject(new Error('connection reset')),
+        },
+      },
+    } as never, () => ({
+      id: SessionId('blank'), blank: true, projectionValues: { agentPreset: 'standard' },
+    }))
+
+    expect(await controller.select('data-agent')).toBe('connection reset')
+    expect(controller.store.getSnapshot()).toMatchObject({
+      busy: false, current: 'standard', error: 'connection reset',
+    })
   })
 })

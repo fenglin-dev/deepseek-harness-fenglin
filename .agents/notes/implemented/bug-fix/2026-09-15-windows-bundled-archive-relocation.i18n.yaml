@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-15-windows-bundled-archive-relocation.md
+2026-09-15-windows-bundled-archive-relocation.md: 8f97b94565eed51a26ba0264ab8090a88e191554
+2026-09-15-windows-bundled-archive-relocation.zh.md: cf16b18510a160502df94f5e65da11d23c3b7872

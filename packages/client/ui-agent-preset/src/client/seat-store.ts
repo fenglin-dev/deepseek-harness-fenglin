@@ -19,6 +19,17 @@ import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { presetOptions, readRoster } from './settings-store.ts'
 import type { AgentPresetOption } from './settings-store.ts'
 
+const PREFLIGHT_TIMEOUT_MS = 15_000
+
+function failureReason(error: { message: string; details: object }): string {
+  const reason: unknown = (error.details as { reason?: unknown }).reason
+  return typeof reason === 'string' ? reason : error.message
+}
+
+function thrownReason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 /** Hero-chip snapshot. */
 export interface AgentPresetSeatState {
   /** Presets the deployment supplies; empty means the chip renders nothing. */
@@ -78,10 +89,15 @@ export class AgentPresetSeatController {
       return
     }
     const { presets } = roster.value
-    this.fallback = presets.find(preset => preset.isDefault)?.id ?? presets[0]?.id ?? ''
+    const options = presetOptions(presets)
+    const configuredDefault = presets.find(preset => preset.isDefault)?.id
+    this.fallback = options.find(option => option.id === configuredDefault)?.id
+      ?? options.find(option => option.id === 'standard')?.id
+      ?? options[0]?.id
+      ?? ''
     const session = this.currentSession()
     this.set({
-      options: presetOptions(presets),
+      options,
       // Staged pick first, then the composition the current session
       // already carries, then the deployment default. The middle term is
       // what keeps a late-landing load from regressing the display after
@@ -107,9 +123,43 @@ export class AgentPresetSeatController {
    */
   async select(id: string): Promise<string | undefined> {
     if (this.store.getSnapshot().busy) return undefined
-    this.stage(id)
-    await this.apply()
+    const previous = this.store.getSnapshot().current
+    this.set({ busy: true, error: null })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => { controller.abort() }, PREFLIGHT_TIMEOUT_MS)
+    try {
+      const checked = await this.ctx.remote.agentPresets.preflight(id, controller.signal)
+      if (!checked.ok) {
+        this.rejectSelection(
+          id,
+          previous,
+          failureReason(checked.error),
+          checked.error.code === 'agent-preset/invalid',
+        )
+        return this.store.getSnapshot().error ?? undefined
+      }
+      this.stage(id)
+      await this.apply()
+    } catch (error: unknown) {
+      // A transport reset or timeout says nothing about the preset itself.
+      // Keep it in the chooser so reconnecting can retry the same choice.
+      this.rejectSelection(id, previous, thrownReason(error), false)
+    } finally {
+      clearTimeout(timeout)
+      this.set({ busy: false })
+    }
     return this.store.getSnapshot().error ?? undefined
+  }
+
+  private rejectSelection(id: string, previous: string, reason: string, remove: boolean): void {
+    this.staged = undefined
+    const options = remove
+      ? this.store.getSnapshot().options.filter(option => option.id !== id)
+      : this.store.getSnapshot().options
+    const current = options.some(option => option.id === previous)
+      ? previous
+      : options.find(option => option.id === this.fallback)?.id ?? options[0]?.id ?? ''
+    this.set({ options, current, error: reason })
   }
 
   /**
@@ -157,26 +207,21 @@ export class AgentPresetSeatController {
       return
     }
     this.set({ busy: true, error: null })
-    const result = await this.ctx.remote.agentPresets.select(session.id, staged)
-    this.staged = undefined
-    if (!result.ok) {
-      const { error } = result
-      this.set({
-        busy: false,
-        // A refusal carries its cause twice: `message` wraps it in the
-        // roster's own frame, which names the preset the surface reporting
-        // this already names, and a `reason` detail holds the same cause
-        // without it. Read by the detail rather than by the code, because
-        // every refusal that has a cause to give names it the same way.
-        error: 'reason' in error.details && typeof error.details.reason === 'string'
-          ? error.details.reason
-          : error.message,
-        current: presetOf(session) ?? '',
-      })
-      return
+    try {
+      const result = await this.ctx.remote.agentPresets.select(session.id, staged)
+      this.staged = undefined
+      if (!result.ok) {
+        this.set({ error: failureReason(result.error), current: presetOf(session) ?? '' })
+        return
+      }
+      // Consumed: the next new session opens on the deployment default again.
+      this.set({ current: result.value })
+    } catch (error: unknown) {
+      this.staged = undefined
+      this.set({ error: thrownReason(error), current: presetOf(session) ?? '' })
+    } finally {
+      this.set({ busy: false })
     }
-    // Consumed: the next new session opens on the deployment default again.
-    this.set({ busy: false, current: result.value })
   }
 }
 

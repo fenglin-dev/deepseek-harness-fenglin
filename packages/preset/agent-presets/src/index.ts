@@ -376,7 +376,17 @@ export class AgentPresets extends TypertRemoteService {
    * @returns the presets, first-root-wins per id.
    */
   async list(): Promise<AgentPreset[]> {
-    return await discoverPresets(this.resolvedRoots, this.harnessBase)
+    const presets = await discoverPresets(this.resolvedRoots, this.harnessBase)
+    return await Promise.all(presets.map(async (preset) => {
+      const problem = this.runtimeProblems.get(preset.id)
+      if (problem === undefined) return preset
+      const stamp = await compositionStamp(preset.path)
+      if (problem.path === preset.path && stamp !== undefined && sameStamp(problem.stamp, stamp)) {
+        return { ...preset, broken: preset.broken ?? problem.reason }
+      }
+      this.runtimeProblems.delete(preset.id)
+      return preset
+    }))
   }
 
   /**
@@ -521,6 +531,47 @@ export class AgentPresets extends TypertRemoteService {
   }
 
   /**
+   * Resolve and mount one preset without creating or changing a Session.
+   * A runtime mount failure remains on the roster until the composition file
+   * changes, and the later Agent mount reuses a successful standing mount.
+   * @param id - preset id, or the configured default when omitted.
+   * @returns the resolved preset after its standing composition is usable.
+   */
+  async prepare(id?: string): Promise<AgentPreset> {
+    const preset = await this.resolveMountable(id)
+    try {
+      await this.ensureStanding(preset)
+      this.runtimeProblems.delete(preset.id)
+      return preset
+    } catch (error: unknown) {
+      const stamp = await compositionStamp(preset.path)
+      if (stamp !== undefined) {
+        this.runtimeProblems.set(preset.id, {
+          path: preset.path,
+          stamp,
+          reason: presetFailureReason(error),
+        })
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Validate one picker choice before a Session is created.
+   * @param agentPreset - preset selected by the user.
+   * @param signal - caller cancellation while validation is in flight.
+   * @returns the validated preset id.
+   */
+  @Remote('preflight')
+  async preflight(agentPreset: string, signal: AbortSignal): Promise<string> {
+    validatePresetId(agentPreset, 'agentPreset')
+    signal.throwIfAborted()
+    const preset = await this.prepare(agentPreset)
+    signal.throwIfAborted()
+    return preset.id
+  }
+
+  /**
    * Standing mounts by preset id, single-flight so two agents racing the
    * first use of one preset share one composition. A settled failure is
    * removed so a later session retries a preset whose file has been fixed; a
@@ -532,6 +583,9 @@ export class AgentPresets extends TypertRemoteService {
    * is bounded by how often compositions change, not by session count.
    */
   private readonly standing = new Map<string, Promise<StandingMount>>()
+
+  /** Runtime failures keyed by a composition file identity. */
+  private readonly runtimeProblems = new Map<string, RuntimePresetProblem>()
 
   /**
    * Parent bindings of the agents this roster composed, keyed by the agent's
@@ -559,7 +613,7 @@ export class AgentPresets extends TypertRemoteService {
     if (agentKey === undefined) {
       throw new Error('agent-presets: refusing to compose an unscoped context; the scope key is what joins an agent to its preset')
     }
-    const preset = await this.resolveMountable(id)
+    const preset = await this.prepare(id)
     const standing = await this.ensureStanding(preset)
     // The one bind of this agent's ancestry. The binding is the only re-link
     // authority, held privately so nothing outside this roster can move a
@@ -829,7 +883,7 @@ export class AgentPresets extends TypertRemoteService {
     if (agentKey === undefined) {
       throw new Error('agent-presets: refusing to recompose an unscoped context')
     }
-    const preset = await this.resolveMountable(id)
+    const preset = await this.prepare(id)
     const standing = await this.ensureStanding(preset)
     const binding = this.bindings.get(agentKey)
     if (binding === undefined) {
@@ -916,7 +970,7 @@ export class AgentPresets extends TypertRemoteService {
    * @throws when the preset is unknown or its composition is unusable.
    */
   async standingKeyFor(id?: string): Promise<ScopeKey> {
-    const preset = await this.resolveMountable(id)
+    const preset = await this.prepare(id)
     return (await this.ensureStanding(preset)).key
   }
 
@@ -980,6 +1034,16 @@ interface CompositionStamp {
   readonly size: number
 }
 
+/** One runtime mount failure tied to the file version that produced it. */
+interface RuntimePresetProblem {
+  /** Composition path, so a different winning root cannot inherit the failure. */
+  readonly path: string
+  /** File identity that produced the failure. */
+  readonly stamp: CompositionStamp
+  /** User-facing cause returned by the mount operation. */
+  readonly reason: string
+}
+
 /** Read one composition file's stamp, or undefined when it cannot be statted. */
 async function compositionStamp(path: string): Promise<CompositionStamp | undefined> {
   try {
@@ -995,6 +1059,18 @@ async function compositionStamp(path: string): Promise<CompositionStamp | undefi
 /** Whether two stamps name the same file state. */
 function sameStamp(a: CompositionStamp, b: CompositionStamp): boolean {
   return a.mtimeMs === b.mtimeMs && a.size === b.size
+}
+
+/** Mount failure text without repeating the preset frame when available. */
+function presetFailureReason(error: unknown): string {
+  if (typeof error === 'object' && error !== null) {
+    const details: unknown = (error as { details?: unknown }).details
+    if (typeof details === 'object' && details !== null) {
+      const reason: unknown = (details as { reason?: unknown }).reason
+      if (typeof reason === 'string') return reason
+    }
+  }
+  return error instanceof Error ? error.message : String(error)
 }
 
 /** One preset's standing composition. */
