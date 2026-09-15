@@ -128,6 +128,27 @@ describe('staged Profile activation', () => {
     expect(existsSync(join(local, 'package.json'))).toBe(true)
   })
 
+  it('stabilizes a same-drive relative local dependency link before moving candidate modules', () => {
+    const f = fixture()
+    const local = join(f.home, 'local-plugin')
+    mkdirSync(local)
+    writeFileSync(join(local, 'package.json'), '{"name":"local-plugin","version":"1.0.0"}')
+    const candidateLink = join(f.candidateProfile, 'node_modules', 'local-plugin')
+    symlinkSync(relative(join(f.candidateProfile, 'node_modules'), local), candidateLink, 'dir')
+    readyProfilePluginTransaction(f.home, 'web', f.record.id)
+    activateProfilePluginTransaction(f.home, 'web', f.record.id)
+    expect(realpathSync(join(f.profile, 'node_modules', 'local-plugin'))).toBe(realpathSync(local))
+  })
+
+  it('rejects a missing candidate dependency link before changing active dependencies', () => {
+    const f = fixture()
+    const candidateLink = join(f.candidateProfile, 'node_modules', 'missing-plugin')
+    symlinkSync('../../../../missing-plugin', candidateLink, 'dir')
+    readyProfilePluginTransaction(f.home, 'web', f.record.id)
+    expect(() => { activateProfilePluginTransaction(f.home, 'web', f.record.id) }).toThrow('missing target')
+    expect(readFileSync(join(f.profile, 'node_modules', 'generation'), 'utf8')).toBe('old')
+  })
+
   it.each(['workspace:*', 'file:../../../outside'])('rejects an unsafe %s source without activating it', (spec) => {
     const f = fixture()
     settleProfilePluginTransaction(f.home, 'web', f.record.id, false)

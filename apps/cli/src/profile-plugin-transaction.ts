@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
   closeSync, copyFileSync, cpSync, constants, existsSync, fsyncSync, lstatSync, mkdirSync, openSync,
-  readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync,
+  readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { dump, load } from 'js-yaml'
@@ -213,6 +213,37 @@ function retainCandidateArchives(candidate: string, home: string, profile: strin
   }
 }
 
+function isWithin(root: string, target: string): boolean {
+  const child = relative(resolve(root), resolve(target))
+  return child === '' || (!isAbsolute(child) && child !== '..' && !child.startsWith(`..${sep}`))
+}
+
+/**
+ * Candidate dependencies move to a shallower active directory during activation. Relative pnpm
+ * links that leave node_modules would otherwise keep their text but resolve to a different path.
+ * Internal pnpm links move as one tree and remain relative; only external links are stabilized.
+ */
+function stabilizeExternalDependencyLinks(modules: string): void {
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name)
+      const metadata = lstatSync(path)
+      if (metadata.isSymbolicLink()) {
+        let destination: string
+        try { destination = realpathSync(path) } catch {
+          throw new Error(`dsh: candidate dependency link ${JSON.stringify(relative(modules, path))} has a missing target; activation refused`)
+        }
+        if (isWithin(modules, destination)) continue
+        const target = statSync(destination)
+        unlinkSync(path)
+        symlinkSync(destination, path,
+          process.platform === 'win32' && target.isDirectory() ? 'junction' : target.isDirectory() ? 'dir' : 'file')
+      } else if (metadata.isDirectory()) visit(path)
+    }
+  }
+  visit(modules)
+}
+
 // The manifest and lockfile retain their literal local specs. A candidate-only
 // link preserves the original target rather than rewriting a local source as npm.
 function projectLocalSources(home: string, candidate: string, profile: string, value: unknown): void {
@@ -347,6 +378,7 @@ export function activateProfilePluginTransaction(home: string, profile: string, 
   const newModules = join(candidate, 'profiles', profile, 'node_modules')
   inside(candidate, newModules)
   if (!lstatSync(newModules).isDirectory()) throw new Error('dsh: candidate dependencies are not installed')
+  stabilizeExternalDependencyLinks(newModules)
   retainCandidateArchives(candidate, home, profile)
   relocateGeneratedMetadata(candidate, home, profile, true)
   publish(home, { ...record, phase: 'activating' })
