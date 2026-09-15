@@ -81,6 +81,8 @@ Desktop resolves the system proxy only for the official Codex Provider; explicit
 Development and package scripts invoke the Desktop and Web apps from their owning directories. Every Unix package command passes an explicit platform and architecture to the runtime and Codex preparation steps, keeping macOS Apple Silicon, macOS Intel, Linux x64, and Windows x64 staging independent.
 
 <a id="custom-application-icons"></a>
+Schema-4 seed state separately records the bundled version already evaluated and the actual version read from the installed package. Startup skips package management only when those fields agree with the Profile declaration and physical package. The reviewed registry migration list initially covers `@xmanrui/dsh-im@3.0.6`, `dsh-better-sidebar@0.16.1`, `dsh-pocket@1.14.5`, and `dsh-skill-picker@0.2.0`; only these exact historical versions can be adopted and upgraded automatically.
+
 ## Custom application icons
 
 Output previews include transparent padding and antialiased rounded corners. Custom macOS application artwork occupies a centered 412 × 412 region of the 512-pixel canvas; Windows application and custom tray artwork use a 480 × 480 region to keep small icons readable. The saved crop remains unstyled, so startup reapplies the geometry without cumulative shrinking. Built-in icons retain their original artwork. Development and installed macOS builds share the default Dock image for startup, settings previews, and Restore default, with a small optical enlargement from its transparent margins; the adjustment always starts from the bundled source and does not accumulate.
