@@ -28,7 +28,12 @@ const zh = {
   detected: '已检测到', notDetected: '未检测到', selectHint: '可手动选择其他目录。',
   chooseOfficial: '选择官方目录',
   chooseCommunity: '选择社区目录',
-  communitySourceInvalid: '未识别为 Open DeepSeek Harness Desktop 配置。请选择包含本应用身份标记的配置目录；旧版本请改选 open-deepseek-harness-desktop 根目录。',
+  communitySourceInvalid: '无法识别此社区配置。身份文件或旧版设置记录无效，或者目录中没有可用的 DSH 数据。',
+  communityConfirmTitle: '确认旧版社区配置',
+  communityConfirmMessage: '无法验证此目录的 Open DeepSeek Harness Desktop 身份',
+  communityConfirmDetail: '目录包含可识别的 DSH 数据，但没有本应用的身份标记。只有确认它来自旧版 Open DeepSeek Harness Desktop 时才继续；其他社区桌面版的 Profile 和插件可能不兼容。',
+  communityConfirmAccept: '确认并继续',
+  communityConfirmCancel: '取消',
   start: '开始使用',
 }
 type SourceCopy = { readonly [K in keyof typeof zh]: string }
@@ -60,7 +65,12 @@ const en: SourceCopy = {
   detected: 'Detected', notDetected: 'Not detected', selectHint: 'Choose another directory if needed.',
   chooseOfficial: 'Choose official folder',
   chooseCommunity: 'Choose community folder',
-  communitySourceInvalid: 'This is not a recognized Open DeepSeek Harness Desktop configuration. Choose a directory carrying this app’s identity marker; for an older version, select its open-deepseek-harness-desktop root.',
+  communitySourceInvalid: 'This community configuration cannot be recognized. Its identity or legacy setup record is invalid, or the directory contains no usable DSH data.',
+  communityConfirmTitle: 'Confirm legacy community configuration',
+  communityConfirmMessage: 'This directory cannot be verified as Open DeepSeek Harness Desktop data',
+  communityConfirmDetail: 'The directory contains recognizable DSH data but no identity marker from this app. Continue only if it came from an older Open DeepSeek Harness Desktop release; Profiles and plugins from other community desktop apps may be incompatible.',
+  communityConfirmAccept: 'Confirm and continue',
+  communityConfirmCancel: 'Cancel',
   start: 'Start',
 }
 
@@ -91,7 +101,12 @@ const ja: SourceCopy = {
   detected: '検出済み', notDetected: '未検出', selectHint: '必要なら別のフォルダーを選択します。',
   chooseOfficial: '公式フォルダーを選択',
   chooseCommunity: 'コミュニティフォルダーを選択',
-  communitySourceInvalid: 'Open DeepSeek Harness Desktop の設定として認識できません。このアプリの識別マーカーを含むフォルダーを選択してください。旧版では open-deepseek-harness-desktop のルートを選択してください。',
+  communitySourceInvalid: 'このコミュニティ設定を認識できません。識別情報または旧版の設定記録が無効か、使用可能な DSH データがありません。',
+  communityConfirmTitle: '旧版コミュニティ設定の確認',
+  communityConfirmMessage: 'このフォルダーが Open DeepSeek Harness Desktop のデータか確認できません',
+  communityConfirmDetail: '認識可能な DSH データはありますが、このアプリの識別マーカーがありません。旧版 Open DeepSeek Harness Desktop のデータだと確認できる場合だけ続行してください。他のコミュニティ版の Profile やプラグインとは互換性がない可能性があります。',
+  communityConfirmAccept: '確認して続行',
+  communityConfirmCancel: 'キャンセル',
   start: '使用を開始',
 }
 const ko: SourceCopy = {
@@ -120,7 +135,12 @@ const ko: SourceCopy = {
   detected: '감지됨', notDetected: '감지되지 않음', selectHint: '필요하면 다른 폴더를 선택하세요.',
   chooseOfficial: '공식 폴더 선택',
   chooseCommunity: '커뮤니티 폴더 선택',
-  communitySourceInvalid: 'Open DeepSeek Harness Desktop 구성으로 인식되지 않습니다. 이 앱의 식별 표시가 있는 폴더를 선택하세요. 이전 버전은 open-deepseek-harness-desktop 루트를 선택하세요.',
+  communitySourceInvalid: '이 커뮤니티 구성을 인식할 수 없습니다. 식별 정보나 이전 설정 기록이 잘못되었거나 사용 가능한 DSH 데이터가 없습니다.',
+  communityConfirmTitle: '이전 커뮤니티 구성 확인',
+  communityConfirmMessage: '이 폴더를 Open DeepSeek Harness Desktop 데이터로 확인할 수 없습니다',
+  communityConfirmDetail: '인식 가능한 DSH 데이터는 있지만 이 앱의 식별 표시가 없습니다. 이전 Open DeepSeek Harness Desktop에서 만든 데이터라고 확신할 때만 계속하세요. 다른 커뮤니티 데스크톱 앱의 Profile과 플러그인은 호환되지 않을 수 있습니다.',
+  communityConfirmAccept: '확인하고 계속',
+  communityConfirmCancel: '취소',
   start: '시작하기',
 }
 const es: SourceCopy = {
@@ -149,7 +169,12 @@ const es: SourceCopy = {
   detected: 'Detectada', notDetected: 'No detectada', selectHint: 'Elige otra carpeta si es necesario.',
   chooseOfficial: 'Elegir carpeta oficial',
   chooseCommunity: 'Elegir carpeta comunitaria',
-  communitySourceInvalid: 'No se reconoce como configuración de Open DeepSeek Harness Desktop. Elige una carpeta con la marca de identidad de esta aplicación; para versiones anteriores, selecciona la raíz open-deepseek-harness-desktop.',
+  communitySourceInvalid: 'No se puede reconocer esta configuración comunitaria. Su identidad o registro antiguo no es válido, o la carpeta no contiene datos DSH utilizables.',
+  communityConfirmTitle: 'Confirmar configuración comunitaria antigua',
+  communityConfirmMessage: 'No se puede verificar que esta carpeta pertenezca a Open DeepSeek Harness Desktop',
+  communityConfirmDetail: 'La carpeta contiene datos DSH reconocibles, pero no la marca de identidad de esta aplicación. Continúa solo si procede de una versión antigua de Open DeepSeek Harness Desktop; los Profiles y plugins de otras aplicaciones comunitarias pueden ser incompatibles.',
+  communityConfirmAccept: 'Confirmar y continuar',
+  communityConfirmCancel: 'Cancelar',
   start: 'Comenzar',
 }
 const fr: SourceCopy = {
@@ -178,7 +203,12 @@ const fr: SourceCopy = {
   detected: 'Détectée', notDetected: 'Non détectée', selectHint: 'Choisissez un autre dossier si nécessaire.',
   chooseOfficial: 'Choisir le dossier officiel',
   chooseCommunity: 'Choisir le dossier communautaire',
-  communitySourceInvalid: 'Cette configuration n’est pas reconnue comme provenant d’Open DeepSeek Harness Desktop. Choisissez un dossier portant l’identité de l’application ; pour une ancienne version, sélectionnez la racine open-deepseek-harness-desktop.',
+  communitySourceInvalid: 'Cette configuration communautaire ne peut pas être reconnue. Son identité ou son ancien enregistrement est invalide, ou le dossier ne contient aucune donnée DSH exploitable.',
+  communityConfirmTitle: 'Confirmer une ancienne configuration communautaire',
+  communityConfirmMessage: 'Impossible de vérifier que ce dossier appartient à Open DeepSeek Harness Desktop',
+  communityConfirmDetail: 'Le dossier contient des données DSH reconnaissables, mais aucune identité de cette application. Continuez uniquement s’il provient d’une ancienne version d’Open DeepSeek Harness Desktop ; les Profiles et plugins d’autres applications communautaires peuvent être incompatibles.',
+  communityConfirmAccept: 'Confirmer et continuer',
+  communityConfirmCancel: 'Annuler',
   start: 'Commencer',
 }
 const de: SourceCopy = {
@@ -207,7 +237,12 @@ const de: SourceCopy = {
   detected: 'Erkannt', notDetected: 'Nicht erkannt', selectHint: 'Bei Bedarf einen anderen Ordner wählen.',
   chooseOfficial: 'Offiziellen Ordner wählen',
   chooseCommunity: 'Community-Ordner wählen',
-  communitySourceInvalid: 'Dies ist keine erkannte Open-DeepSeek-Harness-Desktop-Konfiguration. Wählen Sie einen Ordner mit der Identitätsmarke dieser App; bei älteren Versionen die Wurzel open-deepseek-harness-desktop.',
+  communitySourceInvalid: 'Diese Community-Konfiguration kann nicht erkannt werden. Ihre Identität oder ihr alter Einrichtungsdatensatz ist ungültig, oder der Ordner enthält keine nutzbaren DSH-Daten.',
+  communityConfirmTitle: 'Alte Community-Konfiguration bestätigen',
+  communityConfirmMessage: 'Dieser Ordner kann nicht als Open-DeepSeek-Harness-Desktop-Daten bestätigt werden',
+  communityConfirmDetail: 'Der Ordner enthält erkennbare DSH-Daten, aber keine Identitätsmarke dieser App. Fahren Sie nur fort, wenn er aus einer älteren Open-DeepSeek-Harness-Desktop-Version stammt; Profiles und Plugins anderer Community-Desktop-Apps können inkompatibel sein.',
+  communityConfirmAccept: 'Bestätigen und fortfahren',
+  communityConfirmCancel: 'Abbrechen',
   start: 'Starten',
 }
 const ptBR: SourceCopy = {
@@ -236,7 +271,12 @@ const ptBR: SourceCopy = {
   detected: 'Detectada', notDetected: 'Não detectada', selectHint: 'Escolha outra pasta se necessário.',
   chooseOfficial: 'Escolher pasta oficial',
   chooseCommunity: 'Escolher pasta comunitária',
-  communitySourceInvalid: 'Esta não é uma configuração reconhecida do Open DeepSeek Harness Desktop. Escolha uma pasta com a marca de identidade deste aplicativo; em versões antigas, selecione a raiz open-deepseek-harness-desktop.',
+  communitySourceInvalid: 'Não foi possível reconhecer esta configuração comunitária. A identidade ou o registro antigo é inválido, ou a pasta não contém dados DSH utilizáveis.',
+  communityConfirmTitle: 'Confirmar configuração comunitária antiga',
+  communityConfirmMessage: 'Não foi possível verificar esta pasta como dados do Open DeepSeek Harness Desktop',
+  communityConfirmDetail: 'A pasta contém dados DSH reconhecíveis, mas não tem a marca de identidade deste aplicativo. Continue apenas se ela vier de uma versão antiga do Open DeepSeek Harness Desktop; Profiles e plugins de outros aplicativos comunitários podem ser incompatíveis.',
+  communityConfirmAccept: 'Confirmar e continuar',
+  communityConfirmCancel: 'Cancelar',
   start: 'Começar',
 }
 const ru: SourceCopy = {
@@ -265,7 +305,12 @@ const ru: SourceCopy = {
   detected: 'Найдена', notDetected: 'Не найдена', selectHint: 'При необходимости выберите другую папку.',
   chooseOfficial: 'Выбрать официальную папку',
   chooseCommunity: 'Выбрать папку сообщества',
-  communitySourceInvalid: 'Эта конфигурация не распознана как Open DeepSeek Harness Desktop. Выберите папку с меткой этого приложения; для старой версии выберите корень open-deepseek-harness-desktop.',
+  communitySourceInvalid: 'Не удалось распознать эту конфигурацию сообщества. Идентификатор или старая запись настройки недействительны либо в папке нет пригодных данных DSH.',
+  communityConfirmTitle: 'Подтвердить старую конфигурацию сообщества',
+  communityConfirmMessage: 'Не удалось подтвердить, что эта папка принадлежит Open DeepSeek Harness Desktop',
+  communityConfirmDetail: 'В папке есть распознаваемые данные DSH, но нет идентификатора этого приложения. Продолжайте только если данные созданы старой версией Open DeepSeek Harness Desktop; Profiles и плагины других приложений сообщества могут быть несовместимы.',
+  communityConfirmAccept: 'Подтвердить и продолжить',
+  communityConfirmCancel: 'Отмена',
   start: 'Начать',
 }
 

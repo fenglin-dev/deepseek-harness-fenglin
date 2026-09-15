@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-15-community-data-home-identity.md
-2026-09-15-community-data-home-identity.md: ab63e584b718285ad8ffcf1374dbfc88137a65a1
-2026-09-15-community-data-home-identity.zh.md: ef05f1dab688ba8af42f0012e14cf316af66e807
+2026-09-15-community-data-home-identity.md: b77157675a238f02e56c3e4a35ae55c4c13b62c2
+2026-09-15-community-data-home-identity.zh.md: 31f643438405b8c7b5319a73b1ad705498651500

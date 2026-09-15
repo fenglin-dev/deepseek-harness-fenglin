@@ -331,6 +331,33 @@ export async function resolveCommunityDataHomeSource(candidate: string): Promise
   return undefined
 }
 
+/**
+ * Resolve recognizable legacy community data only when no product identity evidence exists.
+ * Present identity or setup records remain authoritative even when malformed or foreign, so
+ * this compatibility path cannot bypass a failed identity check.
+ * @param candidate - Directory selected by the native picker.
+ * @returns Recognized actual data path eligible for explicit user confirmation, or undefined.
+ */
+export async function resolveUnidentifiedCommunityDataHomeSource(
+  candidate: string,
+): Promise<DesktopDataHomeSource | undefined> {
+  const root = resolve(candidate)
+  if (await pathExists(join(root, 'data-home-setup.json'))) return undefined
+
+  const directEntries = await recognizedDesktopDataEntries(root)
+  if (directEntries.length > 0) {
+    if (await pathExists(join(root, COMMUNITY_PROFILE_IDENTITY_FILE))) return undefined
+    if (await pathExists(join(dirname(root), 'data-home-setup.json'))) return undefined
+    return { path: root, entries: directEntries }
+  }
+
+  const nested = join(root, 'dsh-home')
+  const nestedEntries = await recognizedDesktopDataEntries(nested)
+  if (nestedEntries.length === 0) return undefined
+  if (await pathExists(join(nested, COMMUNITY_PROFILE_IDENTITY_FILE))) return undefined
+  return { path: nested, entries: nestedEntries }
+}
+
 /** Resolve an existing empty directory that can become a new Harness home.
  * @param candidate - Native-picker-selected directory.
  * @returns The normalized directory, or undefined when it is not empty.

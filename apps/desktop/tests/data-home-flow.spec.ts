@@ -83,7 +83,10 @@ describe('configuration source and operation flow', () => {
     await mount()
     button('[data-source="community"]').click()
     expect(document.querySelector('#community-source-path')?.textContent).toBe('')
-    ipc.invoke.mockResolvedValueOnce({ status: 'valid', path: '/社区配置/dsh-home', entries: ['settings.yaml'] })
+    ipc.invoke.mockResolvedValueOnce({
+      status: 'valid', path: '/社区配置/dsh-home', entries: ['settings.yaml'],
+      selectionId: '12345678-1234-1234-1234-123456789abc',
+    })
     button('#choose-community-source').click()
     await vi.waitFor(() => { expect(button('#choose-community-source').disabled).toBe(false) })
     expect(ipc.invoke).toHaveBeenCalledWith('dsh:data-home:choose-source', 'community')
@@ -105,6 +108,7 @@ describe('configuration source and operation flow', () => {
     button('#continue').click()
     expect(ipc.send).toHaveBeenCalledExactlyOnceWith('dsh:data-home:selected', {
       mode: 'copied', sourceKind: 'community', source: '/社区配置/dsh-home',
+      sourceSelectionId: '12345678-1234-1234-1234-123456789abc',
       target: { kind: 'custom', selectionId: 'opaque-selection' },
     })
   })
@@ -136,7 +140,7 @@ describe('configuration source and operation flow', () => {
     ipc.handlers.get('dsh:data-home:source-error')?.({}, { status: 'invalid', path: '/community/dsh-home' })
     expect(button('#continue').disabled).toBe(false)
     expect(document.querySelector<HTMLElement>('#community-source-error')?.hidden).toBe(false)
-    expect(document.querySelector('#community-source-error')?.textContent).toContain('Open DeepSeek Harness Desktop')
+    expect(document.querySelector('#community-source-error')?.textContent).toBe(sourceCopyFor('zh').communitySourceInvalid)
   })
 
   it('does not submit on cancelled or unrelated source selection, and fresh setup needs no source', async () => {

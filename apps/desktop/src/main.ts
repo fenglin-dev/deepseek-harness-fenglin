@@ -106,6 +106,7 @@ import {
   resolveDesktopDataHomeSwitch,
   resolveDesktopDataHomeSource,
   resolveCommunityDataHomeSource,
+  resolveUnidentifiedCommunityDataHomeSource,
   resolveDesktopDataHomeRecoverySelection,
   resolveEmptyDesktopDataHome,
   resolveRecordedDesktopDataHome,
@@ -168,6 +169,7 @@ import { DesktopWebAccess, type DesktopWebStatus } from './desktop-web-access.ts
 import { clearStaleHarnessAuthCookies } from './harness-auth-cookies.ts'
 import { activateOrDiscardRecoveryCandidate } from './recovery-candidate.ts'
 import { shellMessages, trayMessages, dataHomeMessages } from './locales/shell.ts'
+import { sourceCopyFor } from './locales/data-home-source.ts'
 import { DesktopReturnControl } from './desktop-return-control.ts'
 import { createDesktopLocaleStore, type DesktopLocaleStore } from './desktop-locale-store.ts'
 import { resolveDesktopLocale } from './desktop-locale.ts'
@@ -503,12 +505,23 @@ type DataHomeChoiceRequest =
     readonly mode: 'copied'
     readonly sourceKind: ExistingDataHomeSourceKind
     readonly source: string
+    readonly sourceSelectionId?: string
     readonly target: { readonly kind: 'default' } | { readonly kind: 'custom'; readonly selectionId: string }
   }
-  | { readonly mode: 'reused'; readonly sourceKind: 'community'; readonly source: string }
+  | {
+    readonly mode: 'reused'
+    readonly sourceKind: 'community'
+    readonly source: string
+    readonly sourceSelectionId?: string
+  }
 
 type DataHomeSourceResult =
-  | { readonly status: 'valid'; readonly path: string; readonly entries: readonly string[] }
+  | {
+    readonly status: 'valid'
+    readonly path: string
+    readonly entries: readonly string[]
+    readonly selectionId?: string
+  }
   | { readonly status: 'invalid' | 'unreadable'; readonly path: string }
   | { readonly status: 'cancelled' }
 
@@ -570,6 +583,11 @@ function isDataHomeSelection(value: unknown): value is DataHomeSelection {
 function isDataHomeChoiceRequest(value: unknown): value is DataHomeChoiceRequest {
   if (typeof value !== 'object' || value === null || !('mode' in value)
     || !isDataHomeSelection(value.mode)) return false
+  const sourceSelectionValid = !('sourceSelectionId' in value)
+    || (typeof value.sourceSelectionId === 'string' && /^[0-9a-f-]{36}$/u.test(value.sourceSelectionId))
+  if (!sourceSelectionValid) return false
+  if ('sourceSelectionId' in value
+    && (value.mode === 'fresh' || !('sourceKind' in value) || value.sourceKind !== 'community')) return false
   if (value.mode === 'reused') {
     return 'sourceKind' in value && value.sourceKind === 'community'
       && 'source' in value && typeof value.source === 'string' && value.source.trim().length > 0
@@ -627,12 +645,14 @@ async function showDataHomeChooser(
   return new Promise<DataHomeChoice>((resolve, reject) => {
     let settled = false
     const pendingTargets = new Map<string, { readonly path: string; readonly expiresAt: number }>()
+    const pendingCommunitySources = new Map<string, { readonly path: string; readonly expiresAt: number }>()
     const cleanup = (): void => {
       ipcMain.removeListener('dsh:data-home:selected', handleSelection)
       ipcMain.removeListener('dsh:data-home:cancelled', handleCancellation)
       ipcMain.removeHandler('dsh:data-home:choose-source')
       ipcMain.removeHandler('dsh:data-home:choose-target')
       pendingTargets.clear()
+      pendingCommunitySources.clear()
     }
     const closeChooser = (): void => {
       cleanup()
@@ -660,6 +680,13 @@ async function showDataHomeChooser(
             source = await (value.sourceKind === 'community'
               ? resolveCommunityDataHomeSource(value.source)
               : resolveDesktopDataHomeSource(value.source))
+            if (source === undefined && value.sourceKind === 'community'
+              && value.sourceSelectionId !== undefined) {
+              const pending = pendingCommunitySources.get(value.sourceSelectionId)
+              if (pending !== undefined && pending.expiresAt >= Date.now() && pending.path === value.source) {
+                source = await resolveUnidentifiedCommunityDataHomeSource(value.source)
+              }
+            }
           } catch {
             if (!settled) event.sender.send('dsh:data-home:source-error', { status: 'unreadable', path: value.source })
             return
@@ -671,6 +698,8 @@ async function showDataHomeChooser(
         }
         if (value.mode === 'reused') {
           if (source === undefined) return
+          if (value.sourceSelectionId !== undefined) await ensureCommunityProfileIdentity(source.path)
+          if (value.sourceSelectionId !== undefined) pendingCommunitySources.delete(value.sourceSelectionId)
           finish({ mode: 'reused', sourceKind: 'community', source: source.path })
           return
         }
@@ -705,6 +734,7 @@ async function showDataHomeChooser(
         if (value.mode === 'fresh') finish({ mode: 'fresh', target, customTarget })
         else {
           if (source === undefined) return
+          if (value.sourceSelectionId !== undefined) pendingCommunitySources.delete(value.sourceSelectionId)
           finish({ mode: 'copied', sourceKind: value.sourceKind, source: source.path, target, customTarget })
         }
       })().catch(fail)
@@ -724,7 +754,35 @@ async function showDataHomeChooser(
       const candidate = result.filePaths[0]
       if (result.canceled || candidate === undefined) return { status: 'cancelled' }
       try {
-        const source = await (origin === 'community' ? resolveCommunityDataHomeSource(candidate) : resolveDesktopDataHomeSource(candidate))
+        let source = await (origin === 'community'
+          ? resolveCommunityDataHomeSource(candidate)
+          : resolveDesktopDataHomeSource(candidate))
+        if (source === undefined && origin === 'community') {
+          source = await resolveUnidentifiedCommunityDataHomeSource(candidate)
+          if (source !== undefined) {
+            const copy = sourceCopyFor(resolveDesktopLocale(app.getLocale()))
+            const confirmation = await dialog.showMessageBox(chooser, {
+              type: 'warning',
+              title: copy.communityConfirmTitle,
+              message: copy.communityConfirmMessage,
+              detail: `${copy.communityConfirmDetail}\n\n${source.path}`,
+              buttons: [copy.communityConfirmCancel, copy.communityConfirmAccept],
+              defaultId: 0,
+              cancelId: 0,
+              noLink: true,
+            })
+            if (confirmation.response !== 1) return { status: 'cancelled' }
+            const selectionId = randomUUID()
+            for (const [id, pending] of pendingCommunitySources) {
+              if (pending.expiresAt < Date.now()) pendingCommunitySources.delete(id)
+            }
+            pendingCommunitySources.set(selectionId, {
+              path: source.path,
+              expiresAt: Date.now() + DATA_HOME_SELECTION_LIFETIME_MS,
+            })
+            return { status: 'valid', path: source.path, entries: source.entries, selectionId }
+          }
+        }
         return source === undefined
           ? { status: 'invalid', path: candidate }
           : { status: 'valid', path: source.path, entries: source.entries }

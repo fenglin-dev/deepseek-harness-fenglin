@@ -12,7 +12,12 @@ import { sourceCopyFor } from './locales/data-home-source.ts'
 type DataHomeMode = 'imported' | 'reused' | 'fresh'
 
 type DataHomeSourceResult =
-  | { readonly status: 'valid'; readonly path: string; readonly entries: readonly string[] }
+  | {
+    readonly status: 'valid'
+    readonly path: string
+    readonly entries: readonly string[]
+    readonly selectionId?: string
+  }
   | { readonly status: 'invalid' | 'unreadable'; readonly path: string }
   | { readonly status: 'cancelled' }
 
@@ -131,6 +136,7 @@ window.addEventListener('DOMContentLoaded', () => {
     readonly defaultPath: string | undefined
     readonly candidate: string | undefined
     error: 'invalid' | 'unreadable' | undefined
+    selectionId: string | undefined
   }
   let selected: DataHomeMode = isDataHomeMode(requestedMode) ? requestedMode : 'imported'
   let origin: SourceCategory = selected === 'fresh' ? 'fresh' : selectedSource
@@ -143,6 +149,7 @@ window.addEventListener('DOMContentLoaded', () => {
       defaultPath: parameters.get('officialDefaultSource')?.trim() || undefined,
       candidate: parameters.get('officialSourceCandidate')?.trim() || undefined,
       error: undefined,
+      selectionId: undefined,
     },
     community: {
       path: communitySource,
@@ -150,6 +157,7 @@ window.addEventListener('DOMContentLoaded', () => {
       defaultPath: parameters.get('communityDefaultSource')?.trim() || undefined,
       candidate: parameters.get('communitySourceCandidate')?.trim() || undefined,
       error: undefined,
+      selectionId: undefined,
     },
   }
   let source = origin === 'fresh' ? undefined : sources[origin].path
@@ -355,6 +363,7 @@ window.addEventListener('DOMContentLoaded', () => {
         simulateMissingSource = false
         selectionBeforeSimulation = undefined
         sources[category].error = result.status
+        sources[category].selectionId = undefined
         renderSource()
         return
       }
@@ -364,6 +373,7 @@ window.addEventListener('DOMContentLoaded', () => {
       sources[category].path = source
       sources[category].status = 'valid'
       sources[category].error = undefined
+      sources[category].selectionId = result.selectionId
       renderSource()
     } catch {
       sources[category].error = 'unreadable'
@@ -460,7 +470,10 @@ window.addEventListener('DOMContentLoaded', () => {
   ipcRenderer.on('dsh:data-home:source-error', (_event, result: DataHomeSourceResult) => {
     if (result.status !== 'invalid' && result.status !== 'unreadable') return
     submitting = false
-    if (origin !== 'fresh') sources[origin].error = result.status
+    if (origin !== 'fresh') {
+      sources[origin].error = result.status
+      sources[origin].selectionId = undefined
+    }
     renderSource()
     renderStep()
   })
@@ -625,7 +638,13 @@ window.addEventListener('DOMContentLoaded', () => {
     renderStep()
     if (selected === 'reused') {
       if (source !== undefined && origin === 'community') {
-        ipcRenderer.send('dsh:data-home:selected', { mode: selected, sourceKind: 'community', source })
+        ipcRenderer.send('dsh:data-home:selected', {
+          mode: selected,
+          sourceKind: 'community',
+          source,
+          ...(sources.community.selectionId === undefined
+            ? {} : { sourceSelectionId: sources.community.selectionId }),
+        })
       }
       return
     }
@@ -640,7 +659,11 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     ipcRenderer.send('dsh:data-home:selected', selected === 'fresh'
       ? { mode: selected, target }
-      : { mode: 'copied', sourceKind: origin, source, target })
+      : {
+        mode: 'copied', sourceKind: origin, source, target,
+        ...(origin !== 'community' || sources.community.selectionId === undefined
+          ? {} : { sourceSelectionId: sources.community.selectionId }),
+      })
   }
 
   continueButton.addEventListener('click', () => {

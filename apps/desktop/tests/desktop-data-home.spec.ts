@@ -20,6 +20,7 @@ import {
   resolveDesktopDataHomeRecoverySelection,
   resolveDesktopDataHomeSource,
   resolveCommunityDataHomeSource,
+  resolveUnidentifiedCommunityDataHomeSource,
   resolveEmptyDesktopDataHome,
   resolveRecordedDesktopDataHome,
   resolveDesktopDataHomeLayout,
@@ -77,6 +78,7 @@ describe('desktop data home', () => {
     const marker = join(root, 'data-home-setup.json')
     await writeFile(marker, '{')
     expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
+    expect(await resolveUnidentifiedCommunityDataHomeSource(root)).toBeUndefined()
     await writeDesktopDataHomeSetup(marker, desktopDataHomeSetup('created', join(root, 'missing')))
     expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
     await writeDesktopDataHomeSetup(marker, desktopDataHomeSetup('created', 'relative-path'))
@@ -86,15 +88,29 @@ describe('desktop data home', () => {
   it('rejects generic DSH and foreign desktop homes without a valid community identity', async () => {
     const root = await fixture()
     await writeFile(join(root, 'settings.yaml'), '{}')
+    expect((await resolveUnidentifiedCommunityDataHomeSource(root))?.path).toBe(root)
     await writeFile(join(root, COMMUNITY_PROFILE_IDENTITY_FILE), 'null\n')
     expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
+    expect(await resolveUnidentifiedCommunityDataHomeSource(root)).toBeUndefined()
     await writeFile(join(root, COMMUNITY_PROFILE_IDENTITY_FILE), JSON.stringify({
       schema: 'another-community/desktop-profile/v1',
       instanceId: 'a6d0c6b4-95e8-4a90-b2a5-a31bbc27d781',
     }))
     expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
+    expect(await resolveUnidentifiedCommunityDataHomeSource(root)).toBeUndefined()
     await ensureCommunityProfileIdentity(root)
     expect((await resolveCommunityDataHomeSource(root))?.path).toBe(root)
+    expect(await resolveUnidentifiedCommunityDataHomeSource(root)).toBeUndefined()
+  })
+
+  it('offers an unidentified nested legacy home only when no authoritative record exists', async () => {
+    const root = await fixture()
+    const nested = join(root, 'dsh-home')
+    await mkdir(join(nested, 'profiles', 'web'), { recursive: true })
+    await writeFile(join(nested, 'profiles', 'web', 'package.json'), '{}')
+    expect((await resolveUnidentifiedCommunityDataHomeSource(root))?.path).toBe(nested)
+    await writeFile(join(root, 'data-home-setup.json'), '{broken')
+    expect(await resolveUnidentifiedCommunityDataHomeSource(root)).toBeUndefined()
   })
 
   it('does not treat desktop logs, caches or an empty folder as reusable community data', async () => {

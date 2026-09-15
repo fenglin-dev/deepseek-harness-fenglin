@@ -10,16 +10,16 @@ The first-run chooser previously treated any directory containing recognizable D
 
 ## Decision
 
-Official DeepSeek Harness data is import-only in the first-run chooser. Direct reuse remains available for community data only after the main process verifies either this distribution's `.open-deepseek-harness-desktop.json` identity file in the Harness home or a valid legacy `data-home-setup.json` record that points to that home. Homes created, copied, imported, or adopted by this application receive the identity file through an atomic write.
+Official DeepSeek Harness data is import-only in the first-run chooser. The main process accepts community data immediately when it verifies either this distribution's `.open-deepseek-harness-desktop.json` identity file in the Harness home or a valid legacy `data-home-setup.json` record that points to that home. Recognizable DSH data with neither record enters an explicit native confirmation that asks whether it came from an older Open DeepSeek Harness Desktop release. Confirmation issues a short-lived opaque source identity that the main process revalidates on final submission. Direct reuse then adopts the source through an atomic identity write; copying leaves the source unchanged and identifies the target.
 
-Source selection uses opaque native-picker records, and final confirmation revalidates both the declared source category and its identity. Generic DSH contents, malformed identities, foreign identity schemas, and invalid legacy setup records are rejected. Existing persisted setups that already reuse an official home remain readable for compatibility, but the chooser and renderer protocol cannot create new ones.
+Source selection uses opaque native-picker records, and final confirmation revalidates both the declared source category and its identity state. Malformed identities, foreign identity schemas, and invalid legacy setup records are authoritative failures that cannot enter the compatibility confirmation. Existing persisted setups that already reuse an official home remain readable for compatibility, but the chooser and renderer protocol cannot create new ones.
 
 ## Alternatives considered
 
-**Recognize generic DSH files.** This preserves broad compatibility but cannot distinguish this application from another community desktop distribution.
+**Silently recognize generic DSH files.** This preserves broad compatibility but cannot distinguish this application from another community desktop distribution or make the compatibility risk visible.
 
 **Copy every selected directory.** This avoids direct sharing but unnecessarily duplicates a verified community desktop home and removes the user's explicit reuse workflow.
 
 ## Consequences
 
-Official imports cannot mutate the source directory. Community copies and direct reuse accept only data identified as belonging to this distribution or covered by its legacy setup record. A legacy community home without either proof must be opened once by a compatible version that records its identity or imported through a supported migration path; adding a marker by hand is not presented as a compatibility guarantee.
+Official imports cannot mutate the source directory. A legacy community home without product evidence remains usable after the user explicitly confirms its origin, at the cost that the application cannot independently prove that assertion. Corrupt or foreign evidence still fails closed, and adding a marker by hand is not presented as a compatibility guarantee.
