@@ -32,6 +32,43 @@ function props(snapshot: PluginInventorySnapshot): PluginDiagnosticsSectionProps
 }
 
 describe('PluginDiagnosticsSection', () => {
+  it('shows recorded, installed, and preset versions for a seed marker mismatch', async () => {
+    const startupDiagnostics = {
+      list: async () => [{
+        incidentId: 'preset-version-mismatch',
+        code: 'runtime.bundled-plugin-marker-mismatch',
+        operation: 'bundled-plugin-reconciliation',
+        packageName: 'dsh-pocket',
+        recordedVersion: '2.10.6',
+        actualVersion: '1.14.5',
+        targetVersion: '2.10.6',
+        createdAt: '2026-09-15T00:00:00.000Z',
+        actions: ['diagnostics', 'open-log', 'retry-plugin'],
+      }],
+      retry: vi.fn(async () => ({ status: 'plugin-started' as const, installId: 'desktop-bundled:test' })),
+      openLog: vi.fn(async () => ({ error: '' })),
+    }
+    render(<PluginDiagnosticsSection
+      {...props({
+        entries: [],
+        dependencyHealth: { lastRepair: null, diagnosticMode: null, quarantined: [], issues: [] },
+      })}
+      startupDiagnostics={startupDiagnostics}
+    />)
+
+    expect(await screen.findByText('dsh-pocket')).toBeTruthy()
+    expect(
+      screen.getByText((_, element) =>
+        element?.tagName === 'P'
+        && element.textContent.includes(en['diagnostics.startup.recordedVersion'])
+        && element.textContent.includes(en['diagnostics.startup.actualVersion'])
+        && element.textContent.includes(en['diagnostics.startup.targetVersion']),
+      ),
+    ).toBeTruthy()
+    expect(screen.getByText('1.14.5')).toBeTruthy()
+    expect(screen.getAllByText('2.10.6')).toHaveLength(2)
+  })
+
   it('explains a legacy Session API warning without claiming the plugin was quarantined', async () => {
     render(<PluginDiagnosticsSection {...props({
       entries: [],

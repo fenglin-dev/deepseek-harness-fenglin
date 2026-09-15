@@ -180,7 +180,9 @@ function startupDiagnosticSolution(code: string): PluginInventoryLocaleKey {
   if (code === 'runtime.profile-repair-timeout' || code === 'runtime.profile-repair-failed') {
     return 'diagnostics.startup.solution.profileRepair'
   }
-  if (code === 'runtime.bundled-plugin-timeout' || code === 'runtime.bundled-plugin-failed') {
+  if (code === 'runtime.bundled-plugin-timeout'
+    || code === 'runtime.bundled-plugin-failed'
+    || code === 'runtime.bundled-plugin-marker-mismatch') {
     return 'diagnostics.startup.solution.bundledPlugin'
   }
   if (code === 'runtime.profile-mutation-lock-busy') return 'diagnostics.startup.solution.lockBusy'
@@ -560,6 +562,16 @@ export function PluginDiagnosticsSection({
                 <span>{incident.code}</span>
               </div>
               {incident.packageName === undefined ? null : <code>{incident.packageName}</code>}
+              {incident.recordedVersion === undefined && incident.actualVersion === undefined
+                && incident.targetVersion === undefined ? null : (
+                  <p>
+                    {t('diagnostics.startup.recordedVersion')} <code>{incident.recordedVersion ?? '—'}</code>
+                    {' · '}
+                    {t('diagnostics.startup.actualVersion')} <code>{incident.actualVersion ?? '—'}</code>
+                    {' · '}
+                    {t('diagnostics.startup.targetVersion')} <code>{incident.targetVersion ?? '—'}</code>
+                  </p>
+                )}
               <p>{incident.operation} · {new Date(incident.createdAt).toLocaleString()}</p>
               <p className={css.summarySolution}>
                 <b>{t('health.quarantine.solution.title')}：</b>{t(startupDiagnosticSolution(incident.code))}

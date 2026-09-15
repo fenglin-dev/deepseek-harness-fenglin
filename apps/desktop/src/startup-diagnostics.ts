@@ -8,6 +8,7 @@ export const STARTUP_DIAGNOSTIC_SCHEMA = 'dsh/desktop-startup-diagnostic/v1' as 
 
 export type StartupDiagnosticCode =
   | 'runtime.bundled-plugin-failed'
+  | 'runtime.bundled-plugin-marker-mismatch'
   | 'runtime.bundled-plugin-timeout'
   | 'runtime.profile-check-timeout'
   | 'runtime.profile-mutation-lock-busy'
@@ -17,6 +18,7 @@ export type StartupDiagnosticCode =
 
 const STARTUP_DIAGNOSTIC_CODES = new Set<StartupDiagnosticCode>([
   'runtime.bundled-plugin-failed',
+  'runtime.bundled-plugin-marker-mismatch',
   'runtime.bundled-plugin-timeout',
   'runtime.profile-check-timeout',
   'runtime.profile-mutation-lock-busy',
@@ -34,6 +36,9 @@ export interface StartupDiagnosticIncident {
   readonly code: StartupDiagnosticCode
   readonly operation: string
   readonly packageName?: string
+  readonly recordedVersion?: string
+  readonly actualVersion?: string
+  readonly targetVersion?: string
   readonly createdAt: string
   readonly actions: readonly ('diagnostics' | 'open-log' | 'retry-plugin' | 'switch-profile' | 'snapshot-restore')[]
 }
@@ -59,6 +64,12 @@ function validIncident(value: unknown): value is StartupDiagnosticIncident {
       && STARTUP_DIAGNOSTIC_ACTIONS.has(action as StartupDiagnosticIncident['actions'][number]))
     && (incident.packageName === undefined
       || (typeof incident.packageName === 'string' && incident.packageName.length <= 214))
+    && (incident.recordedVersion === undefined
+      || (typeof incident.recordedVersion === 'string' && incident.recordedVersion.length <= 64))
+    && (incident.actualVersion === undefined
+      || (typeof incident.actualVersion === 'string' && incident.actualVersion.length <= 64))
+    && (incident.targetVersion === undefined
+      || (typeof incident.targetVersion === 'string' && incident.targetVersion.length <= 64))
 }
 
 /** Read only valid bounded startup incidents; damaged documents fail closed as empty. */

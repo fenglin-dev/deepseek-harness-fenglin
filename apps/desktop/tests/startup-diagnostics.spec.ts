@@ -53,6 +53,28 @@ describe('desktop startup diagnostics', () => {
     await expect(readStartupDiagnostics(home)).resolves.toEqual([])
   })
 
+  it('retains bounded marker and installed versions for preset reconciliation', async () => {
+    const home = fixture()
+    await recordStartupDiagnostic(home, {
+      code: 'runtime.bundled-plugin-marker-mismatch',
+      operation: 'bundled-plugin-reconciliation',
+      packageName: 'dsh-pocket',
+      recordedVersion: '2.10.6',
+      actualVersion: '1.14.5',
+      targetVersion: '2.10.6',
+      actions: ['diagnostics', 'open-log', 'retry-plugin'],
+    })
+
+    await expect(readStartupDiagnostics(home)).resolves.toEqual([
+      expect.objectContaining({
+        code: 'runtime.bundled-plugin-marker-mismatch',
+        recordedVersion: '2.10.6',
+        actualVersion: '1.14.5',
+        targetVersion: '2.10.6',
+      }),
+    ])
+  })
+
   it('drops forged codes and actions from a damaged local document', async () => {
     const home = fixture()
     const diagnostics = join(home, 'diagnostics')
