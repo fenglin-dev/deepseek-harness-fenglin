@@ -10,11 +10,7 @@ import type { DesktopReleaseDownloadStatus } from './release-downloader.ts'
 import type { SourceUpdateResult, SourceUpdateStatus } from './source-updater.ts'
 import type { DesktopCliStatus } from './desktop-cli-registration.ts'
 import type {
-  DesktopDataHomeSelectionResult,
-  DesktopDataHomeSelectionKind,
   DesktopDataHomeStatus,
-  DesktopDataHomeSwitchRequest,
-  DesktopDataHomeSwitchResult,
 } from './desktop-data-home.ts'
 import type { DesktopChatBackground } from './chat-background-store.ts'
 import type {
@@ -72,8 +68,7 @@ export interface DesktopCapabilities {
 export interface DesktopShellBridge {
   getCapabilities(): Promise<DesktopCapabilities>
   getDataHome(): Promise<DesktopDataHomeStatus>
-  chooseDataHome(kind: DesktopDataHomeSelectionKind): Promise<DesktopDataHomeSelectionResult>
-  switchDataHome(request: DesktopDataHomeSwitchRequest): Promise<DesktopDataHomeSwitchResult>
+  openDataHomeChooser(): Promise<{ restarting: boolean }>
   getPreferences(): Promise<DesktopPreferences>
   updatePreferences(patch: DesktopPreferencesPatch): Promise<DesktopPreferences>
   onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
@@ -195,12 +190,9 @@ export interface DesktopChatBackgroundBridge {
 const shellBridge: DesktopShellBridge = {
   getCapabilities: () => ipcRenderer.invoke('dsh:desktop:capabilities') as Promise<DesktopCapabilities>,
   getDataHome: () => ipcRenderer.invoke('dsh:desktop:data-home:get') as Promise<DesktopDataHomeStatus>,
-  chooseDataHome: kind => ipcRenderer.invoke(
-    'dsh:desktop:data-home:choose', kind,
-  ) as Promise<DesktopDataHomeSelectionResult>,
-  switchDataHome: request => ipcRenderer.invoke(
-    'dsh:desktop:data-home:switch', request,
-  ) as Promise<DesktopDataHomeSwitchResult>,
+  openDataHomeChooser: () => ipcRenderer.invoke(
+    'dsh:desktop:data-home:open-chooser',
+  ) as Promise<{ restarting: boolean }>,
   getPreferences: () => ipcRenderer.invoke('dsh:desktop:preferences:get') as Promise<DesktopPreferences>,
   updatePreferences: patch => ipcRenderer.invoke('dsh:desktop:preferences:update', patch) as Promise<DesktopPreferences>,
   onPreferences(callback) {

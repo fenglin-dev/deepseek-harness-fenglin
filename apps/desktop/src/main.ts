@@ -469,6 +469,7 @@ let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', prog
 let desktopThemeSource: DesktopThemeSource = 'system'
 const reportedDesktopReadiness = new Set<'client' | 'event-dispatch'>()
 let profileTransactionManager: ProfileTransactionManager | undefined
+let dataHomeChooserWindow: BrowserWindow | undefined
 const pendingDataHomeSelections = new Map<string, {
   readonly rendererId: number
   readonly selectionKind: DesktopDataHomeSelectionKind
@@ -546,6 +547,13 @@ interface DesktopCapabilities {
   developmentRecoveryAvailable: boolean
 }
 
+interface DataHomeChooserOptions {
+  readonly parent?: BrowserWindow
+  readonly returnToMain?: boolean
+  readonly defaultTargetAvailable?: boolean
+  readonly currentDataHome?: string
+}
+
 function applyDesktopThemeSource(source: DesktopThemeSource): void {
   desktopThemeSource = source
   nativeTheme.themeSource = source
@@ -621,6 +629,7 @@ async function showDataHomeChooser(
   communitySourceUnreadable: boolean,
   communitySourceCandidate: string,
   defaultTarget: string,
+  options: DataHomeChooserOptions = {},
 ): Promise<DataHomeChoice> {
   const chooser = new BrowserWindow({
     title: APP_NAME,
@@ -632,6 +641,7 @@ async function showDataHomeChooser(
     backgroundColor: desktopThemeBackground('system', nativeTheme.shouldUseDarkColors),
     icon: desktopWindowIcon(),
     show: false,
+    ...(options.parent === undefined ? {} : { parent: options.parent }),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -639,6 +649,7 @@ async function showDataHomeChooser(
       preload: DATA_HOME_PRELOAD,
     },
   })
+  dataHomeChooserWindow = chooser
   chooser.webContents.on('will-navigate', (event) => { event.preventDefault() })
   chooser.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
@@ -653,6 +664,7 @@ async function showDataHomeChooser(
       ipcMain.removeHandler('dsh:data-home:choose-target')
       pendingTargets.clear()
       pendingCommunitySources.clear()
+      if (dataHomeChooserWindow === chooser) dataHomeChooserWindow = undefined
     }
     const closeChooser = (): void => {
       cleanup()
@@ -703,8 +715,17 @@ async function showDataHomeChooser(
           finish({ mode: 'reused', sourceKind: 'community', source: source.path })
           return
         }
+        if (source !== undefined && options.currentDataHome !== undefined
+          && desktopDataHomesOverlap(options.currentDataHome, source.path)) {
+          event.sender.send('dsh:data-home:source-error', { status: 'invalid', path: source.path })
+          return
+        }
         let target = defaultTarget
         let customTarget = false
+        if (value.target.kind === 'default' && options.defaultTargetAvailable === false) {
+          event.sender.send('dsh:data-home:target-error', { status: 'not-empty', path: defaultTarget })
+          return
+        }
         if (value.target.kind === 'custom') {
           const pending = pendingTargets.get(value.target.selectionId)
           if (pending === undefined || pending.expiresAt < Date.now()) {
@@ -728,6 +749,11 @@ async function showDataHomeChooser(
           customTarget = true
         }
         if (value.mode === 'copied' && source !== undefined && desktopDataHomesOverlap(source.path, target)) {
+          event.sender.send('dsh:data-home:target-error', { status: 'overlap', path: target })
+          return
+        }
+        if (options.currentDataHome !== undefined
+          && desktopDataHomesOverlap(options.currentDataHome, target)) {
           event.sender.send('dsh:data-home:target-error', { status: 'overlap', path: target })
           return
         }
@@ -831,8 +857,53 @@ async function showDataHomeChooser(
       communitySourceStatus: communitySourceUnreadable ? 'unreadable' : communitySource === undefined ? 'missing' : 'valid',
       defaultTarget,
       development: app.isPackaged ? 'false' : 'true',
+      returnToMain: options.returnToMain === true ? 'true' : 'false',
+      defaultTargetAvailable: options.defaultTargetAvailable === false ? 'false' : 'true',
     } }).catch(fail)
   })
+}
+
+interface PreparedDataHomeChoice {
+  readonly path: string
+  readonly setup: ReturnType<typeof desktopDataHomeSetup>
+  readonly copied: boolean
+}
+
+async function prepareDataHomeChoice(selection: DataHomeChoice): Promise<PreparedDataHomeChoice> {
+  if (selection.mode === 'copied') {
+    if (selection.sourceKind === 'official') {
+      await importOfficialDesktopData(selection.source, selection.target)
+    } else {
+      await copyCommunityDesktopData(selection.source, selection.target)
+    }
+    await ensureCommunityProfileIdentity(selection.target)
+    return {
+      path: selection.target,
+      setup: desktopDataHomeSetup(
+        selection.sourceKind === 'official' ? 'imported' : 'copied',
+        selection.target,
+        selection.source,
+      ),
+      copied: true,
+    }
+  }
+  if (selection.mode === 'reused') {
+    await ensureCommunityProfileIdentity(selection.source)
+    return {
+      path: selection.source,
+      setup: desktopDataHomeSetup('reused', selection.source, selection.source),
+      copied: false,
+    }
+  }
+  if (await hasDesktopData(selection.target)) {
+    throw new Error(`desktop: refusing to initialize non-empty Harness home ${selection.target}`)
+  }
+  await ensureCommunityProfileIdentity(selection.target)
+  return {
+    path: selection.target,
+    setup: desktopDataHomeSetup(selection.customTarget ? 'created' : 'fresh', selection.target),
+    copied: false,
+  }
 }
 
 async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<string> {
@@ -896,41 +967,20 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
     layout.communityDesktopRoot,
     layout.dshHome,
   )
-  if (selection.mode === 'copied') {
-    try {
-      if (selection.sourceKind === 'official') {
-        await importOfficialDesktopData(selection.source, selection.target)
-      } else {
-        await copyCommunityDesktopData(selection.source, selection.target)
-      }
-      await ensureCommunityProfileIdentity(selection.target)
-      await writeDesktopDataHomeSetup(
-        layout.setupFile,
-        desktopDataHomeSetup(selection.sourceKind === 'official' ? 'imported' : 'copied', selection.target, selection.source),
-      )
+  try {
+    const prepared = await prepareDataHomeChoice(selection)
+    await writeDesktopDataHomeSetup(layout.setupFile, prepared.setup)
+    if (prepared.copied) {
       await dialog.showMessageBox({
         type: 'info', title: copy.completeTitle, message: copy.completeMessage,
-        detail: selection.target, buttons: ['OK'], noLink: true,
+        detail: prepared.path, buttons: ['OK'], noLink: true,
       })
-      return selection.target
-    } catch (error) {
-      dialog.showErrorBox(copy.failedTitle, error instanceof Error ? error.message : String(error))
-      throw error
     }
+    return prepared.path
+  } catch (error) {
+    dialog.showErrorBox(copy.failedTitle, error instanceof Error ? error.message : String(error))
+    throw error
   }
-  if (selection.mode === 'reused') {
-    await writeDesktopDataHomeSetup(
-      layout.setupFile,
-      desktopDataHomeSetup('reused', selection.source, selection.source),
-    )
-    return selection.source
-  }
-  await ensureCommunityProfileIdentity(selection.target)
-  await writeDesktopDataHomeSetup(
-    layout.setupFile,
-    desktopDataHomeSetup(selection.customTarget ? 'created' : 'fresh', selection.target),
-  )
-  return selection.target
 }
 
 function applyLaunchAtLogin(enabled: boolean): void {
@@ -1812,6 +1862,83 @@ async function startApplication(): Promise<void> {
   ipcMain.handle('dsh:desktop:data-home:get', (event) => {
     assertMainRenderer(event.sender)
     return inspectDesktopDataHomeStatus(DESKTOP_DATA_HOME, dshHome)
+  })
+  let runningDataHomeChooser: Promise<{ restarting: boolean }> | undefined
+  ipcMain.handle('dsh:desktop:data-home:open-chooser', (event): Promise<{ restarting: boolean }> => {
+    assertMainRenderer(event.sender)
+    if (DESKTOP_DATA_HOME.explicitDshHome) {
+      throw new Error('desktop: DSH_HOME is managed by the launch environment')
+    }
+    if (runningDataHomeChooser !== undefined) {
+      if (dataHomeChooserWindow !== undefined && !dataHomeChooserWindow.isDestroyed()) {
+        dataHomeChooserWindow.show()
+        dataHomeChooserWindow.focus()
+      }
+      return runningDataHomeChooser
+    }
+    const operation = (async (): Promise<{ restarting: boolean }> => {
+      const surface = mainSurface
+      if (surface === undefined) throw new Error('desktop: main window is unavailable')
+      let officialSource: DesktopDataHomeSource | undefined
+      let officialSourceUnreadable = false
+      try {
+        officialSource = await resolveDesktopDataHomeSource(DESKTOP_DATA_HOME.officialDshHome)
+      } catch {
+        officialSourceUnreadable = true
+      }
+      let communitySource: DesktopDataHomeSource | undefined
+      let communitySourceUnreadable = false
+      try {
+        communitySource = await resolveCommunityDataHomeSource(dshHome)
+        if (communitySource === undefined) {
+          communitySource = await resolveCommunityDataHomeSource(DESKTOP_DATA_HOME.communityDesktopRoot)
+        }
+      } catch {
+        communitySourceUnreadable = true
+      }
+      const status = await inspectDesktopDataHomeStatus(DESKTOP_DATA_HOME, dshHome)
+      const defaultTargetAvailable = !desktopDataHomesOverlap(status.desktopPath, dshHome)
+        && !await hasDesktopData(status.desktopPath)
+      let selection: DataHomeChoice
+      try {
+        selection = await showDataHomeChooser(
+          officialSource,
+          officialSourceUnreadable,
+          DESKTOP_DATA_HOME.officialDshHome,
+          communitySource,
+          communitySourceUnreadable,
+          communitySource?.path ?? DESKTOP_DATA_HOME.communityDesktopRoot,
+          status.desktopPath,
+          {
+            parent: surface.window,
+            returnToMain: true,
+            defaultTargetAvailable,
+            currentDataHome: dshHome,
+          },
+        )
+      } catch (error) {
+        if (error instanceof DesktopDataHomeSelectionCancelledError) {
+          if (!surface.window.isDestroyed()) {
+            surface.window.show()
+            surface.window.focus()
+          }
+          return { restarting: false }
+        }
+        throw error
+      }
+      const prepared = await prepareDataHomeChoice(selection)
+      if (desktopDataHomesOverlap(prepared.path, dshHome)) return { restarting: false }
+      await stopPersistentServicesForActiveProfile()
+      await writeDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile, prepared.setup)
+      setTimeout(requestDesktopRestart, 250)
+      return { restarting: true }
+    })()
+    runningDataHomeChooser = operation
+    const clearOperation = (): void => {
+      if (runningDataHomeChooser === operation) runningDataHomeChooser = undefined
+    }
+    void operation.then(clearOperation, clearOperation)
+    return operation
   })
   ipcMain.handle('dsh:desktop:data-home:choose', async (
     event,

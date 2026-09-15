@@ -29,7 +29,7 @@ function installBridge(): ReturnType<typeof vi.fn> {
         activePath: '/desktop/dsh-home', activeKind: 'desktop', desktopPath: '/desktop/dsh-home',
         officialPath: '/home/user/.dsh', officialAvailable: true, managedExternally: false,
       })),
-      chooseDataHome: vi.fn(), switchDataHome: vi.fn(),
+      openDataHomeChooser: vi.fn(),
       getPreferences: vi.fn(() => Promise.resolve({
         closeBehavior: 'tray', notificationsEnabled: true, launchAtLoginEnabled: false, openBrowserOnStartup: false,
       })),

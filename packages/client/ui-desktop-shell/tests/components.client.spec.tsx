@@ -71,19 +71,9 @@ function setup(releaseStatus: DesktopReleaseStatus = {
   const openInstaller = vi.fn(() => Promise.resolve({ error: '' }))
   const openDesktopWeb = vi.fn(() => Promise.resolve({ opened: true as const, hidden: true }))
   const enterRecoveryMode = vi.fn(() => Promise.resolve({ entered: true as const }))
+  const openDataHomeChooser = vi.fn(() => Promise.resolve({ restarting: false }))
   const installCommandLine = vi.fn(() => Promise.resolve({
     phase: 'installed' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
-  }))
-  const chooseDataHome = vi.fn((selectionKind: 'existing' | 'empty') => Promise.resolve({
-    status: 'selected' as const,
-    selectionKind,
-    selectionId: '11111111-1111-4111-8111-111111111111',
-    path: selectionKind === 'empty' ? '/Volumes/Portable/New DSH' : '/Volumes/Portable/.dsh',
-    entries: selectionKind === 'empty' ? [] : ['settings.yaml'],
-  }))
-  const switchDataHome = vi.fn(() => Promise.resolve({
-    restarting: true,
-    activePath: '/home/user/.dsh',
   }))
   const bridge: DesktopBridge = {
     shell: {
@@ -96,8 +86,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
         desktopPath: '/desktop/dsh-home', officialPath: '/home/user/.dsh',
         officialAvailable: true, managedExternally: false,
       }),
-      chooseDataHome,
-      switchDataHome,
+      openDataHomeChooser,
       getPreferences: () => Promise.resolve({
         closeBehavior: 'tray', notificationsEnabled: true, launchAtLoginEnabled: false, openBrowserOnStartup: false,
       }),
@@ -133,7 +122,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
   controller.start()
   return {
     controller, updatePreferences, openDownload, startDownload, cancelDownload, openInstaller, installCommandLine,
-    chooseDataHome, switchDataHome, openDesktopWeb, enterRecoveryMode,
+    openDataHomeChooser, openDesktopWeb, enterRecoveryMode,
   }
 }
 
@@ -434,51 +423,13 @@ describe('desktop shell components', () => {
     b.controller.dispose()
   })
 
-  it('switches only to built-in or native-picker-selected data homes', async () => {
+  it('opens the shared data-import chooser instead of a second settings modal', async () => {
     const b = setup()
     render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch directory' }))
-    expect(screen.getByText(/Switching does not copy, move, or delete data/u)).toBeTruthy()
-    fireEvent.click(screen.getByRole('radio', { name: /Official DSH directory/u }))
-    fireEvent.click(screen.getByRole('button', { name: 'Switch and restart' }))
-    await waitFor(() => { expect(b.switchDataHome).toHaveBeenCalledWith({ kind: 'official' }) })
-    b.controller.dispose()
-  })
-
-  it('uses an opaque native selection when switching to another existing directory', async () => {
-    const b = setup()
-    render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch directory' }))
-    fireEvent.click(screen.getByRole('radio', { name: /Another existing directory/u }))
-    fireEvent.click(screen.getByRole('button', { name: 'Choose directory' }))
-    expect(b.chooseDataHome).toHaveBeenCalledWith('existing')
-    await waitFor(() => { expect(screen.getByText('/Volumes/Portable/.dsh')).toBeTruthy() })
-    fireEvent.click(screen.getByRole('button', { name: 'Switch and restart' }))
-    await waitFor(() => {
-      expect(b.switchDataHome).toHaveBeenCalledWith({
-        kind: 'custom', selectionId: '11111111-1111-4111-8111-111111111111',
-      })
-    })
-    b.controller.dispose()
-  })
-
-  it('creates a fresh configuration only in a native-picker-selected empty folder', async () => {
-    const b = setup()
-    render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch directory' }))
-    fireEvent.click(screen.getByRole('radio', { name: /Create a new configuration in an empty folder/u }))
-    fireEvent.click(screen.getByRole('button', { name: 'Choose empty folder' }))
-    expect(b.chooseDataHome).toHaveBeenCalledWith('empty')
-    await waitFor(() => { expect(screen.getByText('/Volumes/Portable/New DSH')).toBeTruthy() })
-    fireEvent.click(screen.getByRole('button', { name: 'Switch and restart' }))
-    await waitFor(() => {
-      expect(b.switchDataHome).toHaveBeenCalledWith({
-        kind: 'create', selectionId: '11111111-1111-4111-8111-111111111111',
-      })
-    })
+    await waitFor(() => { expect(b.openDataHomeChooser).toHaveBeenCalledOnce() })
+    expect(screen.queryByRole('dialog', { name: 'Switch data directory' })).toBeNull()
     b.controller.dispose()
   })
 })

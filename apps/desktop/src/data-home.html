@@ -386,9 +386,14 @@
       .target-action:hover { background: #f5f7fa; border-color: #b8bec8; }
       .target-error { color: #bc433d; font-size: 12px; line-height: 1.45; margin: 11px 0 0 36px; }
       .target-error[hidden] { display: none; }
-      .footer { align-items: center; border-top: 1px solid #e6e7ea; display: flex; justify-content: space-between; min-height: 82px; padding: 0 52px; }
+      .footer { align-items: center; border-top: 1px solid #e6e7ea; display: flex; gap: 20px; justify-content: space-between; min-height: 82px; padding: 0 52px; }
+      .footer-links { align-items: center; display: flex; flex-wrap: wrap; gap: 20px; min-width: 0; }
       .compare-link { appearance: none; background: transparent; border: 0; color: #286be8; cursor: pointer; padding: 8px 0; }
       .compare-link:hover { text-decoration: underline; }
+      .return-link { align-items: center; appearance: none; background: transparent; border: 0; color: #171719; cursor: pointer; display: inline-flex; font-weight: 620; gap: 7px; padding: 8px 0; }
+      .return-link::before { content: '←'; font-size: 16px; font-weight: 450; }
+      .return-link:hover { color: #286be8; }
+      .return-link[hidden], .target-choice[hidden] { display: none; }
       .actions { display: flex; gap: 12px; }
       .action { appearance: none; border-radius: 8px; cursor: pointer; min-width: 104px; padding: 10px 20px; }
       .action[hidden] { display: none; }
@@ -396,7 +401,7 @@
       .action.primary { background: #171719; border: 1px solid #171719; color: #fff; min-width: 154px; }
       .action:disabled { cursor: not-allowed; filter: none; opacity: .45; }
       .action:hover { filter: brightness(.96); }
-      .action:focus-visible, .compare-link:focus-visible { outline: 2px solid #4176e6; outline-offset: 2px; }
+      .action:focus-visible, .compare-link:focus-visible, .return-link:focus-visible { outline: 2px solid #4176e6; outline-offset: 2px; }
       .overlay { align-items: center; background: rgb(15 18 24 / 42%); display: flex; inset: 0; justify-content: center; padding: 34px; position: fixed; z-index: 10; }
       .overlay[hidden] { display: none; }
       .comparison { background: #fff; border-radius: 14px; box-shadow: 0 20px 60px rgb(15 18 24 / 22%); max-width: 920px; padding: 28px; width: 100%; }
@@ -447,6 +452,7 @@
         .target-action:hover { background: #30333a; border-color: #626670; }
         .target-error { color: #f08a82; }
         .language-trigger, .help-button, .action.secondary { background: linear-gradient(180deg, #292b31, #24262b); border-color: #494c55; color: #f4f4f5; }
+        .return-link { color: #f4f4f5; }
         .language-trigger:hover { background: #2d2f35; border-color: #626670; }
         .language-trigger[aria-expanded="true"] { border-color: #657ba7; box-shadow: 0 0 0 3px rgb(120 163 243 / 10%); }
         .development-toggle { background: #25304a; border-color: #40557c; color: #a8c4f7; }
@@ -498,6 +504,8 @@
       @media (max-width: 720px) {
         .titlebar { align-items: flex-start; flex-direction: column; gap: 10px; padding: 12px 20px; }
         .header-actions { justify-content: flex-start; width: 100%; }
+        .footer { align-items: stretch; flex-direction: column; gap: 4px; justify-content: center; padding: 8px 20px; }
+        .footer-links, .actions { justify-content: space-between; width: 100%; }
       }
     </style>
   </head>
@@ -601,7 +609,7 @@
         </article>
       </section>
       <footer class="footer">
-        <button id="compare" class="compare-link" type="button" data-copy="compare">查看完整对比</button>
+        <div class="footer-links"><button id="return-main" class="return-link" type="button" data-copy="returnMain" hidden>回到主页面</button><button id="compare" class="compare-link" type="button" data-copy="compare">查看完整对比</button></div>
         <div class="actions"><button id="back" class="action secondary" type="button" data-copy="back" hidden>上一步</button><button id="continue" class="action primary" type="button" data-copy="continue">继续</button></div>
       </footer>
     </main>

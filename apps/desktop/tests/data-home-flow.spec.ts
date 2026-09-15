@@ -21,7 +21,7 @@ function button(selector: string): HTMLButtonElement {
   return result
 }
 function step(): string | undefined { return document.querySelector<HTMLElement>('#detail-stage')?.dataset.step }
-async function mount(locale = 'zh', source = '/official/.dsh', community = ''): Promise<void> {
+async function mount(locale = 'zh', source = '/official/.dsh', community = '', runtimeSwitch = false): Promise<void> {
   const html = await readFile(new NodeURL('../src/data-home.html', import.meta.url), 'utf8')
   document.documentElement.innerHTML = html.replace(/<!doctype html>/i, '')
   window.history.replaceState({}, '', '/?' + new URLSearchParams({
@@ -37,6 +37,8 @@ async function mount(locale = 'zh', source = '/official/.dsh', community = ''): 
     defaultTarget: '/desktop/dsh-home',
     selected: source || community ? 'imported' : 'fresh',
     selectedSource: source ? 'official' : community ? 'community' : 'official',
+    returnToMain: runtimeSwitch ? 'true' : 'false',
+    defaultTargetAvailable: runtimeSwitch ? 'false' : 'true',
   }).toString())
   await import('../src/data-home-preload.ts')
   window.dispatchEvent(new Event('DOMContentLoaded'))
@@ -48,8 +50,23 @@ afterEach(() => {
 })
 
 describe('configuration source and operation flow', () => {
+  it('returns to the running client without selecting a new configuration', async () => {
+    await mount('zh', '', '/desktop/community/dsh-home', true)
+    expect(button('#return-main').hidden).toBe(false)
+    button('#return-main').click()
+    expect(ipc.send).toHaveBeenCalledExactlyOnceWith('dsh:data-home:cancelled')
+
+    ipc.send.mockClear()
+    button('[data-source="fresh"]').click()
+    button('#continue').click()
+    expect(document.querySelector<HTMLElement>('[data-target="default"]')?.hidden).toBe(true)
+    expect(button('#continue').disabled).toBe(true)
+    expect(ipc.send).not.toHaveBeenCalled()
+  })
+
   it('initializes the fresh-start details and controls when no source is detected', async () => {
     await mount('zh', '')
+    expect(button('#return-main').hidden).toBe(true)
     expect(button('[data-source="fresh"]').ariaChecked).toBe('true')
     expect(document.querySelector('#detail-title')?.textContent).toBe('全新开始')
     expect(document.querySelector('#location-value')?.textContent).not.toBe('')

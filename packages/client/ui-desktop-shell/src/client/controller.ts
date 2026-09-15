@@ -1,8 +1,7 @@
 /** Reactive owner of desktop bridge snapshots and operations. */
 
 import type {
-  CloseBehavior, DesktopBridge, DesktopCapabilities, DesktopCliStatus, DesktopDataHomeSelectionResult,
-  DesktopDataHomeSelectionKind, DesktopDataHomeStatus, DesktopDataHomeSwitchRequest, DesktopPreferences,
+  CloseBehavior, DesktopBridge, DesktopCapabilities, DesktopCliStatus, DesktopDataHomeStatus, DesktopPreferences,
   DesktopReleaseDownloadStatus, DesktopReleaseStatus,
   DesktopWebStatus,
 } from './bridge.ts'
@@ -17,7 +16,6 @@ export interface DesktopShellSnapshot {
   releaseDownload: DesktopReleaseDownloadStatus
   commandLine: DesktopCliStatus | null
   dataHome: DesktopDataHomeStatus | null
-  dataHomeSelection: DesktopDataHomeSelectionResult | null
   desktopWeb: DesktopWebStatus
   restartPending: boolean
   busy: boolean
@@ -37,7 +35,6 @@ export class DesktopShellController {
     releaseDownload: { phase: 'unsupported' },
     commandLine: null,
     dataHome: null,
-    dataHomeSelection: null,
     desktopWeb: { phase: 'starting' },
     restartPending: false,
     busy: false,
@@ -176,27 +173,11 @@ export class DesktopShellController {
     }
   }
 
-  /** Open the native picker and retain its opaque validated selection.
-   * @param kind - Whether the picker accepts an existing DSH home or an empty folder.
-   */
-  async chooseDataHome(kind: DesktopDataHomeSelectionKind): Promise<void> {
+  /** Open the shared data-import chooser without changing the active configuration on return. */
+  async openDataHomeChooser(): Promise<void> {
     this.#publish({ busy: true, error: null })
     try {
-      this.#publish({ dataHomeSelection: await this.bridge.shell.chooseDataHome(kind) })
-    } catch (error) {
-      this.#publish({ error: error instanceof Error ? error.message : String(error) })
-    } finally {
-      this.#publish({ busy: false })
-    }
-  }
-
-  /** Persist one validated data-home choice and request a complete desktop restart.
-   * @param request - Built-in target or opaque native-picker selection.
-   */
-  async switchDataHome(request: DesktopDataHomeSwitchRequest): Promise<void> {
-    this.#publish({ busy: true, error: null })
-    try {
-      const result = await this.bridge.shell.switchDataHome(request)
+      const result = await this.bridge.shell.openDataHomeChooser()
       this.#publish({ restartPending: result.restarting })
     } catch (error) {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })

@@ -106,11 +106,13 @@ window.addEventListener('DOMContentLoaded', () => {
   const destinationSummary = required('#destination-summary')
   const targetChoicesGroup = required('#target-choices')
   const targetChoices = [...document.querySelectorAll<HTMLElement>('[data-target]')]
+  const defaultTargetChoice = required('[data-target="default"]')
   const defaultTargetPath = required('#default-target-path')
   const customTargetPath = required('#custom-target-path')
   const customTargetError = required('#custom-target-error')
   const chooseTargetButton = required('#choose-target') as HTMLButtonElement
   const backButton = required('#back') as HTMLButtonElement
+  const returnMainButton = required('#return-main') as HTMLButtonElement
   const continueButton = required('#continue') as HTMLButtonElement
   const risk = required('#risk')
   const comparisonTitle = required('#comparison-title')
@@ -123,6 +125,8 @@ window.addEventListener('DOMContentLoaded', () => {
   const builds = required('#builds-value')
   const parameters = new URLSearchParams(window.location.search)
   const development = parameters.get('development') === 'true'
+  const returnToMain = parameters.get('returnToMain') === 'true'
+  const defaultTargetAvailable = parameters.get('defaultTargetAvailable') !== 'false'
   const requestedMode = parameters.get('selected')
   const selectedSource = parameters.get('selectedSource') === 'community' ? 'community' : 'official'
   const officialSource = parameters.get('officialSource')?.trim() || undefined
@@ -164,13 +168,15 @@ window.addEventListener('DOMContentLoaded', () => {
   let sourceSelectionPending = false
   let submitting = false
   let step: DataHomeStep = 'details'
-  let targetMode: DataHomeTargetMode = 'default'
+  let targetMode: DataHomeTargetMode = defaultTargetAvailable ? 'default' : 'custom'
   let customTarget: { readonly selectionId: string; readonly path: string } | undefined
   let targetErrorKind: 'not-empty' | 'overlap' | 'unreadable' | undefined
   let simulateMissingSource = false
   let selectionBeforeSimulation: SourceCategory | undefined
 
   developmentTools.hidden = !development
+  returnMainButton.hidden = !returnToMain
+  defaultTargetChoice.hidden = !defaultTargetAvailable
 
   const displayedSource = (): string | undefined =>
     origin === 'official' && simulateMissingSource ? undefined : source
@@ -695,6 +701,9 @@ window.addEventListener('DOMContentLoaded', () => {
   })
   backButton.addEventListener('click', () => {
     if (step !== 'details' && !submitting) leaveDestinationStep()
+  })
+  returnMainButton.addEventListener('click', () => {
+    if (!submitting) ipcRenderer.send('dsh:data-home:cancelled')
   })
   window.addEventListener('keydown', (event) => {
     if (event.defaultPrevented || submitting) return
