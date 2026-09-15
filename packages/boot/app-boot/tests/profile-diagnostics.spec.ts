@@ -39,6 +39,7 @@ describe('profile diagnostic v2', () => {
     ['ERR_PNPM_PATCH_FAILED', 'pnpm.patch-failed', 'blocked'],
     ['credentials-local: the value for "version" must be a string', 'config.credentials-invalid', 'blocked'],
     ['settings-file: invalid document at C:\\Users\\Alice\\settings.yaml: DUPLICATE_KEY at line 9, column 3', 'config.settings-invalid', 'blocked'],
+    ['Error: atomic-write: timed out waiting for the writer lock at C:\\Users\\Alice\\.dsh\\profiles\\node_modules.lock', 'profile.module-fallback-lock-busy', 'blocked'],
     ["Cannot find package '@deepseek-ai/dsh-session-persistence-sqlite' imported from cordis.patch.yml", 'profile.session-persistence-migration', 'blocked'],
     ['corrupt Zstandard session log: first frame is not exactly one header line', 'session.persistence-corrupt', 'blocked'],
     ['loader dependency unavailable: Loader module @fixture/ui imports unavailable dependency @deepseek-ai/dsh-host-apiproxy', 'loader.dependency-unavailable', 'blocked'],

@@ -49,6 +49,7 @@ import {
 import { ensurePackagedRuntime, packagedRuntimeArchiveRoot } from './packaged-runtime.ts'
 import { HarnessSupervisor, type HarnessFailure, type HarnessState } from './supervisor.ts'
 import { readRecoveryFailureSummary, type RecoveryFailureSummary } from './recovery-failure.ts'
+import { clearDeadModuleFallbackLock, inspectModuleFallbackLock } from './module-fallback-lock.ts'
 import { ProfileTransactionManager } from './profile-transaction-manager.ts'
 import { terminateWindowsProcessTree } from './windows-process-tree.ts'
 import { revealHarnessLog, type OpenLogResult } from './log-reveal.ts'
@@ -93,6 +94,7 @@ import { parseStartupBuildApproval } from './startup-build-approval.ts'
 import {
   desktopDataHomeSetup,
   desktopDataHomesOverlap,
+  ensureCommunityProfileIdentity,
   hasDesktopData,
   IMPORTED_ONBOARDING_RESET_VERSION,
   copyCommunityDesktopData,
@@ -163,6 +165,8 @@ import {
   type StartupDiagnosticIncident,
 } from './startup-diagnostics.ts'
 import { DesktopWebAccess, type DesktopWebStatus } from './desktop-web-access.ts'
+import { clearStaleHarnessAuthCookies } from './harness-auth-cookies.ts'
+import { activateOrDiscardRecoveryCandidate } from './recovery-candidate.ts'
 import { shellMessages, trayMessages, dataHomeMessages } from './locales/shell.ts'
 import { DesktopReturnControl } from './desktop-return-control.ts'
 import { createDesktopLocaleStore, type DesktopLocaleStore } from './desktop-locale-store.ts'
@@ -219,6 +223,7 @@ let iconManager: DesktopIconManager | undefined
 let mainSurface: DesktopWindowSurface | undefined
 let supervisor: HarnessSupervisor | undefined
 let harnessOrigin: string | undefined
+let harnessAuthenticationUrl: string | undefined
 let desktopWebAccess: DesktopWebAccess | undefined
 let desktopReturnControl: DesktopReturnControl | undefined
 let lifecycle: DesktopLifecycle | undefined
@@ -487,7 +492,7 @@ type DataHomeChoice =
     readonly target: string
     readonly customTarget: boolean
   }
-  | { readonly mode: 'reused'; readonly source: string }
+  | { readonly mode: 'reused'; readonly sourceKind: 'community'; readonly source: string }
 
 type DataHomeChoiceRequest =
   | {
@@ -500,7 +505,7 @@ type DataHomeChoiceRequest =
     readonly source: string
     readonly target: { readonly kind: 'default' } | { readonly kind: 'custom'; readonly selectionId: string }
   }
-  | { readonly mode: 'reused'; readonly source: string }
+  | { readonly mode: 'reused'; readonly sourceKind: 'community'; readonly source: string }
 
 type DataHomeSourceResult =
   | { readonly status: 'valid'; readonly path: string; readonly entries: readonly string[] }
@@ -566,7 +571,8 @@ function isDataHomeChoiceRequest(value: unknown): value is DataHomeChoiceRequest
   if (typeof value !== 'object' || value === null || !('mode' in value)
     || !isDataHomeSelection(value.mode)) return false
   if (value.mode === 'reused') {
-    return 'source' in value && typeof value.source === 'string' && value.source.trim().length > 0
+    return 'sourceKind' in value && value.sourceKind === 'community'
+      && 'source' in value && typeof value.source === 'string' && value.source.trim().length > 0
   }
   if (value.mode === 'copied'
     && (!('source' in value) || typeof value.source !== 'string' || value.source.trim().length === 0
@@ -651,7 +657,9 @@ async function showDataHomeChooser(
         let source: DesktopDataHomeSource | undefined
         if (value.mode !== 'fresh') {
           try {
-            source = await resolveDesktopDataHomeSource(value.source)
+            source = await (value.sourceKind === 'community'
+              ? resolveCommunityDataHomeSource(value.source)
+              : resolveDesktopDataHomeSource(value.source))
           } catch {
             if (!settled) event.sender.send('dsh:data-home:source-error', { status: 'unreadable', path: value.source })
             return
@@ -663,7 +671,7 @@ async function showDataHomeChooser(
         }
         if (value.mode === 'reused') {
           if (source === undefined) return
-          finish({ mode: 'reused', source: source.path })
+          finish({ mode: 'reused', sourceKind: 'community', source: source.path })
           return
         }
         let target = defaultTarget
@@ -785,7 +793,10 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
     return layout.dshHome
   }
   const recordedHome = resolveRecordedDesktopDataHome(layout, previous)
-  if (recordedHome !== undefined && previous?.mode !== 'reused') return recordedHome
+  if (recordedHome !== undefined && previous?.mode !== 'reused') {
+    await ensureCommunityProfileIdentity(recordedHome)
+    return recordedHome
+  }
   if (recordedHome !== undefined) {
     try {
       const recordedSource = await resolveDesktopDataHomeSource(recordedHome)
@@ -795,6 +806,7 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
     }
   }
   if (await hasDesktopData(layout.dshHome)) {
+    await ensureCommunityProfileIdentity(layout.dshHome)
     await writeDesktopDataHomeSetup(
       layout.setupFile,
       desktopDataHomeSetup('existing', layout.dshHome),
@@ -833,6 +845,7 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
       } else {
         await copyCommunityDesktopData(selection.source, selection.target)
       }
+      await ensureCommunityProfileIdentity(selection.target)
       await writeDesktopDataHomeSetup(
         layout.setupFile,
         desktopDataHomeSetup(selection.sourceKind === 'official' ? 'imported' : 'copied', selection.target, selection.source),
@@ -854,6 +867,7 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
     )
     return selection.source
   }
+  await ensureCommunityProfileIdentity(selection.target)
   await writeDesktopDataHomeSetup(
     layout.setupFile,
     desktopDataHomeSetup(selection.customTarget ? 'created' : 'fresh', selection.target),
@@ -1245,6 +1259,21 @@ function showLoading(
   })
 }
 
+async function loadAuthenticatedHarness(surface: DesktopWindowSurface, url: string): Promise<void> {
+  const expectedOrigin = new URL(url).origin
+  if (mainSurface !== surface || surface.window.isDestroyed() || harnessOrigin !== expectedOrigin) return
+  try {
+    const removed = await clearStaleHarnessAuthCookies(surface.renderer.session.cookies, url)
+    if (removed > 0) await appendDesktopStartupLog(`Removed ${removed} stale Harness authentication cookie(s).`)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    console.warn('desktop: could not clear stale Harness authentication cookies', error)
+    await appendDesktopStartupLog(`Could not clear stale Harness authentication cookies: ${detail}`)
+  }
+  if (mainSurface !== surface || surface.window.isDestroyed() || harnessOrigin !== expectedOrigin) return
+  await surface.loadURL(withDesktopWindowMetadata(url, process.platform))
+}
+
 function configureNavigation(renderer: WebContents): void {
   const permissionGrants = new Set<string>()
   const permissionDetails = (details: object): HarnessPermissionDetails => ({
@@ -1390,6 +1419,22 @@ function createWindow(): BrowserWindow {
   })
   const { window } = surface
   configureNavigation(surface.renderer)
+  surface.renderer.session.webRequest.onCompleted({ urls: ['http://127.0.0.1/*'] }, (details) => {
+    if (details.webContentsId !== surface.renderer.id || details.resourceType !== 'mainFrame'
+      || details.statusCode < 400 || lifecycle?.isQuitting === true || harnessOrigin === undefined) return
+    let responseOrigin: string
+    try { responseOrigin = new URL(details.url).origin } catch { return }
+    if (responseOrigin !== harnessOrigin) return
+    const evidence = `HTTP ${details.statusCode}`
+    void appendDesktopStartupLog(`Harness main page failed with ${evidence}; showing recovery controls.`)
+    showLoading('failed', {
+      message: shellMessages(app.getLocale()).harnessHttpFailed(details.statusCode),
+      diagnosticCode: 'desktop.harness-http-response',
+      nativeCode: `HTTP_${details.statusCode}`,
+      evidence,
+      logPath: harnessLogPath,
+    })
+  })
   surface.renderer.on('page-title-updated', (_event, title) => {
     surface.sendTitlebar('dsh:window:title', desktopWindowTitle(title))
   })
@@ -2118,6 +2163,7 @@ async function startApplication(): Promise<void> {
     const surface = mainSurface
     if (surface === undefined) throw new Error('desktop: main window is unavailable')
     const inventory = await readRecoveryPluginInventory(activeMenuHome)
+    const moduleFallbackLock = await inspectModuleFallbackLock(activeMenuHome).catch(() => ({ state: 'unavailable' as const }))
     const day = new Date().toISOString().slice(0, 10)
     const result = await dialog.showSaveDialog(surface.window, {
       title: shellMessages(app.getLocale()).exportDiagnostics,
@@ -2149,6 +2195,7 @@ async function startApplication(): Promise<void> {
           },
         }),
       },
+      moduleFallbackLock,
       plugins: inventory,
     }, undefined, 2)}\n`, { mode: 0o600 })
     return { saved: true as const, fileName: basename(result.filePath) }
@@ -2165,6 +2212,16 @@ async function startApplication(): Promise<void> {
     blockedProcessRecoveryPath = undefined
     setTimeout(() => { requestDesktopRestart() }, 150)
     return { restarting: true as const }
+  })
+  ipcMain.handle('dsh:desktop:module-fallback-lock:get', async (event) => {
+    assertMainRenderer(event.sender)
+    if (activeMenuHome === undefined) throw new Error('desktop: active Profile is unavailable')
+    return inspectModuleFallbackLock(activeMenuHome)
+  })
+  ipcMain.handle('dsh:desktop:module-fallback-lock:clear', async (event) => {
+    assertMainRenderer(event.sender)
+    if (activeMenuHome === undefined) throw new Error('desktop: active Profile is unavailable')
+    return clearDeadModuleFallbackLock(activeMenuHome)
   })
   ipcMain.handle('dsh:desktop:recovery:exit', async (event) => {
     assertMainRenderer(event.sender)
@@ -2192,11 +2249,19 @@ async function startApplication(): Promise<void> {
     if (supervisor?.isDiagnosticMode === true) {
       await supervisor.stop()
       harnessOrigin = undefined
+      harnessAuthenticationUrl = undefined
       return { started: supervisor.resume() }
     }
     const started = supervisor?.retry() ?? false
     if (!started && harnessOrigin !== undefined && mainSurface !== undefined && !mainSurface.window.isDestroyed()) {
-      void mainSurface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))
+      const retryUrl = harnessAuthenticationUrl
+      if (retryUrl === undefined || new URL(retryUrl).origin !== harnessOrigin) {
+        void mainSurface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))
+      } else {
+        void loadAuthenticatedHarness(mainSurface, retryUrl).catch((error: unknown) => {
+          console.error('desktop: Harness authentication retry failed', error)
+        })
+      }
     }
     return { started }
   })
@@ -2674,6 +2739,7 @@ async function startApplication(): Promise<void> {
       await supervisor.stop()
       recoveryHarnessSuspended = true
       harnessOrigin = undefined
+      harnessAuthenticationUrl = undefined
       desktopReturnControl?.clear()
       desktopWebAccess?.clear()
     } else if (supervisor === undefined) {
@@ -2924,7 +2990,15 @@ async function startApplication(): Promise<void> {
   recoveryActivateCandidate = async () => {
     if (!recoveryOwnsCandidate) return
     if (recoveryMutationBusy) throw new Error('desktop: recovery plugin removal is still running')
-    try { await activateDesktopCandidate(false) } finally { recoveryOwnsCandidate = desktopCandidateId !== undefined }
+    try {
+      await activateOrDiscardRecoveryCandidate({
+        activate: () => activateDesktopCandidate(false),
+        discard: discardDesktopCandidate,
+        onRollback: () => appendDesktopStartupLog('Recovery plugin candidate failed validation and was rolled back before retry.'),
+      })
+    } finally {
+      recoveryOwnsCandidate = desktopCandidateId !== undefined
+    }
   }
   recoveryDiscardCandidate = async () => {
     if (!recoveryOwnsCandidate) return
@@ -3375,6 +3449,7 @@ async function startApplication(): Promise<void> {
       latestRecoveryFailure = undefined
       latestRecoveryDiagnostic = undefined
       harnessOrigin = new URL(url).origin
+      harnessAuthenticationUrl = url
       desktopReturnControl?.setHarnessOrigin(`${harnessOrigin}/`)
       desktopWebAccess?.setReady(url)
       reportedDesktopReadiness.clear()
@@ -3382,7 +3457,9 @@ async function startApplication(): Promise<void> {
       const readyOrigin = harnessOrigin
       setTimeout(() => {
         if (harnessOrigin !== readyOrigin || mainSurface === undefined || mainSurface.window.isDestroyed()) return
-        void mainSurface.loadURL(withDesktopWindowMetadata(url, process.platform))
+        void loadAuthenticatedHarness(mainSurface, url).catch((error: unknown) => {
+          console.error('desktop: could not load authenticated Harness page', error)
+        })
       }, 120)
       if (recovering) {
         recovering = false
@@ -3398,6 +3475,7 @@ async function startApplication(): Promise<void> {
       recoveryHarnessSuspended = false
       recoveryRestartRequired = false
       harnessOrigin = new URL(url).origin
+      harnessAuthenticationUrl = undefined
       reportedDesktopReadiness.clear()
       desktopReturnControl?.clear()
       desktopWebAccess?.clear()
@@ -3427,6 +3505,7 @@ async function startApplication(): Promise<void> {
       if (state === 'restarting' || state === 'failed' || state === 'stopped') {
         cancelBootableSnapshot()
         harnessOrigin = undefined
+        harnessAuthenticationUrl = undefined
         desktopReturnControl?.clear()
         desktopWebAccess?.clear()
       }

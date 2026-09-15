@@ -58,6 +58,7 @@ export type ProfileDiagnosticCode =
   | 'profile.orphaned-bundle'
   | 'profile.bundle-invalid'
   | 'profile.module-resolution'
+  | 'profile.module-fallback-lock-busy'
   | 'profile.immutable-agent-input-mutation'
   | 'profile.session-api-incompatible'
   | 'profile.session-persistence-migration'
@@ -165,6 +166,11 @@ const LOADER_ENTRY = /failed to (?:apply|import) loader entry\s+([^\s(:]+)(?:\s+
 const FAILED_MODULE = /plugin\(s\) failed to load:\s*([^,\s]+)/iu
 
 const RULES: readonly DiagnosticRule[] = [
+  {
+    code: 'profile.module-fallback-lock-busy', source: 'profile', severity: 'blocked',
+    actions: ['export'],
+    pattern: /atomic-write: timed out waiting for the writer lock at .*[/\\]profiles[/\\]node_modules\.lock\b/iu,
+  },
   {
     code: 'pnpm.build-script-blocked', severity: 'security', actions: ['approve-build', 'isolate', 'export'],
     nativeCodes: ['ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED', 'ERR_PNPM_IGNORED_BUILDS'],

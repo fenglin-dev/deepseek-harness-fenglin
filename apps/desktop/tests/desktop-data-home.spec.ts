@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  COMMUNITY_PROFILE_IDENTITY_FILE,
   desktopDataHomeSetup,
   desktopDataHomesOverlap,
   copyCommunityDesktopData,
+  ensureCommunityProfileIdentity,
   hasDesktopData,
   hasImportableDesktopData,
   importOfficialDesktopData,
@@ -55,6 +57,9 @@ describe('desktop data home', () => {
     const nested = join(desktop, 'dsh-home')
     await mkdir(nested, { recursive: true })
     await writeFile(join(nested, 'settings.yaml'), 'settings: {}')
+    expect(await resolveCommunityDataHomeSource(desktop)).toBeUndefined()
+    expect(await resolveCommunityDataHomeSource(nested)).toBeUndefined()
+    await ensureCommunityProfileIdentity(nested)
     expect((await resolveCommunityDataHomeSource(desktop))?.path).toBe(nested)
     expect((await resolveCommunityDataHomeSource(nested))?.path).toBe(nested)
     const external = join(root, '自定义 数据')
@@ -76,6 +81,20 @@ describe('desktop data home', () => {
     expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
     await writeDesktopDataHomeSetup(marker, desktopDataHomeSetup('created', 'relative-path'))
     expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
+  })
+
+  it('rejects generic DSH and foreign desktop homes without a valid community identity', async () => {
+    const root = await fixture()
+    await writeFile(join(root, 'settings.yaml'), '{}')
+    await writeFile(join(root, COMMUNITY_PROFILE_IDENTITY_FILE), 'null\n')
+    expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
+    await writeFile(join(root, COMMUNITY_PROFILE_IDENTITY_FILE), JSON.stringify({
+      schema: 'another-community/desktop-profile/v1',
+      instanceId: 'a6d0c6b4-95e8-4a90-b2a5-a31bbc27d781',
+    }))
+    expect(await resolveCommunityDataHomeSource(root)).toBeUndefined()
+    await ensureCommunityProfileIdentity(root)
+    expect((await resolveCommunityDataHomeSource(root))?.path).toBe(root)
   })
 
   it('does not treat desktop logs, caches or an empty folder as reusable community data', async () => {
@@ -347,6 +366,7 @@ describe('desktop data home', () => {
     await writeFile(join(desktop, 'settings.yaml'), 'locale: en\n')
     await writeFile(join(official, 'settings.yaml'), 'locale: zh\n')
     await writeFile(join(custom, 'profiles', 'web', 'package.json'), '{}\n')
+    await ensureCommunityProfileIdentity(custom)
 
     const officialDecision = await resolveDesktopDataHomeSwitch(layout, desktop, { kind: 'official' })
     expect(officialDecision).toMatchObject({ changed: true, path: official })

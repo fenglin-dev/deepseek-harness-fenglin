@@ -13,8 +13,9 @@ describe('Desktop recovery plugin inventory', () => {
       dependencies: {
         'example-plugin': `file:${join(home, 'bundled-plugins', 'example-plugin-1.2.3.tgz')}`,
         '@scope/registry-plugin': '^2.0.0',
+        'first-bundle-plugin': '^3.0.0',
       },
-      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'example-plugin'] } },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'first-bundle-plugin', 'example-plugin'] } },
     }))
     await writeFile(join(profile, 'node_modules', 'example-plugin', 'package.json'), JSON.stringify({
       name: 'example-plugin', version: '1.2.3',
@@ -32,6 +33,7 @@ describe('Desktop recovery plugin inventory', () => {
           packageName: 'example-plugin', version: '1.2.3', source: 'bundled',
           status: 'attention', diagnosticCode: 'profile.module-resolution',
         },
+        { packageName: 'first-bundle-plugin', source: 'registry', status: 'normal' },
         { packageName: '@scope/registry-plugin', source: 'registry', status: 'normal' },
       ],
       protectedCount: 2,

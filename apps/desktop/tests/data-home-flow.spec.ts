@@ -67,19 +67,16 @@ describe('configuration source and operation flow', () => {
     expect(button('#choose-community-source').textContent).toBe(sourceCopyFor('zh').chooseCommunity)
   })
 
-  it('requires a separate operation choice before official direct reuse', async () => {
+  it('imports official data without offering direct directory sharing', async () => {
     await mount()
     expect(button('#back').hidden).toBe(true)
     button('#continue').click()
-    expect(step()).toBe('operation')
-    expect(document.querySelector('[data-operation-copy="importTitle"]')?.textContent).toBe('导入到独立环境')
+    expect(step()).toBe('destination')
     expect(ipc.send).not.toHaveBeenCalled()
     expect(document.querySelector<HTMLElement>('#facts')?.inert).toBe(true)
-    button('[data-operation="reused"]').click()
-    expect(document.querySelector<HTMLElement>('#risk')?.hidden).toBe(false)
-    button('#continue').click()
-    button('#continue').click()
-    expect(ipc.send).toHaveBeenCalledExactlyOnceWith('dsh:data-home:selected', { mode: 'reused', source: '/official/.dsh' })
+    expect(button('[data-operation="reused"]').hidden).toBe(true)
+    button('#back').click()
+    expect(step()).toBe('details')
   })
 
   it('copies a community home through an opaque destination and preserves Back navigation', async () => {
@@ -112,6 +109,17 @@ describe('configuration source and operation flow', () => {
     })
   })
 
+  it('reuses only a validated community source and identifies its source category', async () => {
+    await mount('zh', '', '/desktop/community/dsh-home')
+    button('#continue').click()
+    expect(step()).toBe('operation')
+    button('[data-operation="reused"]').click()
+    button('#continue').click()
+    expect(ipc.send).toHaveBeenCalledExactlyOnceWith('dsh:data-home:selected', {
+      mode: 'reused', sourceKind: 'community', source: '/desktop/community/dsh-home',
+    })
+  })
+
   it('keeps source paths separate and permits retry after final source validation fails', async () => {
     await mount()
     button('[data-source="community"]').click()
@@ -128,6 +136,7 @@ describe('configuration source and operation flow', () => {
     ipc.handlers.get('dsh:data-home:source-error')?.({}, { status: 'invalid', path: '/community/dsh-home' })
     expect(button('#continue').disabled).toBe(false)
     expect(document.querySelector<HTMLElement>('#community-source-error')?.hidden).toBe(false)
+    expect(document.querySelector('#community-source-error')?.textContent).toContain('Open DeepSeek Harness Desktop')
   })
 
   it('does not submit on cancelled or unrelated source selection, and fresh setup needs no source', async () => {
@@ -149,7 +158,7 @@ describe('configuration source and operation flow', () => {
   })
 
   it('updates source descriptions, comparison and operation controls when changing language', async () => {
-    await mount()
+    await mount('zh', '', '/desktop/community/dsh-home')
     button('#continue').click()
     button('#language-trigger').click()
     button('[data-language="de"]').click()
@@ -192,7 +201,7 @@ describe('configuration source and operation flow', () => {
   })
 
   it('keeps full comparison on source categories at every step and returns focus to its trigger', async () => {
-    await mount('zh')
+    await mount('zh', '', '/desktop/community/dsh-home')
     for (const current of ['details', 'operation', 'destination']) {
       expect(step()).toBe(current)
       button('#compare').click()
@@ -201,8 +210,8 @@ describe('configuration source and operation flow', () => {
       const rows = document.querySelectorAll('#comparison-body tr')
       for (const index of [1, 2]) {
         const official = rows[index]?.querySelector('td')?.textContent
-        expect(official).toContain('直接使用')
-        expect(official).toContain('导入到独立环境')
+        expect(official).not.toContain('直接使用')
+        expect(official).not.toBe('')
       }
       expect(rows[1]?.textContent).toContain('Agent 预设')
       expect(rows[2]?.textContent).toContain('联网重新安装')
@@ -223,13 +232,13 @@ describe('browser source preview', () => {
     window.history.replaceState({}, '', '/')
     window.eval(preview)
 
-    expect(document.querySelector('#detail-title')?.textContent).toBe('使用官方 DeepSeek Harness 配置')
+    expect(document.querySelector('#detail-title')?.textContent).toBe('导入官方 DeepSeek Harness 配置')
     expect(document.querySelector('#location-value')?.textContent).toContain('.dsh')
     expect(button('#back').hidden).toBe(true)
 
     button('#help').click()
     expect(document.querySelector<HTMLElement>('#overlay')?.hidden).toBe(false)
-    expect(document.querySelector('.comparison-note')?.textContent).toContain('直接使用')
+    expect(document.querySelector('.comparison-note')?.textContent).toContain('独立目录')
     button('#acknowledge').click()
     expect(document.querySelector<HTMLElement>('#overlay')?.hidden).toBe(true)
 
@@ -245,16 +254,12 @@ describe('browser source preview', () => {
     button('#choose-official-source').click()
     expect(document.querySelector('#official-source-status')?.textContent).toContain('Detected')
     button('#continue').click()
-    expect(step()).toBe('operation')
-    expect(document.querySelector('[data-operation-copy="importTitle"]')?.textContent).toBe('Import into an independent environment')
-    expect(document.querySelector('#reuse-operation-summary')?.textContent).toContain('official DeepSeek Harness')
+    expect(step()).toBe('destination')
+    expect(button('[data-operation="reused"]').hidden).toBe(true)
     button('#help').click()
-    expect(document.querySelector('#comparison-title')?.textContent).toBe('Choose how to use this configuration')
+    expect(document.querySelector('#comparison-title')?.textContent).toBe('Choose configuration directory')
     expect(document.querySelectorAll('#comparison-head th')).toHaveLength(3)
     button('#acknowledge').click()
-    button('[data-operation="imported"]').click()
-    button('#continue').click()
-    expect(step()).toBe('destination')
     button('#help').click()
     expect(document.querySelector('#comparison-title')?.textContent).toBe('Choose configuration directory')
     expect(document.querySelectorAll('#comparison-head th')).toHaveLength(3)

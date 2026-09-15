@@ -28,6 +28,9 @@
       .detail-link { background: none; border: 0; color: var(--accent); cursor: pointer; font: 500 13px/1.4 inherit; margin: 17px 0 0; padding: 0; }
       .detail-link:hover { color: var(--accent-hover); text-decoration: underline; }
       .failure-details { background: var(--surface-muted); border: 1px solid var(--border); border-radius: 10px; margin-top: 14px; padding: 12px 14px; }
+      .lock-recovery { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-top: 14px; padding: 16px; }
+      .lock-recovery strong { display: block; font-size: 14px; margin-bottom: 7px; }
+      .lock-recovery p { color: var(--muted); font-size: 13px; line-height: 1.55; margin: 0 0 12px; }
       .failure-details[hidden], .slow[hidden], .recovery-workspace[hidden], .panel[hidden], .status[hidden], [hidden] { display: none; }
       .failure-message { color: #a7272d; font-size: 13px; line-height: 1.55; margin: 0 0 8px; }
       .log-path { color: var(--muted); font: 12px/1.5 ui-monospace, monospace; margin: 0; overflow-wrap: anywhere; }
@@ -89,6 +92,7 @@
         <div id="progress-surface" class="progress-surface"><div class="progress-meta" aria-live="polite"><span id="progress-task" class="progress-task">Preparing desktop environment</span><span id="progress-percent" class="progress-percent">4%</span></div><div id="progress" class="track" role="progressbar" aria-label="Starting DeepSeek Harness" aria-valuemin="0" aria-valuemax="100" aria-valuenow="4"><div id="progress-bar" class="bar"></div></div></div>
         <button id="toggle-details" class="detail-link" type="button" hidden>View error details</button>
         <div id="failure-details" class="failure-details" hidden><strong id="failure-title"></strong><p id="failure-message" class="failure-message"></p><p id="failure-context" class="log-path"></p><p id="log-path" class="log-path"></p></div>
+        <div id="module-fallback-lock-recovery" class="lock-recovery" hidden><strong id="module-fallback-lock-title"></strong><p id="module-fallback-lock-detail" role="status"></p><button id="clear-module-fallback-lock" class="action" type="button" disabled></button></div>
       </section>
       <section id="slow" class="slow" aria-live="polite" hidden><p id="slow-message"></p><div class="actions"><button id="open-slow-log" class="action" type="button">Open Harness log</button></div></section>
       <section id="recovery-workspace" class="recovery-workspace" hidden>

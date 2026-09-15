@@ -92,6 +92,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const facts = required('#facts')
   const operationPanel = required('#operation-panel')
   const operationChoices = [...document.querySelectorAll<HTMLButtonElement>('[data-operation]')]
+  const reuseOperationChoice = required('[data-operation="reused"]') as HTMLButtonElement
   const independentOperationTitle = required('[data-operation-copy="importTitle"]')
   const operationSummary = required('.operation-panel .destination-summary')
   const copyOperationSummary = required('#copy-operation-summary')
@@ -193,7 +194,7 @@ window.addEventListener('DOMContentLoaded', () => {
       view.summary.hidden = view.summary.textContent.length === 0
       const error = simulated ? undefined : entry.error
       view.error.textContent = error === 'invalid'
-        ? copy.sourceInvalid
+        ? category === 'community' ? sourceCopy.communitySourceInvalid : copy.sourceInvalid
         : error === 'unreadable' ? copy.sourceReadFailed : ''
       view.error.hidden = error === undefined
       view.button.textContent = category === 'official' ? sourceCopy.chooseOfficial : sourceCopy.chooseCommunity
@@ -257,6 +258,7 @@ window.addEventListener('DOMContentLoaded', () => {
     destinationPanel.ariaHidden = String(!destinationVisible)
     destinationPanel.inert = !destinationVisible
     for (const choice of operationChoices) choice.ariaChecked = String(choice.dataset.operation === selected)
+    reuseOperationChoice.hidden = origin === 'official'
     required('#operation-sharing').textContent = detail.sharing
     required('#operation-plugins').textContent = detail.plugins
     required('#operation-builds').textContent = detail.builds
@@ -333,7 +335,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   const leaveDestinationStep = (): void => {
-    step = origin === 'fresh' || step === 'operation' ? 'details' : 'operation'
+    step = origin === 'fresh' || origin === 'official' || step === 'operation' ? 'details' : 'operation'
     renderStep()
     if (step === 'operation') operationChoices.find(choice => choice.dataset.operation === selected)?.focus()
     else choices.find(choice => choice.dataset.source === origin)?.focus()
@@ -551,8 +553,8 @@ window.addEventListener('DOMContentLoaded', () => {
       ], [
         { title: sourceCopy.officialTitle, tone: 'official', values: [
           sourceCopy.officialLocation,
-          `${copy.reuseTitle}: ${detailsFor(language).reused.sharing}\n\n${sourceCopy.officialImportTitle}: ${copy.compareImportLocation}`,
-          `${copy.reuseTitle}: ${copy.compareReusePlugins}\n\n${sourceCopy.officialImportTitle}: ${copy.compareImportPlugins}`,
+          copy.compareImportLocation,
+          copy.compareImportPlugins,
           sourceCopy.officialSuitable,
         ] },
         { title: sourceCopy.communityTitle, tone: 'community', values: [
@@ -622,7 +624,9 @@ window.addEventListener('DOMContentLoaded', () => {
     submitting = true
     renderStep()
     if (selected === 'reused') {
-      if (source !== undefined) ipcRenderer.send('dsh:data-home:selected', { mode: selected, source })
+      if (source !== undefined && origin === 'community') {
+        ipcRenderer.send('dsh:data-home:selected', { mode: selected, sourceKind: 'community', source })
+      }
       return
     }
     const target = targetMode === 'default'
@@ -647,6 +651,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     if (step === 'details') {
       if (origin === 'fresh') enterDestinationStep()
+      else if (origin === 'official') enterDestinationStep()
       else {
         step = 'operation'
         renderStep()

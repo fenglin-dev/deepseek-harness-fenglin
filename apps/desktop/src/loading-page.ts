@@ -35,6 +35,10 @@ const recoveryFailures: Readonly<Record<string, LocalizedFailure>> = {
     zh: ['插件或 Bundle 文件缺失', '某个插件依赖无法从当前 Profile 解析。可在插件管理中卸载对应外部插件，或回退到可用的插件快照。'],
     en: ['Plugin or Bundle file is missing', 'A plugin dependency cannot be resolved from this Profile. Remove the affected external plugin or restore a known-good plugin snapshot.'],
   },
+  'profile.module-fallback-lock-busy': {
+    zh: ['共享依赖写锁未释放', 'Profile 的共享依赖目录仍有写锁。下方会显示持锁 PID；只有系统确认该进程已死亡后，才允许清理这一处锁并重试。'],
+    en: ['Shared dependency writer lock was not released', 'The Profile shared-dependency directory is still locked. The owning PID is shown below; this one lock can be removed only after the operating system confirms that process is dead.'],
+  },
   'loader.dependency-unavailable': {
     zh: ['插件依赖不可用', '插件声明的运行依赖没有加载成功。请优先卸载相关插件或恢复插件快照。'],
     en: ['Plugin dependency unavailable', 'A runtime dependency required by a plugin did not load. Remove the affected plugin or restore a plugin snapshot first.'],
@@ -167,6 +171,10 @@ const recoveryFailures: Readonly<Record<string, LocalizedFailure>> = {
     zh: ['Harness 启动后立即退出', '没有生成可用的 Profile 分类报告。请展开详情查看退出原因并导出日志；不要在无法归属插件时批量卸载。'],
     en: ['Harness exited during startup', 'No usable Profile classification report was produced. Expand the details and export logs; do not remove plugins in bulk without attribution.'],
   },
+  'desktop.harness-http-response': {
+    zh: ['本机页面认证或响应失败', 'Harness 已运行，但桌面窗口收到异常 HTTP 响应。点击“继续”会清理旧的本机登录 Cookie，并使用当前启动令牌重新认证；会话和插件不会被删除。'],
+    en: ['Local page authentication or response failed', 'Harness is running, but the desktop window received an unexpected HTTP response. Continue clears stale local login cookies and authenticates again with the current startup token; sessions and plugins are preserved.'],
+  },
   'desktop.profile-initialize-failed': {
     zh: ['全新 Profile 初始化失败', '首次创建配置时依赖或受管文件没有准备完成。请检查日志、磁盘权限和网络设置，修复后再重试。'],
     en: ['New Profile initialization failed', 'Dependencies or managed files were not prepared during first-time setup. Check logs, disk permissions, and network settings before retrying.'],
@@ -248,6 +256,10 @@ export function installLoadingPage(ipcRenderer: IpcRenderer): void {
   const openSlowLog = element<HTMLButtonElement>('#open-slow-log')
   const retry = element<HTMLButtonElement>('#retry')
   const exitButton = element<HTMLButtonElement>('#exit')
+  const moduleFallbackLockRecovery = element<HTMLElement>('#module-fallback-lock-recovery')
+  const moduleFallbackLockTitle = element<HTMLElement>('#module-fallback-lock-title')
+  const moduleFallbackLockDetail = element<HTMLElement>('#module-fallback-lock-detail')
+  const clearModuleFallbackLock = element<HTMLButtonElement>('#clear-module-fallback-lock')
   const failed = query.get('state') === 'failed'
   const shutdown = query.get('mode') === 'shutdown'
   let currentProgress: DesktopStartupProgress | undefined
@@ -363,6 +375,52 @@ export function installLoadingPage(ipcRenderer: IpcRenderer): void {
   recoveryWorkspace.hidden = false
   localizeRecoveryWorkspace(copy)
 
+  if (diagnostic?.code === 'profile.module-fallback-lock-busy') {
+    moduleFallbackLockRecovery.hidden = false
+    moduleFallbackLockTitle.textContent = copy.moduleFallbackLockTitle
+    clearModuleFallbackLock.textContent = copy.moduleFallbackLockAction
+    let lockCheckRunning = false
+    let lockOwnerPid: number | undefined
+    const inspectLock = async (): Promise<void> => {
+      if (lockCheckRunning) return
+      lockCheckRunning = true
+      try {
+        const value = await ipcRenderer.invoke('dsh:desktop:module-fallback-lock:get') as {
+          state?: unknown
+          ownerPid?: unknown
+        }
+        const ownerPid = typeof value.ownerPid === 'number' && Number.isSafeInteger(value.ownerPid)
+          ? value.ownerPid : undefined
+        lockOwnerPid = ownerPid
+        clearModuleFallbackLock.disabled = value.state !== 'dead'
+        retry.disabled = value.state !== 'missing'
+        moduleFallbackLockDetail.textContent = copy.moduleFallbackLockState(String(value.state), ownerPid)
+      } catch (error) {
+        clearModuleFallbackLock.disabled = true
+        retry.disabled = true
+        moduleFallbackLockDetail.textContent = `${copy.moduleFallbackLockInspectFailed}: ${error instanceof Error ? error.message : String(error)}`
+      } finally {
+        lockCheckRunning = false
+      }
+    }
+    void inspectLock()
+    const lockPoll = setInterval(() => { void inspectLock() }, 2_000)
+    window.addEventListener('unload', () => { clearInterval(lockPoll) }, { once: true })
+    clearModuleFallbackLock.addEventListener('click', () => {
+      if (lockOwnerPid === undefined || !window.confirm(copy.moduleFallbackLockConfirm(lockOwnerPid))) return
+      clearModuleFallbackLock.disabled = true
+      retry.disabled = true
+      moduleFallbackLockDetail.textContent = copy.moduleFallbackLockClearing(lockOwnerPid)
+      void ipcRenderer.invoke('dsh:desktop:module-fallback-lock:clear').then(() => {
+        moduleFallbackLockDetail.textContent = copy.moduleFallbackLockRestarting
+        return ipcRenderer.invoke('dsh:harness:retry')
+      }).catch((error: unknown) => {
+        moduleFallbackLockDetail.textContent = `${copy.moduleFallbackLockClearFailed}: ${error instanceof Error ? error.message : String(error)}`
+        void inspectLock()
+      })
+    })
+  }
+
   const tabs = [...document.querySelectorAll<HTMLButtonElement>('.tab')]
   const panels = [...document.querySelectorAll<HTMLElement>('.panel')]
   const openPanel = (name: RecoveryPanel): void => {
@@ -431,7 +489,7 @@ export function installLoadingPage(ipcRenderer: IpcRenderer): void {
     remove.textContent = copy.uninstall
     remove.setAttribute('aria-label', `${copy.uninstall} ${plugin.packageName}`)
     remove.addEventListener('click', () => {
-      if (!window.confirm(copy.uninstallConfirm(plugin.packageName))) return
+      if (!window.confirm(copy.uninstallConfirm(plugin.packageName, plugin.status === 'attention'))) return
       remove.disabled = true
       pluginStatus.hidden = false
       pluginStatus.textContent = copy.uninstalling(plugin.packageName)
@@ -617,7 +675,7 @@ interface RecoveryCopy {
   readonly pluginAttention: (code?: string) => string
   readonly protectedComponents: (count: number) => string
   readonly uninstall: string
-  readonly uninstallConfirm: (name: string) => string
+  readonly uninstallConfirm: (name: string, attributed: boolean) => string
   readonly uninstalling: (name: string) => string
   readonly uninstalled: (name: string) => string
   readonly uninstallFailed: string
@@ -639,6 +697,14 @@ interface RecoveryCopy {
   readonly processRecoveryResetConfirm: string
   readonly processRecoveryResetting: string
   readonly processRecoveryResetFailed: string
+  readonly moduleFallbackLockTitle: string
+  readonly moduleFallbackLockAction: string
+  readonly moduleFallbackLockState: (state: string, ownerPid?: number) => string
+  readonly moduleFallbackLockInspectFailed: string
+  readonly moduleFallbackLockConfirm: (ownerPid: number) => string
+  readonly moduleFallbackLockClearing: (ownerPid: number) => string
+  readonly moduleFallbackLockRestarting: string
+  readonly moduleFallbackLockClearFailed: string
 }
 
 const chineseCopy: RecoveryCopy = {
@@ -658,7 +724,9 @@ const chineseCopy: RecoveryCopy = {
   pluginSource: source => ({ registry: '在线安装', bundled: '桌面预装', local: '本地来源', other: '其他来源' })[source],
   pluginAttention: code => code === undefined ? '诊断异常' : `诊断异常 · ${code}`,
   protectedComponents: count => `核心组件 ${count} 项 · 已锁定保护`, uninstall: '卸载',
-  uninstallConfirm: name => `确认卸载 ${name}？将先暂停 Harness，并为本次变更创建插件快照。`,
+  uninstallConfirm: (name, attributed) => attributed
+    ? `诊断已指向 ${name}。确认卸载？将先暂停 Harness，并为本次变更创建插件快照。`
+    : `${name} 未被本次诊断标记为异常。仍要卸载吗？将先暂停 Harness，并为本次变更创建插件快照。`,
   uninstalling: name => `正在卸载 ${name}…`, uninstalled: name => `${name} 已卸载。你可以继续处理其他插件，或点击“继续”重新启动。`, uninstallFailed: '插件卸载失败',
   snapshotLoading: '正在读取快照…', lastSuccessful: '最近成功启动', automaticSnapshot: '自动快照', noSnapshots: '没有可用的插件快照',
   snapshotConfirm: '将恢复所选插件快照。会话、凭据和插件配置不会改变。是否继续？', snapshotFailed: '插件快照恢复失败', snapshotRunning: '正在校验、恢复并重新启动…', snapshotNeedsNetwork: '本地缓存不完整，原状态已恢复。允许联网后可重试。', snapshotRolledBack: '所选快照未能安全启动，已自动恢复到操作前状态。',
@@ -666,6 +734,16 @@ const chineseCopy: RecoveryCopy = {
   exported: '诊断报告已导出', exportFailed: '诊断报告导出失败',
   processRecoveryResetConfirm: '仅重置后台进程恢复记录并重新启动，不会删除会话、配置、插件或凭据。是否继续？',
   processRecoveryResetting: '后台进程恢复记录已隔离，正在重新启动…', processRecoveryResetFailed: '无法重置后台进程恢复记录',
+  moduleFallbackLockTitle: '共享依赖写锁', moduleFallbackLockAction: '确认进程已死亡后清理锁并重试',
+  moduleFallbackLockState: (state, ownerPid) => state === 'dead'
+    ? `持锁 PID ${ownerPid ?? '未知'} 已死亡，可以安全清理这一处锁。`
+    : state === 'alive' ? `持锁 PID ${ownerPid ?? '未知'} 仍在运行。请先关闭对应进程，页面会自动重新检查。`
+      : state === 'unknown' ? `无法确认持锁 PID ${ownerPid ?? '未知'} 是否已死亡，因此不会清理。`
+        : state === 'missing' ? '写锁已经不存在，可以直接重新尝试启动。'
+          : '写锁内容无效，无法可靠确认持锁进程，因此不会自动清理。',
+  moduleFallbackLockInspectFailed: '无法检查共享依赖写锁',
+  moduleFallbackLockConfirm: ownerPid => `系统已确认持锁 PID ${ownerPid} 死亡。仅删除 profiles/node_modules.lock 并重新启动，不修改插件、会话或凭据。是否继续？`,
+  moduleFallbackLockClearing: ownerPid => `正在再次确认 PID ${ownerPid} 并清理失效锁…`, moduleFallbackLockRestarting: '失效锁已清理，正在重新启动…', moduleFallbackLockClearFailed: '无法安全清理共享依赖写锁',
 }
 
 const englishCopy: RecoveryCopy = {
@@ -685,7 +763,9 @@ const englishCopy: RecoveryCopy = {
   pluginSource: source => ({ registry: 'Online install', bundled: 'Desktop preset', local: 'Local source', other: 'Other source' })[source],
   pluginAttention: code => code === undefined ? 'Diagnostic issue' : `Diagnostic issue · ${code}`,
   protectedComponents: count => `${count} core components · protected`, uninstall: 'Uninstall',
-  uninstallConfirm: name => `Uninstall ${name}? Harness will pause first and a plugin snapshot will protect this change.`,
+  uninstallConfirm: (name, attributed) => attributed
+    ? `Diagnostics identified ${name}. Uninstall it? Harness will pause first and a plugin snapshot will protect this change.`
+    : `${name} was not identified by this diagnostic. Uninstall it anyway? Harness will pause first and a plugin snapshot will protect this change.`,
   uninstalling: name => `Uninstalling ${name}…`, uninstalled: name => `${name} was removed. Continue with other plugins, or choose Continue to restart.`, uninstallFailed: 'Plugin uninstall failed',
   snapshotLoading: 'Loading snapshots…', lastSuccessful: 'Last successful startup', automaticSnapshot: 'Automatic snapshot', noSnapshots: 'No plugin snapshots are available',
   snapshotConfirm: 'Restore the selected plugin snapshot? Sessions, credentials, and plugin configuration will not change.', snapshotFailed: 'Plugin snapshot restore failed', snapshotRunning: 'Verifying, restoring, and restarting…', snapshotNeedsNetwork: 'The local cache is incomplete and the prior state was restored. Allow network access to retry.', snapshotRolledBack: 'The selected snapshot did not start safely, so the pre-restore state was restored.',
@@ -693,6 +773,16 @@ const englishCopy: RecoveryCopy = {
   exported: 'Diagnostic report exported', exportFailed: 'Could not export the diagnostic report',
   processRecoveryResetConfirm: 'Reset only the background-process recovery record and restart? Sessions, settings, plugins, and credentials are not removed.',
   processRecoveryResetting: 'The background-process recovery record was quarantined. Restarting…', processRecoveryResetFailed: 'Could not reset the background-process recovery record',
+  moduleFallbackLockTitle: 'Shared dependency writer lock', moduleFallbackLockAction: 'Verify the process is dead, clear the lock, and retry',
+  moduleFallbackLockState: (state, ownerPid) => state === 'dead'
+    ? `Owning PID ${ownerPid ?? 'unknown'} is dead. This one lock can be removed safely.`
+    : state === 'alive' ? `Owning PID ${ownerPid ?? 'unknown'} is still running. Close that process; this page will check again automatically.`
+      : state === 'unknown' ? `The operating system cannot confirm whether PID ${ownerPid ?? 'unknown'} is dead, so the lock will not be removed.`
+        : state === 'missing' ? 'The writer lock no longer exists. You can retry startup directly.'
+          : 'The writer lock is invalid, so its owner cannot be verified and it will not be removed automatically.',
+  moduleFallbackLockInspectFailed: 'Could not inspect the shared dependency writer lock',
+  moduleFallbackLockConfirm: ownerPid => `The operating system confirmed that owning PID ${ownerPid} is dead. Only profiles/node_modules.lock will be removed before startup is retried; plugins, sessions, and credentials are unchanged. Continue?`,
+  moduleFallbackLockClearing: ownerPid => `Checking PID ${ownerPid} again and removing the stale lock…`, moduleFallbackLockRestarting: 'The stale lock was removed; retrying startup…', moduleFallbackLockClearFailed: 'Could not safely remove the shared dependency writer lock',
 }
 
 function localizeRecoveryWorkspace(copy: RecoveryCopy): void {
