@@ -25,7 +25,7 @@ function stubAgent(session: Session): Agent {
   return { id: session.id, session, status: 'idle' } as unknown as Agent
 }
 
-function roster(ids: readonly string[]): unknown {
+function roster(ids: readonly string[], broken: readonly string[] = []): unknown {
   const presetOf = (id: string): object => ({
     id,
     trust: 'system',
@@ -44,11 +44,29 @@ function roster(ids: readonly string[]): unknown {
       }
       return Promise.resolve(presetOf(wanted))
     },
+    prepare: async (id?: string) => {
+      const wanted = id ?? ids[0] ?? ''
+      if (!ids.includes(wanted)) {
+        throw new RemoteError(
+          'agent-preset/not-found',
+          `agent-presets: preset "${wanted}" not found (available: ${ids.join(', ') || 'none'})`,
+          { agentPreset: wanted, available: ids },
+        )
+      }
+      if (broken.includes(wanted)) {
+        throw new RemoteError(
+          'agent-preset/invalid',
+          `agent-presets: preset "${wanted}" failed to mount: invalid composition`,
+          { agentPreset: wanted, reason: 'invalid composition' },
+        )
+      }
+      return presetOf(wanted)
+    },
     mount: (_ctx: Context, id?: string) => Promise.resolve(presetOf(id ?? ids[0] ?? '')),
   }
 }
 
-async function harness(presets?: readonly string[]) {
+async function harness(presets?: readonly string[], broken: readonly string[] = []) {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-session-preset-')))
   tempDirs.push(cwd)
   const ctx = new Context()
@@ -56,7 +74,7 @@ async function harness(presets?: readonly string[]) {
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
   if (presets !== undefined) {
-    ctx.provide('agentPresets', roster(presets) as never)
+    ctx.provide('agentPresets', roster(presets, broken) as never)
   }
 
   const factory: AgentFactory = {
@@ -100,6 +118,24 @@ describe('session.create Agent preset identity', () => {
     await remote.create({ sessionId: SessionId('s2') })
 
     expect(ctx.sessions.get(SessionId('s2'))?.header.agentPreset).toBe('standard')
+  })
+
+  it('uses the shipped standard preset when the configured default cannot mount', async () => {
+    const { ctx, remote } = await harness(['data-agent', 'standard'], ['data-agent'])
+
+    const response = await remote.create({ sessionId: SessionId('fallback') })
+
+    expect(response).toMatchObject({ ok: true, value: { agentPreset: 'standard' } })
+    expect(ctx.sessions.get(SessionId('fallback'))?.header.agentPreset).toBe('standard')
+  })
+
+  it('does not replace an explicitly requested broken preset', async () => {
+    const { ctx, remote } = await harness(['data-agent', 'standard'], ['data-agent'])
+
+    const response = await remote.create({ sessionId: SessionId('explicit'), agentPreset: 'data-agent' })
+
+    expect(response).toMatchObject({ ok: false, error: { code: 'agent-preset/invalid' } })
+    expect(ctx.sessions.get(SessionId('explicit'))).toBeUndefined()
   })
 
   it('rejects an unknown preset', async () => {

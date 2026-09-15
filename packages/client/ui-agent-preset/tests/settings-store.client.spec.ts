@@ -176,6 +176,20 @@ describe('the agent-preset roster store', () => {
     expect(state.error).toBe('host down')
   })
 
+  it('surfaces a thrown roster transport failure and leaves loading state', async () => {
+    const controller = derivedController({
+      remote: {
+        agentPresets: {
+          list: () => Promise.reject(new Error('connection closed')),
+        },
+      },
+    } as unknown as ClientContext)
+
+    await controller.load()
+
+    expect(controller.store.getSnapshot()).toMatchObject({ status: 'error', error: 'connection closed' })
+  })
+
   it('ignores a load while one is already in flight', async () => {
     const writes: Recorded[] = []
     const controller = derivedController(fakeApi(
@@ -211,6 +225,7 @@ describe('the new-session chip controller', () => {
                 error: new RemoteError(options.failListCode ?? 'gateway/internal', options.failList, {}),
               })
           },
+          preflight: (agentPreset: string) => Promise.resolve({ ok: true as const, value: agentPreset }),
           select: (agentId: SessionId, agentPreset: string) => {
             options.writes?.push({ ns: 'select', ops: agentPreset })
             return Promise.resolve(options.failSelect === undefined

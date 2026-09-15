@@ -25,6 +25,7 @@ import type { Config } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
+const CLI_ROOT = join(FIXTURES, '../../../../../apps/cli')
 const ROOTS = [
   { path: join(FIXTURES, 'system'), trust: 'system' as const },
   { path: join(FIXTURES, 'user'), trust: 'user' as const },
@@ -72,9 +73,10 @@ function reasonOf(failure: RemoteFailure): string {
 
 async function harness(
   roster: Config = { default: 'standard', roots: ROOTS, includeShippedRoot: false, includeUserRoot: false },
+  harnessBase = FIXTURES,
 ): Promise<Context> {
   const ctx = new Context()
-  ctx.baseUrl = pathToFileURL(FIXTURES).href + '/'
+  ctx.baseUrl = pathToFileURL(harnessBase).href + '/'
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   await ctx.plugin(LlmRuntime)
@@ -143,6 +145,90 @@ describe('the roster a client reads', () => {
     // The directory still occupies the id, so a surface must be able to show
     // and delete it; offering it for selection is what the reason prevents.
     expect(roster.presets.find(row => row.id === 'damaged')?.broken).toEqual(expect.any(String))
+  })
+
+  it('preflights runtime plugin failures and retains the reason on the roster', async () => {
+    const ctx = await harness()
+
+    const failure = await remoteFailure(
+      ctx.agentPresets.preflight('broken', new AbortController().signal),
+    )
+    const roster = await ctx.agentPresets.remoteExportList()
+
+    expect(failure).toMatchObject({
+      code: 'agent-preset/invalid',
+      details: { agentPreset: 'broken' },
+    })
+    expect(roster.presets.find(row => row.id === 'broken')?.broken)
+      .toContain('this row refuses to apply')
+  })
+
+  it('retries a runtime-broken preset after its composition changes', async () => {
+    const userRoot = await mkdtemp(join(tmpdir(), 'dsh-preset-remote-'))
+    roots.push(userRoot)
+    const presetRoot = join(userRoot, 'repaired')
+    const composition = join(presetRoot, COMPOSITION_FILE)
+    await mkdir(presetRoot, { recursive: true })
+    await writeFile(
+      composition,
+      `- id: refuses\n  name: ${join(FIXTURES, 'plugins', 'throws.js')}\n  config:\n    message: stale config\n`,
+    )
+    const ctx = await harness({
+      default: 'repaired',
+      roots: [{ path: userRoot, trust: 'user' }],
+      includeShippedRoot: false,
+      includeUserRoot: false,
+    })
+
+    await expect(ctx.agentPresets.preflight('repaired', new AbortController().signal))
+      .rejects.toThrow(/stale config/)
+    expect((await ctx.agentPresets.remoteExportList()).presets[0]?.broken).toContain('stale config')
+
+    await writeFile(
+      composition,
+      `- id: repaired\n  name: ${join(FIXTURES, 'plugins', 'contribute.js')}\n  config:\n    tool: repaired\n`,
+    )
+
+    await expect(ctx.agentPresets.preflight('repaired', new AbortController().signal))
+      .resolves.toBe('repaired')
+    expect((await ctx.agentPresets.remoteExportList()).presets[0]?.broken).toBeUndefined()
+  })
+
+  it('rejects a legacy persona row before a Session uses the preset', async () => {
+    const userRoot = await mkdtemp(join(tmpdir(), 'dsh-preset-remote-'))
+    roots.push(userRoot)
+    await mkdir(join(userRoot, 'legacy-persona'), { recursive: true })
+    await writeFile(
+      join(userRoot, 'legacy-persona', COMPOSITION_FILE),
+      '- id: persona\n  name: \'@deepseek-ai/dsh-persona\'\n  config:\n    text: legacy persona\n',
+    )
+    const ctx = await harness({
+      default: 'standard',
+      roots: [{ path: join(FIXTURES, 'system'), trust: 'system' }, { path: userRoot, trust: 'user' }],
+      includeShippedRoot: false,
+      includeUserRoot: false,
+    }, CLI_ROOT)
+
+    const failure = await remoteFailure(
+      ctx.agentPresets.preflight('legacy-persona', new AbortController().signal),
+    )
+
+    expect(failure).toMatchObject({
+      code: 'agent-preset/invalid',
+      details: { agentPreset: 'legacy-persona' },
+    })
+    expect(reasonOf(failure)).toContain('prefix')
+    expect((await ctx.agentPresets.remoteExportList()).presets
+      .find(row => row.id === 'legacy-persona')?.broken).toContain('prefix')
+  })
+
+  it('refuses an empty preflight id before resolving it', async () => {
+    const ctx = await harness()
+    const resolve = vi.spyOn(ctx.agentPresets, 'resolve')
+
+    await expect(ctx.agentPresets.preflight('', new AbortController().signal))
+      .rejects.toMatchObject({ code: 'gateway/bad-request' })
+    expect(resolve).not.toHaveBeenCalled()
   })
 
   it('answers an empty roster with nothing authorable', async () => {

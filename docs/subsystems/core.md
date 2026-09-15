@@ -547,6 +547,23 @@ async compositionInventory(): Promise<AgentPresetComposition[]>
 async resolve(id?: string): Promise<AgentPreset>
 
 /**
+ * Resolve and mount one preset without creating or changing a Session.
+ * A runtime mount failure remains on the roster until the composition file
+ * changes, and the later Agent mount reuses a successful standing mount.
+ * @param id - preset id, or the configured default when omitted.
+ * @returns the resolved preset after its standing composition is usable.
+ */
+async prepare(id?: string): Promise<AgentPreset>
+
+/**
+ * Validate one picker choice before a Session is created.
+ * @param agentPreset - preset selected by the user.
+ * @param signal - caller cancellation while validation is in flight.
+ * @returns the validated preset id.
+ */
+@Remote('preflight') async preflight(agentPreset: string, signal: AbortSignal): Promise<string>
+
+/**
  * Compose one agent from a preset: ensure the preset's standing mount, then
  * parent the agent's scope key to it so the mount's registrations and
  * listeners cover this agent.

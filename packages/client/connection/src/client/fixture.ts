@@ -2750,6 +2750,18 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         },
       }
     },
+    preflight(agentPreset: string): RpcResult<string> {
+      return fixturePresets.has(agentPreset)
+        ? { ok: true, value: agentPreset }
+        : {
+          ok: false,
+          error: {
+            code: 'agent-preset/not-found',
+            message: `unknown agent preset "${agentPreset}"`,
+            details: { agentPreset, available: [...fixturePresets.keys()] },
+          },
+        }
+    },
     select(_id: SessionId, agentPreset: string): RpcResult<string> {
       fixtureDefaultPreset = agentPreset
       return { ok: true, value: agentPreset }
@@ -3864,6 +3876,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         case 'goals/complete': return Promise.resolve(goalRemotes.complete(sessionId, args.ref as FxGoalRef))
         case 'goals/clear': return Promise.resolve(goalRemotes.clear(sessionId, args.ref as FxGoalRef))
         case 'agentPresets/list': return Promise.resolve(presetRemotes.list())
+        case 'agentPresets/preflight': return Promise.resolve(presetRemotes.preflight(args.agentPreset as string))
         case 'agentPresets/select': return Promise.resolve(presetRemotes.select(sessionId, args.agentPreset as string))
         case 'agentPresets/read': return Promise.resolve(presetRemotes.read(args.agentPreset as string))
         case 'agentPresets/copy': return Promise.resolve(presetRemotes.copy(args.from as string, args.id as string))
