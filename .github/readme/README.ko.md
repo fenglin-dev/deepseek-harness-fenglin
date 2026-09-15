@@ -8,9 +8,9 @@
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-rc.1.1이 출시되었습니다. 다운로드해 사용해 보세요](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1).** 이 유지보수 릴리스는 대화형 시작 복구 작업 공간과 확장된 플러그인 진단·격리를 추가하고, 두 번째 시작 지연과 Profile 잠금 문제를 해결합니다. 데스크톱과 브라우저 간 양방향 전환, 권한 확인, 선택한 텍스트 메뉴의 빠른 재시작, Windows 사용자 지정 ICO 선명도도 개선했습니다.
+> **[v0.1.5-rc.2.2가 출시되었습니다](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2).** 이번 유지보수 업데이트는 덮어쓰기 설치 중 번들 플러그인의 기록 버전과 실제 설치 버전이 어긋나는 문제를 수정했습니다. 또한 첫 실행용 사전 구성 플러그인 배포, Windows 업그레이드 정리, 보관된 세션 복원, 외부 도구 설치 진행률, 데이터 디렉터리 식별 및 진단 복구를 개선합니다.
 >
-> 이 버전은 Release Candidate 프리릴리스입니다. 업그레이드 전에 중요한 설정을 백업하고, 문제를 보고할 때 관련 로그나 진단 보고서를 첨부해 주세요.
+> 버전 이름에는 `rc`가 남아 있지만 GitHub에서는 일반 Release로 게시되었습니다. 업그레이드 전에 중요한 설정을 백업하고, 문제를 보고할 때 관련 로그나 진단 보고서를 첨부해 주세요.
 
 Open DeepSeek Harness Desktop는 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)를 기반으로 하는 독립적인 커뮤니티 배포판입니다. 설치 프로그램에 Node.js, pnpm, Harness 런타임이 포함되어 모델 설정, 코딩 세션, 실행 기록, 플러그인과 Skill, 외부 코딩 도구 및 IM 봇을 별도 개발 환경 없이 사용할 수 있습니다.
 
@@ -43,11 +43,11 @@ Open DeepSeek Harness Desktop는 [DeepSeek Harness](https://github.com/deepseek-
 
 <p align="center"><img src="../../assets/readme/data-home-import-en.png" width="900" alt="공식 DSH 설정을 독립 데스크톱 환경으로 가져오기"><br><sub>지원 데이터만 복사하고 원본 환경은 유지합니다</sub></p>
 
-### 이 설정을 직접 사용
+### 커뮤니티 데스크톱 설정 재사용
 
-공식 ~/.dsh 또는 직접 선택한 지원 디렉터리를 복사 없이 사용합니다. 설정, 자격 증명, 세션, Agent 프리셋, Skill, Profile, 플러그인이 공유되며 Desktop과 공식 CLI/Web의 변경은 같은 데이터에 반영됩니다.
+공식 ~/.dsh는 독립 환경으로만 가져올 수 있습니다. 이 앱의 제품 식별 파일이나 유효한 이전 데스크톱 설정 기록이 있는 디렉터리는 직접 재사용할 수 있습니다. 인식 가능한 DSH 데이터는 있지만 두 기록이 모두 없는 이전 폴더라면, 앱이 이전 Open DeepSeek Harness Desktop에서 만든 데이터인지 확인한 뒤 계속할 수 있습니다. 손상되었거나 명백히 다른 제품의 식별 정보는 호환되지 않는 Profile이나 플러그인을 알림 없이 불러오지 않도록 계속 거부됩니다.
 
-<p align="center"><img src="../../assets/readme/data-home-reuse-en.png" width="900" alt="기존 DSH 설정을 데스크톱에서 직접 사용"><br><sub>선택한 디렉터리와 모든 지원 데이터를 공유합니다</sub></p>
+<p align="center"><img src="../../assets/readme/data-home-reuse-en.png" width="900" alt="식별된 커뮤니티 데스크톱 설정 재사용"><br><sub>제품 식별을 확인한 뒤 커뮤니티 설정을 재사용합니다</sub></p>
 
 ### 새로 시작
 
@@ -168,9 +168,9 @@ Cordis Context, Service, Symbol은 버전 번호뿐 아니라 물리 모듈의 �
 
 <p align="center"><img src="../../assets/readme/preset-im-robot-zh.png" width="900" alt="dsh-im으로 WeChat 등 IM 봇 연결"><br><sub>IM 봇: WeChat, Feishu, DingTalk, WeCom, QQ, Slack, Telegram, Discord, WhatsApp 연결</sub></p>
 
-설치 프로그램의 로컬 버전은 오프라인 준비에 유용하지만 시장 업데이트를 직접 받지 않습니다. 온라인 상태가 되면 **플러그인 시장 → 설치됨**에서 각 프리셋의 **복원**을 눌러 온라인 버전으로 교체하는 것을 권장합니다. 복원은 자동으로 되돌릴 수 없으므로 고정된 오프라인 버전이 더 중요하면 그대로 유지할 수 있습니다.
+덮어쓰기 설치에서는 기록, 의존성 선언, Bundle 등록 및 실제 패키지 버전을 대조합니다. 데스크톱이 관리하는 이전 버전만 트랜잭션으로 갱신하며, 사용자의 최신 버전, 사용자 지정 소스, 명시적 제거 및 스냅샷 버전 고정은 유지합니다. 온라인 registry 소스로 전환하려는 경우에만 **복원**을 명시적으로 선택합니다.
 
-<p align="center"><img src="../../assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="로컬 프리셋을 온라인 버전으로 복원"><br><sub>권장: 온라인에서 복원을 눌러 정상 업데이트 검사를 받는 온라인 버전으로 전환</sub></p>
+<p align="center"><img src="../../assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="로컬 프리셋을 온라인 버전으로 복원"><br><sub>온라인 registry 소스로 전환할 때 복원을 사용합니다</sub></p>
 
 ### 설정 탐색 사용자 지정
 
@@ -186,7 +186,7 @@ Cordis Context, Service, Symbol은 버전 번호뿐 아니라 물리 모듈의 �
 
 ## 다운로드 및 설치
 
-[GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1)에서 운영체제에 맞는 파일을 다운로드하세요.
+[GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2)에서 운영체제에 맞는 파일을 다운로드하세요.
 
 | 운영체제 | 아키텍처 | 패키지 |
 | --- | --- | --- |

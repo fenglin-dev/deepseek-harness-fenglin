@@ -12,9 +12,9 @@ Languages: [简体中文](../../README.md) · English · [日本語](README.ja.m
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-rc.1.1 is available—download it and give it a try](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1).** This maintenance release adds an interactive startup-recovery workspace and broader plugin diagnosis and quarantine, addresses second-launch stalls and Profile locking, and improves bidirectional browser switching, permission consent, Quick Restart from selected text, and Windows custom ICO clarity.
+> **[v0.1.5-rc.2.2 is now available](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2).** This maintenance update fixes bundled-plugin markers drifting from the versions actually installed during in-place upgrades. It also improves prebuilt first-start plugin deployment, Windows upgrade cleanup, archived-session recovery, external-tool installation progress, data-directory identification, and diagnostic recovery.
 >
-> This is a Release Candidate prerelease. Back up important configuration before upgrading, and include relevant logs or diagnostic reports when reporting problems.
+> Although the version name retains `rc`, it is published as a regular GitHub Release. Back up important configuration before upgrading, and include relevant logs or diagnostic reports when reporting problems.
 
 <p align="center">
   <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="Downloads"></a>
@@ -45,6 +45,8 @@ The desktop client includes the complete DeepSeek Harness conversation experienc
 
 Question history uses readable question-and-answer cards with completed, cancelled, and interrupted states. Switching sessions preserves an unsubmitted question card. While a session is still running, users can continue typing; the primary action becomes Send and the new message enters the send queue.
 
+Archiving a session does not delete its contents. Open **Settings → Archived sessions** to search and filter by Workspace, restore one session or restore them all. Restored sessions return to their original Workspace with their message history intact.
+
 Images appear immediately while compression and upload continue in the background. Long screenshots balance size and clarity, image usage participates in context-compaction accounting, and the trace can display images from users, assistants, and tool results. Local-filesystem mode can locate uploaded images, and editing adjacent text does not invalidate file or session references in the composer.
 
 ## First launch and independent data environments
@@ -63,14 +65,16 @@ Profiles, `node_modules`, lockfiles, plugin runtimes, bundled-plugin markers, qu
   <sub>Import into an independent environment: copy supported data and leave the source unchanged</sub>
 </p>
 
-### Use this configuration directly
+### Reuse a community desktop configuration
 
-Desktop can use the official `~/.dsh` directory, or another supported directory selected manually, without making a second copy. Settings, credentials, sessions, Agent presets, Skills, Profiles, and plugins are shared; later changes from Desktop or the official CLI/Web environment affect the same data.
+The official `~/.dsh` directory can only be imported into an independent environment; it is no longer offered as a shared live directory. Open DeepSeek Harness Desktop writes a product-identity file when it creates or adopts a data directory. A community configuration carrying that identity or a valid legacy desktop record can be reused directly. When recognizable DSH data has neither record, the app asks the user to confirm that it came from an older Open DeepSeek Harness Desktop release before continuing. Malformed or explicitly foreign identity records remain rejected to avoid silently loading an incompatible Profile, plugin set, or desktop state.
+
+After the identity check passes, settings, credentials, sessions, Agent presets, Skills, Profiles, and plugins are shared by Open DeepSeek Harness Desktop instances using that directory.
 
 <p align="center">
-  <img src="../../assets/readme/data-home-reuse-en.png" width="900" alt="Use an existing DSH configuration directly from Desktop">
+  <img src="../../assets/readme/data-home-reuse-en.png" width="900" alt="Reuse an identified Open DeepSeek Harness Desktop configuration">
   <br>
-  <sub>Use this configuration directly: Desktop and the selected directory share data</sub>
+  <sub>Reuse a community desktop configuration after its product identity is verified</sub>
 </p>
 
 ### Start fresh
@@ -255,11 +259,13 @@ Electron is more than a wrapper around a Web page. The desktop host supervises t
 
 The tray can reopen the window, reveal the log, toggle notifications and launch at login, and quit safely. Abnormal exits, repeated startup failures, and recovery produce throttled native notifications. Every bridge is capability-scoped: Web content may manage these desktop preferences, reveal the fixed `harness.log`, or query this project's Releases, but it receives no generic shell, filesystem, or arbitrary-URL capability.
 
+On Windows, uninstall can remove only the application or also delete production configuration, sessions, plugins, and caches to reclaim space or clear persistent faults. Data deletion is irreversible and intentionally leaves development data untouched.
+
 On Windows and Linux, the native titlebar and Harness content use separate views. A plugin's `100vh`, fixed positioning, portals, and high-level overlays remain inside the content view and cannot cover the minimize, maximize, or close controls. macOS retains native window behavior.
 
 ### Customizable Settings navigation
 
-The Settings sidebar has its own scroll region, so plugin-provided sections remain reachable when the list exceeds the dialog height. Users can drag Settings sections into a preferred order with placeholder and automatic-scroll feedback. The order is stored locally and merges predictably when plugins are installed or removed. Configuration files, logs, and other supported paths use the desktop host to open the platform file manager.
+The Settings sidebar has its own scroll region, so plugin-provided sections remain reachable when the list exceeds the dialog height. Users can drag Settings sections into a preferred order with placeholder and automatic-scroll feedback. The order is stored locally and merges predictably when plugins are installed or removed. Separate **Open log directory** and **Open configuration file** actions appear in the Settings header; other supported paths also use the desktop host to open the platform file manager.
 
 <p align="center">
   <img src="../../assets/readme/settings-navigation-reorder-zh.png" width="900" alt="Drag the three-line handles to reorder the Settings sidebar">
@@ -273,7 +279,7 @@ The Electron host grants sanitized clipboard-write permission to the supervised 
 
 ### Preset plugins
 
-The installer carries integrity-checked archives for seven startup presets: Plugin Marketplace, IM connections, Skill picker, Better Sidebar, Pocket, `@ychris12138/dsh-usage-stats`, and `dsh-smooth-stream`. Usage Stats adds token usage, provider accounts, session cost estimates, budgets, and exports; Smooth Stream adds fluid streaming rendering and scrolling for Markdown, code blocks, tables, and tool results. `dsh-font` and the minimal offline `@dsh-diagnostic-lab/scoped-loader-mismatch`, `@dsh-diagnostic-lab/loader-dependency-unavailable`, and `@dsh-diagnostic-lab/loader-export-unavailable` packages are supplied only as Diagnostics Lab samples. Initial preparation can use the local archives without fetching the plugin packages on demand, while package and source identities remain available for compatible online update discovery. They remain ordinary Harness dependencies: users can uninstall them, and the desktop app respects that decision instead of silently restoring them.
+The installer carries integrity-checked archives for seven startup presets and a complete platform-specific prebuilt Profile: Plugin Marketplace, IM connections, Skill picker, Better Sidebar, Pocket, `@ychris12138/dsh-usage-stats`, and `dsh-smooth-stream`. First setup deploys the verified template transactionally, rewrites paths, and checks every preset before opening the main UI; it neither downloads nor installs each preset separately. The archives remain available for repair and bounded compatibility fallback. They remain ordinary Harness dependencies that users can uninstall.
 
 #### Preset plugin acknowledgements
 
@@ -293,13 +299,15 @@ Thank you to the authors and maintainers of [`dshmarket`](https://github.com/dsh
 
 > [!TIP]
 >
-> First startup uses the local plugin archives carried by the installer. They are useful for offline preparation, but a local source does not follow marketplace updates directly. Once online, open **Plugin Marketplace → Installed** and choose **Restore** for each preset: the client removes the local version and reinstalls it from the online source, after which normal update checks can deliver new versions promptly. Restore cannot roll back automatically; keep the local version if a fixed offline package is preferable.
+> During an in-place upgrade, the client reconciles the seed record, dependency declaration, Bundle registration, and actual package version. Older desktop-managed archives and registry plugins matching verified historical preset versions are upgraded transactionally. Newer user versions, custom sources, explicit uninstall records, and snapshot version holds are preserved, and plugins are never downgraded.
 
 <p align="center">
   <img src="../../assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="Restore bundled local plugins as online plugins in the marketplace">
   <br>
-  <sub>Recommended after going online: restore each local preset as an online package that can receive update checks</sub>
+  <sub>Use Restore explicitly when you want to switch a preset to its online registry source</sub>
 </p>
+
+Schema 4 seed markers record the handled installer version, the actual installed version, state, and ownership separately. Diagnostics shows both recorded and actual versions when they drift and offers a guarded **Restore bundled version** action; a successful command is not reported as an upgrade until the Profile transaction commits.
 
 ### Dependency safety before plugin execution
 
@@ -314,7 +322,9 @@ This capability must belong to the desktop client's boot layer rather than anoth
 
 ### User-triggered official Codex and Claude Code connections
 
-Platform installers carry neither the official DeepSeek Harness [`@deepseek-ai/dsh-subagent-codex`](../../packages/subagent/subagent-codex/README.md) nor [`@deepseek-ai/dsh-subagent-claude-code`](../../packages/subagent/subagent-claude-code/README.md) Bundle. Onboarding and **Settings → External tools** expose explicit install actions; only after the user clicks one does the desktop client download that exact official package and its platform dependencies from npm. The action therefore requires a network connection, while the packaged runtime still supplies Node and pnpm so no system installation is required. Both connectors remain removable, and restart or upgrade never silently restores them.
+Platform installers carry neither the official DeepSeek Harness [`@deepseek-ai/dsh-subagent-codex`](../../packages/subagent/subagent-codex/README.md) nor [`@deepseek-ai/dsh-subagent-claude-code`](../../packages/subagent/subagent-claude-code/README.md) Bundle. Onboarding and **Settings → External tools** expose explicit install actions; only after the user clicks one does the desktop client download the reviewed package and platform dependencies from npm. The same page can install the community-maintained `dsh-workbuddy-connect@0.5.0` connector for an already signed-in WorkBuddy or WorkBuddy AI desktop app. None of these packages is silently restored after removal.
+
+The installer view reports resolution, download, and import progress and can show sanitized live output. Pause ends the current package-manager transaction safely and Resume reuses pnpm's cache; Stop leaves an explicit stopped state for a fresh retry. Closing the progress view does not cancel the operation. Desktop-managed public npm downloads default to npmmirror while explicit registry, proxy, build-approval, and Profile transaction settings remain authoritative.
 
 The official connector currently treats every delegation as an independent, ephemeral Codex task. Codex uses the parent session's working directory and the login, model, MCP, and Skill configuration already present under the local `CODEX_HOME`, but it does not inherit the Harness conversation transcript or persist its temporary Codex thread into the Harness session. The parent receives only the final answer or a sanitized failure diagnostic; intermediate reasoning, tool traffic, raw stderr, and the complete workspace diff are not copied back.
 
@@ -326,7 +336,7 @@ The official connector currently treats every delegation as an independent, ephe
 
 ### External coding tools connection center
 
-**Settings → External tools** brings Codex, Claude Code, and placeholders for future Hermes and Trae Providers into one discoverable surface. After a supported Provider is connected, existing and new full-mode sessions receive its tool at the next safe turn boundary; an already running turn is never rewritten, and minimal mode stays intentionally lean. Disconnecting withdraws the tool without deleting Harness sessions or data owned by the external product.
+**Settings → External tools** brings Codex, Claude Code, WorkBuddy, and placeholders for future Hermes and Trae Providers into one discoverable surface. After a supported Provider is connected, existing and new full-mode sessions receive its tool at the next safe turn boundary; an already running turn is never rewritten, and minimal mode stays intentionally lean. Disconnecting withdraws the tool without deleting Harness sessions or data owned by the external product.
 
 <p align="center">
   <img src="../../assets/readme/codex-connection-center-zh.png" width="760" alt="Codex connection state in the external coding tools center">
@@ -364,9 +374,9 @@ Switch between system, light, dark, and eight product themes; pair them with eig
   </tr>
 </table>
 
-### Synchronized with DeepSeek Harness 0.1.2-rc.1
+### Synchronized with DeepSeek Harness 0.1.5-rc.2
 
-The desktop baseline uses upstream `dsh-v0.1.2-rc.1`. Conversation, model, subagent, image, and file capabilities come from the same Harness runtime, while the desktop distribution adds environment selection, plugin management, diagnostic protection, and system integration. File and Session references, concurrent `web_search`, reasoning passback, persistent PowerShell PTY, dynamic client packages, build Profiles, and branding slots remain available. Electron passes `--no-open` to `dsh web`, so starting the desktop app does not also open a system browser. Packaged macOS and Windows clients can open their active Harness in the browser and reveal the same desktop window through Return to Desktop.
+The desktop baseline uses upstream `dsh-v0.1.5-rc.2`. Conversation, model, subagent, image, and file capabilities come from the same Harness runtime, while the desktop distribution adds environment selection, plugin management, diagnostic protection, and system integration. Session V3, the right sidebar and file preview, external-tool lifecycle, and the newer plugin loader are integrated. Electron passes `--no-open` to `dsh web`, so starting the desktop app does not also open a system browser. Packaged macOS and Windows clients can open their active Harness in the browser and reveal the same desktop window through Return to Desktop.
 
 ## What you can do
 
@@ -379,12 +389,12 @@ The desktop baseline uses upstream `dsh-v0.1.2-rc.1`. Conversation, model, subag
 
 ## Installation
 
-Download builds only from this project's [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1) page. [`v0.1.2-rc.1.1`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1) provides the following artifacts:
+Download builds only from this project's [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) page. [`v0.1.5-rc.2.2`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) provides the following artifacts:
 
 | Platform | Architecture | Release package | Status |
 | --- | --- | --- | --- |
-| macOS | Apple Silicon (`arm64`) | `DeepSeek-Harness-macos-arm64.dmg` | Available |
-| macOS | Intel (`x64`) | `DeepSeek-Harness-macos-x64.dmg` | Available |
+| macOS | Apple Silicon (`arm64`) | `DeepSeek-Harness-macos-arm64.dmg` / `.zip` | Available |
+| macOS | Intel (`x64`) | `DeepSeek-Harness-macos-x64.dmg` / `.zip` | Available |
 | Windows | `x64` | `DeepSeek-Harness-windows-x64.exe` | Available |
 | Linux | Debian / Ubuntu (`x64`) | `DeepSeek-Harness-linux-x64.deb` | Available |
 | Linux | Fedora / RHEL (`x64`) | `DeepSeek-Harness-linux-x64.rpm` | Available |

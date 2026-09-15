@@ -8,9 +8,9 @@ Sprachen: [简体中文](../../README.md) · [English](README.en.md) · [日本�
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-rc.1.1 ist verfügbar – jetzt herunterladen und ausprobieren](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1).** Diese Wartungsversion ergänzt einen interaktiven Arbeitsbereich zur Startwiederherstellung sowie erweiterte Plugin-Diagnose und Quarantäne. Sie behebt Hänger beim zweiten Start und Profile-Sperren und verbessert den Wechsel zwischen Desktop und Browser, die Berechtigungsabfrage, den Schnellneustart für markierten Text und die Schärfe eigener Windows-ICO-Dateien.
+> **[v0.1.5-rc.2.2 ist verfügbar](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2).** Dieses Wartungsupdate behebt Abweichungen zwischen den gespeicherten Versionen vorinstallierter Plugins und den bei einer Aktualisierung tatsächlich installierten Versionen. Außerdem verbessert es die vorkonfigurierte Plugin-Bereitstellung beim ersten Start, die Windows-Upgrade-Bereinigung, die Wiederherstellung archivierter Sitzungen, den Installationsfortschritt externer Werkzeuge, die Erkennung des Datenverzeichnisses und die Diagnosewiederherstellung.
 >
-> Dies ist ein Release Candidate. Sichern Sie wichtige Konfigurationen vor dem Upgrade und fügen Sie Problemmeldungen relevante Protokolle oder Diagnoseberichte bei.
+> Obwohl der Versionsname weiterhin `rc` enthält, ist sie auf GitHub als reguläres Release veröffentlicht. Sichern Sie wichtige Konfigurationen vor dem Upgrade und fügen Sie Problemmeldungen relevante Protokolle oder Diagnoseberichte bei.
 
 Open DeepSeek Harness Desktop ist eine unabhängige, von der Community gepflegte Distribution von [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Die Installer enthalten Node.js, pnpm und die Harness-Laufzeit. Modelle, Coding-Sitzungen, Ausführungsspuren, Plugins, Skills, externe Coding-Werkzeuge und IM-Bots funktionieren daher ohne vorbereitete Entwicklungsumgebung.
 
@@ -43,11 +43,11 @@ Einstellungen, Zugangsdaten, Sitzungen, Workspace-Informationen, Agent-Presets, 
 
 <p align="center"><img src="../../assets/readme/data-home-import-en.png" width="900" alt="Offizielle DSH-Konfiguration in eine unabhängige Umgebung importieren"><br><sub>Unterstützte Daten kopieren und die Quelle unverändert lassen</sub></p>
 
-### Diese Konfiguration direkt verwenden
+### Eine Community-Desktop-Konfiguration wiederverwenden
 
-Verwendet ~/.dsh oder ein anderes kompatibles Verzeichnis ohne zweite Kopie. Einstellungen, Zugangsdaten, Sitzungen, Agent-Presets, Skills, Profiles und Plugins werden geteilt; Desktop und offizielles CLI/Web bearbeiten dieselben Daten.
+Das offizielle ~/.dsh kann nur in eine unabhängige Umgebung importiert werden. Verzeichnisse mit der Produktidentität dieser App oder einem gültigen Datensatz einer älteren Desktop-Version können direkt wiederverwendet werden. Enthält ein alter Ordner erkennbare DSH-Daten, aber keinen dieser Nachweise, fragt die App ausdrücklich, ob er aus einer älteren Open-DeepSeek-Harness-Desktop-Version stammt. Beschädigte oder eindeutig fremde Identitätsdaten werden weiterhin abgelehnt, damit keine inkompatiblen Profiles oder Plugins unbemerkt geladen werden.
 
-<p align="center"><img src="../../assets/readme/data-home-reuse-en.png" width="900" alt="Vorhandene DSH-Konfiguration direkt verwenden"><br><sub>Desktop teilt die Daten des ausgewählten Verzeichnisses</sub></p>
+<p align="center"><img src="../../assets/readme/data-home-reuse-en.png" width="900" alt="Identifizierte Community-Desktop-Konfiguration wiederverwenden"><br><sub>Wiederverwendung nach Prüfung der Produktidentität</sub></p>
 
 ### Neu beginnen
 
@@ -162,7 +162,7 @@ Vielen Dank an die Autoren und Maintainer von [`dshmarket`](https://github.com/d
 
 <p align="center"><img src="../../assets/readme/preset-im-robot-zh.png" width="900" alt="WeChat und weitere IM-Bots über dsh-im verbinden"><br><sub>IM-Bots: WeChat, Feishu, DingTalk, WeCom, QQ, Slack, Telegram, Discord und WhatsApp</sub></p>
 
-Die mitgelieferte lokale Version eignet sich zur Offline-Vorbereitung, folgt Markt-Updates aber nicht direkt. Sobald eine Verbindung besteht, unter **Plugin-Markt → Installiert** bei jedem Preset **Wiederherstellen** wählen, um es durch die Online-Version zu ersetzen. Die Wiederherstellung lässt sich nicht automatisch zurückrollen; eine feste lokale Version kann bei Bedarf beibehalten werden.
+Bei einem direkten Upgrade gleicht der Client Eintrag, Abhängigkeit, Bundle-Registrierung und tatsächliche Paketversion ab. Nur ältere, von Desktop verwaltete Versionen werden transaktional aktualisiert; neuere Benutzerversionen, benutzerdefinierte Quellen, ausdrückliche Deinstallationen und Snapshot-Fixierungen bleiben erhalten. **Wiederherstellen** wird nur benötigt, um ausdrücklich zur Online-Registry-Quelle zu wechseln.
 
 <p align="center"><img src="../../assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="Lokale Presets als Online-Versionen wiederherstellen"><br><sub>Empfohlen: online wiederherstellen und danach normale Update-Prüfungen erhalten</sub></p>
 
@@ -180,7 +180,7 @@ Unterstützt System, Hell, Dunkel und acht Produkt-Themes, acht integrierte Illu
 
 ## Download und Installation
 
-Laden Sie das passende Paket von [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1) herunter.
+Laden Sie das passende Paket von [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) herunter.
 
 | System | Architektur | Paket |
 | --- | --- | --- |

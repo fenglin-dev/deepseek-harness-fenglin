@@ -8,9 +8,9 @@ Langues : [简体中文](../../README.md) · [English](README.en.md) · [日本�
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-rc.1.1 est disponible : téléchargez-la et essayez-la](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1).** Cette version de maintenance ajoute un espace interactif de récupération au démarrage ainsi qu’un diagnostic et une mise en quarantaine plus complets des plugins. Elle corrige les blocages au deuxième lancement et les verrous de Profile, et améliore le passage bidirectionnel entre le bureau et le navigateur, le consentement aux autorisations, le redémarrage rapide depuis un texte sélectionné et la netteté des ICO personnalisées sous Windows.
+> **[v0.1.5-rc.2.2 est disponible](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2).** Cette mise à jour corrige l’écart entre les versions enregistrées des plugins prédéfinis et les versions réellement installées lors d’une mise à niveau sur place. Elle améliore aussi le déploiement préconstruit au premier démarrage, le nettoyage des mises à niveau Windows, la restauration des sessions archivées, la progression d’installation des outils externes, l’identification du dossier de données et la récupération par diagnostic.
 >
-> Il s’agit d’une version candidate. Sauvegardez les configurations importantes avant la mise à niveau et joignez les journaux ou rapports de diagnostic utiles à vos signalements.
+> Bien que le nom conserve `rc`, cette version est publiée comme une Release GitHub normale. Sauvegardez les configurations importantes avant la mise à niveau et joignez les journaux ou rapports de diagnostic utiles à vos signalements.
 
 Open DeepSeek Harness Desktop est une distribution indépendante et maintenue par la communauté de [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Les installateurs incluent Node.js, pnpm et le runtime Harness : configuration des modèles, sessions de code, traces d’exécution, plugins, Skills, outils de code externes et bots IM fonctionnent sans préparer un environnement de développement.
 
@@ -43,11 +43,11 @@ Les réglages, identifiants, sessions, espaces de travail, presets Agent, Skills
 
 <p align="center"><img src="../../assets/readme/data-home-import-en.png" width="900" alt="Importer une configuration DSH officielle dans un environnement indépendant"><br><sub>Copier les données prises en charge sans modifier la source</sub></p>
 
-### Utiliser directement cette configuration
+### Réutiliser une configuration du bureau communautaire
 
-Utilisez ~/.dsh ou un autre dossier compatible sans créer de copie. Réglages, identifiants, sessions, presets Agent, Skills, Profiles et plugins sont partagés ; Desktop et CLI/Web modifient les mêmes données.
+Le dossier officiel ~/.dsh peut uniquement être importé dans un environnement indépendant. Les dossiers portant l’identité de ce produit ou un enregistrement valide d’une ancienne version Desktop peuvent être réutilisés directement. Lorsqu’un ancien dossier contient des données DSH reconnaissables sans aucun de ces enregistrements, l’application demande de confirmer qu’il provient d’une ancienne version d’Open DeepSeek Harness Desktop. Les identités endommagées ou explicitement étrangères restent refusées afin d’éviter de charger silencieusement des Profiles ou plugins incompatibles.
 
-<p align="center"><img src="../../assets/readme/data-home-reuse-en.png" width="900" alt="Utiliser directement une configuration DSH existante"><br><sub>Desktop partage les données du dossier sélectionné</sub></p>
+<p align="center"><img src="../../assets/readme/data-home-reuse-en.png" width="900" alt="Réutiliser une configuration communautaire identifiée"><br><sub>Réutilisation après vérification de l’identité du produit</sub></p>
 
 ### Repartir de zéro
 
@@ -162,9 +162,9 @@ Merci aux auteurs et mainteneurs de [`dshmarket`](https://github.com/dsh-market/
 
 <p align="center"><img src="../../assets/readme/preset-im-robot-zh.png" width="900" alt="Connecter WeChat et d’autres bots IM avec dsh-im"><br><sub>Bots IM : WeChat, Feishu, DingTalk, WeCom, QQ, Slack, Telegram, Discord et WhatsApp</sub></p>
 
-La version locale intégrée facilite la préparation hors ligne, mais ne suit pas directement les mises à jour du marché. Une fois connecté, ouvrez **Marché des plugins → Installés** et utilisez **Restaurer** pour chaque preset afin de le remplacer par sa version en ligne. La restauration n’est pas automatiquement réversible ; conservez la version locale si un paquet hors ligne figé est préférable.
+Lors d’une mise à niveau sur place, le client compare l’enregistrement, la dépendance, le Bundle et la version réelle du paquet. Seules les anciennes versions gérées par Desktop sont mises à niveau de manière transactionnelle ; les versions utilisateur plus récentes, sources personnalisées, suppressions explicites et versions figées par instantané sont conservées. **Restaurer** sert uniquement à basculer explicitement vers la source registry en ligne.
 
-<p align="center"><img src="../../assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="Restaurer les presets locaux comme versions en ligne"><br><sub>Recommandé : restaurer en ligne pour participer aux vérifications normales de mise à jour</sub></p>
+<p align="center"><img src="../../assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="Restaurer les presets locaux comme versions en ligne"><br><sub>Utilisez Restaurer pour basculer vers la source registry en ligne</sub></p>
 
 ### Navigation des Réglages personnalisable
 
@@ -180,7 +180,7 @@ Modes système, clair, sombre, huit thèmes produit, huit illustrations intégr�
 
 ## Télécharger et installer
 
-Téléchargez le paquet adapté depuis [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1).
+Téléchargez le paquet adapté depuis [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2).
 
 | Système | Architecture | Paquet |
 | --- | --- | --- |

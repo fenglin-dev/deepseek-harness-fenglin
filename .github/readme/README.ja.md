@@ -12,9 +12,9 @@
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-rc.1.1 を公開しました。ぜひダウンロードしてお試しください](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1)。** このメンテナンス版では、対話式の起動復旧ワークスペースと拡張されたプラグイン診断・隔離を追加し、2 回目の起動停止と Profile ロックを修正しました。デスクトップとブラウザーの双方向切り替え、権限確認、選択テキストからのクイック再起動、Windows カスタム ICO の鮮明さも改善しています。
+> **[v0.1.5-rc.2.2 を公開しました](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2)。** 上書きインストール時に、プリセットプラグインの記録バージョンと実際のインストール版が一致しなくなる問題を修正しました。また、初回起動用の事前構築済みプラグイン展開、Windows のアップグレード時のクリーンアップ、アーカイブ済みセッションの復元、外部ツールのインストール進捗、データディレクトリの識別、診断からの復旧を改善しています。
 >
-> これは Release Candidate のプレリリースです。アップグレード前に重要な設定をバックアップし、問題を報告する際はログまたは診断レポートを添付してください。
+> バージョン名には `rc` が残っていますが、GitHub では通常の Release として公開しています。アップグレード前に重要な設定をバックアップし、問題を報告する際はログまたは診断レポートを添付してください。
 
 Open DeepSeek Harness Desktop は、[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) を基盤とする、コミュニティ運営の独立したデスクトップ配布版です。Node.js、pnpm、Harness ランタイムをインストーラーに同梱し、モデル設定、コーディングセッション、実行履歴、プラグイン、Skill、外部コーディングツール、IM ボットを一つのアプリで扱えます。
 
@@ -50,13 +50,13 @@ Open DeepSeek Harness Desktop は、[DeepSeek Harness](https://github.com/deepse
   <br><sub>独立環境へインポート：対応データのみをコピーし、元の環境を維持</sub>
 </p>
 
-### この設定を直接使用
+### コミュニティデスクトップ設定を再利用
 
-公式 ~/.dsh または手動で選択した対応ディレクトリをそのまま使用します。設定、資格情報、セッション、Agent プリセット、Skill、Profile、プラグインが共有され、Desktop と公式 CLI/Web の変更は同じデータへ反映されます。
+公式 ~/.dsh は独立環境へのインポート専用です。本アプリの製品識別ファイルまたは有効な旧版デスクトップ設定記録を持つディレクトリは直接再利用できます。認識可能な DSH データがありながら両方の記録がない旧フォルダーでは、旧版 Open DeepSeek Harness Desktop のデータであることを確認してから続行できます。壊れた識別情報や明らかに別製品の識別情報は、互換性のない Profile やプラグインを無断で読み込まないよう引き続き拒否されます。
 
 <p align="center">
-  <img src="../../assets/readme/data-home-reuse-en.png" width="900" alt="既存 DSH 設定をデスクトップから直接使用">
-  <br><sub>この設定を直接使用：選択したディレクトリとデータを共有</sub>
+  <img src="../../assets/readme/data-home-reuse-en.png" width="900" alt="識別済みのコミュニティデスクトップ設定を再利用">
+  <br><sub>製品識別を確認してコミュニティ設定を再利用</sub>
 </p>
 
 ### 新しく開始
@@ -184,9 +184,9 @@ Cordis の Context、Service、Symbol はバージョン番号だけでなく物
 
 <p align="center"><img src="../../assets/readme/preset-im-robot-zh.png" width="900" alt="dsh-im で WeChat などの IM ボットを接続"><br><sub>IM ボット：WeChat、Feishu、DingTalk、WeCom、QQ、Slack、Telegram、Discord、WhatsApp に接続</sub></p>
 
-インストーラー内のローカル版はオフライン準備に便利ですが、市場更新には直接追随しません。オンラインになったら **プラグイン市場 → インストール済み** で各プリセットの **復元** を選び、オンライン版へ入れ替えることを推奨します。復元は自動ロールバックできないため、固定されたオフライン版を優先する場合はそのまま維持できます。
+上書きインストール時は、記録、依存宣言、Bundle 登録、実際のパッケージ版を照合します。デスクトップ管理の旧版だけをトランザクションで更新し、ユーザーの新版、独自ソース、明示的な削除、スナップショットの固定版は保持します。オンライン registry へ切り替える場合のみ **復元** を明示的に選択します。
 
-<p align="center"><img src="../../assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="ローカルのプリセットをオンライン版へ復元"><br><sub>推奨：オンライン時に「復元」を押し、通常の更新確認が可能なオンライン版へ切り替え</sub></p>
+<p align="center"><img src="../../assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="ローカルのプリセットをオンライン版へ復元"><br><sub>オンライン registry ソースへ切り替える場合に「復元」を使用</sub></p>
 
 ### 設定ナビゲーションのカスタマイズ
 
@@ -208,7 +208,7 @@ Cordis の Context、Service、Symbol はバージョン番号だけでなく物
 
 ## ダウンロードとインストール
 
-[GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1) から対象パッケージを入手してください。
+[GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) から対象パッケージを入手してください。
 
 | OS | アーキテクチャ | パッケージ |
 | --- | --- | --- |
