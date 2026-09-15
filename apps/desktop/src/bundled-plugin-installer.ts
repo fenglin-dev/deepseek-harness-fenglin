@@ -6,10 +6,9 @@ import {
   assertBundledPluginManifestEntry,
   bundledPluginSeedIsSettled,
   hasBundledPluginQuarantineRecord,
-  hasLegacyBundledPluginSeedMarker,
-  hasBundledPluginSeedMarker,
   seedBundledPlugin,
   type BundledPluginManifestEntry,
+  type BundledPluginReconciliation,
   type BundledPluginSeedProgress,
   type BundledPluginSeedStage,
   type SeedBundledPluginResult,
@@ -46,6 +45,7 @@ export interface BundledPluginInstallerOptions {
   readonly manifest: BundledPluginManifest
   readonly resourcesDirectory: string
   readonly dshHome: string
+  readonly sourceDshHome?: string
   readonly install: (archivePath: string, entry: BundledPluginManifestEntry) => Promise<void>
   readonly prepare?: (entry: BundledPluginManifestEntry) => Promise<void>
   readonly onFailure?: (error: unknown, entry: BundledPluginManifestEntry) => Promise<void>
@@ -64,6 +64,8 @@ export interface BundledPluginInstallerOptions {
   readonly now?: () => number
   readonly shouldAttemptStartup?: (entry: BundledPluginManifestEntry) => Promise<boolean>
   readonly onStartupSuccess?: (entry: BundledPluginManifestEntry) => Promise<void>
+  readonly onStartupResult?: (entry: BundledPluginManifestEntry, result: SeedBundledPluginResult) => Promise<void>
+  readonly onReconciled?: (result: BundledPluginReconciliation) => void
   /** Report unattempted entries without treating them as failed installs or starting cooldown. */
   readonly onStartupDeferred?: (entry: BundledPluginManifestEntry, reason: 'budget' | 'cooldown') => Promise<void>
   readonly onManagedMutationStart?: (entry: BundledPluginManifestEntry) => void
@@ -185,9 +187,11 @@ export class BundledPluginInstaller {
           this.options.dshHome,
           entry,
           this.options.repairLegacyMarkers ?? false,
+          this.options.sourceDshHome ?? this.options.dshHome,
         )) {
           report({ stage: 'configuring', progress: 100 })
-          results.push({ entry, result: 'already-seeded' })
+          results.push({ entry, result: 'verified' })
+          await this.options.onStartupResult?.(entry, 'verified')
           await this.options.onStartupSuccess?.(entry)
           continue
         }
@@ -208,9 +212,12 @@ export class BundledPluginInstaller {
         const result = this.options.withStartupTransaction === undefined
           ? await this.seed(entry, this.options.requireCompleteStartup ?? false, report)
           : await this.options.withStartupTransaction(entry, () => this.seed(entry, this.options.requireCompleteStartup ?? false, report))
-        if (result === 'already-seeded') report({ stage: 'configuring', progress: 100 })
+        if (result === 'verified' || result === 'removed' || result === 'unresolved') {
+          report({ stage: 'configuring', progress: 100 })
+        }
         results.push({ entry, result })
-        await this.options.onStartupSuccess?.(entry)
+        await this.options.onStartupResult?.(entry, result)
+        if (result !== 'unresolved') await this.options.onStartupSuccess?.(entry)
       } catch (error) {
         if (this.options.isStartupCancelled?.()) throw error
         results.push({ entry })
@@ -236,9 +243,12 @@ export class BundledPluginInstaller {
   async startDeferred(profile: string, packageSpec: string): Promise<BundledPluginDeferredStartResult> {
     const entry = this.findManual(profile, packageSpec)
     if (entry === undefined) return { handled: false }
-    if (await hasBundledPluginSeedMarker(this.options.dshHome, entry)
-      && (!this.options.repairLegacyMarkers
-        || !await hasLegacyBundledPluginSeedMarker(this.options.dshHome, entry))) return { handled: true }
+    if (await bundledPluginSeedIsSettled(
+      this.options.dshHome,
+      entry,
+      this.options.repairLegacyMarkers ?? false,
+      this.options.sourceDshHome ?? this.options.dshHome,
+    )) return { handled: true }
     if (await hasBundledPluginQuarantineRecord(this.options.dshHome, entry)) return { handled: true }
     return this.startJob(entry, false)
   }
@@ -251,7 +261,7 @@ export class BundledPluginInstaller {
     ))
   }
 
-  private startJob(entry: BundledPluginManifestEntry, force: boolean): BundledPluginStartResult {
+  private startJob(entry: BundledPluginManifestEntry, restoreBundledVersion: boolean): BundledPluginStartResult {
     const packageSpec = bundledPluginRequestSpec(entry)
     const profile = entry.profile
 
@@ -275,7 +285,7 @@ export class BundledPluginInstaller {
     const job: InstallJob = { snapshot, target }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
-    void this.runJob(job, entry, force)
+    void this.runJob(job, entry, restoreBundledVersion)
     return { handled: true, snapshot }
   }
 
@@ -291,25 +301,31 @@ export class BundledPluginInstaller {
 
   private async seed(
     entry: BundledPluginManifestEntry,
-    force: boolean,
+    restoreBundledVersion: boolean,
     onProgress?: (progress: BundledPluginSeedProgress) => void,
   ): Promise<SeedBundledPluginResult> {
     return seedBundledPlugin({
       entry,
       resourcesDirectory: this.options.resourcesDirectory,
       dshHome: this.options.dshHome,
+      sourceDshHome: this.options.sourceDshHome ?? this.options.dshHome,
       install: this.options.install,
       ...(this.options.prepare === undefined ? {} : { prepare: this.options.prepare }),
-      force,
+      restoreBundledVersion,
       repairLegacyMarker: this.options.repairLegacyMarkers ?? false,
+      ...(this.options.onReconciled === undefined ? {} : { onReconciled: this.options.onReconciled }),
       ...(onProgress === undefined ? {} : { onProgress }),
     })
   }
 
-  private async runJob(job: InstallJob, entry: BundledPluginManifestEntry, force: boolean): Promise<void> {
+  private async runJob(
+    job: InstallJob,
+    entry: BundledPluginManifestEntry,
+    restoreBundledVersion: boolean,
+  ): Promise<void> {
     this.options.onManagedMutationStart?.(entry)
     try {
-      const operation = () => this.seed(entry, force, (progress) => {
+      const operation = () => this.seed(entry, restoreBundledVersion, (progress) => {
         if (job.snapshot.phase !== 'running') return
         job.snapshot = { ...job.snapshot, ...progress }
       })

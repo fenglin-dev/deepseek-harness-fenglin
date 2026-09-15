@@ -274,8 +274,20 @@ foreach ($plugin in @($bundledPlugins | Where-Object { $_.InstallPolicy -eq 'sta
   $markerPath = Join-Path $dshHome "bundled-plugins/$($plugin.SeedId).seeded.json"
   if (-not (Test-Path $markerPath)) { throw "Bundled plugin seed marker is missing: $markerPath" }
   $marker = Get-Content $markerPath -Raw | ConvertFrom-Json
-  if ($marker.packageName -ne $plugin.PackageName -or $marker.version -ne $plugin.Version) {
+  if ($marker.schema -ne 4 `
+    -or $marker.packageName -ne $plugin.PackageName `
+    -or $marker.handledBundledVersion -ne $plugin.Version `
+    -or $marker.installedVersion -ne $plugin.Version `
+    -or $marker.state -ne 'installed') {
     throw "Bundled plugin seed marker has unexpected package metadata: $markerPath"
+  }
+  $installedManifestPath = Join-Path $profileDir "node_modules/$($plugin.PackageName)/package.json"
+  if (-not (Test-Path $installedManifestPath)) {
+    throw "Bundled plugin package metadata is missing: $installedManifestPath"
+  }
+  $installedManifest = Get-Content $installedManifestPath -Raw | ConvertFrom-Json
+  if ($installedManifest.name -ne $plugin.PackageName -or $installedManifest.version -ne $marker.installedVersion) {
+    throw "Bundled plugin marker does not match the installed package: $markerPath"
   }
 }
 foreach ($plugin in @($bundledPlugins | Where-Object { $_.InstallPolicy -eq 'manual' })) {

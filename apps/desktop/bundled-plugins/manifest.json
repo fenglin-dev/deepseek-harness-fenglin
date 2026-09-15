@@ -18,6 +18,7 @@
       "profile": "web",
       "installPolicy": "startup",
       "registrySpec": "@xmanrui/dsh-im@4.19.2",
+      "managedUpgradeFrom": ["3.0.6"],
       "archive": "xmanrui-dsh-im-4.19.2.tgz",
       "integrity": "sha512-JUJQ/GX5Pv8Br2TgdpO/cuyu0NRHygQjZcvgSq53MQboA5e+udXFHjSjtnK0jq+O7P3Cb/kGSdub1h14kTzKCw=="
     },
@@ -28,6 +29,7 @@
       "profile": "web",
       "installPolicy": "startup",
       "registrySpec": "dsh-skill-picker@0.5.9",
+      "managedUpgradeFrom": ["0.2.0"],
       "archive": "dsh-skill-picker-0.5.9.tgz",
       "integrity": "sha512-gmry19MqaNRaIIbidQ1sg/WQIRkHraPkJaEmNomO5BViKEnw4/aHNR1cOqDY+VpqvviC7r3txJsNbM0ArnzASw=="
     },
@@ -38,6 +40,7 @@
       "profile": "web",
       "installPolicy": "startup",
       "registrySpec": "dsh-better-sidebar@0.19.0",
+      "managedUpgradeFrom": ["0.16.1"],
       "approvedBuilds": [
         "node-pty"
       ],
@@ -51,6 +54,7 @@
       "profile": "web",
       "installPolicy": "startup",
       "registrySpec": "dsh-pocket@2.10.6",
+      "managedUpgradeFrom": ["1.14.5"],
       "archive": "dsh-pocket-2.10.6.tgz",
       "integrity": "sha512-yqybeWWutozi1yBLDpSs6ien9SndFPVNK6HlmhJf8q0AOLauzcLntmFyGQ0/v3EzS3V8ftM4yvqcc/o6LcGcGA=="
     },

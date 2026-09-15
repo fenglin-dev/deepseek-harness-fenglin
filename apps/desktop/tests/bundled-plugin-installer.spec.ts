@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -45,6 +45,42 @@ async function fixture() {
     ],
   }
   return { root, resourcesDirectory, manifest }
+}
+
+function successfulInstall(
+  root: string,
+  beforeMaterialize?: () => void | Promise<void>,
+) {
+  return vi.fn(async (_archivePath: string, entry: BundledPluginManifestEntry) => {
+    await beforeMaterialize?.()
+    const home = join(root, 'home')
+    const profile = join(home, 'profiles', entry.profile)
+    const installed = join(profile, 'node_modules', ...entry.packageName.split('/'))
+    await mkdir(installed, { recursive: true })
+    await writeFile(join(installed, 'package.json'), JSON.stringify({
+      name: entry.packageName,
+      version: entry.version,
+    }))
+    let dependencies: Record<string, string> = {}
+    let bundles: string[] = []
+    try {
+      const current = JSON.parse(await readFile(join(profile, 'package.json'), 'utf8')) as {
+        dependencies?: Record<string, string>
+        dsh?: { profile?: { bundles?: string[] } }
+      }
+      dependencies = current.dependencies ?? {}
+      bundles = current.dsh?.profile?.bundles ?? []
+    } catch {
+      // The fake package manager creates a Profile manifest on first install.
+    }
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      dependencies: {
+        ...dependencies,
+        [entry.packageName]: `file:${join(home, 'bundled-plugins', entry.archive)}`,
+      },
+      dsh: { profile: { bundles: [...new Set([...bundles, entry.packageName])] } },
+    }))
+  })
 }
 
 describe('BundledPluginInstaller', () => {
@@ -99,7 +135,7 @@ describe('BundledPluginInstaller', () => {
   it('wraps each startup plugin in an independent transaction and continues after failure', async () => {
     const f = await fixture()
     const manifest = twoStartupPlugins(f.manifest)
-    const install = vi.fn(async () => {})
+    const install = successfulInstall(f.root)
     const onFailure = vi.fn(async () => {})
     const transactionCalls = vi.fn()
     const withStartupTransaction = async <T>(
@@ -127,7 +163,7 @@ describe('BundledPluginInstaller', () => {
     const f = await fixture()
     const manifest = twoStartupPlugins(f.manifest)
     let now = 0
-    const install = vi.fn(async () => { now = 101 })
+    const install = successfulInstall(f.root, () => { now = 101 })
     const onFailure = vi.fn(async () => {})
     const onStartupDeferred = vi.fn(async () => {})
     const installer = new BundledPluginInstaller({
@@ -148,7 +184,7 @@ describe('BundledPluginInstaller', () => {
     const progress: Array<{ packageName: string; index: number; total: number; stage: string; progress: number }> = []
     const installer = new BundledPluginInstaller({
       manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome: join(f.root, 'home'),
-      install: async () => {},
+      install: successfulInstall(f.root),
     })
 
     await installer.seedStartup((event) => {
@@ -185,7 +221,7 @@ describe('BundledPluginInstaller', () => {
   it('attempts every first-start plugin past the total budget and ignores retry cooldown', async () => {
     const f = await fixture()
     let now = 0
-    const install = vi.fn(async () => { now += 180_000 })
+    const install = successfulInstall(f.root, () => { now += 180_000 })
     const shouldAttemptStartup = vi.fn(async () => false)
     const installer = new BundledPluginInstaller({
       manifest: twoStartupPlugins(f.manifest), resourcesDirectory: f.resourcesDirectory,
@@ -214,7 +250,7 @@ describe('BundledPluginInstaller', () => {
 
   it('does not let a startup progress observer interrupt plugin installation', async () => {
     const f = await fixture()
-    const install = vi.fn(async () => {})
+    const install = successfulInstall(f.root)
     const installer = new BundledPluginInstaller({
       manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome: join(f.root, 'home'), install,
     })
@@ -227,7 +263,7 @@ describe('BundledPluginInstaller', () => {
     const f = await fixture()
     let finishInstall: (() => void) | undefined
     const installPromise = new Promise<void>((resolve) => { finishInstall = resolve })
-    const install = vi.fn(() => installPromise)
+    const install = successfulInstall(f.root, () => installPromise)
     const installer = new BundledPluginInstaller({
       manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome: join(f.root, 'home'),
       install, createId: () => 'job-1',
@@ -251,7 +287,7 @@ describe('BundledPluginInstaller', () => {
 
   it('settles a manual job only after its managed activation commits', async () => {
     const f = await fixture()
-    const install = vi.fn(async () => {})
+    const install = successfulInstall(f.root)
     const withManagedTransaction = vi.fn(async (_entry, operation: () => Promise<unknown>) => {
       await operation()
       throw new Error('candidate startup rolled back')
@@ -269,7 +305,7 @@ describe('BundledPluginInstaller', () => {
 
   it('restores an explicitly requested startup entry from its bundled archive', async () => {
     const f = await fixture()
-    const install = vi.fn(async () => {})
+    const install = successfulInstall(f.root)
     const installer = new BundledPluginInstaller({
       manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome: join(f.root, 'home'),
       install, createId: () => 'startup-restore',
@@ -284,7 +320,7 @@ describe('BundledPluginInstaller', () => {
 
   it('defers a manual entry once and preserves its durable uninstall marker', async () => {
     const f = await fixture()
-    const install = vi.fn(async () => {})
+    const install = successfulInstall(f.root)
     const installer = new BundledPluginInstaller({
       manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome: join(f.root, 'home'), install,
     })
@@ -305,7 +341,7 @@ describe('BundledPluginInstaller', () => {
     const dshHome = join(f.root, 'home')
     await mkdir(join(dshHome, 'bundled-plugins'), { recursive: true })
     await writeFile(join(dshHome, 'bundled-plugins', 'manual.seeded.json'), JSON.stringify({ schema: 1 }))
-    const install = vi.fn(async () => {})
+    const install = successfulInstall(f.root)
     const installer = new BundledPluginInstaller({
       manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome, install,
       repairLegacyMarkers: true,
@@ -325,7 +361,7 @@ describe('BundledPluginInstaller', () => {
       schema: 1,
       plugins: [{ profile: 'web', packageName: 'manual' }],
     }))
-    const install = vi.fn(async () => {})
+    const install = successfulInstall(f.root)
     const installer = new BundledPluginInstaller({
       manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome, install,
     })

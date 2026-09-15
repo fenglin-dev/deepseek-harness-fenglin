@@ -1,7 +1,7 @@
 /** One-time, removable installation of plugins shipped with the desktop app. */
 
-import { createHash } from 'node:crypto'
-import { appendFile, copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { appendFile, copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { gt, valid, validRange } from 'semver'
 import { isMap, parseDocument } from 'yaml'
@@ -14,6 +14,8 @@ export interface BundledPluginManifestEntry {
   readonly installPolicy: 'startup' | 'manual' | 'diagnostic'
   /** Exact npm or Git spec used first so ordinary installs remain updateable. */
   readonly registrySpec?: string
+  /** Exact historical registry versions once shipped and managed by Desktop. */
+  readonly managedUpgradeFrom?: readonly string[]
   /** Reviewed registry packages whose lifecycle scripts this bundled entry requires. */
   readonly approvedBuilds?: readonly string[]
   readonly archive: string
@@ -24,18 +26,36 @@ export interface SeedBundledPluginOptions {
   readonly entry: BundledPluginManifestEntry
   readonly resourcesDirectory: string
   readonly dshHome: string
+  /** Active home whose desktop archives may be copied into a candidate home. */
+  readonly sourceDshHome?: string
   readonly install: (archivePath: string, entry: BundledPluginManifestEntry) => Promise<void>
   /** Merge reviewed lifecycle approvals before adopting or installing a dependency. */
   readonly prepare?: (entry: BundledPluginManifestEntry) => Promise<void>
   /** Explicit UI installs may replace a tombstone left by an earlier uninstall. */
-  readonly force?: boolean
+  readonly restoreBundledVersion?: boolean
   /** Development migration for schema-1 markers produced before DSH_HOME reached the installer. */
   readonly repairLegacyMarker?: boolean
   /** Milestone updates for a desktop-owned progress surface. */
   readonly onProgress?: (progress: BundledPluginSeedProgress) => void
+  readonly onReconciled?: (result: BundledPluginReconciliation) => void
 }
 
-export type SeedBundledPluginResult = 'installed' | 'already-seeded' | 'already-installed'
+export type SeedBundledPluginResult =
+  | 'installed'
+  | 'upgraded'
+  | 'verified'
+  | 'preserved-user-version'
+  | 'removed'
+  | 'unresolved'
+
+export interface BundledPluginReconciliation {
+  readonly packageName: string
+  readonly targetVersion: string
+  readonly recordedVersion?: string
+  readonly actualVersion?: string
+  readonly sourceKind?: string
+  readonly ownership: 'desktop-archive' | 'desktop-registry' | 'user'
+}
 
 /** Coarse installation milestones that remain truthful across package-manager implementations. */
 export type BundledPluginSeedStage = 'verifying' | 'extracting' | 'configuring'
@@ -65,6 +85,7 @@ export function assertBundledPluginManifestEntry(entry: unknown): asserts entry 
   }
   const candidate = entry as Record<string, unknown>
   const approvedBuilds = candidate.approvedBuilds
+  const managedUpgradeFrom = candidate.managedUpgradeFrom
   const seedLabel = typeof candidate.seedId === 'string' ? candidate.seedId : '<unknown>'
   if (typeof candidate.seedId !== 'string'
     || !/^[a-z0-9][a-z0-9._-]*$/iu.test(candidate.seedId)
@@ -91,6 +112,18 @@ export function assertBundledPluginManifestEntry(entry: unknown): asserts entry 
       || approvedBuilds.some(packageName => (
         typeof packageName !== 'string'
         || !/^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/iu.test(packageName)
+      ))
+    ))
+    || (managedUpgradeFrom !== undefined && (
+      !Array.isArray(managedUpgradeFrom)
+      || managedUpgradeFrom.length > 32
+      || new Set(managedUpgradeFrom).size !== managedUpgradeFrom.length
+      || managedUpgradeFrom.some(version => (
+        typeof version !== 'string'
+        || valid(version) === null
+        || typeof candidate.version !== 'string'
+        || valid(candidate.version) === null
+        || !gt(candidate.version, version)
       ))
     ))
     || typeof candidate.integrity !== 'string'
@@ -126,8 +159,13 @@ function dependencyMatchesBundledEntry(
 
 interface BundledDependencyState {
   readonly present: boolean
+  readonly bundleRegistered: boolean
   readonly desktopOwned: boolean
   readonly registryManaged: boolean
+  readonly exactRegistryVersion?: string
+  readonly dependencyName?: string
+  readonly sourceKind?: 'desktop-archive' | 'registry' | 'github' | 'custom'
+  readonly sourceIdentity?: string
   readonly installedVersion?: string
 }
 
@@ -138,7 +176,7 @@ function pathIsWithin(parent: string, candidate: string): boolean {
 
 async function bundledDependencyState(
   packagePath: string,
-  stateDirectory: string,
+  stateDirectories: readonly string[],
   entry: BundledPluginManifestEntry,
 ): Promise<BundledDependencyState> {
   try {
@@ -150,8 +188,13 @@ async function bundledDependencyState(
       .find(([dependencyName, dependencySpec]) => (
         dependencyMatchesBundledEntry(dependencyName, dependencySpec, entry)
       ))
-    if (dependency === undefined) return { present: false, desktopOwned: false, registryManaged: false }
+    if (dependency === undefined) {
+      return { present: false, bundleRegistered: false, desktopOwned: false, registryManaged: false }
+    }
     const [dependencyName, dependencySpec] = dependency
+    const profile = manifest as typeof manifest & { dsh?: { profile?: { bundles?: unknown } } }
+    const bundleRegistered = Array.isArray(profile.dsh?.profile?.bundles)
+      && profile.dsh.profile.bundles.includes(dependencyName)
     const filePath = typeof dependencySpec === 'string' && dependencySpec.startsWith('file:')
       ? resolve(dirname(packagePath), dependencySpec.slice('file:'.length))
       : undefined
@@ -164,6 +207,11 @@ async function bundledDependencyState(
       : undefined
     const registryRange = registrySpecifier === undefined ? undefined : validRange(registrySpecifier)
     const registryManaged = registryRange !== undefined && registryRange !== null
+    const exactRegistryVersion = dependencyName === entry.packageName
+      && registrySpecifier !== undefined
+      && valid(registrySpecifier) !== null
+      ? registrySpecifier
+      : undefined
     let installedVersion: string | undefined
     try {
       const nodeModules = join(dirname(packagePath), 'node_modules')
@@ -182,23 +230,40 @@ async function bundledDependencyState(
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
     }
-    if (installedVersion === undefined
-      && registryManaged
-      && registrySpecifier !== undefined
-      && valid(registrySpecifier) !== null) {
-      installedVersion = registrySpecifier
-    }
+    const desktopOwned = dependencyName === entry.packageName
+      && filePath !== undefined
+      && stateDirectories.some(stateDirectory => pathIsWithin(stateDirectory, filePath))
+    const repositoryIdentity = typeof dependencySpec === 'string'
+      ? githubRepositoryIdentity(dependencySpec)
+      : undefined
+    const sourceKind = desktopOwned
+      ? 'desktop-archive'
+      : registryManaged
+        ? 'registry'
+        : repositoryIdentity === undefined
+          ? 'custom'
+          : 'github'
+    const sourceIdentity = desktopOwned
+      ? `desktop-archive:${entry.archive}`
+      : sourceKind === 'registry'
+        ? `registry:${dependencyName}`
+        : repositoryIdentity ?? `custom:${createHash('sha256').update(String(dependencySpec)).digest('hex')}`
     return {
       present: true,
-      desktopOwned: dependencyName === entry.packageName
-        && filePath !== undefined
-        && pathIsWithin(stateDirectory, filePath),
+      bundleRegistered,
+      desktopOwned,
       registryManaged,
+      ...(exactRegistryVersion === undefined ? {} : { exactRegistryVersion }),
+      dependencyName,
+      sourceKind,
+      sourceIdentity,
       ...(installedVersion === undefined ? {} : { installedVersion }),
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') return { present: false, desktopOwned: false, registryManaged: false }
+    if (code === 'ENOENT') {
+      return { present: false, bundleRegistered: false, desktopOwned: false, registryManaged: false }
+    }
     throw error
   }
 }
@@ -217,14 +282,26 @@ interface BundledPluginSeedMarker {
   readonly schema: number
   readonly version?: string
   readonly ownership?: 'desktop' | 'external'
+  readonly handledBundledVersion?: string
+  readonly installedVersion?: string
+  readonly state?: 'installed' | 'removed' | 'unresolved'
+  readonly managedOwnership?: 'desktop-archive' | 'desktop-registry' | 'user'
+  readonly damaged?: boolean
 }
 
 async function readSeedMarker(path: string): Promise<BundledPluginSeedMarker | undefined> {
   try {
-    const value = JSON.parse(await readFile(path, 'utf8')) as {
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as unknown
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { schema: 0, damaged: true }
+    }
+    const value = parsed as {
       schema?: unknown
       version?: unknown
       ownership?: unknown
+      handledBundledVersion?: unknown
+      installedVersion?: unknown
+      state?: unknown
     }
     const version = typeof value.version === 'string' ? value.version : undefined
     const ownership = value.ownership === 'desktop' || value.ownership === 'external'
@@ -234,10 +311,23 @@ async function readSeedMarker(path: string): Promise<BundledPluginSeedMarker | u
       schema: typeof value.schema === 'number' ? value.schema : 0,
       ...(version === undefined ? {} : { version }),
       ...(ownership === undefined ? {} : { ownership }),
+      ...(typeof value.handledBundledVersion === 'string'
+        ? { handledBundledVersion: value.handledBundledVersion }
+        : {}),
+      ...(typeof value.installedVersion === 'string' ? { installedVersion: value.installedVersion } : {}),
+      ...(value.state === 'installed' || value.state === 'removed' || value.state === 'unresolved'
+        ? { state: value.state }
+        : {}),
+      ...(value.ownership === 'desktop-archive'
+        || value.ownership === 'desktop-registry'
+        || value.ownership === 'user'
+        ? { managedOwnership: value.ownership }
+        : {}),
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
-    return { schema: 0 }
+    if (error instanceof SyntaxError) return { schema: 0, damaged: true }
+    throw error
   }
 }
 
@@ -246,14 +336,15 @@ async function snapshotVersionHeld(
   entry: BundledPluginManifestEntry,
   marker: BundledPluginSeedMarker,
 ): Promise<boolean> {
-  if (marker.version === undefined) return false
+  const installedVersion = marker.installedVersion ?? marker.version
+  if (installedVersion === undefined) return false
   try {
     const value = JSON.parse(await readFile(
       join(dshHome, 'bundled-plugins', 'snapshot-version-hold.json'),
       'utf8',
     )) as { schema?: unknown; versions?: Array<{ seedId?: unknown; version?: unknown }> }
     return value.schema === 1 && Array.isArray(value.versions) && value.versions.some(version => (
-      version.seedId === entry.seedId && version.version === marker.version
+      version.seedId === entry.seedId && version.version === installedVersion
     ))
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
@@ -296,21 +387,26 @@ export async function bundledPluginSeedIsSettled(
   dshHome: string,
   entry: BundledPluginManifestEntry,
   repairLegacyMarker = false,
+  sourceDshHome = dshHome,
 ): Promise<boolean> {
   assertBundledPluginManifestEntry(entry)
   const marker = await readSeedMarker(join(dshHome, 'bundled-plugins', `${entry.seedId}.seeded.json`))
   if (marker === undefined) return false
   if (repairLegacyMarker && marker.schema < 2) return false
+  if (marker.schema < 4) return false
+  if (marker.handledBundledVersion !== entry.version) return false
+  const dependency = await bundledDependencyState(
+    join(dshHome, 'profiles', entry.profile, 'package.json'),
+    [join(dshHome, 'bundled-plugins'), join(sourceDshHome, 'bundled-plugins')],
+    entry,
+  )
+  if (marker.state === 'removed') return !dependency.present
+  if (marker.state !== 'installed'
+    || !dependency.present
+    || !dependency.bundleRegistered
+    || dependency.installedVersion === undefined) return false
+  if (marker.installedVersion !== dependency.installedVersion) return false
   if (await snapshotVersionHeld(dshHome, entry, marker)) return true
-  if (marker.schema < 2 || marker.version !== entry.version) return false
-  if (marker.schema === 2) {
-    const dependency = await bundledDependencyState(
-      join(dshHome, 'profiles', entry.profile, 'package.json'),
-      join(dshHome, 'bundled-plugins'),
-      entry,
-    )
-    if (dependency.present) return false
-  }
   const approvedBuilds = entry.approvedBuilds ?? []
   if (approvedBuilds.length === 0) return true
   try {
@@ -360,19 +456,29 @@ export async function hasBundledPluginQuarantineRecord(
 async function writeMarker(
   path: string,
   entry: BundledPluginManifestEntry,
-  ownership: 'desktop' | 'external',
+  dependency: BundledDependencyState,
+  state: 'installed' | 'removed' | 'unresolved',
+  ownership: 'desktop-archive' | 'desktop-registry' | 'user',
 ): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
-  const temporary = `${path}.${process.pid}.tmp`
-  await writeFile(temporary, `${JSON.stringify({
-    schema: 3,
-    seedId: entry.seedId,
-    packageName: entry.packageName,
-    version: entry.version,
-    ownership,
-    seededAt: new Date().toISOString(),
-  }, null, 2)}\n`, { flag: 'wx' })
-  await rename(temporary, path)
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    await writeFile(temporary, `${JSON.stringify({
+      schema: 4,
+      seedId: entry.seedId,
+      packageName: entry.packageName,
+      dependencyName: dependency.dependencyName ?? entry.packageName,
+      handledBundledVersion: entry.version,
+      ...(dependency.installedVersion === undefined ? {} : { installedVersion: dependency.installedVersion }),
+      state,
+      ownership,
+      ...(dependency.sourceIdentity === undefined ? {} : { sourceIdentity: dependency.sourceIdentity }),
+      seededAt: new Date().toISOString(),
+    }, null, 2)}\n`, { flag: 'wx' })
+    await rename(temporary, path)
+  } finally {
+    await rm(temporary, { force: true })
+  }
 }
 
 /**
@@ -402,12 +508,15 @@ export async function seedBundledPluginsBatch(
   if (archives.length === 0) return
   await install(archives)
   for (const entry of entries) {
-    const dependency = await bundledDependencyState(join(home, 'profiles', entry.profile, 'package.json'), state, entry)
-    if (!dependency.present || dependency.installedVersion !== entry.version) {
+    const dependency = await bundledDependencyState(join(home, 'profiles', entry.profile, 'package.json'), [state], entry)
+    if (!dependency.present || !dependency.bundleRegistered || dependency.installedVersion !== entry.version) {
       throw new Error(`desktop: bundled batch did not materialize ${entry.packageName}@${entry.version}`)
     }
   }
-  for (const entry of entries) await writeMarker(join(state, `${entry.seedId}.seeded.json`), entry, 'desktop')
+  for (const entry of entries) {
+    const dependency = await bundledDependencyState(join(home, 'profiles', entry.profile, 'package.json'), [state], entry)
+    await writeMarker(join(state, `${entry.seedId}.seeded.json`), entry, dependency, 'installed', 'desktop-archive')
+  }
 }
 
 /**
@@ -432,62 +541,101 @@ export async function verifyBundledPluginArchive(
 /** Seed or advance a desktop-owned preset; the durable marker survives a later user uninstall. */
 export async function seedBundledPlugin(options: SeedBundledPluginOptions): Promise<SeedBundledPluginResult> {
   const {
-    entry, resourcesDirectory, dshHome, install, prepare,
-    force = false, repairLegacyMarker = false, onProgress,
+    entry, resourcesDirectory, dshHome, sourceDshHome = dshHome, install, prepare,
+    restoreBundledVersion = false, repairLegacyMarker = false, onProgress, onReconciled,
   } = options
   assertBundledPluginManifestEntry(entry)
   const stateDirectory = join(dshHome, 'bundled-plugins')
   const markerPath = join(stateDirectory, `${entry.seedId}.seeded.json`)
-  const dependency = await bundledDependencyState(
-    join(dshHome, 'profiles', entry.profile, 'package.json'), stateDirectory,
+  const dependencyPath = join(dshHome, 'profiles', entry.profile, 'package.json')
+  let dependency = await bundledDependencyState(
+    dependencyPath,
+    [stateDirectory, join(sourceDshHome, 'bundled-plugins')],
     entry,
   )
-  // An explicit user restore hands ownership back to the current packaged
-  // archive even when a snapshot hold preserved an older desktop-owned file.
-  let replaceBundledDependency = force && dependency.desktopOwned
-  if (!force) {
-    const marker = await readSeedMarker(markerPath)
-    if (marker !== undefined) {
-      if (await snapshotVersionHeld(dshHome, entry, marker)) {
-        return 'already-seeded'
-      }
-      const packagedVersion = valid(entry.version)
-      const markerVersion = marker.version === undefined ? null : valid(marker.version)
-      const installedVersion = dependency.installedVersion === undefined
-        ? null
-        : valid(dependency.installedVersion)
-      const packagedVersionIncreased = marker.schema >= 2
-        && packagedVersion !== null
-        && markerVersion !== null
-        && gt(packagedVersion, markerVersion)
-      const packagedVersionAheadOfInstall = marker.schema === 2
-        && packagedVersion !== null
-        && markerVersion !== null
-        && installedVersion !== null
-        && gt(packagedVersion, installedVersion)
-      const markerAllowsReplacement = marker.ownership !== 'external'
-      replaceBundledDependency = markerAllowsReplacement
-        && ((dependency.desktopOwned && (packagedVersionIncreased || packagedVersionAheadOfInstall))
-          || (dependency.registryManaged && packagedVersionAheadOfInstall))
-      if (!replaceBundledDependency
-        && (!repairLegacyMarker || marker.schema >= 2 || dependency.present)) {
-        if (dependency.present) await prepare?.(entry)
-        if (dependency.present && (packagedVersionIncreased || marker.schema === 2)) {
-          await unlink(markerPath)
-          await writeMarker(markerPath, entry, dependency.desktopOwned ? 'desktop' : 'external')
-        }
-        return 'already-seeded'
-      }
-      await unlink(markerPath)
-    }
-  }
+  const marker = await readSeedMarker(markerPath)
+  const legacyMarker = marker !== undefined
+    && marker.damaged !== true
+    && marker.schema >= 1
+    && marker.schema < 4
+  const packagedVersion = valid(entry.version)
+  const installedVersion = dependency.installedVersion === undefined ? null : valid(dependency.installedVersion)
+  const installedIsNewer = packagedVersion !== null && installedVersion !== null && gt(installedVersion, packagedVersion)
+  const exactHistoricalRegistry = dependency.exactRegistryVersion !== undefined
+    && dependency.installedVersion === dependency.exactRegistryVersion
+    && (entry.managedUpgradeFrom ?? []).includes(dependency.exactRegistryVersion)
+  const ownership: BundledPluginReconciliation['ownership'] = dependency.desktopOwned
+    ? 'desktop-archive'
+    : marker?.managedOwnership === 'desktop-registry' && dependency.registryManaged
+      ? 'desktop-registry'
+      : legacyMarker && exactHistoricalRegistry
+        ? 'desktop-registry'
+        : 'user'
+  onReconciled?.({
+    packageName: entry.packageName,
+    targetVersion: entry.version,
+    ...(marker?.installedVersion === undefined && marker?.version === undefined
+      ? {}
+      : { recordedVersion: marker.installedVersion ?? marker.version }),
+    ...(dependency.installedVersion === undefined ? {} : { actualVersion: dependency.installedVersion }),
+    ...(dependency.sourceKind === undefined ? {} : { sourceKind: dependency.sourceKind }),
+    ownership,
+  })
 
-  if (dependency.present && !replaceBundledDependency) {
+  if (!restoreBundledVersion && marker?.damaged === true) {
+    if (!dependency.present || !dependency.bundleRegistered || dependency.installedVersion === undefined) {
+      await writeMarker(markerPath, entry, dependency, 'unresolved', 'user')
+      return 'unresolved'
+    }
+    await prepare?.(entry)
+    await writeMarker(markerPath, entry, dependency, 'installed', 'user')
+    return 'preserved-user-version'
+  }
+  if (!restoreBundledVersion && marker !== undefined && await snapshotVersionHeld(dshHome, entry, marker)) {
+    if (!dependency.present) {
+      await writeMarker(markerPath, entry, dependency, 'removed', ownership)
+      return 'removed'
+    }
+    if (!dependency.bundleRegistered || dependency.installedVersion === undefined) {
+      await writeMarker(markerPath, entry, dependency, 'unresolved', ownership)
+      return 'unresolved'
+    }
+    await prepare?.(entry)
+    await writeMarker(markerPath, entry, dependency, 'installed', ownership)
+    return ownership === 'user' ? 'preserved-user-version' : 'verified'
+  }
+  if (!dependency.present && marker !== undefined && (!repairLegacyMarker || marker.schema >= 2)
+    && !restoreBundledVersion) {
+    await writeMarker(markerPath, entry, dependency, 'removed', marker.managedOwnership ?? 'user')
+    return 'removed'
+  }
+  if (dependency.present
+    && (!dependency.bundleRegistered || dependency.installedVersion === undefined)
+    && !restoreBundledVersion) {
+    await prepare?.(entry)
+    await writeMarker(markerPath, entry, dependency, 'unresolved', ownership)
+    return 'unresolved'
+  }
+  const packagedAhead = packagedVersion !== null && installedVersion !== null && gt(packagedVersion, installedVersion)
+  const shouldUpgradeManagedArchive = dependency.desktopOwned
+    && marker !== undefined
+    && ownership === 'desktop-archive'
+    && packagedAhead
+  const shouldUpgradeManagedRegistry = dependency.registryManaged
+    && packagedAhead
+    && (ownership === 'desktop-registry' || exactHistoricalRegistry)
+  const shouldInstall = restoreBundledVersion
+    || !dependency.present
+    || shouldUpgradeManagedArchive
+    || shouldUpgradeManagedRegistry
+
+  if (!shouldInstall) {
     await prepare?.(entry)
     onProgress?.({ stage: 'configuring', progress: 90 })
-    await writeMarker(markerPath, entry, 'external')
+    const retainedOwnership = ownership
+    await writeMarker(markerPath, entry, dependency, 'installed', retainedOwnership)
     onProgress?.({ stage: 'configuring', progress: 100 })
-    return 'already-installed'
+    return retainedOwnership === 'user' || installedIsNewer ? 'preserved-user-version' : 'verified'
   }
 
   onProgress?.({ stage: 'verifying', progress: 8 })
@@ -498,8 +646,18 @@ export async function seedBundledPlugin(options: SeedBundledPluginOptions): Prom
   await prepare?.(entry)
   onProgress?.({ stage: 'extracting', progress: 46 })
   await install(stableArchive, entry)
+  dependency = await bundledDependencyState(
+    dependencyPath,
+    [stateDirectory, join(sourceDshHome, 'bundled-plugins')],
+    entry,
+  )
+  if (!dependency.present || !dependency.bundleRegistered || dependency.installedVersion !== entry.version) {
+    throw new Error(
+      `desktop: bundled install verification failed for ${entry.packageName}; expected ${entry.version}, actual ${dependency.installedVersion ?? 'missing'}, bundleRegistered=${dependency.bundleRegistered}`,
+    )
+  }
   onProgress?.({ stage: 'configuring', progress: 90 })
-  await writeMarker(markerPath, entry, 'desktop')
+  await writeMarker(markerPath, entry, dependency, 'installed', 'desktop-archive')
   onProgress?.({ stage: 'configuring', progress: 100 })
-  return 'installed'
+  return installedVersion === null ? 'installed' : 'upgraded'
 }

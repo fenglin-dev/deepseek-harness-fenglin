@@ -200,6 +200,40 @@ describe('Profile plugin snapshots', () => {
     }
   })
 
+  it('uses schema-4 installedVersion when restoring a snapshot version hold', () => {
+    const { home } = fixture()
+    const state = join(home, 'bundled-plugins')
+    try {
+      mkdirSync(state, { recursive: true })
+      writeFileSync(join(state, 'alpha.seeded.json'), JSON.stringify({
+        schema: 4,
+        seedId: 'alpha',
+        packageName: 'alpha',
+        handledBundledVersion: '2.0.0',
+        installedVersion: '1.0.0',
+        state: 'installed',
+        ownership: 'desktop-registry',
+      }))
+      const record = createProfilePluginSnapshot({
+        home, profile: 'web', kind: 'manual', trigger: 'manual',
+      })
+      writeFileSync(join(state, 'alpha.seeded.json'), JSON.stringify({
+        schema: 4,
+        handledBundledVersion: '2.0.0',
+        installedVersion: '2.0.0',
+        state: 'installed',
+        ownership: 'desktop-archive',
+      }))
+
+      restoreProfilePluginSnapshotFiles({ home, profile: 'web', snapshotId: record.snapshotId })
+
+      expect(JSON.parse(readFileSync(join(state, 'snapshot-version-hold.json'), 'utf8')))
+        .toMatchObject({ schema: 1, versions: [{ seedId: 'alpha', version: '1.0.0' }] })
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('drops unchanged automatic snapshots and retains changed ones', () => {
     const { home, profileDir } = fixture()
     try {

@@ -719,9 +719,17 @@ export function restoreProfilePluginSnapshotFiles(
       const bytes = payloads.get(file.relativePath)
       if (bytes === undefined) return []
       try {
-        const marker = JSON.parse(bytes.toString('utf8')) as { version?: unknown }
-        if (typeof marker.version !== 'string') return []
-        return [{ seedId: basename(file.relativePath, '.seeded.json'), version: marker.version }]
+        const marker = JSON.parse(bytes.toString('utf8')) as {
+          version?: unknown
+          installedVersion?: unknown
+        }
+        const installedVersion = typeof marker.installedVersion === 'string'
+          ? marker.installedVersion
+          : typeof marker.version === 'string'
+            ? marker.version
+            : undefined
+        if (installedVersion === undefined) return []
+        return [{ seedId: basename(file.relativePath, '.seeded.json'), version: installedVersion }]
       } catch {
         return []
       }

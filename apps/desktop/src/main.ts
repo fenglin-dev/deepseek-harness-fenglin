@@ -1532,11 +1532,13 @@ async function startApplication(): Promise<void> {
     operation: string,
     actions: StartupDiagnosticIncident['actions'],
     packageName?: string,
+    versions: Pick<StartupDiagnosticIncident, 'recordedVersion' | 'actualVersion' | 'targetVersion'> = {},
   ): Promise<void> => {
     startupWarnings.push(`${code}: ${packageName ?? operation}`)
     await recordStartupDiagnostic(dshHome, {
       code, operation, actions,
       ...(packageName === undefined ? {} : { packageName }),
+      ...versions,
     })
   }
   applyDesktopThemeSource(await readDesktopThemeSource(
@@ -2433,7 +2435,8 @@ async function startApplication(): Promise<void> {
       return { status: 'restarting' as const }
     }
     if ((incident.code === 'runtime.bundled-plugin-timeout'
-      || incident.code === 'runtime.bundled-plugin-failed')
+      || incident.code === 'runtime.bundled-plugin-failed'
+      || incident.code === 'runtime.bundled-plugin-marker-mismatch')
       && incident.packageName !== undefined
       && bundledPluginInstaller !== undefined) {
       await bundledPluginCooldown?.clear(incident.packageName)
@@ -3228,12 +3231,47 @@ async function startApplication(): Promise<void> {
     manifest,
     resourcesDirectory: bundledDirectory,
     get dshHome() { return mutationHome() },
+    sourceDshHome: dshHome,
     repairLegacyMarkers: !app.isPackaged,
     startupBudgetMs: 120_000,
     requireCompleteStartup: firstStartPending,
     isStartupCancelled: () => lifecycle?.isQuitting === true,
     shouldAttemptStartup: plugin => startupPluginCooldown.shouldAttempt(plugin.packageName, plugin.version),
     onStartupSuccess: plugin => startupPluginCooldown.clear(plugin.packageName),
+    onStartupResult: async (plugin, result) => {
+      await appendDesktopStartupLog(`Bundled plugin ${plugin.packageName}@${plugin.version}: ${result}.`)
+      if (result === 'unresolved') {
+        await retainStartupWarning(
+          'runtime.bundled-plugin-marker-mismatch',
+          'bundled-plugin-reconciliation',
+          ['diagnostics', 'open-log', 'retry-plugin'],
+          plugin.packageName,
+        )
+      }
+    },
+    onReconciled: (reconciliation) => {
+      void appendDesktopStartupLog(
+        `Bundled plugin reconciliation: ${reconciliation.packageName}; recorded=${reconciliation.recordedVersion ?? 'none'}; actual=${reconciliation.actualVersion ?? 'missing'}; target=${reconciliation.targetVersion}; source=${reconciliation.sourceKind ?? 'missing'}; ownership=${reconciliation.ownership}.`,
+      ).catch((error: unknown) => {
+        console.warn('desktop: could not persist bundled plugin reconciliation', error)
+      })
+      if (reconciliation.recordedVersion !== undefined
+        && reconciliation.recordedVersion !== reconciliation.actualVersion) {
+        void retainStartupWarning(
+          'runtime.bundled-plugin-marker-mismatch',
+          'bundled-plugin-reconciliation',
+          ['diagnostics', 'open-log', 'retry-plugin'],
+          reconciliation.packageName,
+          {
+            recordedVersion: reconciliation.recordedVersion,
+            ...(reconciliation.actualVersion === undefined ? {} : { actualVersion: reconciliation.actualVersion }),
+            targetVersion: reconciliation.targetVersion,
+          },
+        ).catch((error: unknown) => {
+          console.warn('desktop: could not retain bundled plugin reconciliation warning', error)
+        })
+      }
+    },
     onStartupDeferred: async (plugin, reason) => {
       await appendDesktopStartupLog(`Bundled plugin ${plugin.packageName}@${plugin.version} was not attempted (${reason}); it remains available for manual installation.`)
       await retainStartupWarning(
@@ -3337,8 +3375,11 @@ async function startApplication(): Promise<void> {
           )
           publishStartupProgress({ ...mapped, detail: `${progress.entry.packageName} (${progress.index + 1}/${progress.total})` })
         })
-        const pending = seedResults.filter(result => result.result === undefined)
-        await appendDesktopStartupLog(`Bundled startup plugin preparation finished: ${seedResults.length - pending.length}/${seedResults.length} settled; ${pending.length} failed or deferred. Activation still requires normal readiness.`)
+        const count = (result: NonNullable<(typeof seedResults)[number]['result']>): number => (
+          seedResults.filter(item => item.result === result).length
+        )
+        const pending = seedResults.filter(result => result.result === undefined).length
+        await appendDesktopStartupLog(`Bundled startup plugin preparation finished: verified=${count('verified')}; installed=${count('installed')}; upgraded=${count('upgraded')}; preserved-user-version=${count('preserved-user-version')}; removed=${count('removed')}; unresolved=${count('unresolved')}; failed-or-deferred=${pending}. Activation still requires normal readiness.`)
       }
     } else {
       await appendDesktopStartupLog(
