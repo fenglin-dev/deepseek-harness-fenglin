@@ -118,3 +118,18 @@
   z-index: 60;
   pointer-events: none;
 }
+
+@media (max-width: 680px) {
+  .panel[data-sidebar-right-panel='fullscreen'] {
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .iconButton {
+    width: 44px;
+    height: 44px;
+    padding: 14px;
+  }
+}

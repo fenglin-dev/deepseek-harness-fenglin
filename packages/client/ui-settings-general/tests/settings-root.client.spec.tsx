@@ -86,12 +86,14 @@ function mount({
     })) as never
   const unusedHook = (() => { throw new Error('unused by SettingsRoot') }) as never
   const setSectionOrder = vi.fn<(ids: readonly string[]) => Promise<void>>(() => Promise.resolve())
+  const dismissSidebar = vi.fn()
   const props: SettingsRootComponentProps = {
     useSessions,
     useSessionPendingInteraction,
     usePanelInfo, useResource,
     useWorkspaces: unusedHook,
     wide,
+    dismissSidebar,
     reconnect,
     t: makeTranslate(dictionary),
     useConnectionState: (select) => {
@@ -131,7 +133,7 @@ function mount({
       for (const fn of [...connectionListeners]) fn()
     })
   }
-  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, setSectionOrder }
+  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, setSectionOrder, dismissSidebar }
 }
 
 function openPanel() {
@@ -178,6 +180,11 @@ function installPointerGeometry() {
 }
 
 describe('SettingsRoot trigger', () => {
+  it('dismisses the phone drawer when settings opens', () => {
+    const mounted = mount()
+    openPanel()
+    expect(mounted.dismissSidebar).toHaveBeenCalledOnce()
+  })
   it.each([
     { column: 'expanded English', wide: true, dictionary: en, name: 'Settings' },
     { column: 'collapsed English', wide: false, dictionary: en, name: 'Settings' },
@@ -296,6 +303,33 @@ describe('SettingsPanel close paths', () => {
 })
 
 describe('SettingsPanel navigation', () => {
+  it('uses list then detail navigation on a 320px phone', () => {
+    vi.stubGlobal('innerWidth', 320)
+    mount()
+    openPanel()
+    expect(screen.queryByTestId('section-general')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Models' }))
+    expect(screen.getByTestId('section-models')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to settings' }))
+    expect(screen.queryByTestId('section-models')).toBeNull()
+    expect(screen.getByRole('button', { name: 'General' })).toBeTruthy()
+  })
+
+  it.each([
+    ['German', 'Heruntergeladene Anwendungen und Proxy-Einstellungen verwalten'],
+    ['Russian', 'Управление загрузками приложений и настройками прокси-сервера'],
+    ['Brazilian Portuguese', 'Gerenciar downloads de aplicativos e configurações de proxy'],
+  ])('keeps a long %s section name operable in the 320px phone list', (_locale, label) => {
+    vi.stubGlobal('innerWidth', 320)
+    mount({ rows: [{ id: 'general', order: 0, label }] })
+    openPanel()
+    const row = screen.getByRole('button', { name: label })
+    expect(row).toBeTruthy()
+    fireEvent.click(row)
+    expect(screen.getByTestId('section-general')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Back to settings' })).toBeTruthy()
+  })
+
   it('opens a requested section and forwards its subsection', () => {
     const { renderSlot } = mount({
       navigation: { sectionId: 'models', subsectionId: 'provider', revision: 1 },

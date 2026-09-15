@@ -254,20 +254,19 @@ function PanelChrome({ sessionId, fullscreen, autoFullscreen, actions, t }: Pick
   const modeLabel = fullscreen ? t('chrome.exitFullscreen') : t('chrome.toFullscreen')
   return (
     <>
-      <Tooltip label={modeLabel} side="bottom" delayMs={500}>
+      {!autoFullscreen && <Tooltip label={modeLabel} side="bottom" delayMs={500}>
         <button
           type="button"
           className={css.iconButton}
           aria-label={modeLabel}
           data-sidebar-right-mode={next}
           onClick={() => {
-            if (fullscreen && autoFullscreen) actions.setExpanded(sessionId, false)
             actions.setMode(sessionId, next)
           }}
         >
           {fullscreen ? <ExitFullscreenGlyph /> : <FullscreenGlyph />}
         </button>
-      </Tooltip>
+      </Tooltip>}
       <Tooltip label={t('chrome.collapse')} side="bottom" delayMs={500}>
         <button
           type="button"

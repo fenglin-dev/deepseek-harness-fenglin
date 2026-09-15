@@ -55,4 +55,11 @@ describe('SettingsRoot.module.css geometry', () => {
     expect(css).not.toContain('data-drop-after')
     expect(css).not.toContain('transform: rotate(90deg)')
   })
+
+  it('keeps phone navigation and actions inside a full-height safe-area panel', () => {
+    expect(css).toMatch(/@media \(max-width: 680px\)[\s\S]*?\.panel\s*\{[\s\S]*?width: 100vw;[\s\S]*?height: 100dvh;/)
+    expect(css).toMatch(/\.mobileNavClose\s*\{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/)
+    expect(css).toMatch(/\.mobileBack,[\s\S]*?\.close\s*\{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/)
+    expect(css).toContain('env(safe-area-inset-bottom)')
+  })
 })

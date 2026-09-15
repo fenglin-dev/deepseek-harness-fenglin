@@ -99,3 +99,15 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+@media (max-width: 680px) {
+  .actions {
+    height: 44px;
+  }
+
+  .action {
+    width: 44px;
+    height: 44px;
+    padding: 12px;
+  }
+}

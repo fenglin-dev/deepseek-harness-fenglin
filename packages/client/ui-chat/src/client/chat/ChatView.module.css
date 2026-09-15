@@ -136,6 +136,20 @@
   }
 }
 
+@media (max-width: 680px) {
+  .scroll {
+    max-width: 100vw;
+    padding: 12px;
+    overflow-x: hidden;
+    container-type: inline-size;
+  }
+
+  .column {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
 .hint {
   color: var(--dsw-alias-label-tertiary);
   font-size: var(--dsh-content-font-size-secondary, 13px);
