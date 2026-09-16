@@ -37,7 +37,7 @@ const en = {
   busy: 'A plugin operation or recovery is in progress. Wait for it to finish before restarting or quitting.',
   tray: 'The system tray is unavailable. Cancel to keep the window open, or quit completely.',
   shutdownFailed: 'Background process cleanup did not complete. Exit and restart were blocked. Inspect the logs, then retry quitting.',
-  cancel: 'Cancel', community: 'Maintained by FLAQ AI. An independent community distribution, not an official DeepSeek product.',
+  cancel: 'Cancel', community: 'Maintained by 枫林. An independent community distribution, not an official DeepSeek product.',
 }
 /** Exact copy surface shared by every desktop-owned application menu locale. */
 export type ApplicationMenuCopy = typeof en
@@ -56,7 +56,7 @@ const zh: typeof en = {
   busy: '插件操作或恢复正在进行，请等待完成后再重启或退出。',
   tray: '系统托盘不可用。可以取消并保留窗口，或完整退出客户端。', cancel: '取消',
   shutdownFailed: '后台进程回收未完成，已阻止退出和重启。请查看日志后重试退出。',
-  community: '由 FLAQ AI 维护的社区独立发行版，并非 DeepSeek 官方产品。',
+  community: '由枫林维护的独立版，并非 DeepSeek 官方产品。',
 }
 const ru: typeof en = {
   app: DESKTOP_PRODUCT_NAME, file: 'Файл', edit: 'Правка', view: 'Вид', tools: 'Инструменты', window: 'Окно', help: 'Справка', more: 'Ещё',
@@ -147,6 +147,7 @@ export function applicationMenuTemplate(
       ...(['darwin', 'win32'].includes(state.platform) ? [item('open-web')] : []), separator,
       ...(!mac ? [item('settings'), separator] : []), item('close'), ...(!mac ? [item('quit')] : [])]),
     group('edit', [item('undo'), item('redo'), separator, item('cut'), item('copy'), item('paste'), item('select-all'),
+      separator, item('reload'),
       ...(mac ? [separator, item('emoji')] : [])]),
     group('view', [item('zoom-in'), item('zoom-out'), item('zoom-reset'), separator, item('fullscreen'), item('reload'),
       ...(state.development ? [separator, item('devtools')] : [])]),

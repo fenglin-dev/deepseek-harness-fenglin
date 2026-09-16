@@ -16,7 +16,7 @@ const ja: ApplicationMenuCopy = {
   busy: 'プラグイン操作または復旧を実行中です。完了してから再起動または終了してください。',
   tray: 'システムトレイを利用できません。キャンセルしてウインドウを残すか、完全に終了してください。', cancel: 'キャンセル',
   shutdownFailed: 'バックグラウンドプロセスの終了処理が完了していないため、終了と再起動を停止しました。ログを確認してから終了を再試行してください。',
-  community: 'FLAQ AI が独立して保守するコミュニティ版であり、DeepSeek の公式製品ではありません。',
+  community: '枫林 が独立して保守するコミュニティ版であり、DeepSeek の公式製品ではありません。',
 }
 
 const ko: ApplicationMenuCopy = {
@@ -33,7 +33,7 @@ const ko: ApplicationMenuCopy = {
   busy: '플러그인 작업 또는 복구가 진행 중입니다. 완료된 후 다시 시작하거나 종료하세요.',
   tray: '시스템 트레이를 사용할 수 없습니다. 취소하여 창을 유지하거나 완전히 종료하세요.', cancel: '취소',
   shutdownFailed: '백그라운드 프로세스 정리가 완료되지 않아 종료와 재시작이 차단되었습니다. 로그를 확인한 후 종료를 다시 시도하세요.',
-  community: 'FLAQ AI가 독립적으로 유지 관리하는 커뮤니티 배포판이며 DeepSeek 공식 제품이 아닙니다.',
+  community: '枫林가 독립적으로 유지 관리하는 커뮤니티 배포판이며 DeepSeek 공식 제품이 아닙니다.',
 }
 
 const es: ApplicationMenuCopy = {
@@ -51,7 +51,7 @@ const es: ApplicationMenuCopy = {
   busy: 'Hay una operación de plugins o una recuperación en curso. Espera a que termine antes de reiniciar o salir.',
   tray: 'La bandeja del sistema no está disponible. Cancela para mantener la ventana abierta o sal completamente.', cancel: 'Cancelar',
   shutdownFailed: 'La limpieza de procesos en segundo plano no terminó. Se bloquearon la salida y el reinicio. Revisa los registros y vuelve a intentar salir.',
-  community: 'Distribución comunitaria independiente mantenida por FLAQ AI; no es un producto oficial de DeepSeek.',
+  community: 'Distribución comunitaria independiente mantenida por 枫林; no es un producto oficial de DeepSeek.',
 }
 
 const fr: ApplicationMenuCopy = {
@@ -69,7 +69,7 @@ const fr: ApplicationMenuCopy = {
   busy: 'Une opération de plugin ou une récupération est en cours. Attendez sa fin avant de redémarrer ou de quitter.',
   tray: 'La zone de notification est indisponible. Annulez pour garder la fenêtre ouverte ou quittez complètement.', cancel: 'Annuler',
   shutdownFailed: 'Le nettoyage des processus en arrière-plan n’est pas terminé. La fermeture et le redémarrage ont été bloqués. Consultez les journaux, puis réessayez de quitter.',
-  community: 'Distribution communautaire indépendante maintenue par FLAQ AI, et non un produit officiel DeepSeek.',
+  community: 'Distribution communautaire indépendante maintenue par 枫林, et non un produit officiel DeepSeek.',
 }
 
 const de: ApplicationMenuCopy = {
@@ -87,7 +87,7 @@ const de: ApplicationMenuCopy = {
   busy: 'Ein Plugin-Vorgang oder eine Wiederherstellung läuft. Warten Sie vor Neustart oder Beenden auf den Abschluss.',
   tray: 'Der Infobereich ist nicht verfügbar. Brechen Sie ab, um das Fenster offen zu lassen, oder beenden Sie vollständig.', cancel: 'Abbrechen',
   shutdownFailed: 'Die Bereinigung der Hintergrundprozesse wurde nicht abgeschlossen. Beenden und Neustart wurden blockiert. Prüfen Sie die Protokolle und versuchen Sie das Beenden erneut.',
-  community: 'Unabhängige, von FLAQ AI gepflegte Community-Distribution; kein offizielles DeepSeek-Produkt.',
+  community: 'Unabhängige, von 枫林 gepflegte Community-Distribution; kein offizielles DeepSeek-Produkt.',
 }
 
 const ptBR: ApplicationMenuCopy = {
@@ -105,7 +105,7 @@ const ptBR: ApplicationMenuCopy = {
   busy: 'Há uma operação de plugin ou recuperação em andamento. Aguarde antes de reiniciar ou sair.',
   tray: 'A bandeja do sistema está indisponível. Cancele para manter a janela aberta ou saia completamente.', cancel: 'Cancelar',
   shutdownFailed: 'A limpeza dos processos em segundo plano não foi concluída. A saída e a reinicialização foram bloqueadas. Verifique os logs e tente sair novamente.',
-  community: 'Distribuição comunitária independente mantida pela FLAQ AI; não é um produto oficial da DeepSeek.',
+  community: 'Distribuição comunitária independente mantida pela 枫林; não é um produto oficial da DeepSeek.',
 }
 
 /** Additional dictionaries kept separate so the command registry stays readable. */

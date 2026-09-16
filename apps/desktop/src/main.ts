@@ -441,7 +441,7 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
     }
     case 'docs': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin#readme'); return
     case 'repository': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin'); return
-    case 'feedback': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin/issues'); return
+    case 'feedback': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin/issues/new'); return
     default: throw new Error(`desktop: unhandled menu command ${command}`)
   }
 }
