@@ -158,7 +158,7 @@
       "installPolicy": "startup",
       "registrySpec": "@linxin666/dsh-web-all@0.3.23",
       "archive": "dsh-web-all-0.3.23.tgz",
-      "integrity": "sha512-weCIA7OSWzRWFIO29AJP71J0GUQiFtMMXDE1niv/tjhG8AQKlphH67VofuvBLCGCPQmAtmQ1ZkYKxI4pKc5xww==",
+      "integrity": "sha512-lrkXMQmcnfQRQS6APUWMLK62cifglg95NE+0K+mAJUnNzMHXtme9N13yeqqvHmaWxOr9aFvhgFXi+O/ad07vpw==",
       "approvedBuilds": [
         "ssh2",
         "cpu-features",
@@ -173,7 +173,10 @@
       "installPolicy": "startup",
       "registrySpec": "dsh-music-huazai@0.1.0",
       "archive": "dsh-music-huazai-0.1.0.tgz",
-      "integrity": "sha512-SjV88gS/gSE+v4ZthionmCp/H4ZZoM65GXmgRnPMwF/LvspbF26ZtUgCLE2tVR9P0Ua75V/tHbQgicfxWmjzaQ=="
+      "integrity": "sha512-SjV88gS/gSE+v4ZthionmCp/H4ZZoM65GXmgRnPMwF/LvspbF26ZtUgCLE2tVR9P0Ua75V/tHbQgicfxWmjzaQ==",
+      "approvedBuilds": [
+        "node-hid"
+      ]
     },
     {
       "seedId": "dsh-whale-widget-bowl",
