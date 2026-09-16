@@ -33,19 +33,25 @@ type AttentionSnapshot = Parameters<Parameters<SidebarRootComponentProps['useSes
 const noAttention: AttentionSnapshot = new Map()
 const useSessionPendingInteraction: SidebarRootComponentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
 
-function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; width?: number } = {}) {
+function mountShell({ collapsed = false, width = 300, presentation = 'column' }: {
+  collapsed?: boolean
+  width?: number
+  presentation?: 'column' | 'drawer'
+} = {}) {
   const startSession = vi.fn()
   const toggleSidebar = vi.fn()
+  const dismiss = vi.fn()
   let regionOwner: SidebarSectionOwnerProps | undefined
   let settingsOwner: SidebarSettingsOwnerProps | undefined
   let settingsActionOwner: SidebarSettingsActionOwnerProps | undefined
   let footerActionOwner: SidebarFooterActionOwnerProps | undefined
   const brandMark = <span data-testid="custom-brand-mark">M</span>
   const brandName = <span data-testid="custom-brand-name">Custom Brand</span>
-  let current = { collapsed, width }
+  let current = { collapsed, width, presentation }
   const root = () => (
     <SidebarRoot
       collapsed={current.collapsed} width={current.width}
+      presentation={current.presentation} dismiss={dismiss}
       useSessions={neverHook} useSessionPendingInteraction={useSessionPendingInteraction}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook}
@@ -58,7 +64,7 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
         if (key === 'sidebar.brand.mark') return brandMark
         if (key === 'sidebar.brand.name') return brandName
         if (key === 'sidebar.settings') {
-          settingsOwner = owner
+          settingsOwner = owner as SidebarSettingsOwnerProps
           return <div data-testid="settings-seat" data-wide={owner.wide} />
         }
         if (key === 'sidebar.footer.action') {
@@ -78,6 +84,7 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
   return {
     startSession,
     toggleSidebar,
+    dismiss,
     regionOwner: () => {
       if (regionOwner === undefined) throw new Error('region owner not rendered')
       return regionOwner
@@ -121,7 +128,7 @@ describe('SidebarRoot shell', () => {
     vi.stubEnv('DSH_CLIENT_GIT_DIRTY', 'true')
     vi.stubEnv('DSH_CLIENT_VERSION', '1.2.3-rc.4')
     const { container } = render(<SidebarRoot
-      collapsed={false} width={300}
+      collapsed={false} width={300} presentation="column" dismiss={vi.fn()}
       useSessions={neverHook} useSessionPendingInteraction={useSessionPendingInteraction}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook}
@@ -141,7 +148,7 @@ describe('SidebarRoot shell', () => {
   ])('omits unavailable build-version suffixes from %j', (environment, expected) => {
     for (const [name, value] of Object.entries(environment)) vi.stubEnv(name, value)
     render(<SidebarRoot
-      collapsed={false} width={300}
+      collapsed={false} width={300} presentation="column" dismiss={vi.fn()}
       useSessions={neverHook} useSessionPendingInteraction={useSessionPendingInteraction}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook}
@@ -156,7 +163,7 @@ describe('SidebarRoot shell', () => {
 
   it('retains the local-build fallback without complete build metadata', () => {
     render(<SidebarRoot
-      collapsed={false} width={300}
+      collapsed={false} width={300} presentation="column" dismiss={vi.fn()}
       useSessions={neverHook} useSessionPendingInteraction={useSessionPendingInteraction}
       usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])}
       useResource={useResource} useWorkspaces={neverHook}
@@ -200,5 +207,33 @@ describe('SidebarRoot shell', () => {
     const b = mountShell({ collapsed: true })
     expect(b.regionOwner().wide).toBe(false)
     expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
+  })
+
+  it('renders a modal drawer and dismisses it through Escape and navigation', () => {
+    const b = mountShell({ collapsed: false, width: 320, presentation: 'drawer' })
+    const dialog = screen.getByRole('dialog', { name: 'Global panels' })
+    const focusable = [...dialog.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+    focusable.at(-1)?.focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement).toBe(focusable[0])
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(b.dismiss).toHaveBeenCalledOnce()
+    const backdrop = screen.getAllByRole('button', { name: 'Collapse sidebar' })
+      .find(button => !dialog.contains(button))
+    if (backdrop === undefined) throw new Error('drawer backdrop missing')
+    fireEvent.click(backdrop)
+    expect(b.dismiss).toHaveBeenCalledTimes(2)
+    fireEvent.click(screen.getAllByRole('button', { name: 'New session' })[0]!)
+    expect(b.startSession).toHaveBeenCalledOnce()
+    expect(b.dismiss).toHaveBeenCalledTimes(3)
+  })
+
+  it('restores focus to the phone opener after the controlled drawer closes', async () => {
+    const b = mountShell({ collapsed: true, width: 320, presentation: 'drawer' })
+    const opener = screen.getByRole('button', { name: 'Open sidebar' })
+    opener.focus()
+    b.rerender({ collapsed: false })
+    b.rerender({ collapsed: true })
+    await vi.waitFor(() => { expect(document.activeElement).toBe(opener) })
   })
 })

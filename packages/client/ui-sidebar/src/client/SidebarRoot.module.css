@@ -22,6 +22,112 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+.mobileTrigger {
+  position: fixed;
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  z-index: 32;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: var(--dsw-elevation-soft);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.mobileTrigger[data-visible] {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.mobileTrigger:hover,
+.mobileTrigger:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.drawerLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 31;
+  visibility: hidden;
+  pointer-events: none;
+  transition: visibility 0s linear var(--ds-transition-duration-slow);
+}
+
+.drawerLayer[data-open] {
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.drawerBackdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: var(--dsw-alias-bg-mask-1);
+  opacity: 0;
+  cursor: default;
+  transition: opacity var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.drawerLayer[data-open] .drawerBackdrop {
+  opacity: 1;
+}
+
+.drawerPanel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  max-width: calc(100vw - 38px);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--dsw-specific-sidebar-fill);
+  border-right: none;
+  box-shadow: var(--dsw-elevation-prominent);
+  transform: translateX(-100%);
+  transition: transform var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.drawerLayer[data-open] .drawerPanel {
+  transform: none;
+}
+
+.drawerPanel > .root {
+  width: 100% !important;
+}
+
+.drawerPanel .iconButton,
+.drawerPanel .newSession {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.drawerPanel .panelRow {
+  min-height: 44px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawerLayer,
+  .drawerBackdrop,
+  .drawerPanel {
+    transition: none;
+  }
+}
+
 /* Rail geometry (figma rail spec): 36x36 control boxes centered in the 56px
    rail (10px side padding), 12px vertical rhythm, 18px from the rail top to
    the whale's box (24px to the 24-wide whale glyph itself). */

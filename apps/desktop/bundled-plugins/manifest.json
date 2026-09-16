@@ -4,45 +4,54 @@
     {
       "seedId": "dshmarket",
       "packageName": "dshmarket",
-      "version": "1.45.1",
+      "version": "1.47.0",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dshmarket@1.45.1",
-      "archive": "dshmarket-1.45.1.tgz",
-      "integrity": "sha512-Vmn+nuwBNtaE+VkQ9Flw3llrx0rCugEzGYYcS7xFoIx7uhKowRVz4LSDNFG4qeYOhFm2r+oi3qXcGRpy7Tf1Sw=="
+      "registrySpec": "dshmarket@1.47.0",
+      "archive": "dshmarket-1.47.0.tgz",
+      "integrity": "sha512-pVmakGEyZajwoDwXh7jGfHxtHtI5LCT5/4qmzfoU4gZKYD9F34AbJTF8MdU7Hfw0fBENs/Pkb0WF3kBZEf8QVg=="
     },
     {
       "seedId": "xmanrui-dsh-im",
       "packageName": "@xmanrui/dsh-im",
-      "version": "4.19.2",
+      "version": "4.21.0",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "@xmanrui/dsh-im@4.19.2",
-      "archive": "xmanrui-dsh-im-4.19.2.tgz",
-      "integrity": "sha512-JUJQ/GX5Pv8Br2TgdpO/cuyu0NRHygQjZcvgSq53MQboA5e+udXFHjSjtnK0jq+O7P3Cb/kGSdub1h14kTzKCw=="
+      "registrySpec": "@xmanrui/dsh-im@4.21.0",
+      "managedUpgradeFrom": [
+        "3.0.6"
+      ],
+      "archive": "xmanrui-dsh-im-4.21.0.tgz",
+      "integrity": "sha512-cIv89Q01uhwEXRarjqFUJ05bHYXmb2MtyN44F9T9nHh4jgk0MKjpbvQx/u+HCSzzijYFCSRTZic81O8pzokqdA=="
     },
     {
       "seedId": "dsh-skill-picker",
       "packageName": "dsh-skill-picker",
-      "version": "0.5.9",
+      "version": "0.5.10",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dsh-skill-picker@0.5.9",
-      "archive": "dsh-skill-picker-0.5.9.tgz",
-      "integrity": "sha512-gmry19MqaNRaIIbidQ1sg/WQIRkHraPkJaEmNomO5BViKEnw4/aHNR1cOqDY+VpqvviC7r3txJsNbM0ArnzASw=="
+      "registrySpec": "dsh-skill-picker@0.5.10",
+      "managedUpgradeFrom": [
+        "0.2.0"
+      ],
+      "archive": "dsh-skill-picker-0.5.10.tgz",
+      "integrity": "sha512-WB+ofsBV2NT6Hcx3xNEhXb8nXDlpetzXWdDvWe2zJHA48loSMp+O5iNmEwCJ3/SD7OKywymCjtIJMRx7jWku6A=="
     },
     {
       "seedId": "dsh-better-sidebar",
       "packageName": "dsh-better-sidebar",
-      "version": "0.19.0",
+      "version": "0.19.1",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dsh-better-sidebar@0.19.0",
+      "registrySpec": "dsh-better-sidebar@0.19.1",
+      "managedUpgradeFrom": [
+        "0.16.1"
+      ],
       "approvedBuilds": [
         "node-pty"
       ],
-      "archive": "dsh-better-sidebar-0.19.0.tgz",
-      "integrity": "sha512-eUNfVfJScUfvBiiB7yqot4UDslTOaDcRxPR9LKWE2Kv/Mp/iSk14whgrVg2RggYLc5aq2c+zpXG6qeQ5+aiHrg=="
+      "archive": "dsh-better-sidebar-0.19.1.tgz",
+      "integrity": "sha512-Jr0tPJoDKUVkq+fioL6Td+YwXZ+PULx3CnBJ4iktaQGNP5y9hgpz6V7o7f4Yh2czheVKZsewurqCaiN10GQYeQ=="
     },
     {
       "seedId": "dsh-pocket",
@@ -51,18 +60,21 @@
       "profile": "web",
       "installPolicy": "startup",
       "registrySpec": "dsh-pocket@2.10.6",
+      "managedUpgradeFrom": [
+        "1.14.5"
+      ],
       "archive": "dsh-pocket-2.10.6.tgz",
       "integrity": "sha512-yqybeWWutozi1yBLDpSs6ien9SndFPVNK6HlmhJf8q0AOLauzcLntmFyGQ0/v3EzS3V8ftM4yvqcc/o6LcGcGA=="
     },
     {
       "seedId": "ychris12138-dsh-usage-stats",
       "packageName": "@ychris12138/dsh-usage-stats",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "@ychris12138/dsh-usage-stats@0.3.2",
-      "archive": "ychris12138-dsh-usage-stats-0.3.2.tgz",
-      "integrity": "sha512-R85d0bgIzKk1/A8M32YiMeItgQWevNNSkb0gsedoHJY7Mc67sZf/UjsukTn4OrxREYt2h6Z6zGm5btKC0X8PCQ=="
+      "registrySpec": "@ychris12138/dsh-usage-stats@0.3.3",
+      "archive": "ychris12138-dsh-usage-stats-0.3.3.tgz",
+      "integrity": "sha512-HMjAAc5fy7RglztdHfgUh4I2ul3a5N2wSz1H2JSqpCqxxdCmHJwC1AwX06eb16AGBgixpcwfnZBcegx/oVbs0A=="
     },
     {
       "seedId": "dsh-smooth-stream",
@@ -73,6 +85,16 @@
       "registrySpec": "dsh-smooth-stream@0.6.1",
       "archive": "dsh-smooth-stream-0.6.1.tgz",
       "integrity": "sha512-gikVy5Wo5O7wUMOnd6cLCP/NA1fy+XOrhAiWoucjTDoLrfwu/88mK6jltv7Uv1jD4hf68j80oUArS9KnPQztCw=="
+    },
+    {
+      "seedId": "dsh-mermaid",
+      "packageName": "dsh-mermaid",
+      "version": "0.4.0",
+      "profile": "web",
+      "installPolicy": "startup",
+      "registrySpec": "dsh-mermaid@0.4.0",
+      "archive": "dsh-mermaid-0.4.0.tgz",
+      "integrity": "sha512-SVXmo3MdINyAf097eEF7A4D41wb+bZr5pX8uoHVbD+ZnMOdfW80AXcHMlMPkcrAHFPzkOeC9cL91zjDEqteTIg=="
     },
     {
       "seedId": "diagnostic-dsh-font",

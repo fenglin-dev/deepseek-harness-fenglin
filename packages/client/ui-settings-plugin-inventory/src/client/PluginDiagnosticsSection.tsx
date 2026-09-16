@@ -99,6 +99,8 @@ const RETRY_KEYS = {
   succeeded: 'health.retry.succeeded',
   repaired: 'health.retry.repaired',
   quarantined: 'health.retry.quarantined',
+  paused: 'health.retry.paused',
+  cancelled: 'health.retry.cancelled',
   failed: 'health.retry.failed',
 } satisfies Record<Exclude<PluginInstallSnapshot['phase'], 'running'>, PluginInventoryLocaleKey>
 
@@ -111,6 +113,7 @@ const QUARANTINE_REASON_KEYS = {
   'client-module-unavailable': 'health.quarantine.reason.clientModuleUnavailable',
   'loader-module-unresolvable': 'health.quarantine.reason.loaderModuleUnresolvable',
   'loader-dependency-unavailable': 'health.quarantine.reason.loaderDependencyUnavailable',
+  'loader-entry-collision': 'health.quarantine.reason.loaderEntryCollision',
   'loader-lifecycle-failed': 'health.quarantine.reason.loaderLifecycleFailed',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
@@ -123,6 +126,7 @@ const QUARANTINE_SOLUTION_KEYS = {
   'client-module-unavailable': 'health.quarantine.solution.client-module-unavailable',
   'loader-module-unresolvable': 'health.quarantine.solution.loader-module-unresolvable',
   'loader-dependency-unavailable': 'health.quarantine.solution.loader-dependency-unavailable',
+  'loader-entry-collision': 'health.quarantine.solution.loader-entry-collision',
   'loader-lifecycle-failed': 'health.quarantine.solution.loader-lifecycle-failed',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
@@ -135,6 +139,7 @@ const QUARANTINE_RETRY_KEYS = {
   'client-module-unavailable': 'health.quarantine.action.findUpdate',
   'loader-module-unresolvable': 'health.quarantine.action.findUpdate',
   'loader-dependency-unavailable': 'health.quarantine.action.findUpdate',
+  'loader-entry-collision': 'health.quarantine.action.findUpdate',
   'loader-lifecycle-failed': 'health.quarantine.action.findUpdate',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
@@ -156,6 +161,7 @@ function diagnosticIssueCopy(code: DiagnosticIssue['code']): PluginInventoryLoca
   if (code === 'profile.session-api-incompatible') return 'diagnostics.issue.sessionApi'
   if (code === 'profile.quarantine-removal-residue') return 'diagnostics.issue.quarantineRemovalResidue'
   if (code === 'profile.session-persistence-migration') return 'diagnostics.issue.sessionPersistenceMigration'
+  if (code === 'session.persistence-corrupt') return 'diagnostics.issue.sessionPersistenceCorrupt'
   if (code === 'pnpm.build-script-blocked') return 'diagnostics.issue.buildScript'
   if (code === 'pnpm.minimum-release-age' || code === 'pnpm.supply-chain' || code === 'pnpm.integrity') {
     return 'diagnostics.issue.supplyChain'
@@ -174,7 +180,9 @@ function startupDiagnosticSolution(code: string): PluginInventoryLocaleKey {
   if (code === 'runtime.profile-repair-timeout' || code === 'runtime.profile-repair-failed') {
     return 'diagnostics.startup.solution.profileRepair'
   }
-  if (code === 'runtime.bundled-plugin-timeout' || code === 'runtime.bundled-plugin-failed') {
+  if (code === 'runtime.bundled-plugin-timeout'
+    || code === 'runtime.bundled-plugin-failed'
+    || code === 'runtime.bundled-plugin-marker-mismatch') {
     return 'diagnostics.startup.solution.bundledPlugin'
   }
   if (code === 'runtime.profile-mutation-lock-busy') return 'diagnostics.startup.solution.lockBusy'
@@ -439,7 +447,7 @@ export function PluginDiagnosticsSection({
   const retained = inventory.status === 'ready' ? inventory.snapshot.dependencyHealth.lastRepair : null
   const quarantined = inventory.status === 'ready' ? inventory.snapshot.dependencyHealth.quarantined : []
   const retainedIssues = inventory.status === 'ready' ? inventory.snapshot.dependencyHealth.issues : []
-  const safeMode = inventory.status === 'ready' ? inventory.snapshot.dependencyHealth.safeMode ?? null : null
+  const diagnosticMode = inventory.status === 'ready' ? inventory.snapshot.dependencyHealth.diagnosticMode ?? null : null
   const currentIssues = report?.issues ?? retainedIssues
   const failedEntries = inventory.status === 'ready'
     ? inventory.snapshot.entries.filter(entry => entry.enabled && entry.fiberPhase === 'failed')
@@ -532,13 +540,13 @@ export function PluginDiagnosticsSection({
         ) : null}
       </div>
 
-      {safeMode !== null ? (
-        <article className={css.safeModeNotice} role="status">
+      {diagnosticMode !== null ? (
+        <article className={css.diagnosticModeNotice} role="status">
           <IconWarningOutline16 size={16} />
           <div>
-            <strong>{t('diagnostics.safeMode.title')}</strong>
-            <p>{t('diagnostics.safeMode.description')}</p>
-            {safeMode.skippedBundles.length > 0 ? <code>{safeMode.skippedBundles.join(', ')}</code> : null}
+            <strong>{t('diagnostics.diagnosticMode.title')}</strong>
+            <p>{t('diagnostics.diagnosticMode.description')}</p>
+            {diagnosticMode.skippedBundles.length > 0 ? <code>{diagnosticMode.skippedBundles.join(', ')}</code> : null}
           </div>
         </article>
       ) : null}
@@ -554,6 +562,16 @@ export function PluginDiagnosticsSection({
                 <span>{incident.code}</span>
               </div>
               {incident.packageName === undefined ? null : <code>{incident.packageName}</code>}
+              {incident.recordedVersion === undefined && incident.actualVersion === undefined
+                && incident.targetVersion === undefined ? null : (
+                  <p>
+                    {t('diagnostics.startup.recordedVersion')} <code>{incident.recordedVersion ?? '—'}</code>
+                    {' · '}
+                    {t('diagnostics.startup.actualVersion')} <code>{incident.actualVersion ?? '—'}</code>
+                    {' · '}
+                    {t('diagnostics.startup.targetVersion')} <code>{incident.targetVersion ?? '—'}</code>
+                  </p>
+                )}
               <p>{incident.operation} · {new Date(incident.createdAt).toLocaleString()}</p>
               <p className={css.summarySolution}>
                 <b>{t('health.quarantine.solution.title')}：</b>{t(startupDiagnosticSolution(incident.code))}
@@ -866,6 +884,7 @@ export function PluginDiagnosticsSection({
                     || record.reason === 'client-module-unavailable'
                     || record.reason === 'loader-module-unresolvable'
                     || record.reason === 'loader-dependency-unavailable'
+                    || record.reason === 'loader-entry-collision'
                     || record.reason === 'loader-lifecycle-failed' ? (
                       <Button
                         variant="primary"

@@ -12,7 +12,7 @@ The upstream client and Better Sidebar historically supplied overlapping right-s
 
 The upstream `@deepseek-ai/dsh-client-ui-sidebar-right` package is the only owner of the right sidebar. The layout exposes upstream global main panels, and the Conversation surface is registered as `main.conversation` so panel navigation and right-sidebar visibility share the upstream state model.
 
-Bundled Better Sidebar 0.19.0 uses the official right-sidebar service for compatible right-side contributions and owns only its separate bottom workbench. The desktop client does not scan or rewrite plugin DOM, add plugin-specific title-bar CSS, or mount a second right-sidebar container.
+Bundled Better Sidebar 0.19.1 uses the official right-sidebar service for compatible right-side contributions and owns only its separate bottom workbench. The desktop client does not scan or rewrite plugin DOM, add plugin-specific title-bar CSS, or mount a second right-sidebar container.
 
 Community extensions remain orthogonal to this ownership boundary: Session actions, plugin discovery, settings-navigation actions, and desktop commands continue to register through their existing slots and services.
 

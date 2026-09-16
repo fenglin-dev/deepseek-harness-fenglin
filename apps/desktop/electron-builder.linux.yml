@@ -1,5 +1,5 @@
 appId: ai.flaq.deepseek-harness
-productName: DeepSeek Harness
+productName: Open DeepSeek Harness Desktop
 asar: true
 npmRebuild: false
 directories:
@@ -13,12 +13,18 @@ extraResources:
     to: bundled-plugins
     filter:
       - "**/*"
-  - from: ../../.artifacts/desktop-runtime-linux-${arch}.tar.gz
-    to: harness-runtime.tar.gz
+  - from: ../../.artifacts/desktop-runtime-linux-${arch}.tar
+    to: harness-runtime.tar
+  - from: ../../.artifacts/desktop-runtime-linux-${arch}.tar.sha256
+    to: harness-runtime.tar.sha256
+  - from: ../../.artifacts/desktop-prebuilt-linux-${arch}.tar
+    to: prebuilt-profile.tar
+  - from: ../../.artifacts/desktop-prebuilt-linux-${arch}.tar.sha256
+    to: prebuilt-profile.tar.sha256
 linux:
   icon: src/icon.png
   category: Development
-  executableName: deepseek-harness
+  executableName: open-deepseek-harness-desktop
   syncDesktopName: true
   target:
     - deb

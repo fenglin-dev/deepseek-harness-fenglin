@@ -2,9 +2,9 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
   closeSync, copyFileSync, cpSync, constants, existsSync, fsyncSync, lstatSync, mkdirSync, openSync,
-  readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync,
+  readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 'node:path'
 import { dump, load } from 'js-yaml'
 import { relocateProfilePluginMetadata } from './profile-plugin-relocation.ts'
 import {
@@ -113,6 +113,30 @@ function requireTransaction(home: string, profile: string, id: string): ProfileP
 }
 
 /**
+ * Reclaim preparation only after its producer has died; activation always uses rollback recovery.
+ * Caller must hold the Profile mutation lock before changing ownership.
+ * @param home - Active data directory.
+ * @param profile - Profile identity.
+ * @param id - Existing transaction ID.
+ * @param ownerPid - New live desktop owner.
+ */
+export function resumeProfilePluginPreparation(home: string, profile: string, id: string, ownerPid: number): void {
+  const record = requireTransaction(home, profile, id)
+  if (record.phase !== 'preparing') throw new Error('dsh: only interrupted preparation can be resumed')
+  try {
+    process.kill(record.producerPid, 0)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    if (!Number.isSafeInteger(ownerPid) || ownerPid <= 0) throw new Error('dsh: invalid preparation owner')
+    process.kill(ownerPid, 0)
+    profilePluginCandidateHome(home, profile, id)
+    publish(home, { ...record, producerPid: ownerPid })
+    return
+  }
+  throw new Error('dsh: preparation producer is still alive')
+}
+
+/**
  * Resolve the candidate home of an existing transaction.
  * @param home - Active data directory.
  * @param profile - Profile identity.
@@ -151,6 +175,93 @@ function relocateGeneratedMetadata(candidate: string, home: string, profile: str
   }
 }
 
+type PathApi = Pick<typeof posix, 'basename' | 'isAbsolute' | 'relative' | 'resolve' | 'sep'>
+
+function isWindowsAbsolute(path: string): boolean {
+  return /^[A-Za-z]:[\\/]/u.test(path) || /^\\\\/u.test(path)
+}
+
+function pathApiFor(root: string, target: string): PathApi | undefined {
+  if (isWindowsAbsolute(root) && win32.isAbsolute(target)) return win32
+  if (posix.isAbsolute(root) && posix.isAbsolute(target)) return posix
+  return undefined
+}
+
+function directArchiveName(root: string, target: string): string | undefined {
+  const pathApi = pathApiFor(root, target)
+  if (pathApi === undefined) return undefined
+  const child = pathApi.relative(pathApi.resolve(root), pathApi.resolve(target))
+  if (child === '' || pathApi.isAbsolute(child) || child === '..' || child.startsWith(`..${pathApi.sep}`)
+    || child !== pathApi.basename(child) || !child.endsWith('.tgz')) return undefined
+  return child
+}
+
+function joinArchivePath(directory: string, archive: string): string {
+  if (isWindowsAbsolute(directory)) return win32.join(directory, archive)
+  if (posix.isAbsolute(directory)) return posix.join(directory, archive)
+  return join(directory, archive)
+}
+
+function rewriteArchiveLocator(text: string, targetDirectory: string, locate: (path: string) => string | undefined): string {
+  const match = /^(.*?@)?file:(.*?\.tgz)(\(.*\))?$/u.exec(text)
+  if (match?.[2] === undefined) return text
+  const archive = locate(match[2])
+  return archive === undefined ? text : `${match[1] ?? ''}file:${joinArchivePath(targetDirectory, archive)}${match[3] ?? ''}`
+}
+
+function mapArchiveLocators(value: unknown, rewrite: (text: string) => string): unknown {
+  if (typeof value === 'string') return rewrite(value)
+  if (Array.isArray(value)) return value.map(child => mapArchiveLocators(child, rewrite))
+  if (value === null || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [rewrite(key), mapArchiveLocators(child, rewrite)]))
+}
+
+/**
+ * Move direct archive locators between controlled directories across native or normalized path separators.
+ * @param value - Parsed manifest or pnpm metadata.
+ * @param sourceDirectory - Directory that currently owns the archive files.
+ * @param targetDirectory - Directory that will own the archive files.
+ * @returns Equivalent data with direct `.tgz` locators moved and unrelated local sources unchanged.
+ */
+export function relocateProfilePluginArchiveReferences(
+  value: unknown, sourceDirectory: string, targetDirectory: string,
+): unknown {
+  const rewrite = (text: string): string => rewriteArchiveLocator(
+    text, targetDirectory, path => directArchiveName(sourceDirectory, path),
+  )
+  return mapArchiveLocators(value, rewrite)
+}
+
+function staleTransactionArchiveName(home: string, profile: string, target: string): string | undefined {
+  const root = join(home, 'plugin-transactions', profile)
+  const pathApi = pathApiFor(root, target)
+  if (pathApi === undefined) return undefined
+  const child = pathApi.relative(pathApi.resolve(root), pathApi.resolve(target))
+  const parts = child.split(pathApi.sep)
+  if (parts.length !== 4 || !ID.test(parts[0] ?? '') || parts[1] !== 'candidate' || parts[2] !== 'bundled-plugins') return undefined
+  const archive = parts[3]
+  return archive !== undefined && archive === pathApi.basename(archive) && archive.endsWith('.tgz') ? archive : undefined
+}
+
+function repairStaleTransactionArchives(candidate: string, home: string, profile: string): void {
+  const activeArchives = join(home, 'bundled-plugins')
+  const rewrite = (text: string): string => rewriteArchiveLocator(text, activeArchives, (path) => {
+    const archive = staleTransactionArchiveName(home, profile, path)
+    if (archive === undefined) return undefined
+    const retained = join(activeArchives, archive)
+    return existsSync(retained) && lstatSync(retained).isFile() ? archive : undefined
+  })
+  for (const name of ['package.json', 'pnpm-lock.yaml']) {
+    const path = join(candidate, 'profiles', profile, name)
+    if (!existsSync(path)) continue
+    const parsed: unknown = name.endsWith('.json') ? JSON.parse(readFileSync(path, 'utf8')) : load(readFileSync(path, 'utf8'))
+    const moved = mapArchiveLocators(parsed, rewrite)
+    if (JSON.stringify(parsed) !== JSON.stringify(moved)) {
+      writeAtomic(path, name.endsWith('.json') ? `${JSON.stringify(moved, null, 2)}\n` : dump(moved, { lineWidth: -1, noRefs: true }))
+    }
+  }
+}
+
 function retainCandidateArchives(candidate: string, home: string, profile: string): void {
   const directory = join(candidate, 'bundled-plugins')
   if (!existsSync(directory)) return
@@ -168,25 +279,54 @@ function retainCandidateArchives(candidate: string, home: string, profile: strin
   // Only candidate-owned bundled archives move. User local/Git specs remain literal.
   const manifest = join(candidate, 'profiles', profile, 'package.json')
   const parsed: unknown = JSON.parse(readFileSync(manifest, 'utf8'))
-  const visit = (value: unknown): unknown => {
-    if (typeof value === 'string' && value.startsWith(`file:${directory}${sep}`)) {
-      const archive = value.slice(`file:${directory}${sep}`.length)
-      if (archive !== '' && !archive.includes('/') && !archive.includes('\\') && archive.endsWith('.tgz')) {
-        return `file:${join(home, 'bundled-plugins', archive)}`
-      }
-    }
-    if (Array.isArray(value)) return value.map(visit)
-    if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, visit(child)]))
-    return value
-  }
-  const moved = visit(parsed)
+  const activeArchives = join(home, 'bundled-plugins')
+  const moved = relocateProfilePluginArchiveReferences(parsed, directory, activeArchives)
   if (JSON.stringify(parsed) !== JSON.stringify(moved)) writeAtomic(manifest, `${JSON.stringify(moved, null, 2)}\n`)
   const lock = join(candidate, 'profiles', profile, 'pnpm-lock.yaml')
   if (existsSync(lock)) {
     const parsedLock: unknown = load(readFileSync(lock, 'utf8'))
-    const movedLock = visit(parsedLock)
+    const movedLock = relocateProfilePluginArchiveReferences(parsedLock, directory, activeArchives)
     if (JSON.stringify(parsedLock) !== JSON.stringify(movedLock)) writeAtomic(lock, dump(movedLock, { lineWidth: -1, noRefs: true }))
   }
+}
+
+function isWithin(root: string, target: string): boolean {
+  const child = relative(resolve(root), resolve(target))
+  return child === '' || (!isAbsolute(child) && child !== '..' && !child.startsWith(`..${sep}`))
+}
+
+/**
+ * Candidate dependencies move to a shallower active directory during activation. Relative pnpm
+ * links that leave node_modules would otherwise keep their text but resolve to a different path.
+ * Internal pnpm links move as one tree and remain relative; only external links are stabilized.
+ */
+function stabilizeExternalDependencyLinks(modules: string): void {
+  const generatedBinLink = (path: string): boolean => {
+    const bin = dirname(path)
+    return basename(bin) === '.bin' && (dirname(bin) === modules || basename(dirname(bin)) === 'node_modules')
+  }
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name)
+      const metadata = lstatSync(path)
+      if (metadata.isSymbolicLink()) {
+        let destination: string
+        try { destination = realpathSync(path) } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT' && generatedBinLink(path)) {
+            unlinkSync(path)
+            continue
+          }
+          throw new Error(`dsh: candidate dependency link ${JSON.stringify(relative(modules, path))} has a missing target; activation refused`)
+        }
+        if (isWithin(modules, destination)) continue
+        const target = statSync(destination)
+        unlinkSync(path)
+        symlinkSync(destination, path,
+          process.platform === 'win32' && target.isDirectory() ? 'junction' : target.isDirectory() ? 'dir' : 'file')
+      } else if (metadata.isDirectory()) visit(path)
+    }
+  }
+  visit(modules)
 }
 
 // The manifest and lockfile retain their literal local specs. A candidate-only
@@ -224,18 +364,25 @@ function projectLocalSources(home: string, candidate: string, profile: string, v
  * @param home - Active data directory.
  * @param profile - Profile identity.
  * @param producerPid - Process retaining preparation ownership across CLI children.
+ * @param transactionId - Desktop-assigned identity available before preparation starts.
  * @returns The journal for the newly owned candidate.
  */
-export function prepareProfilePluginTransaction(home: string, profile: string, producerPid = process.pid): ProfilePluginTransaction {
+export function prepareProfilePluginTransaction(
+  home: string,
+  profile: string,
+  producerPid = process.pid,
+  transactionId: string = randomUUID(),
+): ProfilePluginTransaction {
+  if (!ID.test(transactionId)) throw new Error('dsh: invalid transaction ID')
   if (!Number.isSafeInteger(producerPid) || producerPid <= 0) throw new Error('dsh: invalid transaction producer')
   if (readProfilePluginTransaction(home, profile) !== undefined) throw new Error('dsh: a plugin transaction needs recovery first')
   const paths = locations(home, profile)
   inside(home, paths.profile)
   const modules = join(paths.profile, 'node_modules')
   if (existsSync(modules) && !lstatSync(modules).isDirectory()) throw new Error('dsh: indirect Profile dependencies cannot be staged')
-  const snapshot = createProfilePluginSnapshot({ home, profile, kind: 'safety', trigger: 'restore-safety' })
+  const snapshot = createProfilePluginSnapshot({ home, profile, kind: 'safety', trigger: 'restore-safety', allowUninitialized: true })
   const record: ProfilePluginTransaction = {
-    schema: SCHEMA, id: randomUUID(), snapshotId: snapshot.snapshotId, profile,
+    schema: SCHEMA, id: transactionId, snapshotId: snapshot.snapshotId, profile,
     producerPid, hadModules: existsSync(modules), files: snapshot.files, phase: 'preparing',
   }
   publish(home, record)
@@ -252,7 +399,10 @@ export function prepareProfilePluginTransaction(home: string, profile: string, p
     if (existsSync(source)) copyRegular(source, join(candidate, 'profiles', profile, name))
   }
   const fallback = join(home, 'profiles', 'node_modules')
-  if (existsSync(fallback)) symlinkSync(fallback, join(candidate, 'profiles', 'node_modules'), 'junction')
+  if (existsSync(fallback)) {
+    mkdirSync(join(candidate, 'profiles'), { recursive: true, mode: 0o700 })
+    symlinkSync(fallback, join(candidate, 'profiles', 'node_modules'), 'junction')
+  }
   const archives = join(home, 'bundled-plugins')
   if (existsSync(archives)) {
     inside(home, archives)
@@ -260,6 +410,7 @@ export function prepareProfilePluginTransaction(home: string, profile: string, p
       if (entry.isFile() && entry.name.endsWith('.tgz')) copyRegular(join(archives, entry.name), join(candidate, 'bundled-plugins', entry.name))
     }
   }
+  repairStaleTransactionArchives(candidate, home, profile)
   for (const name of ['package.json', 'pnpm-workspace.yaml']) {
     const path = join(paths.profile, name)
     if (!existsSync(path)) continue
@@ -320,9 +471,11 @@ export function activateProfilePluginTransaction(home: string, profile: string, 
   const newModules = join(candidate, 'profiles', profile, 'node_modules')
   inside(candidate, newModules)
   if (!lstatSync(newModules).isDirectory()) throw new Error('dsh: candidate dependencies are not installed')
+  stabilizeExternalDependencyLinks(newModules)
   retainCandidateArchives(candidate, home, profile)
   relocateGeneratedMetadata(candidate, home, profile, true)
   publish(home, { ...record, phase: 'activating' })
+  mkdirSync(paths.profile, { recursive: true, mode: 0o700 })
   if (record.hadModules) renameSync(modules, join(paths.root, id, 'previous-node_modules'))
   renameSync(newModules, modules)
   for (const file of record.files) {

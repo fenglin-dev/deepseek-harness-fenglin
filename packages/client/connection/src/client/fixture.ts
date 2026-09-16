@@ -358,6 +358,7 @@ interface WorkspaceInsertSessionBeforeRequest {
   readonly beforeSessionId?: SessionId
 }
 interface WorkspaceArchiveSessionRequest { readonly sessionId: SessionId }
+interface WorkspaceUnarchiveSessionRequest { readonly sessionId: SessionId }
 interface WorkspaceArchiveValue { readonly archivedSessionIds: readonly SessionId[] }
 
 type WorkspaceFollowFrame =
@@ -380,6 +381,7 @@ interface FixtureWorkspaceApi {
   insertBefore(request: WorkspaceInsertBeforeRequest): Promise<ConnectionRpcResult<WorkspaceOrderValue>>
   insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<ConnectionRpcResult<WorkspaceValue>>
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<ConnectionRpcResult<WorkspaceArchiveValue>>
+  unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<ConnectionRpcResult<WorkspaceArchiveValue>>
 }
 
 interface FixtureWorkspace {
@@ -2748,6 +2750,18 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         },
       }
     },
+    preflight(agentPreset: string): RpcResult<string> {
+      return fixturePresets.has(agentPreset)
+        ? { ok: true, value: agentPreset }
+        : {
+          ok: false,
+          error: {
+            code: 'agent-preset/not-found',
+            message: `unknown agent preset "${agentPreset}"`,
+            details: { agentPreset, available: [...fixturePresets.keys()] },
+          },
+        }
+    },
     select(_id: SessionId, agentPreset: string): RpcResult<string> {
       fixtureDefaultPreset = agentPreset
       return { ok: true, value: agentPreset }
@@ -3798,6 +3812,12 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       }
       return sessionOk({ archivedSessionIds: [...archivedSessionIds] })
     },
+    unarchiveSession: (request) => {
+      const index = archivedSessionIds.indexOf(request.sessionId)
+      if (index >= 0) archivedSessionIds.splice(index, 1)
+      emitWorkspace({ type: 'archived', archivedSessionIds: [...archivedSessionIds] })
+      return sessionOk({ archivedSessionIds: [...archivedSessionIds] })
+    },
   }
 
   const rpc: ClientConnectionRpc = {
@@ -3856,6 +3876,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         case 'goals/complete': return Promise.resolve(goalRemotes.complete(sessionId, args.ref as FxGoalRef))
         case 'goals/clear': return Promise.resolve(goalRemotes.clear(sessionId, args.ref as FxGoalRef))
         case 'agentPresets/list': return Promise.resolve(presetRemotes.list())
+        case 'agentPresets/preflight': return Promise.resolve(presetRemotes.preflight(args.agentPreset as string))
         case 'agentPresets/select': return Promise.resolve(presetRemotes.select(sessionId, args.agentPreset as string))
         case 'agentPresets/read': return Promise.resolve(presetRemotes.read(args.agentPreset as string))
         case 'agentPresets/copy': return Promise.resolve(presetRemotes.copy(args.from as string, args.id as string))
@@ -3991,6 +4012,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           request as WorkspaceInsertSessionBeforeRequest,
         )
         case 'workspace/archiveSession': return workspaceApi.archiveSession(request as WorkspaceArchiveSessionRequest)
+        case 'workspace/unarchiveSession': return workspaceApi.unarchiveSession(request as WorkspaceUnarchiveSessionRequest)
         default:
           return Promise.reject(new Error(`fixture connection RPC endpoint ${JSON.stringify(endpoint)} is unavailable`))
       }

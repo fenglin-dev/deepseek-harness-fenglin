@@ -1,13 +1,16 @@
-/** Prepare a self-contained macOS or Linux Harness production runtime archive. */
+/** Prepare expanded macOS or Linux runtime resources and a portable preset Profile. */
 
 import { chmod, cp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { basename, delimiter, dirname, join, relative, resolve, sep } from 'node:path'
+import { delimiter, dirname, join, relative, resolve, sep } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
+import { preparePrebuiltProfile } from './prepare-prebuilt-profile.mjs'
+import { nodeRuntimeArchivesByTarget, nodeVersion } from './node-runtime-pins.mjs'
+import { createPackagedArchive } from './create-packaged-archive.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = resolve(desktopRoot, '../..')
@@ -16,9 +19,9 @@ const { values } = parseArgs({
   allowPositionals: false,
 })
 const target = values.target ?? `${process.platform}-${process.arch}`
+if (target !== `${process.platform}-${process.arch}`) throw new Error('prepare-unix-runtime: prebuilt Profiles require a native platform/architecture runner')
 const targets = {
   'darwin-arm64': {
-    nodeSha256: 'b05aa3a66efe680023f930bd5af3fdbbd542794da5644ca2ad711d68cbd4dc35',
     nativePackages: [
       '@koromix/koffi-darwin-arm64',
       '@img/sharp-darwin-arm64/sharp.node',
@@ -26,7 +29,6 @@ const targets = {
     ],
   },
   'darwin-x64': {
-    nodeSha256: '096081b6d6fcdd3f5ba0f5f1d44a47e83037ad2e78eada26671c252fe64dd111',
     nativePackages: [
       '@koromix/koffi-darwin-x64',
       '@img/sharp-darwin-x64/sharp.node',
@@ -34,7 +36,7 @@ const targets = {
     ],
   },
   'linux-x64': {
-    nodeSha256: '6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff',
+
     nativePackages: [
       '@koromix/koffi-linux-x64',
       '@img/sharp-linux-x64/sharp.node',
@@ -48,18 +50,20 @@ if (targetConfig === undefined) {
 }
 const runtimeName = `desktop-runtime-${target}`
 const staging = join(repositoryRoot, '.artifacts', runtimeName)
-const archive = join(repositoryRoot, '.artifacts', `${runtimeName}.tar.gz`)
+const archive = join(repositoryRoot, '.artifacts', `${runtimeName}.tar`)
+const prebuilt = join(repositoryRoot, '.artifacts', `desktop-prebuilt-${target}`)
+const prebuiltArchive = join(repositoryRoot, '.artifacts', `desktop-prebuilt-${target}.tar`)
 const runtimeMarker = '.desktop-runtime-v3'
-const nodeVersion = '24.21.0'
+
 const pnpmVersion = '11.7.0'
-const nodeArchiveName = `node-v${nodeVersion}-${target}.tar.gz`
-const nodeArchiveSha256 = targetConfig.nodeSha256
+const nodeArchiveName = nodeRuntimeArchivesByTarget[target].name
+const nodeArchiveSha256 = nodeRuntimeArchivesByTarget[target].sha256
 const downloads = join(repositoryRoot, '.artifacts', 'downloads')
 const nodeArchive = join(downloads, nodeArchiveName)
 
-function run(command, args) {
+function run(command, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, { cwd: repositoryRoot, env: process.env, stdio: 'inherit' })
+    const child = spawn(command, args, { cwd: repositoryRoot, env: options.env ?? process.env, stdio: 'inherit' })
     child.once('error', reject)
     child.once('close', (code, signal) => {
       if (code === 0) resolvePromise()
@@ -220,5 +224,16 @@ await run('pnpm', [
 await injectWorkspaceClosure()
 await stagePackageRuntime()
 await verifyRuntime()
-await run('tar', ['-czf', archive, '-C', dirname(staging), basename(staging)])
-console.log(`prepare-unix-runtime: wrote ${archive}`)
+await preparePrebuiltProfile({
+  destination: prebuilt,
+  harnessRoot: staging,
+  node: join(staging, 'package-runtime/bin/node'),
+  pnpm: join(staging, 'package-runtime/bin/pnpm'),
+  resources: join(desktopRoot, 'bundled-plugins'),
+  target, nodeVersion, pnpmVersion, run,
+})
+await createPackagedArchive(staging, archive, 'harness-runtime.tar')
+await createPackagedArchive(prebuilt, prebuiltArchive, 'prebuilt-profile.tar')
+await rm(staging, { recursive: true, force: true })
+await rm(prebuilt, { recursive: true, force: true })
+console.log(`prepare-unix-runtime: packaged runtime and Profile archives ready for ${target}`)

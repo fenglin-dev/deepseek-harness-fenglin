@@ -39,6 +39,8 @@ const COLLAPSE_SETTLE_MS = 150
  */
 const SCROLLBAR_LINGER_MS = 2000
 
+const NOOP = (): void => {}
+
 /** Format complete-build metadata for the local brand badge. */
 function localBuildVersion(): string | undefined {
   const version = process.env.DSH_CLIENT_VERSION
@@ -55,9 +57,10 @@ type PanelRowProps =
   & Pick<PropsRuntime<'sidebar'>, 'usePanelInfo'>
   & Pick<InjectFace<SidebarRootInjected>, 'selectPanel'>
   & PropsRenderSlots<'sidebar.panellist'>
+  & { dismiss: () => void }
 
 /** Each panel row subscribes only to its own selection state. */
-function PanelRow({ id, label, wide, usePanelInfo, selectPanel, renderSlot }: PanelRowProps) {
+function PanelRow({ id, label, wide, usePanelInfo, selectPanel, renderSlot, dismiss }: PanelRowProps) {
   const active = usePanelInfo(info => info.activePanelId === id)
   return (
     <Tooltip label={label} delayMs={500} disabled={wide}>
@@ -66,7 +69,7 @@ function PanelRow({ id, label, wide, usePanelInfo, selectPanel, renderSlot }: Pa
         className={clsx(css.panelRow, active && css.panelActive)}
         aria-label={label}
         aria-current={active ? 'page' : undefined}
-        onClick={() => { selectPanel(id) }}
+        onClick={() => { selectPanel(id); dismiss() }}
       >
         <span className={css.panelGlyph} aria-hidden="true">
           {renderSlot('sidebar.panellist', { size: wide ? 16 : 18, active }, { only: id })}
@@ -89,6 +92,8 @@ function PanelRow({ id, label, wide, usePanelInfo, selectPanel, renderSlot }: Pa
 export function SidebarRoot({
   collapsed,
   width,
+  presentation,
+  dismiss,
   startSession,
   toggleSidebar,
   selectPanel,
@@ -97,6 +102,7 @@ export function SidebarRoot({
   t,
   renderSlot,
 }: SidebarRootComponentProps) {
+  const drawer = presentation === 'drawer'
   const panels = usePanels(snapshot => snapshot)
   // Wide content stays mounted while the collapse animates (fading via
   // .collapsed .wide), unmounts at settle, and remounts right away on expand.
@@ -106,7 +112,7 @@ export function SidebarRoot({
     const timer = window.setTimeout(() => { setSettled(true) }, COLLAPSE_SETTLE_MS)
     return () => { window.clearTimeout(timer) }
   }, [collapsed])
-  const wide = !collapsed || !settled
+  const wide = drawer || !collapsed || !settled
 
   // Freeze the content at its expanded width while it fades out (collapsed
   // && wide): the sliding column then clips it instead of reflowing it. The
@@ -124,6 +130,8 @@ export function SidebarRoot({
   // leaves. A pointer that returns within that window cancels the pending
   // hide rather than restarting from a hidden bar.
   const column = useRef<HTMLDivElement>(null)
+  const drawerPanel = useRef<HTMLElement>(null)
+  const drawerOpener = useRef<HTMLButtonElement>(null)
   const [pointerInside, setPointerInside] = useState(false)
   const lingerTimer = useRef<number | undefined>(undefined)
   const armLinger = (): void => {
@@ -162,9 +170,44 @@ export function SidebarRoot({
     }
   }, [pointerInside])
 
+  useEffect(() => {
+    if (!drawer || collapsed) return
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+    const focusable = (): HTMLElement[] => Array.from(drawerPanel.current?.querySelectorAll<HTMLElement>(
+      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    ) ?? []).filter(element => element.getAttribute('aria-hidden') !== 'true')
+    const frame = window.requestAnimationFrame(() => { focusable()[0]?.focus() })
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        dismiss()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const candidates = focusable()
+      const first = candidates[0]
+      const last = candidates.at(-1)
+      if (first === undefined || last === undefined) return
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', onKeyDown)
+      if (previouslyFocused === drawerOpener.current || previouslyFocused === document.body) drawerOpener.current?.focus()
+      else previouslyFocused?.focus()
+    }
+  }, [collapsed, dismiss, drawer])
+
   const buildVersion = localBuildVersion()
 
-  return (
+  const content = (
     <div
       ref={column}
       className={clsx(
@@ -186,7 +229,7 @@ export function SidebarRoot({
             type="button"
             className={clsx(css.brand, css.wide)}
             aria-label={t('session.new.label')}
-            onClick={() => { startSession() }}
+            onClick={() => { startSession(); if (drawer) dismiss() }}
           >
             <span className={css.brandIdentity} aria-hidden="true">
               <span className={css.brandMark}>
@@ -233,7 +276,7 @@ export function SidebarRoot({
           type="button"
           className={css.newSession}
           aria-label={t('session.new.label')}
-          onClick={() => { startSession() }}
+          onClick={() => { startSession(); if (drawer) dismiss() }}
         >
           <IconNewChatOutline16 size={wide ? 14 : 18} />
           {wide && <span className={clsx(css.newSessionLabel, css.wide)}>{t('session.new')}</span>}
@@ -251,6 +294,7 @@ export function SidebarRoot({
               usePanelInfo={usePanelInfo}
               selectPanel={selectPanel}
               renderSlot={renderSlot}
+              dismiss={drawer ? dismiss : NOOP}
             />
           ))}
         </nav>
@@ -262,6 +306,7 @@ export function SidebarRoot({
         {renderSlot('sidebar.workspaces', {
           wide,
           expandSidebar: () => { if (collapsed) toggleSidebar() },
+          dismissSidebar: drawer ? dismiss : NOOP,
         })}
       </div>
 
@@ -272,7 +317,7 @@ export function SidebarRoot({
         </div>
         <div className={css.settingsLine}>
           <div className={css.settingsArea}>
-            {renderSlot('sidebar.settings', { wide })}
+            {renderSlot('sidebar.settings', { wide, dismissSidebar: drawer ? dismiss : NOOP })}
           </div>
           <div className={css.settingsActions}>
             {renderSlot('sidebar.settings.action', { wide })}
@@ -280,5 +325,30 @@ export function SidebarRoot({
         </div>
       </div>
     </div>
+  )
+
+  if (!drawer) return content
+  return (
+    <>
+      <button
+        ref={drawerOpener}
+        type="button"
+        className={css.mobileTrigger}
+        data-visible={collapsed || undefined}
+        aria-label={t('toggle.open')}
+        aria-expanded={!collapsed}
+        aria-hidden={!collapsed || undefined}
+        tabIndex={collapsed ? 0 : -1}
+        onClick={() => { toggleSidebar() }}
+      >
+        <IconPanelLeftOutline16 size={20} />
+      </button>
+      <div className={css.drawerLayer} data-open={!collapsed || undefined} aria-hidden={collapsed || undefined}>
+        <button className={css.drawerBackdrop} type="button" tabIndex={-1} aria-label={t('toggle.collapse')} onClick={dismiss} />
+        <aside ref={drawerPanel} className={css.drawerPanel} style={{ width }} role="dialog" aria-modal="true" aria-label={t('panels.label')}>
+          {content}
+        </aside>
+      </div>
+    </>
   )
 }

@@ -72,4 +72,11 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.fallbackBrandName')?.get('font-size')).toBe('17px')
     expect(declarations('.fallbackBrandName')?.get('white-space')).toBe('nowrap')
   })
+
+  it('uses a bounded overlay drawer with a 44px phone opener', () => {
+    expect(css).toMatch(/\.mobileTrigger\s*\{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/)
+    expect(css).toMatch(/\.drawerPanel\s*\{[\s\S]*?max-width: calc\(100vw - 38px\);/)
+    expect(css).toContain('env(safe-area-inset-top)')
+    expect(css).toContain('env(safe-area-inset-bottom)')
+  })
 })

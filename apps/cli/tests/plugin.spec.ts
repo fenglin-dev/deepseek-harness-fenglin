@@ -26,6 +26,11 @@ afterEach(() => {
 })
 
 describe('profile plugin package manager', () => {
+  it('hides both pnpm subprocess windows', () => {
+    const source = readFileSync(new URL('../src/profile-package-manager.ts', import.meta.url), 'utf8')
+    expect(source.match(/windowsHide: true/gu)).toHaveLength(2)
+  })
+
   it('restores an absent bundled version locally while leaving explicit updates online', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-bundled-plugin-'))
     const resources = join(root, 'bundled-plugins')
@@ -143,6 +148,73 @@ describe('profile plugin package manager', () => {
         exitCode: 0,
         diagnostic: JSON.stringify(['--store-dir', join(root, '.pnpm-store'), 'add', '--save-exact', archive]),
       })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('streams pnpm NDJSON into a desktop-owned progress file without forwarding its path', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pnpm-progress-'))
+    const entry = join(root, 'pnpm.mjs')
+    const progressDirectory = join(root, '.desktop-install-progress')
+    const progressFile = join(progressDirectory, '00000000-0000-4000-8000-000000000001.ndjson')
+    mkdirSync(progressDirectory, { recursive: true, mode: 0o700 })
+    writeFileSync(progressFile, '', { mode: 0o600 })
+    writeFileSync(entry, [
+      "process.stdout.write(JSON.stringify({ name: 'pnpm:stage', stage: 'resolution_started' }) + '\\n')",
+      "process.stdout.write(JSON.stringify({ name: 'fixture:environment', progressFile: process.env.DSH_DESKTOP_INSTALL_PROGRESS_FILE ?? null, argv: process.argv.slice(2) }) + '\\n')",
+    ].join('\n'))
+    vi.stubEnv('DSH_HOME', root)
+    vi.stubEnv('DSH_PNPM_BIN', entry)
+    try {
+      expect(runProfilePackageManager(root, ['add', '@fixture/plugin'], { progressFile })).toEqual({ exitCode: 0 })
+      const output = readFileSync(progressFile, 'utf8')
+      expect(output).toContain('"name":"dsh:install-progress"')
+      expect(output).toContain('"name":"pnpm:stage"')
+      expect(output).toContain('"progressFile":null')
+      expect(output).toContain('"--reporter=ndjson"')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps desktop progress in the original home while a staged Profile is installed', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pnpm-staged-progress-'))
+    const transactionId = '00000000-0000-4000-8000-000000000002'
+    const candidate = join(root, 'plugin-transactions', 'web', transactionId, 'candidate')
+    const profile = join(candidate, 'profiles', 'web')
+    const lockDirectory = join(root, 'plugin-snapshots', 'v1')
+    const progressDirectory = join(root, '.desktop-install-progress')
+    const progressFile = join(progressDirectory, '00000000-0000-4000-8000-000000000003.ndjson')
+    const entry = join(root, 'pnpm.mjs')
+    mkdirSync(profile, { recursive: true })
+    mkdirSync(lockDirectory, { recursive: true })
+    mkdirSync(progressDirectory, { recursive: true, mode: 0o700 })
+    writeFileSync(join(lockDirectory, '.profile-plugin-mutation.web.lock'), JSON.stringify({
+      pid: process.pid,
+      token: transactionId,
+    }))
+    writeFileSync(progressFile, '', { mode: 0o600 })
+    writeFileSync(entry, "process.stdout.write(JSON.stringify({ name: 'pnpm:stage', stage: 'resolution_started' }) + '\\n')\n")
+    vi.stubEnv('DSH_HOME', candidate)
+    vi.stubEnv('DSH_PLUGIN_TRANSACTION_ORIGIN', root)
+    vi.stubEnv('DSH_PNPM_BIN', entry)
+    try {
+      expect(runProfilePackageManager(profile, ['add', '@fixture/plugin'], { progressFile })).toEqual({ exitCode: 0 })
+      expect(readFileSync(progressFile, 'utf8')).toContain('resolution_started')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects progress output outside the desktop managed directory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-pnpm-progress-boundary-'))
+    const progressFile = join(root, '00000000-0000-4000-8000-000000000001.ndjson')
+    writeFileSync(progressFile, '')
+    vi.stubEnv('DSH_HOME', root)
+    try {
+      expect(() => runProfilePackageManager(root, ['install'], { progressFile }))
+        .toThrow(/outside the managed directory/u)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

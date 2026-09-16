@@ -7,17 +7,21 @@ import { existsSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { preparePrebuiltProfile } from './prepare-prebuilt-profile.mjs'
+import { nodeRuntimeArchivesByTarget, nodeVersion } from './node-runtime-pins.mjs'
+import { createPackagedArchive } from './create-packaged-archive.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = resolve(desktopRoot, '../..')
 const outputRoot = join(repositoryRoot, '.artifacts', 'desktop-runtime-win-x64')
+const prebuilt = join(repositoryRoot, '.artifacts', 'desktop-prebuilt-win32-x64')
+const prebuiltArchive = join(repositoryRoot, '.artifacts', 'desktop-prebuilt-win32-x64.tar')
 const harnessRoot = join(outputRoot, 'harness')
 const runtimeRoot = join(outputRoot, 'runtime', 'win32-x64')
 const downloads = join(repositoryRoot, '.artifacts', 'downloads')
-const nodeVersion = '24.21.0'
 const pnpmVersion = '11.7.0'
-const nodeArchiveName = `node-v${nodeVersion}-win-x64.zip`
-const nodeArchiveSha256 = '158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541'
+const nodeArchiveName = nodeRuntimeArchivesByTarget['win32-x64'].name
+const nodeArchiveSha256 = nodeRuntimeArchivesByTarget['win32-x64'].sha256
 const nodeArchive = join(downloads, nodeArchiveName)
 const nodeExecutable = join(runtimeRoot, 'node.exe')
 const pnpmCommand = join(runtimeRoot, 'pnpm.cmd')
@@ -374,42 +378,14 @@ async function smokeHarness() {
 }
 
 async function smokeBundledPlugins() {
-  const entry = join(harnessRoot, 'lib', 'bin.js')
-  const smokeHome = join(outputRoot, 'plugin-smoke-home')
-  const bundledDirectory = join(repositoryRoot, 'apps', 'desktop', 'bundled-plugins')
-  const manifest = JSON.parse(await readFile(join(bundledDirectory, 'manifest.json'), 'utf8'))
-  try {
-    for (const plugin of manifest.plugins.filter(plugin => plugin.installPolicy === 'startup')) {
-      for (const packageName of plugin.approvedBuilds ?? []) {
-        await run(nodeExecutable, [
-          entry,
-          'plugin', '--profile', plugin.profile,
-          'approve-build', packageName,
-        ], {
-          env: {
-            ...process.env,
-            DSH_HOME: smokeHome,
-            DSH_PNPM_BIN: stagedPnpmEntry,
-            PATH: `${runtimeRoot};${process.env.PATH ?? ''}`,
-          },
-        })
-      }
-      await run(nodeExecutable, [
-        entry,
-        'plugin', '--profile', plugin.profile,
-        'add', '--save-exact', join(bundledDirectory, plugin.archive),
-      ], {
-        env: {
-          ...process.env,
-          DSH_HOME: smokeHome,
-          DSH_PNPM_BIN: stagedPnpmEntry,
-          PATH: `${runtimeRoot};${process.env.PATH ?? ''}`,
-        },
-      })
-    }
-  } finally {
-    await rm(smokeHome, { recursive: true, force: true })
-  }
+  await preparePrebuiltProfile({
+    destination: prebuilt,
+    harnessRoot, node: nodeExecutable, pnpm: stagedPnpmEntry,
+    resources: join(desktopRoot, 'bundled-plugins'),
+    target: 'win32-x64', nodeVersion, pnpmVersion, run,
+  })
+  await createPackagedArchive(prebuilt, prebuiltArchive, 'prebuilt-profile.tar')
+  await rm(prebuilt, { recursive: true, force: true })
 }
 
 async function verifyRuntime() {

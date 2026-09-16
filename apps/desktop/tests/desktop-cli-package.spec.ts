@@ -17,7 +17,7 @@ describe('packaged desktop CLI inputs', () => {
     const windowsSmoke = await readFile(`${desktopRoot}/scripts/smoke-windows-package.ps1`, 'utf8')
     expect(installer).toContain('StrCpy $CliPathRequested "0"')
     expect(installer.match(/\$\{StdUtils\.GetParameter\} \$1 "ADDCLI" ""/g)).toHaveLength(2)
-    expect(installer).not.toContain('${GetOptions}')
+    expect(installer).not.toMatch(/\$\{GetOptions\}[^\n]+"ADDCLI"/u)
     expect(installer).toContain('${If} $1 == "1"')
     expect(installer).toContain('DetailPrint "Desktop CLI PATH requested: $CliPathRequested"')
     expect(installer).not.toContain('DeepSeek-Harness-installer-diagnostic.txt')
@@ -30,7 +30,7 @@ describe('packaged desktop CLI inputs', () => {
     expect(installer).toContain('!macro customHeader')
     expect(installer).toContain('Page custom CliPathPageCreate CliPathPageLeave')
     expect(installer).toContain('!macro customUnInit')
-    expect(installer).not.toContain('!macro customUnInstall')
+    expect(installer).toContain('!macro customUnInstall')
     expect(installer).toContain('File /oname=$PLUGINSDIR\\manage-path.ps1')
     expect(installer).toContain('-File "$PLUGINSDIR\\manage-path.ps1" -Action remove -Directory "$2"')
     expect(installer).toContain('ReadRegStr $2 HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_DIRECTORY_VALUE}"')
@@ -49,6 +49,7 @@ describe('packaged desktop CLI inputs', () => {
 
   it('retains both installed startup logs and quarantine evidence before plugin assertions', async () => {
     const source = await readFile(`${desktopRoot}/scripts/smoke-windows-package.ps1`, 'utf8')
+    expect(source.match(/\\\[harness-stdout\\\] \\\[info\\\] dsh web:/gu)).toHaveLength(2)
     expect(source.indexOf('First installed startup log:')).toBeLessThan(
       source.lastIndexOf('Remove-Item -LiteralPath $harnessLog'),
     )
@@ -56,5 +57,10 @@ describe('packaged desktop CLI inputs', () => {
     expect(source.indexOf('Installed smoke quarantine evidence:')).toBeLessThan(
       source.indexOf('Bundled plugin dependency $($plugin.PackageName) is absent'),
     )
+  })
+
+  it('allows the native macOS Profile verification enough time for Intel runners', async () => {
+    const source = await readFile(`${desktopRoot}/scripts/smoke-macos-package.mjs`, 'utf8')
+    expect(source).toContain("verify-prebuilt-profile.mjs', import.meta.url)), join(app, 'Contents/Resources')], { timeout: 300000")
   })
 })

@@ -39,7 +39,9 @@ describe('profile diagnostic v2', () => {
     ['ERR_PNPM_PATCH_FAILED', 'pnpm.patch-failed', 'blocked'],
     ['credentials-local: the value for "version" must be a string', 'config.credentials-invalid', 'blocked'],
     ['settings-file: invalid document at C:\\Users\\Alice\\settings.yaml: DUPLICATE_KEY at line 9, column 3', 'config.settings-invalid', 'blocked'],
+    ['Error: atomic-write: timed out waiting for the writer lock at C:\\Users\\Alice\\.dsh\\profiles\\node_modules.lock', 'profile.module-fallback-lock-busy', 'blocked'],
     ["Cannot find package '@deepseek-ai/dsh-session-persistence-sqlite' imported from cordis.patch.yml", 'profile.session-persistence-migration', 'blocked'],
+    ['corrupt Zstandard session log: first frame is not exactly one header line', 'session.persistence-corrupt', 'blocked'],
     ['loader dependency unavailable: Loader module @fixture/ui imports unavailable dependency @deepseek-ai/dsh-host-apiproxy', 'loader.dependency-unavailable', 'blocked'],
     ['loader dependency unavailable: Loader module dsh-webchat expects export installSettingsSection from @deepseek-ai/dsh-settings, but the installed dependency does not provide it', 'loader.dependency-unavailable', 'blocked'],
     ['duplicate loader entry web-panel', 'loader.duplicate-entry', 'blocked'],
@@ -104,6 +106,19 @@ describe('profile diagnostic v2', () => {
     expect(issue.actions).not.toContain('isolate')
   })
 
+  it('does not misattribute a corrupt Session artifact to a plugin lifecycle failure', () => {
+    const error = new Error('plugin tree failed to load', {
+      cause: new Error('corrupt Zstandard session log: first frame is not exactly one header line'),
+    })
+    const issue = classifyProfileDiagnostic({ source: 'profile', phase: 'apply', value: error })
+    expect(issue).toMatchObject({
+      code: 'session.persistence-corrupt',
+      source: 'session',
+      actions: ['export'],
+    })
+    expect(issue.actions).not.toContain('isolate')
+  })
+
   it('does not attribute a nested import failure to the outer include row', () => {
     const inner = new Error('failed to import loader entry scoped-mismatch (missing-unscoped-module)', {
       cause: new Error("Cannot find package 'missing-unscoped-module'"),
@@ -153,7 +168,7 @@ describe('profile diagnostic v2', () => {
       .toBe('fixture@git+https://example.invalid/repo.git#commit')
   })
 
-  it('persists and clears a safe-mode incident with the v2 schema', () => {
+  it('persists and clears diagnostic-mode availability with the v2 schema', () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-profile-diagnostics-'))
     roots.push(home)
     const issue = classifyProfileDiagnostic({
@@ -163,13 +178,15 @@ describe('profile diagnostic v2', () => {
     })
     const report = createProfileDiagnosticReport('web', [issue], {
       now: () => new Date('2026-08-25T00:00:00.000Z'),
-      safeMode: {
+      diagnosticMode: {
         enteredAt: '2026-08-25T00:00:01.000Z',
         skippedBundles: ['@fixture/broken'],
         skippedUserLayers: true,
       },
     })
     writeProfileDiagnosticReport(report, home)
+    expect(report.status).toBe('diagnostic-mode')
+    expect(report).not.toHaveProperty('safeMode')
     expect(readProfileDiagnosticReport('web', home)).toEqual(report)
     expect(clearProfileDiagnosticReport('web', home)).toBe(true)
     expect(readProfileDiagnosticReport('web', home)).toBeUndefined()

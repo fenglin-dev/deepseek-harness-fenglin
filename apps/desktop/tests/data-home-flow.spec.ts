@@ -21,7 +21,7 @@ function button(selector: string): HTMLButtonElement {
   return result
 }
 function step(): string | undefined { return document.querySelector<HTMLElement>('#detail-stage')?.dataset.step }
-async function mount(locale = 'zh', source = '/official/.dsh', community = ''): Promise<void> {
+async function mount(locale = 'zh', source = '/official/.dsh', community = '', runtimeSwitch = false): Promise<void> {
   const html = await readFile(new NodeURL('../src/data-home.html', import.meta.url), 'utf8')
   document.documentElement.innerHTML = html.replace(/<!doctype html>/i, '')
   window.history.replaceState({}, '', '/?' + new URLSearchParams({
@@ -37,6 +37,8 @@ async function mount(locale = 'zh', source = '/official/.dsh', community = ''): 
     defaultTarget: '/desktop/dsh-home',
     selected: source || community ? 'imported' : 'fresh',
     selectedSource: source ? 'official' : community ? 'community' : 'official',
+    returnToMain: runtimeSwitch ? 'true' : 'false',
+    defaultTargetAvailable: runtimeSwitch ? 'false' : 'true',
   }).toString())
   await import('../src/data-home-preload.ts')
   window.dispatchEvent(new Event('DOMContentLoaded'))
@@ -48,8 +50,23 @@ afterEach(() => {
 })
 
 describe('configuration source and operation flow', () => {
+  it('returns to the running client without selecting a new configuration', async () => {
+    await mount('zh', '', '/desktop/community/dsh-home', true)
+    expect(button('#return-main').hidden).toBe(false)
+    button('#return-main').click()
+    expect(ipc.send).toHaveBeenCalledExactlyOnceWith('dsh:data-home:cancelled')
+
+    ipc.send.mockClear()
+    button('[data-source="fresh"]').click()
+    button('#continue').click()
+    expect(document.querySelector<HTMLElement>('[data-target="default"]')?.hidden).toBe(true)
+    expect(button('#continue').disabled).toBe(true)
+    expect(ipc.send).not.toHaveBeenCalled()
+  })
+
   it('initializes the fresh-start details and controls when no source is detected', async () => {
     await mount('zh', '')
+    expect(button('#return-main').hidden).toBe(true)
     expect(button('[data-source="fresh"]').ariaChecked).toBe('true')
     expect(document.querySelector('#detail-title')?.textContent).toBe('全新开始')
     expect(document.querySelector('#location-value')?.textContent).not.toBe('')
@@ -67,26 +84,26 @@ describe('configuration source and operation flow', () => {
     expect(button('#choose-community-source').textContent).toBe(sourceCopyFor('zh').chooseCommunity)
   })
 
-  it('requires a separate operation choice before official direct reuse', async () => {
+  it('imports official data without offering direct directory sharing', async () => {
     await mount()
     expect(button('#back').hidden).toBe(true)
     button('#continue').click()
-    expect(step()).toBe('operation')
-    expect(document.querySelector('[data-operation-copy="importTitle"]')?.textContent).toBe('导入到独立环境')
+    expect(step()).toBe('destination')
     expect(ipc.send).not.toHaveBeenCalled()
     expect(document.querySelector<HTMLElement>('#facts')?.inert).toBe(true)
-    button('[data-operation="reused"]').click()
-    expect(document.querySelector<HTMLElement>('#risk')?.hidden).toBe(false)
-    button('#continue').click()
-    button('#continue').click()
-    expect(ipc.send).toHaveBeenCalledExactlyOnceWith('dsh:data-home:selected', { mode: 'reused', source: '/official/.dsh' })
+    expect(button('[data-operation="reused"]').hidden).toBe(true)
+    button('#back').click()
+    expect(step()).toBe('details')
   })
 
   it('copies a community home through an opaque destination and preserves Back navigation', async () => {
     await mount()
     button('[data-source="community"]').click()
     expect(document.querySelector('#community-source-path')?.textContent).toBe('')
-    ipc.invoke.mockResolvedValueOnce({ status: 'valid', path: '/社区配置/dsh-home', entries: ['settings.yaml'] })
+    ipc.invoke.mockResolvedValueOnce({
+      status: 'valid', path: '/社区配置/dsh-home', entries: ['settings.yaml'],
+      selectionId: '12345678-1234-1234-1234-123456789abc',
+    })
     button('#choose-community-source').click()
     await vi.waitFor(() => { expect(button('#choose-community-source').disabled).toBe(false) })
     expect(ipc.invoke).toHaveBeenCalledWith('dsh:data-home:choose-source', 'community')
@@ -108,7 +125,19 @@ describe('configuration source and operation flow', () => {
     button('#continue').click()
     expect(ipc.send).toHaveBeenCalledExactlyOnceWith('dsh:data-home:selected', {
       mode: 'copied', sourceKind: 'community', source: '/社区配置/dsh-home',
+      sourceSelectionId: '12345678-1234-1234-1234-123456789abc',
       target: { kind: 'custom', selectionId: 'opaque-selection' },
+    })
+  })
+
+  it('reuses only a validated community source and identifies its source category', async () => {
+    await mount('zh', '', '/desktop/community/dsh-home')
+    button('#continue').click()
+    expect(step()).toBe('operation')
+    button('[data-operation="reused"]').click()
+    button('#continue').click()
+    expect(ipc.send).toHaveBeenCalledExactlyOnceWith('dsh:data-home:selected', {
+      mode: 'reused', sourceKind: 'community', source: '/desktop/community/dsh-home',
     })
   })
 
@@ -128,6 +157,7 @@ describe('configuration source and operation flow', () => {
     ipc.handlers.get('dsh:data-home:source-error')?.({}, { status: 'invalid', path: '/community/dsh-home' })
     expect(button('#continue').disabled).toBe(false)
     expect(document.querySelector<HTMLElement>('#community-source-error')?.hidden).toBe(false)
+    expect(document.querySelector('#community-source-error')?.textContent).toBe(sourceCopyFor('zh').communitySourceInvalid)
   })
 
   it('does not submit on cancelled or unrelated source selection, and fresh setup needs no source', async () => {
@@ -149,7 +179,7 @@ describe('configuration source and operation flow', () => {
   })
 
   it('updates source descriptions, comparison and operation controls when changing language', async () => {
-    await mount()
+    await mount('zh', '', '/desktop/community/dsh-home')
     button('#continue').click()
     button('#language-trigger').click()
     button('[data-language="de"]').click()
@@ -166,8 +196,8 @@ describe('configuration source and operation flow', () => {
     expect(document.querySelectorAll('#comparison-head th')).toHaveLength(4)
     expect(document.querySelectorAll('#comparison-body th')[1]?.textContent).toBe('保留范围')
     expect(document.querySelectorAll('#comparison-body tr')[1]?.textContent).toContain('历史对话、设置、凭据、Agent 预设、Skill、插件及插件配置全部保留。')
-    expect(document.querySelectorAll('#comparison-body tr')[2]?.textContent).toContain('全部保留。')
-    expect(document.querySelectorAll('#comparison-body tr')[2]?.textContent).toContain('两种方式均全部保留。')
+    expect(document.querySelectorAll('#comparison-body tr')[2]?.textContent).toContain('不复制插件本体')
+    expect(document.querySelectorAll('#comparison-body tr')[2]?.textContent).toContain('直接使用所选目录中已有插件')
     button('#acknowledge').click()
 
     button('#continue').click()
@@ -184,6 +214,8 @@ describe('configuration source and operation flow', () => {
     button('#acknowledge').click()
 
     button('[data-operation="imported"]').click()
+    expect(document.querySelector('#operation-plugins')?.textContent).toContain('插件恢复清单')
+    expect(document.querySelector('#operation-builds')?.textContent).toContain('精确 allowBuilds')
     button('#continue').click()
     expect(step()).toBe('destination')
     button('#help').click()
@@ -192,7 +224,7 @@ describe('configuration source and operation flow', () => {
   })
 
   it('keeps full comparison on source categories at every step and returns focus to its trigger', async () => {
-    await mount('zh')
+    await mount('zh', '', '/desktop/community/dsh-home')
     for (const current of ['details', 'operation', 'destination']) {
       expect(step()).toBe(current)
       button('#compare').click()
@@ -201,8 +233,8 @@ describe('configuration source and operation flow', () => {
       const rows = document.querySelectorAll('#comparison-body tr')
       for (const index of [1, 2]) {
         const official = rows[index]?.querySelector('td')?.textContent
-        expect(official).toContain('直接使用')
-        expect(official).toContain('导入到独立环境')
+        expect(official).not.toContain('直接使用')
+        expect(official).not.toBe('')
       }
       expect(rows[1]?.textContent).toContain('Agent 预设')
       expect(rows[2]?.textContent).toContain('联网重新安装')
@@ -223,13 +255,13 @@ describe('browser source preview', () => {
     window.history.replaceState({}, '', '/')
     window.eval(preview)
 
-    expect(document.querySelector('#detail-title')?.textContent).toBe('使用官方 DeepSeek Harness 配置')
+    expect(document.querySelector('#detail-title')?.textContent).toBe('导入官方 DeepSeek Harness 配置')
     expect(document.querySelector('#location-value')?.textContent).toContain('.dsh')
     expect(button('#back').hidden).toBe(true)
 
     button('#help').click()
     expect(document.querySelector<HTMLElement>('#overlay')?.hidden).toBe(false)
-    expect(document.querySelector('.comparison-note')?.textContent).toContain('直接使用')
+    expect(document.querySelector('.comparison-note')?.textContent).toContain('独立目录')
     button('#acknowledge').click()
     expect(document.querySelector<HTMLElement>('#overlay')?.hidden).toBe(true)
 
@@ -245,16 +277,12 @@ describe('browser source preview', () => {
     button('#choose-official-source').click()
     expect(document.querySelector('#official-source-status')?.textContent).toContain('Detected')
     button('#continue').click()
-    expect(step()).toBe('operation')
-    expect(document.querySelector('[data-operation-copy="importTitle"]')?.textContent).toBe('Import into an independent environment')
-    expect(document.querySelector('#reuse-operation-summary')?.textContent).toContain('official DeepSeek Harness')
+    expect(step()).toBe('destination')
+    expect(button('[data-operation="reused"]').hidden).toBe(true)
     button('#help').click()
-    expect(document.querySelector('#comparison-title')?.textContent).toBe('Choose how to use this configuration')
+    expect(document.querySelector('#comparison-title')?.textContent).toBe('Choose configuration directory')
     expect(document.querySelectorAll('#comparison-head th')).toHaveLength(3)
     button('#acknowledge').click()
-    button('[data-operation="imported"]').click()
-    button('#continue').click()
-    expect(step()).toBe('destination')
     button('#help').click()
     expect(document.querySelector('#comparison-title')?.textContent).toBe('Choose configuration directory')
     expect(document.querySelectorAll('#comparison-head th')).toHaveLength(3)

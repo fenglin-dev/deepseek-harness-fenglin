@@ -9,6 +9,7 @@ import { DesktopPreferencesRow } from '../src/client/DesktopPreferencesRow.tsx'
 import { DesktopUpdateBadge } from '../src/client/DesktopUpdateBadge.tsx'
 import { DesktopSidebarUpdateButton } from '../src/client/DesktopSidebarUpdateButton.tsx'
 import { DesktopBrowserReturnButton } from '../src/client/DesktopBrowserReturnButton.tsx'
+import { DesktopLogDirectoryAction } from '../src/client/DesktopLogDirectoryAction.tsx'
 
 afterEach(() => {
   delete (globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop
@@ -28,11 +29,12 @@ function installBridge(): ReturnType<typeof vi.fn> {
         activePath: '/desktop/dsh-home', activeKind: 'desktop', desktopPath: '/desktop/dsh-home',
         officialPath: '/home/user/.dsh', officialAvailable: true, managedExternally: false,
       })),
-      chooseDataHome: vi.fn(), switchDataHome: vi.fn(),
+      openDataHomeChooser: vi.fn(),
       getPreferences: vi.fn(() => Promise.resolve({
         closeBehavior: 'tray', notificationsEnabled: true, launchAtLoginEnabled: false, openBrowserOnStartup: false,
       })),
       updatePreferences: vi.fn(), onPreferences: vi.fn(() => () => {}), openLog: vi.fn(),
+      openLogDirectory: vi.fn(() => Promise.resolve({ error: '' })),
       openSettingsDocument: vi.fn(() => Promise.resolve({ error: '' })),
       getCommandLine: vi.fn(() => Promise.resolve({
         phase: 'uninstalled', commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
@@ -187,7 +189,10 @@ describe('ui-desktop-shell apply', () => {
     b.connect()
     expect(reportReadiness).toHaveBeenCalledWith('event-dispatch')
     expect(b.slots.entries('settings.general.item')[0]?.component).toBe(DesktopPreferencesRow)
-    expect(b.slots.entries('settings.action')[0]?.component).toBe(DesktopUpdateBadge)
+    expect(b.slots.entries('settings.action').map(entry => entry.component)).toEqual([
+      DesktopUpdateBadge,
+      DesktopLogDirectoryAction,
+    ])
     expect(b.slots.entries('sidebar.settings.action')[0]?.component).toBe(DesktopSidebarUpdateButton)
     await fiber.dispose()
     expect(b.slots.entries('settings.general.item')).toEqual([])

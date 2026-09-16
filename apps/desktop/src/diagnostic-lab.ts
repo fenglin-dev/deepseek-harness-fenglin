@@ -167,14 +167,14 @@ const SCENARIOS: readonly DiagnosticLabScenario[] = [
   { id: 'quarantine-removal-residue', title: 'Incomplete quarantine removal', description: 'Recreates a legacy uninstall that removed the plugin and quarantine record but left derived Profile state, then verifies bounded cleanup.', expectedCode: 'profile.quarantine-removal-residue', targets: ['isolated', 'active-profile'] },
   { id: 'loader-package-name-mismatch', title: 'Scoped Loader package-name mismatch', description: 'Installs a safe scoped package whose Bundle Patch names a missing unscoped module, then verifies immediate attribution and quarantine.', expectedCode: 'profile.module-resolution', targets: ['isolated', 'active-profile'] },
   { id: 'loader-dependency-unavailable', title: 'Loader dependency unavailable', description: 'Installs a resolvable aggregate Loader whose published entry imports a missing internal Host dependency, then verifies root attribution and quarantine.', expectedCode: 'loader.dependency-unavailable', targets: ['isolated', 'active-profile'] },
-  { id: 'loader-export-unavailable', title: 'Loader dependency export unavailable', description: 'Installs a Loader that expects an API export absent from the installed DSH generation, then verifies runtime attribution and quarantine before safe-mode fallback.', expectedCode: 'loader.dependency-unavailable', targets: ['active-profile'] },
+  { id: 'loader-export-unavailable', title: 'Loader dependency export unavailable', description: 'Installs a Loader that expects an API export absent from the installed DSH generation, then verifies runtime attribution and quarantine before diagnostic-mode fallback.', expectedCode: 'loader.dependency-unavailable', targets: ['active-profile'] },
   { id: 'legacy-session-api', title: 'Legacy Session API usage', description: 'Installs an inert offline plugin carrying the reproduced session.events pattern, then verifies advisory attribution without automatic quarantine.', expectedCode: 'profile.session-api-incompatible', targets: ['isolated', 'active-profile'] },
   { id: 'immutable-agent-input-mutation', title: 'Frozen agent input mutation', description: 'Installs an offline plugin that rewrites a frozen agent/pre-step text block, then verifies attribution and recovery guidance without automatic quarantine.', expectedCode: 'profile.immutable-agent-input-mutation', targets: ['isolated', 'active-profile'] },
   { id: 'settings-invalid', title: 'Invalid settings document', description: 'Writes a duplicate-key settings.yaml and verifies that Diagnostics skips it without modifying the original document.', expectedCode: 'config.settings-invalid', targets: ['isolated', 'active-profile'] },
   { id: 'client-module-unavailable', title: 'Packaged dsh-font client incompatibility', description: 'Installs the packaged dsh-font 1.1.0 fixture and verifies that the real browser boot path quarantines it without blocking the main UI.', expectedCode: 'profile.module-resolution', targets: ['active-profile'] },
   { id: 'module-resolution-missing', title: 'Missing plugin module', description: 'Attributes a missing module directory to the owning plugin.', expectedCode: 'profile.module-resolution', targets: ['isolated'] },
   { id: 'patch-invalid', title: 'Invalid Profile patch', description: 'Locates malformed Profile YAML without touching the user patch.', expectedCode: 'profile.patch-invalid', targets: ['isolated'] },
-  { id: 'loader-duplicate', title: 'Duplicate Loader entry', description: 'Detects duplicate Loader registration before activation.', expectedCode: 'loader.duplicate-entry', targets: ['isolated'] },
+  { id: 'loader-duplicate', title: 'Duplicate Loader entry', description: 'Reproduces an external plugin registering the same Loader entry as an installed built-in feature.', expectedCode: 'loader.duplicate-entry', targets: ['isolated'] },
   { id: 'loader-lifecycle-failure', title: 'Loader lifecycle failure', description: 'Exercises mount failure attribution and rollback reporting.', expectedCode: 'loader.lifecycle-failed', targets: ['isolated'] },
   { id: 'build-script-blocked', title: 'Blocked build script', description: 'Uses a reviewed local marker script to verify exact allowBuilds approval.', expectedCode: 'pnpm.build-script-blocked', targets: ['isolated'] },
   { id: 'interrupted-repair', title: 'Interrupted repair recovery', description: 'Leaves a recovery journal at a controlled boundary and resumes cleanup.', expectedCode: 'runtime.interrupted-repair', targets: ['isolated'] },
@@ -202,7 +202,7 @@ const MANAGED_PROFILE_FILES = [
   'quarantine/profile-plugins.json',
   'profile-health/web.json',
   'profile-health/web.diagnostics.json',
-  'profile-health/safe-mode-settings.yaml',
+  'profile-health/diagnostic-mode-settings.yaml',
 ] as const
 const MAX_DIAGNOSTIC_BYTES = 8 * 1024
 
@@ -220,7 +220,7 @@ const FIXTURES: Record<DiagnosticLabScenarioId, ScenarioFixture> = {
   'client-module-unavailable': { code: 'profile.module-resolution', file: 'profile/dsh-font.json', content: '{"package":"dsh-font","version":"1.1.0","source":"packaged-diagnostic"}\n', checksum: 'ff3cf467522316802d16c7ad88863be9becc9789b2e61f94b121c44e786ffec7' },
   'module-resolution-missing': { code: 'profile.module-resolution', file: 'profile/missing-module.json', content: '{"module":"@hecoococ/dsh-lab-missing","exists":false}\n', checksum: '089ed0ccd5e318ad94cae5ea48017bc946676bfa6f4a66e041740369fbc2f221', repairedContent: '{"disabled":true}\n' },
   'patch-invalid': { code: 'profile.patch-invalid', file: 'profile/cordis.patch.yml', content: '- id: diagnostic-lab\n  config: [unterminated\n', checksum: '69ba3a95f37f79f029ade77436be37cb78c1b8d03c57d9133ae37eab3ea61dd5', repairedContent: '[]\n' },
-  'loader-duplicate': { code: 'loader.duplicate-entry', file: 'profile/loader.json', content: '{"entries":["diagnostic-lab","diagnostic-lab"]}\n', checksum: '5684e3a05c702d0823d15347ac0a77a7294ca80ef2486e8b5b4f61e80190b26f', repairedContent: '{"entries":["diagnostic-lab"]}\n' },
+  'loader-duplicate': { code: 'loader.duplicate-entry', file: 'profile/loader.json', content: '{"installation":{"package":"@deepseek-ai/dsh-web-app","entry":{"id":"file-upload","module":"@deepseek-ai/dsh-client-file-upload"}},"external":{"package":"dsh-file-upload","entry":{"id":"file-upload","module":"dsh-file-upload"}}}\n', checksum: '4490b2865f4812a2be94978144ac42e818c91ebe732d6b28a8240b1a951f8f93', repairedContent: '{"external":{"package":"dsh-file-upload","active":false}}\n' },
   'loader-lifecycle-failure': { code: 'loader.lifecycle-failed', file: 'profile/lifecycle.json', content: '{"entry":"diagnostic-lab","mount":"throw","rollback":"verified"}\n', checksum: 'ab378d7d5445c8506ac472dbec274b18a06259813dd8cbe70a98cd4d62696238', repairedContent: '{"disabled":true}\n' },
   'build-script-blocked': { code: 'pnpm.build-script-blocked', file: 'profile/build.json', content: '{"package":"@hecoococ/dsh-lab-build","allowed":false,"script":"write-marker"}\n', checksum: 'ed9d0c04fd3ce37918df14818a6c2d39d884a1f97ed735bfe76f22c1080234d5', repairedContent: '{"package":"@hecoococ/dsh-lab-build","allowed":true,"marker":true}\n' },
   'interrupted-repair': { code: 'runtime.interrupted-repair', file: 'profile/interrupted.json', content: '{"repair":"interrupted","journal":true}\n', checksum: '45864a432cef75a4af007e732ec9c42166174f6c3a20b1ba035d5c2f708cca13', repairedContent: '{"repair":"recovered"}\n' },
@@ -901,7 +901,7 @@ export class DiagnosticLabManager {
     }
   }
 
-  /** Exercise duplicate-key settings detection and the isolated safe-mode document. */
+  /** Exercise duplicate-key settings detection and the isolated diagnostic-mode document. */
   async #runSettingsInvalidScenario(runRoot: string, resumeHarness: () => void): Promise<void> {
     const scenarioId = 'settings-invalid' as const
     const fixture = FIXTURES[scenarioId]
@@ -918,7 +918,7 @@ export class DiagnosticLabManager {
     assertInside(boundary, scenarioRoot)
     const fixturePath = join(scenarioRoot, 'profile', 'settings-invalid.json')
     const settingsPath = join(home, 'settings.yaml')
-    const safeSettingsPath = join(home, 'profile-health', 'safe-mode-settings.yaml')
+    const diagnosticSettingsPath = join(home, 'profile-health', 'diagnostic-mode-settings.yaml')
     const started = Date.now()
     let actualCode: string | undefined
     try {
@@ -939,12 +939,12 @@ export class DiagnosticLabManager {
       await this.#step(scenarioId, 'detect')
       if (active.target === 'active-profile') {
         resumeHarness()
-        await this.#waitForSettingsSafeMode(home)
+        await this.#waitForSettingsDiagnosticMode(home)
         actualCode = fixture.code
       } else {
         const invalid = parseDocument(await readFile(settingsPath, 'utf8'))
         actualCode = invalid.errors.length > 0 ? fixture.code : undefined
-        await atomicWrite(safeSettingsPath, '{}\n')
+        await atomicWrite(diagnosticSettingsPath, '{}\n')
       }
       if (actualCode !== fixture.code) throw new Error(`expected ${fixture.code}, received ${actualCode}`)
 
@@ -953,9 +953,9 @@ export class DiagnosticLabManager {
       if (sha256(await readFile(settingsPath)) !== fixture.checksum) {
         throw new Error('diagnostic startup modified the invalid user settings document')
       }
-      const safe = parseDocument(await readFile(safeSettingsPath, 'utf8'))
-      if (safe.errors.length > 0 || safe.toJS() === null || typeof safe.toJS() !== 'object') {
-        throw new Error('diagnostic safe-mode settings document is not a valid map')
+      const diagnosticSettings = parseDocument(await readFile(diagnosticSettingsPath, 'utf8'))
+      if (diagnosticSettings.errors.length > 0 || diagnosticSettings.toJS() === null || typeof diagnosticSettings.toJS() !== 'object') {
+        throw new Error('diagnostic-mode settings document is not a valid map')
       }
 
       await this.#step(scenarioId, 'retain')
@@ -1153,17 +1153,19 @@ export class DiagnosticLabManager {
     throw new Error(`timed out waiting for runtime recovery to quarantine ${packageName}`)
   }
 
-  async #waitForSettingsSafeMode(home: string): Promise<void> {
+  async #waitForSettingsDiagnosticMode(home: string): Promise<void> {
     const deadline = Date.now() + (this.#options.clientRecoveryTimeoutMs ?? 45_000)
     while (Date.now() <= deadline) {
       try {
         const report = JSON.parse(await readFile(join(home, 'profile-health', 'web.diagnostics.json'), 'utf8')) as {
           issues?: Array<{ code?: unknown }>
+          diagnosticMode?: { skippedUserSettings?: unknown }
           safeMode?: { skippedUserSettings?: unknown }
         }
         if (report.issues?.some(issue => issue.code === 'config.settings-invalid') === true
-          && report.safeMode?.skippedUserSettings === true
-          && existsSync(join(home, 'profile-health', 'safe-mode-settings.yaml'))) return
+          && (report.diagnosticMode?.skippedUserSettings === true
+            || report.safeMode?.skippedUserSettings === true)
+          && existsSync(join(home, 'profile-health', 'diagnostic-mode-settings.yaml'))) return
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }

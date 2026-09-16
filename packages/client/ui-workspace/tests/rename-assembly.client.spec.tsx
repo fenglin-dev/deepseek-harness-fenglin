@@ -49,7 +49,7 @@ async function createRuntime(): Promise<SlotTestRuntime> {
 /** Test-owned sidebar shell role: declares and renders the browsing region. */
 type FrameProps = PropsRenderSlots<'sidebar.workspaces'>
 function SidebarFrame({ renderSlot }: FrameProps) {
-  return <>{renderSlot('sidebar.workspaces', { wide: true, expandSidebar: () => {} })}</>
+  return <>{renderSlot('sidebar.workspaces', { wide: true, expandSidebar: () => {}, dismissSidebar: () => {} })}</>
 }
 
 describe('session rename through the assembled browser', () => {

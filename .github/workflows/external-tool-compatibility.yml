@@ -4,7 +4,7 @@ on:
   push:
     branches: [master]
     paths:
-      - apps/desktop/external-tools/compatibility.v1.json
+      - apps/desktop/external-tools/manifests/**
       - apps/desktop/scripts/verify-external-tool-compatibility.ts
       - apps/desktop/src/external-tool-compatibility-manifest.ts
       - apps/desktop/src/external-tool-compatibility.ts
@@ -49,19 +49,38 @@ jobs:
         run: pnpm run verify:desktop:external-tools
 
       - name: Prepare compatibility manifest
-        run: cp apps/desktop/external-tools/compatibility.v1.json external-tools-compatibility.v1.json
+        run: |
+          mkdir -p .artifacts/external-tool-pages/metadata/external-tools/v2
+          for manifest in apps/desktop/external-tools/manifests/*/external-tools-compatibility.v2.json; do
+            version="$(basename "$(dirname "$manifest")")"
+            subject="external-tools-compatibility-${version}.v2.json"
+            cp "$manifest" "$subject"
+            cp "$manifest" ".artifacts/external-tool-pages/metadata/external-tools/v2/$subject"
+          done
+
+      - name: Refuse immutable manifest replacement
+        run: |
+          for subject in external-tools-compatibility-*.v2.json; do
+            remote="$(mktemp)"
+            status="$(curl --silent --show-error --location --output "$remote" --write-out '%{http_code}' "https://flaqai.github.io/open-deepseek-harness-desktop/metadata/external-tools/v2/$subject")"
+            if [ "$status" = 200 ]; then
+              cmp --silent "$subject" "$remote" || { echo "Published immutable manifest differs: $subject" >&2; exit 1; }
+            elif [ "$status" != 404 ]; then
+              echo "Could not verify immutable manifest $subject: HTTP $status" >&2
+              exit 1
+            fi
+            rm -f "$remote"
+          done
 
       - id: attest
         name: Sign compatibility manifest with GitHub OIDC
         uses: actions/attest@v4
         with:
-          subject-path: external-tools-compatibility.v1.json
+          subject-path: external-tools-compatibility-*.v2.json
 
       - name: Prepare static metadata site
         run: |
-          mkdir -p .artifacts/external-tool-pages/metadata/external-tools/v1
-          cp external-tools-compatibility.v1.json .artifacts/external-tool-pages/metadata/external-tools/v1/
-          cp "${{ steps.attest.outputs.bundle-path }}" .artifacts/external-tool-pages/metadata/external-tools/v1/external-tools-compatibility.sigstore.json
+          cp "${{ steps.attest.outputs.bundle-path }}" .artifacts/external-tool-pages/metadata/external-tools/v2/external-tools-compatibility.v2.sigstore.json
 
       - name: Configure Pages
         uses: actions/configure-pages@v6

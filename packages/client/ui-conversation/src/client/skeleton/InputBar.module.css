@@ -384,3 +384,52 @@
   font-size: 12px;
   cursor: pointer;
 }
+
+@media (max-width: 680px) {
+  .root {
+    box-sizing: border-box;
+    width: 100%;
+    padding-right: max(8px, env(safe-area-inset-right));
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    padding-left: max(8px, env(safe-area-inset-left));
+  }
+
+  .hero {
+    padding-right: max(8px, env(safe-area-inset-right));
+    padding-left: max(8px, env(safe-area-inset-left));
+  }
+
+  .card {
+    max-width: 100%;
+    font-size: max(16px, var(--dsh-content-font-size, 14px));
+  }
+
+  .row {
+    gap: 8px;
+    padding: 2px 8px 8px;
+  }
+
+  .tools,
+  .trailing {
+    flex: 1 1 100%;
+    gap: 8px;
+  }
+
+  .tools {
+    flex-wrap: wrap;
+  }
+
+  .trailing {
+    justify-content: flex-end;
+  }
+
+  .add,
+  .primary {
+    width: 44px;
+    height: 44px;
+  }
+
+  .select {
+    min-height: 44px;
+  }
+}

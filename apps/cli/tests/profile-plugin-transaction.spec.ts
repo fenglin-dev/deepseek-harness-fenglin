@@ -1,13 +1,13 @@
 import { mkdtempSync, mkdirSync, readFileSync, existsSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative, win32 } from 'node:path'
 import { tmpdir } from 'node:os'
 import { load } from 'js-yaml'
-import { relative } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runPlugin } from '../src/plugin.ts'
 import {
   activateProfilePluginTransaction, prepareProfilePluginTransaction, profilePluginCandidateHome,
   readProfilePluginTransaction, readyProfilePluginTransaction, settleProfilePluginTransaction,
+  relocateProfilePluginArchiveReferences, resumeProfilePluginPreparation,
 } from '../src/profile-plugin-transaction.ts'
 
 const homes: string[] = []
@@ -35,6 +35,77 @@ function dependencies(profile: string): Record<string, string> {
   return (JSON.parse(readFileSync(join(profile, 'package.json'), 'utf8')) as { dependencies: Record<string, string> }).dependencies
 }
 describe('staged Profile activation', () => {
+  it('retains a different transaction when a preallocated prepare request is rejected', () => {
+    const f = fixture()
+    vi.stubEnv('DSH_HOME', f.home)
+    vi.stubEnv('DSH_DESKTOP_MUTATION_OWNER_PID', String(process.pid))
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_BATCH', '1')
+    expect(() => runPlugin('web', ['transaction', 'prepare', '11111111-1111-4111-8111-111111111111'])).toThrow('needs recovery first')
+    expect(() => runPlugin('web', ['transaction', 'prepare'])).toThrow('needs recovery first')
+    expect(readProfilePluginTransaction(f.home, 'web')?.id).toBe(f.record.id)
+    expect(readFileSync(join(f.profile, 'node_modules/generation'), 'utf8')).toBe('old')
+  })
+
+  it('publishes the caller-assigned identity and rejects unsafe IDs before writing', () => {
+    const f = fixture()
+    settleProfilePluginTransaction(f.home, 'web', f.record.id, false)
+    expect(() => prepareProfilePluginTransaction(f.home, 'web', process.pid, '../bad')).toThrow('invalid transaction ID')
+    expect(readProfilePluginTransaction(f.home, 'web')).toBeUndefined()
+    const id = '11111111-1111-4111-8111-111111111111'
+    expect(prepareProfilePluginTransaction(f.home, 'web', process.pid, id).id).toBe(id)
+  })
+  it('relocates pnpm-normalized Windows archive locators without changing other local sources', () => {
+    const source = String.raw`C:\Users\Person\AppData\Roaming\open-deepseek-harness-desktop\dsh-home\plugin-transactions\web\3b6dade4-2ed0-48d7-aab4-660532802cba\candidate\bundled-plugins`
+    const target = String.raw`C:\Users\Person\AppData\Roaming\open-deepseek-harness-desktop\dsh-home\bundled-plugins`
+    const archive = `${source.replaceAll('\\', '/')}/dshmarket-1.45.1.tgz`
+    expect(relocateProfilePluginArchiveReferences({
+      dependencies: { dshmarket: `file:${archive}`, local: 'file:C:/plugins/local' },
+      packages: { [`dshmarket@file:${archive}`]: { resolution: { tarball: `file:${archive}` } } },
+    }, source, target)).toEqual({
+      dependencies: { dshmarket: `file:${win32.join(target, 'dshmarket-1.45.1.tgz')}`, local: 'file:C:/plugins/local' },
+      packages: {
+        [`dshmarket@file:${win32.join(target, 'dshmarket-1.45.1.tgz')}`]: {
+          resolution: { tarball: `file:${win32.join(target, 'dshmarket-1.45.1.tgz')}` },
+        },
+      },
+    })
+  })
+
+  it('stages a fresh Profile without initializing the active directory and rolls it back to absent', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-first-deploy-'))
+    homes.push(home)
+    mkdirSync(join(home, 'profiles/node_modules'), { recursive: true })
+    const record = prepareProfilePluginTransaction(home, 'web')
+    const candidate = profilePluginCandidateHome(home, 'web', record.id)
+    const profile = join(candidate, 'profiles/web')
+    mkdirSync(join(profile, 'node_modules'), { recursive: true })
+    writeFileSync(join(profile, 'package.json'), '{"dependencies":{},"dsh":{"profile":{"bundles":[]}}}')
+    expect(existsSync(join(home, 'profiles/web/package.json'))).toBe(false)
+    readyProfilePluginTransaction(home, 'web', record.id)
+    activateProfilePluginTransaction(home, 'web', record.id)
+    expect(existsSync(join(home, 'profiles/web/package.json'))).toBe(true)
+    settleProfilePluginTransaction(home, 'web', record.id, false)
+    expect(existsSync(join(home, 'profiles/web/package.json'))).toBe(false)
+  })
+  it('resumes only preparation from a dead producer and preserves copied candidate files', () => {
+    const f = fixture()
+    const journal = join(f.home, 'plugin-transactions/web/pending.json')
+    writeFileSync(journal, JSON.stringify({ ...f.record, producerPid: 99999999 }))
+    writeFileSync(join(f.candidateProfile, 'node_modules', 'copied'), 'keep')
+    resumeProfilePluginPreparation(f.home, 'web', f.record.id, process.pid)
+    expect(readProfilePluginTransaction(f.home, 'web')?.producerPid).toBe(process.pid)
+    expect(readFileSync(join(f.candidateProfile, 'node_modules', 'copied'), 'utf8')).toBe('keep')
+    expect(() => { resumeProfilePluginPreparation(f.home, 'web', f.record.id, process.pid) }).toThrow('still alive')
+    writeFileSync(journal, JSON.stringify({ ...f.record, producerPid: 99999999, phase: 'activating' }))
+    expect(() => { resumeProfilePluginPreparation(f.home, 'web', f.record.id, process.pid) }).toThrow('only interrupted preparation')
+  })
+  it('rebases a prebuilt candidate store location to the active configuration directory on activation', () => {
+    const f = fixture()
+    writeFileSync(join(f.candidateProfile, 'node_modules/.modules.yaml'), JSON.stringify({ storeDir: join(f.candidate, '.pnpm-store/v11') }))
+    readyProfilePluginTransaction(f.home, 'web', f.record.id)
+    activateProfilePluginTransaction(f.home, 'web', f.record.id)
+    expect(load(readFileSync(join(f.profile, 'node_modules/.modules.yaml'), 'utf8'))).toEqual({ storeDir: join(f.home, '.pnpm-store/v11') })
+  })
   it('activates new seed markers and retained archives together, then removes the new marker on rollback', () => {
     const f = fixture()
     const bundled = join(f.candidate, 'bundled-plugins')
@@ -92,6 +163,40 @@ describe('staged Profile activation', () => {
     expect(existsSync(join(local, 'package.json'))).toBe(true)
   })
 
+  it('stabilizes a same-drive relative local dependency link before moving candidate modules', () => {
+    const f = fixture()
+    const local = join(f.home, 'local-plugin')
+    mkdirSync(local)
+    writeFileSync(join(local, 'package.json'), '{"name":"local-plugin","version":"1.0.0"}')
+    const candidateLink = join(f.candidateProfile, 'node_modules', 'local-plugin')
+    symlinkSync(relative(join(f.candidateProfile, 'node_modules'), local), candidateLink, 'dir')
+    readyProfilePluginTransaction(f.home, 'web', f.record.id)
+    activateProfilePluginTransaction(f.home, 'web', f.record.id)
+    expect(realpathSync(join(f.profile, 'node_modules', 'local-plugin'))).toBe(realpathSync(local))
+  })
+
+  it('rejects a missing candidate dependency link before changing active dependencies', () => {
+    const f = fixture()
+    const candidateLink = join(f.candidateProfile, 'node_modules', 'missing-plugin')
+    symlinkSync('../../../../missing-plugin', candidateLink, 'dir')
+    readyProfilePluginTransaction(f.home, 'web', f.record.id)
+    expect(() => { activateProfilePluginTransaction(f.home, 'web', f.record.id) }).toThrow('missing target')
+    expect(readFileSync(join(f.profile, 'node_modules', 'generation'), 'utf8')).toBe('old')
+  })
+
+  it('removes a generated bin link whose package target is already absent', () => {
+    const f = fixture()
+    const bin = join(f.candidateProfile, 'node_modules', '.bin')
+    mkdirSync(bin)
+    symlinkSync('../cloudflared/lib/cloudflared.js', join(bin, 'cloudflared'))
+    readyProfilePluginTransaction(f.home, 'web', f.record.id)
+
+    activateProfilePluginTransaction(f.home, 'web', f.record.id)
+
+    expect(existsSync(join(f.profile, 'node_modules', '.bin', 'cloudflared'))).toBe(false)
+    expect(readFileSync(join(f.profile, 'node_modules', 'generation'), 'utf8')).toBe('old')
+  })
+
   it.each(['workspace:*', 'file:../../../outside'])('rejects an unsafe %s source without activating it', (spec) => {
     const f = fixture()
     settleProfilePluginTransaction(f.home, 'web', f.record.id, false)
@@ -145,6 +250,66 @@ describe('staged Profile activation', () => {
     expect(runPlugin('web', ['transaction', 'rollback', pending.id])).toBe(0)
     expect(runPlugin('web', ['snapshot', 'end-restore-lease'])).toBe(0)
     expect(dependencies(f.profile)).toEqual({})
+  })
+  it('does not request desktop activation when a package manager reports success without installing the plugin', () => {
+    const f = fixture()
+    settleProfilePluginTransaction(f.home, 'web', f.record.id, false)
+    writeFileSync(join(f.profile, 'package.json'), JSON.stringify({ dependencies: {}, dsh: { profile: { bundles: [] } } }))
+    const pnpm = join(f.home, 'pnpm.mjs')
+    writeFileSync(pnpm, 'process.exit(0)\n')
+    vi.stubEnv('DSH_HOME', f.home)
+    vi.stubEnv('DSH_PNPM_BIN', pnpm)
+    vi.stubEnv('DSH_DESKTOP_MUTATION_OWNER_PID', String(process.pid))
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_BATCH', undefined)
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN', undefined)
+    expect(runPlugin('web', ['add', 'beta@1.0.0'])).toBe(1)
+    expect(readProfilePluginTransaction(f.home, 'web')).toBeUndefined()
+    expect(dependencies(f.profile)).toEqual({})
+  })
+  it('repairs retained archives from a deleted transaction before retrying a plugin install', () => {
+    const f = fixture()
+    settleProfilePluginTransaction(f.home, 'web', f.record.id, false)
+    const archiveName = 'bundled-alpha-1.0.0.tgz'
+    const activeArchive = join(f.home, 'bundled-plugins', archiveName)
+    mkdirSync(join(f.home, 'bundled-plugins'), { recursive: true })
+    writeFileSync(activeArchive, 'retained archive')
+    const staleId = '3b6dade4-2ed0-48d7-aab4-660532802cba'
+    const staleArchive = join(f.home, 'plugin-transactions', 'web', staleId, 'candidate', 'bundled-plugins', archiveName)
+    writeFileSync(join(f.profile, 'package.json'), JSON.stringify({
+      dependencies: { alpha: `file:${staleArchive}` }, dsh: { profile: { bundles: ['alpha'] } },
+    }))
+    writeFileSync(join(f.profile, 'pnpm-lock.yaml'), JSON.stringify({
+      lockfileVersion: '9.0',
+      importers: { '.': { dependencies: { alpha: { specifier: `file:${staleArchive}`, version: `file:${staleArchive}` } } } },
+      packages: { [`alpha@file:${staleArchive}`]: { resolution: { tarball: `file:${staleArchive}` } } },
+    }))
+    const pnpm = join(f.home, 'pnpm.mjs')
+    writeFileSync(pnpm, `
+      import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+      import { fileURLToPath } from 'node:url';
+      const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+      const alpha = pkg.dependencies.alpha;
+      if (!alpha.startsWith('file:') || !existsSync(fileURLToPath(new URL(alpha)))) process.exit(2);
+      pkg.dependencies.beta = '1.0.0';
+      writeFileSync('package.json', JSON.stringify(pkg));
+      mkdirSync('node_modules/beta', { recursive: true });
+      writeFileSync('node_modules/beta/package.json', JSON.stringify({ name: 'beta', version: '1.0.0' }));
+    `)
+    vi.stubEnv('DSH_HOME', f.home)
+    vi.stubEnv('DSH_PNPM_BIN', pnpm)
+    vi.stubEnv('DSH_DESKTOP_MUTATION_OWNER_PID', String(process.pid))
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_BATCH', undefined)
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN', undefined)
+    expect(runPlugin('web', ['add', 'beta@1.0.0'])).toBe(0)
+    const pending = readProfilePluginTransaction(f.home, 'web')
+    expect(pending?.phase).toBe('prepared')
+    expect(dependencies(f.profile).alpha).toBe(`file:${staleArchive}`)
+    if (pending === undefined) throw new Error('missing repaired candidate')
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN', pending.id)
+    expect(runPlugin('web', ['transaction', 'activate', pending.id])).toBe(0)
+    expect(dependencies(f.profile)).toEqual({ alpha: `file:${activeArchive}`, beta: '1.0.0' })
+    expect(runPlugin('web', ['transaction', 'commit', pending.id])).toBe(0)
+    expect(runPlugin('web', ['snapshot', 'end-restore-lease'])).toBe(0)
   })
   it('keeps the active Profile unchanged until activation and restores complete dependencies on failure', () => {
     const f = fixture()

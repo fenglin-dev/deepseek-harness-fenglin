@@ -8,6 +8,7 @@ export interface ProfileMutationLockStatus {
   readonly lockPath: string
   readonly pid?: number
   readonly workerPid?: number
+  readonly workerActive?: boolean
   readonly parentPid?: number
   readonly operationKind?: string
   readonly createdAt?: string
@@ -51,17 +52,22 @@ export function inspectProfileMutationLock(home: string): ProfileMutationLockSta
       ? { operationKind: candidate.operationKind.slice(0, 80) } : {}),
     ...(typeof candidate.createdAt === 'string' ? { createdAt: candidate.createdAt.slice(0, 64) } : {}),
   }
-  for (const pid of [candidate.pid, ...(typeof candidate.workerPid === 'number' ? [candidate.workerPid] : [])]) {
+  const processActive = (pid: number): boolean | undefined => {
     try {
       process.kill(pid, 0)
-      return { active: true, state: 'live', lockPath, ...metadata }
+      return true
     } catch (error) {
-      if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) {
-        return { active: true, state: 'unreadable', lockPath, ...metadata }
-      }
+      return error instanceof Error && 'code' in error && error.code === 'ESRCH' ? false : undefined
     }
   }
-  return { active: false, state: 'dead', lockPath, ...metadata }
+  const ownerActive = processActive(candidate.pid)
+  const workerActive = typeof candidate.workerPid === 'number' ? processActive(candidate.workerPid) : undefined
+  const activity = { ...metadata, ...(workerActive === undefined ? {} : { workerActive }) }
+  if (ownerActive === undefined || (candidate.workerPid !== undefined && workerActive === undefined)) {
+    return { active: true, state: 'unreadable', lockPath, ...activity }
+  }
+  if (ownerActive || workerActive) return { active: true, state: 'live', lockPath, ...activity }
+  return { active: false, state: 'dead', lockPath, ...activity }
 }
 
 /** Detect a live or unreadable Profile mutation lease. @param home - Active Harness home. @returns True when exit must wait. */

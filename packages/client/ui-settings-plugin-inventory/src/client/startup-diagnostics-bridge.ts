@@ -5,6 +5,9 @@ export interface StartupDiagnosticIncident {
   readonly code: string
   readonly operation: string
   readonly packageName?: string
+  readonly recordedVersion?: string
+  readonly actualVersion?: string
+  readonly targetVersion?: string
   readonly createdAt: string
   readonly actions: readonly string[]
 }

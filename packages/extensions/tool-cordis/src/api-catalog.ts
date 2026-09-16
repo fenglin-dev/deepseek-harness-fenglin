@@ -167,6 +167,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when no configured root supplies that id.'],
       },
       {
+        signature: 'async prepare(id?: string): Promise<AgentPreset>',
+        description: 'Resolve and mount one preset without creating or changing a Session. A runtime mount failure remains on the roster until the composition file changes, and the later Agent mount reuses a successful standing mount.',
+        parameters: [{ name: 'id', description: 'preset id, or the configured default when omitted.' }],
+        returns: 'the resolved preset after its standing composition is usable.',
+      },
+      {
+        signature: '@Remote(\'preflight\') async preflight(agentPreset: string, signal: AbortSignal): Promise<string>',
+        description: 'Validate one picker choice before a Session is created.',
+        parameters: [{ name: 'agentPreset', description: 'preset selected by the user.' }, { name: 'signal', description: 'caller cancellation while validation is in flight.' }],
+        returns: 'the validated preset id.',
+      },
+      {
         signature: 'async mount(agentCtx: Context, id?: string): Promise<AgentPreset>',
         description: 'Compose one agent from a preset: ensure the preset\'s standing mount, then parent the agent\'s scope key to it so the mount\'s registrations and listeners cover this agent.\n\nCall from the agent factory\'s `setup(agentCtx)`; a rejection there rolls the agent creation back, so a broken preset never yields a half-composed session.',
         parameters: [{ name: 'agentCtx', description: 'the agent\'s scope context.' }, { name: 'id', description: 'the preset id, or `undefined` for {@link defaultId}.' }],
@@ -2933,6 +2945,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the complete resulting archive set.',
       },
       {
+        signature: '@Remote(\'unarchiveSession\') unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue>',
+        description: 'Reveal one archived Session on Workspace grouping surfaces.',
+        parameters: [{ name: 'request', description: 'Session identity to restore.' }],
+        returns: 'the complete resulting archive set.',
+      },
+      {
         signature: '@Remote({ mode: \'stream\' }) follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame>',
         description: 'Stream a complete Workspace baseline followed by ordered increments.',
         parameters: [{ name: 'signal', description: 'generation cancellation.' }],
@@ -3028,6 +3046,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'archiveSession(sessionId: SessionId): Promise<void>',
         description: 'Archive one session durably. The session must exist (live or in session persistence); its workspace accounting — or lack of one — is irrelevant. An already archived id resolves without writing.',
         parameters: [{ name: 'sessionId', description: 'The session to archive.' }],
+        returns: 'resolution after durability.',
+      },
+      {
+        signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
+        description: 'Remove one session from the durable archive set without changing its Workspace accounting or Session log. An active id resolves without writing.',
+        parameters: [{ name: 'sessionId', description: 'Session to reveal on grouping surfaces.' }],
         returns: 'resolution after durability.',
       },
       {
@@ -6537,6 +6561,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceRenameRequest',
     declaration: 'export interface WorkspaceRenameRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly title: string;\n}',
+  },
+  {
+    name: 'WorkspaceUnarchiveSessionRequest',
+    declaration: 'export interface WorkspaceUnarchiveSessionRequest {\n    readonly sessionId: SessionId;\n}',
   },
   {
     name: 'WorkspaceValue',

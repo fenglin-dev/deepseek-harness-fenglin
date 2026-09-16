@@ -6,15 +6,15 @@ Read this reference only when the requested endpoint includes Release notes or p
 
 Use one of these modes at the beginning of the task:
 
-- **Download only:** build, download, and verify `release/<version>/`.
+- **Download only:** build, download, and verify `<primary-checkout>/release/<version>/`.
 - **Prepare notes:** also write the bilingual notes file, then stop for review.
 - **Publish:** prepare and review the notes, then publish the already verified local assets to GitHub and mirror them to CNB after a fresh, explicit authorization naming both destinations.
 
-When the request does not choose a mode, default to download only. Permission to package, push a branch, or prepare notes is not permission to create a tag, upload assets, or publish a Release. Once the final reviewed plan names both providers, an unqualified approval to upload or publish authorizes that exact verified set on GitHub and CNB. Honor a narrower GitHub-only or CNB-only instruction instead of broadening it.
+When the user asks to prepare or start packaging without choosing a mode, default to **Prepare notes** and produce the filled bilingual draft during version preparation. Default to download-only only for an explicit artifact-only request or packaging diagnostic retry. Permission to package, push a branch, or prepare notes is not permission to create a tag, upload assets, or publish a Release. Once the final reviewed plan names both providers, an unqualified approval to upload or publish authorizes that exact verified set on GitHub and CNB. Honor a narrower GitHub-only or CNB-only instruction instead of broadening it.
 
 ## 2. Write evidence-bounded notes
 
-Use [release-notes.md](release-notes.md) to derive and fill the tag, title, and body. Write the reviewable notes to `.artifacts/release-notes/<tag>.md`; never place it inside the exact-set `release/<version>/` directory. The default document contains complete Chinese and English sections and uses this evidence:
+Use [release-notes.md](release-notes.md) to derive and fill the tag, title, and body as soon as the release version is prepared. Write the reviewable notes to `.artifacts/release-notes/<tag>.md`, show the complete Chinese and English draft to the user, and never place it inside the exact-set `<primary-checkout>/release/<version>/` directory. Refresh that same file after native workflows complete. The document uses this evidence:
 
 - the previous published Open DSH Desktop tag and its notes;
 - the commit range from that tag to the final source SHA;
@@ -60,7 +60,7 @@ skill=.agents/skills/open-dsh-desktop-release-packaging
   odsh-v<version> \
   "v<version>" \
   "$PWD/.artifacts/release-notes/odsh-v<version>.md" \
-  "$PWD/release/<version>"
+  "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/release/<version>"
 ```
 
 Only after the final dual-target authorization, repeat the same invocation with `--publish` in addition to the explicit `--release-state`. The helper creates a lightweight tag at the exact SHA, uploads exactly the seven installers and `SHA256SUMS`, publishes directly, and verifies the remote asset digests. Use `stable` for a dual GitHub and CNB publication. Use `prerelease` only for an explicitly GitHub-only prerelease, because the CNB synchronization intentionally excludes it.

@@ -56,15 +56,12 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, d
   const state = useSyncExternalStore(subscribe, getSnapshot)
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmingCommandLine, setConfirmingCommandLine] = useState(false)
-  const [dataHomeOpen, setDataHomeOpen] = useState(false)
-  const [dataHomeTarget, setDataHomeTarget] = useState<'desktop' | 'official' | 'custom' | 'create'>('desktop')
   const preferences = state.preferences
   const updateRow = useRef<HTMLElement>(null)
   useEffect(() => {
     if (state.preferences === null || state.capabilities === null || state.menuDestination === undefined) return
     if (state.menuDestination === 'data-home') {
-      setDataHomeTarget(state.dataHome?.activeKind === 'official' ? 'official' : 'desktop')
-      setDataHomeOpen(true)
+      void controller.openDataHomeChooser()
       controller.navigate()
       return
     }
@@ -85,15 +82,6 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, d
   const releaseDownload = state.releaseDownload
   const commandLine = state.commandLine
   const dataHome = state.dataHome
-  const dataHomeSelection = state.dataHomeSelection
-  const dataHomeTargetIsCurrent = dataHome !== null && (
-    (dataHomeTarget === 'desktop' && dataHome.activeKind === 'desktop')
-    || (dataHomeTarget === 'official' && dataHome.activeKind === 'official')
-    || (dataHomeTarget === 'custom'
-      && dataHomeSelection?.status === 'selected'
-      && dataHomeSelection.selectionKind === 'existing'
-      && dataHomeSelection.path === dataHome.activePath)
-  )
   const commandLineActionUnavailable = commandLine?.phase === 'unsupported'
     || commandLine?.phase === 'unsupported-shell'
     || commandLine?.phase === 'setup-required'
@@ -219,12 +207,7 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, d
               <Button
                 variant="outline"
                 disabled={state.busy}
-                onClick={() => {
-                  setDataHomeTarget(dataHome.activeKind === 'official'
-                    ? 'official'
-                    : dataHome.activeKind === 'custom' ? 'custom' : 'desktop')
-                  setDataHomeOpen(true)
-                }}
+                onClick={() => { void controller.openDataHomeChooser() }}
               >
                 {t('dataHome.change')}
               </Button>
@@ -387,121 +370,6 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, d
         </div>
       </section>
       {state.error !== null && <div className={css.error} role="alert">{state.error}</div>}
-      <Modal
-        open={dataHomeOpen}
-        title={t('dataHome.modal.title')}
-        description={t('dataHome.modal.description')}
-        closeLabel={t('dataHome.cancel')}
-        onClose={() => { setDataHomeOpen(false) }}
-      >
-        <div className={css.dataHomeChoices} role="radiogroup" aria-label={t('dataHome.modal.title')}>
-          <label className={css.dataHomeChoice} data-selected={dataHomeTarget === 'desktop'}>
-            <input
-              type="radio"
-              name="desktop-data-home"
-              checked={dataHomeTarget === 'desktop'}
-              onChange={() => { setDataHomeTarget('desktop') }}
-            />
-            <span>
-              <strong>{t('dataHome.desktop.title')}</strong>
-              <small>{t('dataHome.desktop.description')}</small>
-              <code>{dataHome?.desktopPath ?? ''}</code>
-            </span>
-          </label>
-          <label
-            className={css.dataHomeChoice}
-            data-selected={dataHomeTarget === 'official'}
-            data-disabled={dataHome?.officialAvailable !== true}
-          >
-            <input
-              type="radio"
-              name="desktop-data-home"
-              checked={dataHomeTarget === 'official'}
-              disabled={dataHome?.officialAvailable !== true}
-              onChange={() => { setDataHomeTarget('official') }}
-            />
-            <span>
-              <strong>{t('dataHome.official.title')}</strong>
-              <small>{t(dataHome?.officialAvailable === true
-                ? 'dataHome.official.description'
-                : 'dataHome.official.unavailable')}</small>
-              <code>{dataHome?.officialPath ?? ''}</code>
-            </span>
-          </label>
-          <label className={css.dataHomeChoice} data-selected={dataHomeTarget === 'custom'}>
-            <input
-              type="radio"
-              name="desktop-data-home"
-              checked={dataHomeTarget === 'custom'}
-              onChange={() => { setDataHomeTarget('custom') }}
-            />
-            <span>
-              <strong>{t('dataHome.custom.title')}</strong>
-              <small>{t('dataHome.custom.description')}</small>
-              {dataHomeSelection?.status === 'selected'
-                && dataHomeSelection.selectionKind === 'existing'
-                && <code>{dataHomeSelection.path}</code>}
-            </span>
-          </label>
-          <label className={css.dataHomeChoice} data-selected={dataHomeTarget === 'create'}>
-            <input
-              type="radio"
-              name="desktop-data-home"
-              checked={dataHomeTarget === 'create'}
-              onChange={() => { setDataHomeTarget('create') }}
-            />
-            <span>
-              <strong>{t('dataHome.create.title')}</strong>
-              <small>{t('dataHome.create.description')}</small>
-              {dataHomeSelection?.status === 'selected'
-                && dataHomeSelection.selectionKind === 'empty'
-                && <code>{dataHomeSelection.path}</code>}
-            </span>
-          </label>
-          {(dataHomeTarget === 'custom' || dataHomeTarget === 'create') && <div className={css.dataHomePicker}>
-            <Button
-              variant="outline"
-              disabled={state.busy}
-              onClick={() => {
-                void controller.chooseDataHome(dataHomeTarget === 'create' ? 'empty' : 'existing')
-              }}
-            >
-              {t(dataHomeTarget === 'create' ? 'dataHome.create.choose' : 'dataHome.custom.choose')}
-            </Button>
-            {dataHomeSelection?.status === 'invalid'
-              || dataHomeSelection?.status === 'not-empty'
-              || dataHomeSelection?.status === 'unreadable' ? (
-                <span className={css.error}>{t(`dataHome.custom.${dataHomeSelection.status}`, { path: dataHomeSelection.path })}</span>
-              ) : null}
-          </div>}
-          <p className={css.dataHomeWarning}>{t('dataHome.warning')}</p>
-        </div>
-        <div className={css.modalActions}>
-          <Button variant="outline" onClick={() => { setDataHomeOpen(false) }}>{t('dataHome.cancel')}</Button>
-          <Button
-            variant="primary"
-            disabled={state.busy
-              || state.restartPending
-              || dataHome === null
-              || dataHomeTargetIsCurrent
-              || (dataHomeTarget === 'official' && !dataHome.officialAvailable)
-              || (dataHomeTarget === 'custom'
-                && (dataHomeSelection?.status !== 'selected' || dataHomeSelection.selectionKind !== 'existing'))
-              || (dataHomeTarget === 'create'
-                && (dataHomeSelection?.status !== 'selected' || dataHomeSelection.selectionKind !== 'empty'))}
-            onClick={() => {
-              if (dataHomeTarget === 'custom' || dataHomeTarget === 'create') {
-                if (dataHomeSelection?.status !== 'selected') return
-                void controller.switchDataHome({ kind: dataHomeTarget, selectionId: dataHomeSelection.selectionId })
-                return
-              }
-              void controller.switchDataHome({ kind: dataHomeTarget })
-            }}
-          >
-            {t(state.restartPending ? 'dataHome.restarting' : 'dataHome.confirm')}
-          </Button>
-        </div>
-      </Modal>
       <Modal
         open={confirmingCommandLine}
         title={t('cli.conflict.title')}

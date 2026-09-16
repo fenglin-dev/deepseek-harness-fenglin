@@ -26,6 +26,8 @@ describe('SettingsRoot.module.css geometry', () => {
     expect(declarations('.overlay').get('inset')).toBe('0')
     expect(declarations('.panel').get('height')).toBe('min(800px, calc(100vh - 48px))')
     expect(declarations('.onboardingPanel').get('height')).toBe('min(820px, calc(100vh - 48px))')
+    expect(declarations('.header').get('align-items')).toBe('center')
+    expect(declarations('.actions').get('align-items')).toBe('center')
   })
 
   it('gives contributed navigation its own non-collapsing scrollport', () => {
@@ -54,5 +56,12 @@ describe('SettingsRoot.module.css geometry', () => {
     expect(css).not.toContain('data-drop-before')
     expect(css).not.toContain('data-drop-after')
     expect(css).not.toContain('transform: rotate(90deg)')
+  })
+
+  it('keeps phone navigation and actions inside a full-height safe-area panel', () => {
+    expect(css).toMatch(/@media \(max-width: 680px\)[\s\S]*?\.panel\s*\{[\s\S]*?width: 100vw;[\s\S]*?height: 100dvh;/)
+    expect(css).toMatch(/\.mobileNavClose\s*\{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/)
+    expect(css).toMatch(/\.mobileBack,[\s\S]*?\.close\s*\{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/)
+    expect(css).toContain('env(safe-area-inset-bottom)')
   })
 })

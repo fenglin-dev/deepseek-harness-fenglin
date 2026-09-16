@@ -68,3 +68,28 @@
   /* Optical align with 28px icon hit targets that pad 6px past the glyph. */
   margin-left: -6px;
 }
+
+@media (max-width: 680px) {
+  .root,
+  .body {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .body :global(.md-table-wide) {
+    --dsh-table-spare: 0px;
+    --dsh-table-lead: 0px;
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    padding-left: 0;
+    overflow-x: auto;
+  }
+
+  .body :global(pre),
+  .body :global(table),
+  .body :global(img),
+  .body :global(video) {
+    max-width: 100%;
+  }
+}

@@ -26,7 +26,7 @@ import { SettingsDescribeMirror } from './settings-mirror.ts'
 import { SettingsNavigation } from './settings-navigation.ts'
 
 export type {
-  SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
+  SettingsActionOwnerProps, SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
   SettingsOnboardingSectionRequest, SettingsPluginsTabOwnerProps, SettingsSectionOwnerProps,
   SettingsTriggerOwnerProps,
 } from './contract/slots.ts'

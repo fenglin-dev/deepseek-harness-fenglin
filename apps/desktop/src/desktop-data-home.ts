@@ -1,11 +1,11 @@
 /** Resolve and initialize the desktop-owned Harness data home. */
 
+import { randomUUID } from 'node:crypto'
 import {
   chmod, copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile,
 } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parseDocument } from 'yaml'
-import { copyCommunityHome } from './community-data-copy.ts'
 import {
   extractImportedPluginRestorePlan,
   writeImportedPluginRestorePlan,
@@ -13,8 +13,12 @@ import {
 
 const DESKTOP_DATA_DIRECTORY = 'open-deepseek-harness-desktop'
 const SETUP_SCHEMA = 'open-deepseek-harness-desktop/data-home-setup/v1'
+const COMMUNITY_PROFILE_IDENTITY_SCHEMA = 'flaqai/open-deepseek-harness-desktop/profile-identity/v1'
+/** Product-owned identity record stored inside community desktop Harness homes. */
+export const COMMUNITY_PROFILE_IDENTITY_FILE = '.open-deepseek-harness-desktop.json'
 const ONBOARDING_SETTINGS_NAMESPACE = 'ui-onboarding'
 export const IMPORTED_ONBOARDING_RESET_VERSION = '1'
+export const PORTABLE_PLUGIN_RESTORE_VERSION = '1'
 const IMPORTABLE_ENTRIES = Object.freeze([
   '.agent-presets',
   '.credentials.yaml',
@@ -88,7 +92,15 @@ export interface DesktopDataHomeSetup {
   readonly dshHome: string
   readonly source?: string
   readonly importedOnboardingReset?: string
+  readonly portablePluginRestore?: string
   readonly completedAt: string
+}
+
+/** Older community copies contain a complete Profile and predate portable restore plans. */
+export function shouldPreserveLegacyCopiedProfile(
+  setup: DesktopDataHomeSetup | undefined,
+): boolean {
+  return setup?.mode === 'copied' && setup.portablePluginRestore !== PORTABLE_PLUGIN_RESTORE_VERSION
 }
 
 /** User-facing classification of the active Harness home. */
@@ -246,6 +258,47 @@ async function recognizedDesktopDataEntries(dshHome: string): Promise<readonly s
   return entries
 }
 
+async function hasCommunityProfileIdentity(dshHome: string): Promise<boolean> {
+  try {
+    const value = JSON.parse(await readFile(join(dshHome, COMMUNITY_PROFILE_IDENTITY_FILE), 'utf8')) as unknown
+    return typeof value === 'object'
+      && value !== null
+      && 'schema' in value
+      && value.schema === COMMUNITY_PROFILE_IDENTITY_SCHEMA
+      && 'instanceId' in value
+      && typeof value.instanceId === 'string'
+      && /^[0-9a-f-]{36}$/u.test(value.instanceId)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError) return false
+    throw error
+  }
+}
+
+/**
+ * Mark a data home as created or adopted by this community desktop distribution.
+ * @param dshHome - Harness home owned by a completed or in-progress desktop setup.
+ * @returns A promise that resolves after a valid identity record is present.
+ */
+export async function ensureCommunityProfileIdentity(dshHome: string): Promise<void> {
+  if (await hasCommunityProfileIdentity(dshHome)) return
+  await mkdir(dshHome, { recursive: true, mode: 0o700 })
+  const path = join(dshHome, COMMUNITY_PROFILE_IDENTITY_FILE)
+  const temporary = `${path}.${process.pid}.tmp`
+  await writeFile(temporary, `${JSON.stringify({
+    schema: COMMUNITY_PROFILE_IDENTITY_SCHEMA,
+    instanceId: randomUUID(),
+    createdAt: new Date().toISOString(),
+  }, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+  await rename(temporary, path)
+}
+
+async function setupClaimsCommunityHome(desktopRoot: string, dshHome: string): Promise<boolean> {
+  const setup = await readDesktopDataHomeSetup(join(desktopRoot, 'data-home-setup.json'))
+  return setup !== undefined
+    && isAbsolute(setup.dshHome)
+    && sameDesktopPath(setup.dshHome, dshHome)
+}
+
 /**
  * Resolve a selected Harness home or its `.dsh` child when recognized data exists.
  * @param candidate - Directory selected by the user or the default `~/.dsh` path.
@@ -261,7 +314,7 @@ export async function resolveDesktopDataHomeSource(candidate: string): Promise<D
 }
 
 /**
- * Resolve a community desktop root or an actual DSH data directory.
+ * Resolve a product-identified community desktop root or actual Harness home.
  * A present setup record is authoritative: invalid or missing recorded data never falls back to stale local data.
  * @param candidate - Directory selected by the native picker.
  * @returns Recognized actual data path, excluding desktop logs and caches, or undefined.
@@ -275,10 +328,42 @@ export async function resolveCommunityDataHomeSource(candidate: string): Promise
     const entries = await recognizedDesktopDataEntries(setup.dshHome)
     return entries.length > 0 ? { path: resolve(setup.dshHome), entries } : undefined
   }
+  const directEntries = await recognizedDesktopDataEntries(root)
+  if (directEntries.length > 0
+    && (await hasCommunityProfileIdentity(root) || await setupClaimsCommunityHome(dirname(root), root))) {
+    return { path: root, entries: directEntries }
+  }
   const nested = join(root, 'dsh-home')
   const entries = await recognizedDesktopDataEntries(nested)
-  if (entries.length > 0) return { path: nested, entries }
-  return resolveDesktopDataHomeSource(root)
+  if (entries.length > 0 && await hasCommunityProfileIdentity(nested)) return { path: nested, entries }
+  return undefined
+}
+
+/**
+ * Resolve recognizable legacy community data only when no product identity evidence exists.
+ * Present identity or setup records remain authoritative even when malformed or foreign, so
+ * this compatibility path cannot bypass a failed identity check.
+ * @param candidate - Directory selected by the native picker.
+ * @returns Recognized actual data path eligible for explicit user confirmation, or undefined.
+ */
+export async function resolveUnidentifiedCommunityDataHomeSource(
+  candidate: string,
+): Promise<DesktopDataHomeSource | undefined> {
+  const root = resolve(candidate)
+  if (await pathExists(join(root, 'data-home-setup.json'))) return undefined
+
+  const directEntries = await recognizedDesktopDataEntries(root)
+  if (directEntries.length > 0) {
+    if (await pathExists(join(root, COMMUNITY_PROFILE_IDENTITY_FILE))) return undefined
+    if (await pathExists(join(dirname(root), 'data-home-setup.json'))) return undefined
+    return { path: root, entries: directEntries }
+  }
+
+  const nested = join(root, 'dsh-home')
+  const nestedEntries = await recognizedDesktopDataEntries(nested)
+  if (nestedEntries.length === 0) return undefined
+  if (await pathExists(join(nested, COMMUNITY_PROFILE_IDENTITY_FILE))) return undefined
+  return { path: nested, entries: nestedEntries }
 }
 
 /** Resolve an existing empty directory that can become a new Harness home.
@@ -423,7 +508,9 @@ export async function resolveDesktopDataHomeSwitch(
     }
   }
   const candidate = target.kind === 'official' ? layout.officialDshHome : target.path
-  const source = await resolveDesktopDataHomeSource(candidate)
+  const source = await (target.kind === 'official'
+    ? resolveDesktopDataHomeSource(candidate)
+    : resolveCommunityDataHomeSource(candidate))
   if (source === undefined) {
     throw new Error(target.kind === 'official'
       ? 'desktop: the official DSH home is unavailable'
@@ -552,13 +639,12 @@ export function importOfficialDesktopData(
   return copyIndependentDesktopData(officialDshHome, targetDshHome, true)
 }
 
-/** Copy a compatible community desktop configuration without replaying first-run onboarding. */
-export async function copyCommunityDesktopData(
+/** Import compatible community desktop data without plugin runtimes or replaying onboarding. */
+export function copyCommunityDesktopData(
   communityDshHome: string,
   targetDshHome: string,
 ): Promise<DesktopDataImportResult> {
-  const copied = await copyCommunityHome(communityDshHome, targetDshHome)
-  return { copied, skippedSymlinks: [], restorablePlugins: 0, pluginRestoreIssues: [] }
+  return copyIndependentDesktopData(communityDshHome, targetDshHome, false)
 }
 
 /**
@@ -581,7 +667,9 @@ export async function readDesktopDataHomeSetup(path: string): Promise<DesktopDat
       || typeof value.completedAt !== 'string'
       || (value.source !== undefined && typeof value.source !== 'string')
       || (value.importedOnboardingReset !== undefined
-        && value.importedOnboardingReset !== IMPORTED_ONBOARDING_RESET_VERSION)) return undefined
+        && value.importedOnboardingReset !== IMPORTED_ONBOARDING_RESET_VERSION)
+      || (value.portablePluginRestore !== undefined
+        && value.portablePluginRestore !== PORTABLE_PLUGIN_RESTORE_VERSION)) return undefined
     return value as DesktopDataHomeSetup
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError) return undefined
@@ -620,6 +708,7 @@ export function desktopDataHomeSetup(
     dshHome,
     ...(source === undefined ? {} : { source }),
     ...(mode === 'imported' ? { importedOnboardingReset: IMPORTED_ONBOARDING_RESET_VERSION } : {}),
+    ...(mode === 'copied' ? { portablePluginRestore: PORTABLE_PLUGIN_RESTORE_VERSION } : {}),
     completedAt: new Date().toISOString(),
   }
 }

@@ -108,6 +108,8 @@ export interface ProfilePluginSnapshotSummary extends ProfilePluginSnapshotRecor
 
 /** Inputs for one local rollback point. */
 export interface CreateProfilePluginSnapshotOptions {
+  /** Internal first-deployment transaction only; user snapshots still require a Profile. */
+  readonly allowUninitialized?: boolean
   readonly home?: string
   readonly profile: string
   readonly kind: ProfilePluginSnapshotKind
@@ -437,7 +439,10 @@ export function createProfilePluginSnapshot(
   const home = options.home ?? resolveDshHome()
   const profileDir = resolveProfileDir(options.profile, home)
   const manifestPath = join(profileDir, 'package.json')
-  if (!existsSync(manifestPath)) throw new Error(`dsh: Profile ${options.profile} is not initialized`)
+  const initialized = existsSync(manifestPath)
+  if (!initialized && !(options.kind === 'safety' && options.allowUninitialized === true)) {
+    throw new Error(`dsh: Profile ${options.profile} is not initialized`)
+  }
   const label = normalizeLabel(options.label)
   const snapshotId = options.snapshotId ?? randomUUID()
   assertSnapshotId(snapshotId)
@@ -489,7 +494,7 @@ export function createProfilePluginSnapshot(
       assertInside(join(temporary, SNAPSHOT_FILES), payload)
       writePrivateFile(payload, file.bytes)
     }
-    const manifest = readManifest(manifestPath)
+    const manifest = initialized ? readManifest(manifestPath) : {}
     const record: ProfilePluginSnapshotRecord = {
       schema: PROFILE_PLUGIN_SNAPSHOT_SCHEMA,
       snapshotId,
@@ -714,9 +719,17 @@ export function restoreProfilePluginSnapshotFiles(
       const bytes = payloads.get(file.relativePath)
       if (bytes === undefined) return []
       try {
-        const marker = JSON.parse(bytes.toString('utf8')) as { version?: unknown }
-        if (typeof marker.version !== 'string') return []
-        return [{ seedId: basename(file.relativePath, '.seeded.json'), version: marker.version }]
+        const marker = JSON.parse(bytes.toString('utf8')) as {
+          version?: unknown
+          installedVersion?: unknown
+        }
+        const installedVersion = typeof marker.installedVersion === 'string'
+          ? marker.installedVersion
+          : typeof marker.version === 'string'
+            ? marker.version
+            : undefined
+        if (installedVersion === undefined) return []
+        return [{ seedId: basename(file.relativePath, '.seeded.json'), version: installedVersion }]
       } catch {
         return []
       }

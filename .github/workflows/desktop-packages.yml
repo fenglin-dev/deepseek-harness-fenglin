@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  PRIMARY_NODE_VERSION: '24.17.0'
+  PRIMARY_NODE_VERSION: '24.21.0'
   DSH_TELEMETRY_DISABLED: '1'
 
 jobs:
@@ -50,6 +50,9 @@ jobs:
 
       - name: Verify external tool provider coordinates
         run: pnpm run verify:desktop:external-tools
+
+      - name: Verify embedded Node runtime pins
+        run: node --test apps/desktop/scripts/node-runtime-pins.test.mjs
 
       - name: Resolve latest stable plugin archives
         if: ${{ inputs.refresh_plugins }}
@@ -143,6 +146,9 @@ jobs:
 
       - name: Build Linux packages
         run: pnpm run package:desktop:linux:x64
+
+      - name: Verify packaged preset resources
+        run: node apps/desktop/scripts/verify-prebuilt-profile.mjs .artifacts/desktop-linux/linux-unpacked/resources
 
       - uses: actions/upload-artifact@v4
         with:

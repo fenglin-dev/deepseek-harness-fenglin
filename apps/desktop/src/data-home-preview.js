@@ -22,16 +22,16 @@
       officialRetained: '保留对话、设置、凭据、Agent 预设和 Skills 等受支持数据。',
       officialPlugins: '不复制插件本体；进入后可选择联网重新安装，本地源码等来源需手动提供。',
       retainedPluginsBoth: '两种方式均全部保留。',
-      language: '语言', current: '中文', officialChoice: '使用官方 DeepSeek Harness 配置',
-      officialChoiceSummary: '选择官方配置，继续后可直接使用，或导入到独立环境。',
+      language: '语言', current: '中文', officialChoice: '导入官方 DeepSeek Harness 配置',
+      officialChoiceSummary: '将兼容数据复制到独立环境，不与官方目录共享。',
       communityChoice: '使用社区桌面版配置',
       communityChoiceSummary: '直接使用或复制 Open DeepSeek Harness Desktop 的已有配置。',
       freshChoice: '全新开始', freshChoiceSummary: '不导入任何现有数据。',
       officialCard: '官方配置', communityCard: '社区配置', detected: '已检测到', missing: '未检测到',
       hint: '可手动选择其他目录。', chooseOfficial: '选择官方目录', chooseCommunity: '选择社区目录',
-      officialTitle: '使用官方 DeepSeek Harness 配置',
+      officialTitle: '导入官方 DeepSeek Harness 配置',
       communityTitle: '使用社区桌面版配置', freshTitle: '全新开始',
-      officialLocation: '使用官方 .dsh 或你选择的 DSH 数据目录，随后可直接使用或导入。',
+      officialLocation: '使用官方 .dsh 或你选择的 DSH 数据目录，将兼容数据复制到独立目录。',
       communityLocation: '使用社区桌面版已有的数据目录。',
       retentionLabel: '保留范围',
       retainedData: '历史对话、设置、凭据、Agent 预设、Skill、插件及插件配置全部保留。',
@@ -71,23 +71,23 @@
       officialSuitable: '将官方 DeepSeek Harness 配置用于 Open DeepSeek Harness Desktop。',
       communitySuitable: '继续现有社区桌面环境，或创建独立副本。',
       freshSuitable: '希望完全从零配置的用户。',
-      comparisonNote: '前两项只决定配置来源。官方来源可直接使用或导入，社区来源可直接使用或复制。',
+      comparisonNote: '官方配置只会导入到独立目录；社区配置通过本应用身份校验后可以直接使用或复制。',
       complete: '预览完成', completeSummary: '正式客户端会从这里开始准备配置。',
     },
     en: {
       officialRetained: 'Retain conversations, settings, credentials, Agent presets, Skills, and other supported data.',
       officialPlugins: 'Plugin files are not copied. Choose plugins to reinstall online afterward; local source plugins may require files supplied manually.',
       retainedPluginsBoth: 'All are retained with either option.',
-      language: 'Language', current: 'English', officialChoice: 'Use official DeepSeek Harness configuration',
-      officialChoiceSummary: 'Select official data, then use it directly or import it into an independent environment.',
+      language: 'Language', current: 'English', officialChoice: 'Import official DeepSeek Harness configuration',
+      officialChoiceSummary: 'Copy compatible data into an independent environment without sharing the official directory.',
       communityChoice: 'Use community desktop configuration',
       communityChoiceSummary: 'Use or copy an existing Open DeepSeek Harness Desktop configuration.',
       freshChoice: 'Start fresh', freshChoiceSummary: 'Do not import existing data.',
       officialCard: 'Official', communityCard: 'Community', detected: 'Detected', missing: 'Not detected',
       hint: 'Choose another directory if needed.', chooseOfficial: 'Choose official folder',
-      chooseCommunity: 'Choose community folder', officialTitle: 'Use official DeepSeek Harness configuration',
+      chooseCommunity: 'Choose community folder', officialTitle: 'Import official DeepSeek Harness configuration',
       communityTitle: 'Use community desktop configuration', freshTitle: 'Start fresh',
-      officialLocation: 'Use the official .dsh folder or another DSH data directory, then use it directly or import it.',
+      officialLocation: 'Use the official .dsh folder or another DSH data directory and copy compatible data into an independent directory.',
       communityLocation: 'Use an existing community desktop data directory.',
       retentionLabel: 'Data retained',
       retainedData: 'Conversation history, settings, credentials, Agent presets, Skills, plugins, and plugin configuration are all retained.',
@@ -131,7 +131,7 @@
       officialSuitable: 'Use an official DeepSeek Harness configuration with Open DeepSeek Harness Desktop.',
       communitySuitable: 'Continue an existing community desktop environment or create an independent copy.',
       freshSuitable: 'Start with a completely new configuration.',
-      comparisonNote: 'The first two options select the source. Official data can be used directly or imported; community data can be used directly or copied.',
+      comparisonNote: 'Official data is imported only into an independent directory. Community data can be used or copied after this app verifies its identity.',
       complete: 'Preview complete', completeSummary: 'The desktop client starts configuration preparation here.',
     },
   }
@@ -242,6 +242,7 @@
       ? value.officialOperationSummary : value.operationSummary)
     const imported = required('[data-operation="imported"]')
     const reused = required('[data-operation="reused"]')
+    reused.hidden = state.origin === 'official'
     imported.ariaChecked = String(state.operation === 'imported')
     reused.ariaChecked = String(state.operation === 'reused')
     imported.querySelector('strong').textContent = state.origin === 'official'
@@ -253,8 +254,8 @@
       ? value.communityReuseSummary : value.officialReuseSummary
     const reusing = state.operation === 'reused'
     text('#operation-sharing', reusing ? value.reuseSharing : value.importSharing)
-    text('#operation-plugins', reusing ? value.reusePlugins : state.origin === 'community' ? value.sourcePlugins : value.importPlugins)
-    text('#operation-builds', reusing || state.origin === 'community' ? value.reuseBuilds : value.importBuilds)
+    text('#operation-plugins', reusing ? value.reusePlugins : value.importPlugins)
+    text('#operation-builds', reusing ? value.reuseBuilds : value.importBuilds)
     text('#risk', value.risk)
     required('#risk').hidden = state.step !== 'operation' || !reusing || state.origin !== 'official'
     textAll('[data-copy="destinationTitle"]', value.destinationTitle)
@@ -335,13 +336,13 @@
         state.sources[state.origin] = sourcePaths[state.origin]
         renderSources()
       }
-      state.step = state.origin === 'fresh' ? 'destination' : 'operation'
+      state.step = state.origin === 'community' ? 'operation' : 'destination'
     } else if (state.step === 'operation' && state.operation === 'imported') state.step = 'destination'
     else if (state.target !== 'custom' || state.customTarget !== null) state.completed = true
     render()
   })
   required('#back').addEventListener('click', () => {
-    state.step = state.step === 'destination' && state.origin !== 'fresh' ? 'operation' : 'details'
+    state.step = state.step === 'destination' && state.origin === 'community' ? 'operation' : 'details'
     render()
   })
 
@@ -382,11 +383,11 @@
       renderComparisonTable(value.compareTitle, value.comparisonNote,
         [value.locationLabel, value.retentionLabel, value.pluginsLabel, value.suitableLabel], [
           { title: value.officialChoice, tone: 'official', values: [value.officialLocation,
-            `${value.reuseTitle}: ${value.reuseSharing}\n\n${value.officialImportTitle}: ${value.officialRetained}`,
-            `${value.reuseTitle}: ${value.reusePlugins}\n\n${value.officialImportTitle}: ${value.officialPlugins}`, value.officialSuitable] },
+            value.officialRetained, value.officialPlugins, value.officialSuitable] },
           { title: value.communityChoice, tone: 'community', values: [value.communityLocation,
-            `${value.reuseTitle}: ${value.retainedData}\n\n${value.importTitle}: ${value.retainedData} ${value.communityCopySummary}`,
-            value.retainedPluginsBoth, value.communitySuitable] },
+            `${value.importTitle}: ${value.officialRetained}\n\n${value.reuseTitle}: ${value.retainedData}`,
+            `${value.importTitle}: ${value.officialPlugins}\n\n${value.reuseTitle}: ${value.reusePlugins}`,
+            value.communitySuitable] },
           { title: value.freshChoice, tone: 'fresh', values: [value.freshLocation, value.freshSharing, value.freshPlugins, value.freshSuitable] },
         ], 'source')
     } else if (state.step === 'operation') {
@@ -395,7 +396,7 @@
       renderComparisonTable(value.operationTitle, state.origin === 'official'
         ? value.officialOperationSummary : value.operationSummary,
         [value.locationLabel, value.sharingLabel, value.pluginsLabel, value.buildsLabel, value.suitableLabel], [
-          { title: state.origin === 'official' ? value.officialImportTitle : value.importTitle, tone: 'copy', values: [value.importSummary, value.importSharing, state.origin === 'community' ? value.sourcePlugins : value.importPlugins, state.origin === 'community' ? value.reuseBuilds : value.importBuilds, copiedSummary] },
+          { title: state.origin === 'official' ? value.officialImportTitle : value.importTitle, tone: 'copy', values: [value.importSummary, value.importSharing, value.importPlugins, value.importBuilds, copiedSummary] },
           { title: value.reuseTitle, tone: 'reuse', values: [value.reuseSummary, value.reuseSharing, value.reusePlugins, value.reuseBuilds, reusedSummary] },
         ], 'option')
     } else {

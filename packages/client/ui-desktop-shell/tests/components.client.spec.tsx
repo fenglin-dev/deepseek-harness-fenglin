@@ -13,6 +13,9 @@ import {
 import {
   DesktopBrowserReturnButton, type DesktopBrowserReturnButtonProps,
 } from '../src/client/DesktopBrowserReturnButton.tsx'
+import {
+  DesktopLogDirectoryAction, type DesktopLogDirectoryActionProps,
+} from '../src/client/DesktopLogDirectoryAction.tsx'
 import { en } from '../src/client/locales.ts'
 import { DownloadNetworkSettings } from '../src/client/DownloadNetworkSettings.tsx'
 
@@ -30,7 +33,7 @@ const t = ((key: string, params?: Record<string, string | number>) => {
 const downloadSettings = {
   schema: 'open-dsh-desktop/download-network/v1' as const, revision: 0,
   application: { source: 'github' as const, proxy: { mode: 'system' as const, passwordSet: false } },
-  npm: { registry: 'existing' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
+  npm: { registry: 'npmmirror' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
   github: { download: 'original' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
 }
 
@@ -68,19 +71,9 @@ function setup(releaseStatus: DesktopReleaseStatus = {
   const openInstaller = vi.fn(() => Promise.resolve({ error: '' }))
   const openDesktopWeb = vi.fn(() => Promise.resolve({ opened: true as const, hidden: true }))
   const enterRecoveryMode = vi.fn(() => Promise.resolve({ entered: true as const }))
+  const openDataHomeChooser = vi.fn(() => Promise.resolve({ restarting: false }))
   const installCommandLine = vi.fn(() => Promise.resolve({
     phase: 'installed' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
-  }))
-  const chooseDataHome = vi.fn((selectionKind: 'existing' | 'empty') => Promise.resolve({
-    status: 'selected' as const,
-    selectionKind,
-    selectionId: '11111111-1111-4111-8111-111111111111',
-    path: selectionKind === 'empty' ? '/Volumes/Portable/New DSH' : '/Volumes/Portable/.dsh',
-    entries: selectionKind === 'empty' ? [] : ['settings.yaml'],
-  }))
-  const switchDataHome = vi.fn(() => Promise.resolve({
-    restarting: true,
-    activePath: '/home/user/.dsh',
   }))
   const bridge: DesktopBridge = {
     shell: {
@@ -93,14 +86,14 @@ function setup(releaseStatus: DesktopReleaseStatus = {
         desktopPath: '/desktop/dsh-home', officialPath: '/home/user/.dsh',
         officialAvailable: true, managedExternally: false,
       }),
-      chooseDataHome,
-      switchDataHome,
+      openDataHomeChooser,
       getPreferences: () => Promise.resolve({
         closeBehavior: 'tray', notificationsEnabled: true, launchAtLoginEnabled: false, openBrowserOnStartup: false,
       }),
       updatePreferences,
       onPreferences: () => () => {},
       openLog: vi.fn(),
+      openLogDirectory: vi.fn(() => Promise.resolve({ error: '' })),
       openSettingsDocument: vi.fn(() => Promise.resolve({ error: '' })),
       getCommandLine: () => Promise.resolve(commandLine),
       installCommandLine,
@@ -129,12 +122,26 @@ function setup(releaseStatus: DesktopReleaseStatus = {
   controller.start()
   return {
     controller, updatePreferences, openDownload, startDownload, cancelDownload, openInstaller, installCommandLine,
-    chooseDataHome, switchDataHome, openDesktopWeb, enterRecoveryMode,
+    openDataHomeChooser, openDesktopWeb, enterRecoveryMode,
   }
 }
 
 describe('desktop shell components', () => {
-  it('keeps application download controls actionable while market-owned policies are unavailable', async () => {
+  it('opens the fixed persistent diagnostic log and permits retry after an error', async () => {
+    const openLog = vi.fn()
+      .mockResolvedValueOnce({ error: 'permission denied' })
+      .mockResolvedValueOnce({ error: '' })
+    render(<DesktopLogDirectoryAction {...({ openLog, t } as DesktopLogDirectoryActionProps)} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open diagnostic log' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not open the diagnostic log')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open diagnostic log' }))
+    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+    expect(openLog).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows the desktop-owned npm registry choices while market-owned GitHub policy is unavailable', async () => {
     const { bridge, update } = createDownloadNetworkBridge()
     const longT = ((key: string, params?: Record<string, string | number>) => {
       let value = (en as Record<string, string>)[key] ?? key
@@ -148,8 +155,12 @@ describe('desktop shell components', () => {
     fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'cnb' } })
     fireEvent.click(screen.getAllByRole('button', { name: /Save/u })[0]!)
     await waitFor(() => { expect(update).toHaveBeenCalledWith(expect.objectContaining({ target: 'application' })) })
-    expect(screen.getAllByRole('button', { name: /Test connection/u })).toHaveLength(1)
-    expect(screen.queryByText(/npm plugins/u)).toBeNull()
+    expect(screen.getAllByRole('button', { name: /Test connection/u })).toHaveLength(2)
+    const registries = screen.getAllByRole('combobox').find(select =>
+      Array.from(select.querySelectorAll('option')).some(option => option.value === 'npmmirror'))!
+    expect((registries as HTMLSelectElement).value).toBe('npmmirror')
+    expect(Array.from(registries.querySelectorAll('option')).map(option => option.value))
+      .toEqual(['npmmirror', 'npmjs', 'custom'])
     expect(screen.queryByText(/GitHub plugins/u)).toBeNull()
   })
 
@@ -349,7 +360,7 @@ describe('desktop shell components', () => {
     expect(await screen.findByText('Development mode: this is the latest version')).toBeTruthy()
     expect(screen.getByRole('region', { name: 'Check for updates' }).contains(screen.getByText('Application updates'))).toBe(true)
     fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'cnb' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0]!)
     await waitFor(() => { expect(network.update).toHaveBeenCalledWith(expect.objectContaining({ target: 'application' })) })
     expect(screen.queryAllByRole('button', { name: 'Version 0.1.1-rc.3' })).toHaveLength(0)
     fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }))
@@ -412,51 +423,13 @@ describe('desktop shell components', () => {
     b.controller.dispose()
   })
 
-  it('switches only to built-in or native-picker-selected data homes', async () => {
+  it('opens the shared data-import chooser instead of a second settings modal', async () => {
     const b = setup()
     render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch directory' }))
-    expect(screen.getByText(/Switching does not copy, move, or delete data/u)).toBeTruthy()
-    fireEvent.click(screen.getByRole('radio', { name: /Official DSH directory/u }))
-    fireEvent.click(screen.getByRole('button', { name: 'Switch and restart' }))
-    await waitFor(() => { expect(b.switchDataHome).toHaveBeenCalledWith({ kind: 'official' }) })
-    b.controller.dispose()
-  })
-
-  it('uses an opaque native selection when switching to another existing directory', async () => {
-    const b = setup()
-    render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch directory' }))
-    fireEvent.click(screen.getByRole('radio', { name: /Another existing directory/u }))
-    fireEvent.click(screen.getByRole('button', { name: 'Choose directory' }))
-    expect(b.chooseDataHome).toHaveBeenCalledWith('existing')
-    await waitFor(() => { expect(screen.getByText('/Volumes/Portable/.dsh')).toBeTruthy() })
-    fireEvent.click(screen.getByRole('button', { name: 'Switch and restart' }))
-    await waitFor(() => {
-      expect(b.switchDataHome).toHaveBeenCalledWith({
-        kind: 'custom', selectionId: '11111111-1111-4111-8111-111111111111',
-      })
-    })
-    b.controller.dispose()
-  })
-
-  it('creates a fresh configuration only in a native-picker-selected empty folder', async () => {
-    const b = setup()
-    render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch directory' }))
-    fireEvent.click(screen.getByRole('radio', { name: /Create a new configuration in an empty folder/u }))
-    fireEvent.click(screen.getByRole('button', { name: 'Choose empty folder' }))
-    expect(b.chooseDataHome).toHaveBeenCalledWith('empty')
-    await waitFor(() => { expect(screen.getByText('/Volumes/Portable/New DSH')).toBeTruthy() })
-    fireEvent.click(screen.getByRole('button', { name: 'Switch and restart' }))
-    await waitFor(() => {
-      expect(b.switchDataHome).toHaveBeenCalledWith({
-        kind: 'create', selectionId: '11111111-1111-4111-8111-111111111111',
-      })
-    })
+    await waitFor(() => { expect(b.openDataHomeChooser).toHaveBeenCalledOnce() })
+    expect(screen.queryByRole('dialog', { name: 'Switch data directory' })).toBeNull()
     b.controller.dispose()
   })
 })

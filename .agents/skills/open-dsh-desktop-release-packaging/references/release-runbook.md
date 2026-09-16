@@ -32,6 +32,8 @@ The desktop installer version is owned by `apps/desktop/package.json`. Verify th
 
 Before pushing, run the checks selected by the changed surface. For ordinary release preparation, use focused tests, strict TypeScript or desktop build checks, documentation gates when documentation changed, and `git diff --check`. Do not repeat already-passing unrelated suites merely because a commit was created.
 
+As soon as the version and release-bound compatibility files are prepared, derive `odsh-v<version>`, `v<version>`, and the filled bilingual notes file. Present that draft before asking to commit or push. At this stage omit bundled-plugin changes and native qualification claims that still depend on accepted workflows. Refresh the same file after artifact verification; do not maintain a second divergent notes document.
+
 ## 3. Dispatch native builds
 
 Use the final packaging branch and keep publication disabled:
@@ -79,6 +81,14 @@ Fix the actual failure on the packaging-fix branch. After any source commit chan
 
 ## 4. Bundled plugin consistency
 
+### Prebuilt resource qualification
+
+Each native target builds its complete preset Profile using the packaged Node, pnpm and verified official archives. Retain the resulting `desktop-prebuilt-<platform>-<arch>` resource; do not replace it with a private plugin patch, a build-machine pnpm store, or user configuration. The manifest records the runtime identity, plugin snapshot digest, build approvals and checksummed inventory. Internal links are recipes recreated at deployment; external build-machine links are forbidden.
+
+Copy to a different path containing spaces, run read-only Doctor, start the ordinary Harness, verify its client HTTP response, and perform offline plugin removal before accepting the template. Check `verify-prebuilt-profile.mjs <installed-resources>` after electron-builder resource copying and signing, not only before packaging. The macOS and Windows smoke scripts and Linux workflow include this inventory check. Never bypass a missing-file check by regenerating the manifest from incomplete installed resources.
+
+For full startup qualification, use a newly created private directory with `--dsh-package-smoke-root=<absolute-directory>` and a separate `DSH_HOME`. Record both readiness markers, HTTP reachability, continued Electron survival, and clean exit. Verify a second launch does not repeat template deployment. Test interruption before activation and confirm completed files are reused only after the prior owner has exited. Keep installation time, template deployment time, server/client readiness, package size, installed size and temporary peak space separate. Missing native platform evidence remains unverified; local `.app` qualification does not replace final DMG/ZIP or installer qualification.
+
 ### macOS native startup qualification
 
 Keep `CFBundleName` consistent with `productName` and the packaged Helper executable names. Prefer electron-builder's generated `CFBundleName`; display-only branding belongs in `CFBundleDisplayName`. Electron reads `CFBundleName` before JavaScript starts to locate its Helper, so a mismatch can terminate with `SIGTRAP` and `Unable to find helper app` even after the user approves Gatekeeper and deep signature verification passes.
@@ -93,7 +103,7 @@ The download helper computes one complete content digest for each run's `bundled
 
 ## 5. Download one flat release set
 
-After Windows, macOS, and Linux have successful runs, pass all three run IDs to one helper. It derives the version from `apps/desktop/package.json`, verifies the runs in temporary storage, and atomically creates the ignored `release/<version>/` directory:
+After Windows, macOS, and Linux have successful runs, pass all three run IDs to one helper. It derives the version from `apps/desktop/package.json`, verifies the runs in temporary storage, resolves the main checkout through Git's common directory, and atomically creates the ignored `<primary-checkout>/release/<version>/` directory. Running the helper from a release or fix worktree does not change this destination. In this workspace the root is `/Users/6677h/StudioProjects/flaq-deepseek-harness/open-deepseek-harness-desktop/release/`:
 
 ```sh
 skill=.agents/skills/open-dsh-desktop-release-packaging
@@ -131,11 +141,11 @@ Do not delete a retained staging directory just to retry, and do not introduce a
 Run the exact-set check again:
 
 ```sh
-"$skill/scripts/verify-release-directory.sh" "$PWD/release/<version>"
+"$skill/scripts/verify-release-directory.sh" "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/release/<version>"
 ```
 
 The verifier requires exactly seven installers and one checksum file at the directory root. Any nested directory, workflow metadata, bundled-plugin snapshot, source archive, partial download, or unrelated file makes verification fail. Artifact-container ZIPs are transport files, not GitHub Release assets. A successful CI run does not imply that a local download exists.
 
 ## 7. Publication boundary
 
-The packaging workflow does not run on tag pushes and never publishes a Release. Publication uses the eight files already verified in `release/<version>/`; it does not rebuild or replace them. Do not create a tag, create a GitHub Release, or upload assets until the user explicitly selects publication, reviews the notes and asset plan, and gives fresh authorization immediately before the external mutation. Packaging authorization alone is insufficient.
+The packaging workflow does not run on tag pushes and never publishes a Release. Publication uses the eight files already verified in `<primary-checkout>/release/<version>/`; it does not rebuild or replace them. Do not create a tag, create a GitHub Release, or upload assets until the user explicitly selects publication, reviews the notes and asset plan, and gives fresh authorization immediately before the external mutation. Packaging authorization alone is insufficient.

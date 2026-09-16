@@ -10,6 +10,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { healProfilesModuleFallback, loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
 import { parseDshArgs } from './args.ts'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { claimDesktopWebLaunch } from './desktop-web-launch.ts'
 
 // Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit
 // one directory under apps/cli, so the checked-in manifest resolves with the
@@ -30,6 +32,10 @@ export async function runCli(): Promise<void> {
 
   switch (invocation.mode) {
     case 'profile': {
+      if (!claimDesktopWebLaunch(invocation.profile, resolveDshHome(), process.env)) {
+        console.error('dsh: Web replacement delegated to Desktop supervisor; no second service started')
+        return
+      }
       const { runProfile } = await import('./profile-boot.ts')
       await runProfile({
         environment: loadLayeredEnv('dsh'),
@@ -37,8 +43,8 @@ export async function runCli(): Promise<void> {
         fromDefaultProfile: invocation.fromDefaultProfile,
         patchFiles: invocation.patches,
         args: invocation.args,
-        safeMode: process.env.DSH_PROFILE_SAFE_MODE === '1',
-        safeModeOnFailure: process.env.DSH_PROFILE_SAFE_MODE_ON_FAILURE === '1',
+        diagnosticMode: process.env.DSH_PROFILE_DIAGNOSTIC_MODE === '1',
+        diagnosticModeOnFailure: process.env.DSH_PROFILE_DIAGNOSTIC_MODE_ON_FAILURE === '1',
       })
       break
     }

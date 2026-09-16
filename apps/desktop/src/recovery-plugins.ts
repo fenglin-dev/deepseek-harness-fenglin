@@ -116,6 +116,7 @@ export async function readRecoveryPluginInventory(dshHome: string): Promise<Reco
     }
   }))
   plugins.sort((left, right) => {
+    if (left.status !== right.status) return left.status === 'attention' ? -1 : 1
     const leftIndex = order.get(left.packageName) ?? Number.MAX_SAFE_INTEGER
     const rightIndex = order.get(right.packageName) ?? Number.MAX_SAFE_INTEGER
     return leftIndex - rightIndex || left.packageName.localeCompare(right.packageName)

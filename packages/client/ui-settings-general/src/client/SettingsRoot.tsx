@@ -15,7 +15,7 @@ import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import {
   ConnectionIndicator,
-  IconAgentPresetOutline16, IconCheckOutline16, IconCloseOutline16, IconDataOutline16,
+  IconAgentPresetOutline16, IconArchiveOutline20, IconCheckOutline16, IconChevronLeftOutline14, IconCloseOutline16, IconDataOutline16,
   IconReorderOutline16,
   IconLinkOutline16, IconPersonalizationOutline16, IconSettingsOutline16, IconWarningOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -30,6 +30,18 @@ import {
 import css from './SettingsRoot.module.css'
 
 const RECOVERY_CONFIRMATION_MS = 2_000
+const PHONE_MAX_WIDTH = 680
+
+/** Track the settings shell's phone presentation while the dialog is mounted. */
+function usePhoneViewport(): boolean {
+  const [phone, setPhone] = useState(() => window.innerWidth <= PHONE_MAX_WIDTH)
+  useEffect(() => {
+    const update = (): void => { setPhone(window.innerWidth <= PHONE_MAX_WIDTH) }
+    window.addEventListener('resize', update)
+    return () => { window.removeEventListener('resize', update) }
+  }, [])
+  return phone
+}
 
 /** Nav glyph by section id; unknown ids fall back to the settings gear. */
 function navIcon(id: string) {
@@ -39,6 +51,7 @@ function navIcon(id: string) {
   if (id === 'plugin-restore') return <IconPersonalizationOutline16 className={css.navIcon} size={16} />
   if (id === 'plugins') return <IconPersonalizationOutline16 className={css.navIcon} size={16} />
   if (id === 'diagnostics') return <IconWarningOutline16 className={css.navIcon} size={16} />
+  if (id === 'archived-sessions') return <IconArchiveOutline20 className={css.navIcon} size={16} />
   return <IconSettingsOutline16 className={css.navIcon} size={16} />
 }
 
@@ -48,7 +61,7 @@ type PanelProps = {
   renderSlot: SettingsRootComponentProps['renderSlot']
   t: SettingsRootComponentProps['t']
   activeId: string | undefined
-  onSelect: (id: string) => void
+  onSelect: (id: string | undefined) => void
   onReorder: (ids: readonly string[]) => void
   onClose: () => void
   preferredSubsectionId?: string
@@ -90,6 +103,7 @@ type ArmedSectionDrag = {
 
 type OnboardingPanelProps = {
   request: SettingsOnboardingSectionRequest
+  available: boolean
   renderSlot: SettingsRootComponentProps['renderSlot']
   t: SettingsRootComponentProps['t']
   onBack: () => void
@@ -105,7 +119,7 @@ const ONBOARDING_SECTION_STEPS = [
 ] as const
 
 /** Reuse one settings section inside the selected first-run progress shell. */
-function OnboardingSectionPanel({ request, renderSlot, t, onBack, onComplete }: OnboardingPanelProps) {
+function OnboardingSectionPanel({ request, available, renderSlot, t, onBack, onComplete }: OnboardingPanelProps) {
   const titleId = useId()
   const backButton = useRef<HTMLButtonElement | null>(null)
 
@@ -133,18 +147,25 @@ function OnboardingSectionPanel({ request, renderSlot, t, onBack, onComplete }: 
         </aside>
         <div className={css.onboardingSectionContent}>
           <div className={css.onboardingSectionBody}>
-            {renderSlot('settings.section', {
-              close: onBack,
-              ...request.subsectionId === undefined
-                ? {}
-                : { preferredSubsectionId: request.subsectionId },
-            }, { only: request.sectionId })}
+            {available
+              ? renderSlot('settings.section', {
+                close: onBack,
+                ...request.subsectionId === undefined
+                  ? {}
+                  : { preferredSubsectionId: request.subsectionId },
+              }, { only: request.sectionId })
+              : (
+                <div className={css.onboardingSectionUnavailable} role="status">
+                  <h3>{t('onboarding.sectionUnavailable.title')}</h3>
+                  <p>{t('onboarding.sectionUnavailable.description')}</p>
+                </div>
+              )}
           </div>
           <footer className={css.onboardingFooter}>
             <button ref={backButton} type="button" className={css.onboardingBack} onClick={onBack}>
               {t('onboarding.back')}
             </button>
-            <button type="button" className={css.onboardingDone} onClick={onComplete}>
+            <button type="button" className={css.onboardingDone} disabled={!available} onClick={onComplete}>
               {t('onboarding.done')}
             </button>
           </footer>
@@ -162,9 +183,11 @@ function OnboardingSectionPanel({ request, renderSlot, t, onBack, onComplete }: 
 function SettingsPanel({
   rows, storedOrder, renderSlot, t, activeId, onSelect, onReorder, onClose, preferredSubsectionId,
 }: PanelProps) {
+  const phone = usePhoneViewport()
   // Entries can unmount underneath the requested id, so the render-time
-  // projection falls back to the first row when the id is gone.
-  const active = rows.find(r => r.id === activeId)?.id ?? rows[0]?.id
+  // projection falls back to the first row on wide screens. Phones keep the
+  // section list as their first page until the user chooses one.
+  const active = rows.find(r => r.id === activeId)?.id ?? (phone ? undefined : rows[0]?.id)
   const titleId = useId()
   const navList = useRef<HTMLDivElement | null>(null)
   const rowElements = useRef(new Map<string, HTMLDivElement>())
@@ -393,9 +416,17 @@ function SettingsPanel({
   return (
     <div className={css.overlay} role="presentation">
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
-      <div className={css.panel} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className={css.panel} data-mobile-view={active === undefined ? 'list' : 'detail'} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-label={t('title')}>
         <nav className={css.nav}>
-          <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
+          <div className={css.navTitleRow}>
+            <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
+            {phone && (
+              <button ref={closeButton} type="button" className={css.mobileNavClose} onClick={onClose}>
+                <IconCloseOutline16 size={14} />
+                <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
+              </button>
+            )}
+          </div>
           <div
             ref={navList}
             className={css.navList}
@@ -484,8 +515,11 @@ function SettingsPanel({
         </nav>
         <div className={css.content}>
           <div className={css.header}>
-            <div className={css.actions}>{renderSlot('settings.action', {})}</div>
-            <button ref={closeButton} type="button" className={css.close} onClick={onClose}>
+            <button type="button" className={css.mobileBack} aria-label={t('nav.back')} onClick={() => { onSelect(undefined) }}>
+              <IconChevronLeftOutline14 size={18} />
+            </button>
+            <div className={css.actions}>{renderSlot('settings.action', active === undefined ? {} : { activeSectionId: active })}</div>
+            <button ref={phone ? undefined : closeButton} type="button" className={css.close} onClick={onClose}>
               <IconCloseOutline16 size={14} />
               <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
             </button>
@@ -509,7 +543,7 @@ function SettingsPanel({
  */
 export function SettingsRoot(props: SettingsRootComponentProps) {
   const {
-    wide, reconnect, useConnectionState, useSections, useOnboardingSteps, useNavigation,
+    wide, dismissSidebar, reconnect, useConnectionState, useSections, useOnboardingSteps, useNavigation,
     useSectionOrder, useSessions, setSectionOrder, renderSlot, t,
   } = props
   const [open, setOpen] = useState(false)
@@ -612,7 +646,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           aria-label={t('trigger')}
           aria-haspopup="dialog"
           aria-expanded={open}
-          onClick={() => { setOpen(true) }}
+          onClick={() => { setOpen(true); dismissSidebar() }}
         >
           {renderSlot('settings.trigger', { wide })}
         </button>
@@ -651,6 +685,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
       {onboardingSection !== undefined && (
         <OnboardingSectionPanel
           request={onboardingSection}
+          available={orderedRows.some(row => row.id === onboardingSection.sectionId)}
           renderSlot={renderSlot}
           t={t}
           onBack={() => { setOnboardingSection(undefined) }}

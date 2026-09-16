@@ -67,6 +67,8 @@ kind: "package-reference"
 
 设置面板会先为桌面标题栏预留空间，再把固定高度的界面居中显示。内容列与导航列分别滚动；导航标题保持固定，插件贡献的设置分类保持完整行高，并在剩余栏位中滚动。
 
+在 680px 及以下，设置会变成铺满屏幕的 `100dvh` 页面。第一层展示完整栏目列表；选择栏目后进入详情页，并提供 44px 的返回控件；两个层级都保留 44px 的关闭控件。安全区域内边距和可换行的顶部操作会确保长语言文案不会越出 320px 视口。
+
 ### 宿主端
 
 宿主端在用户设置 seam 中注册 `ui-onboarding` 与 `ui-settings-navigation`。`ui-settings-models` 提供的欢迎步骤通过既有公开 settings 边界读写其中的 `welcomeNoticeVersion`。外壳只写入有序的 `settings.section` ID，不会改写功能自身的规范注册顺序。

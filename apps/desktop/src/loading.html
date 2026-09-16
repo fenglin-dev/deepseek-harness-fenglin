@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'">
-    <title>DeepSeek Harness</title>
+    <title>Open DeepSeek Harness Desktop</title>
     <style>
       :root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --accent: #3977f6; --accent-hover: #2865de; --background: #f7f8fa; --surface: #fff; --surface-muted: #f5f7fa; --text: #17191d; --muted: #737982; --border: #e1e4e9; --danger: #df3038; --danger-hover: #c9262e; }
       * { box-sizing: border-box; }
@@ -28,6 +28,9 @@
       .detail-link { background: none; border: 0; color: var(--accent); cursor: pointer; font: 500 13px/1.4 inherit; margin: 17px 0 0; padding: 0; }
       .detail-link:hover { color: var(--accent-hover); text-decoration: underline; }
       .failure-details { background: var(--surface-muted); border: 1px solid var(--border); border-radius: 10px; margin-top: 14px; padding: 12px 14px; }
+      .lock-recovery { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-top: 14px; padding: 16px; }
+      .lock-recovery strong { display: block; font-size: 14px; margin-bottom: 7px; }
+      .lock-recovery p { color: var(--muted); font-size: 13px; line-height: 1.55; margin: 0 0 12px; }
       .failure-details[hidden], .slow[hidden], .recovery-workspace[hidden], .panel[hidden], .status[hidden], [hidden] { display: none; }
       .failure-message { color: #a7272d; font-size: 13px; line-height: 1.55; margin: 0 0 8px; }
       .log-path { color: var(--muted); font: 12px/1.5 ui-monospace, monospace; margin: 0; overflow-wrap: anywhere; }
@@ -82,13 +85,14 @@
   </head>
   <body>
     <main>
-      <header class="brand"><img src="./icon.png" alt=""><span class="brand-name">DeepSeek Harness</span><span class="brand-badge">HARNESS</span></header>
+      <header class="brand"><img src="./icon.png" alt=""><span class="brand-name">Open DeepSeek Harness Desktop</span><span class="brand-badge">HARNESS</span></header>
       <section class="startup-header">
         <h1 id="title">Starting DeepSeek Harness</h1>
         <p id="description" class="description">Checking plugin compatibility and preparing your local agent workspace. Your sessions and credentials stay on this machine.</p>
         <div id="progress-surface" class="progress-surface"><div class="progress-meta" aria-live="polite"><span id="progress-task" class="progress-task">Preparing desktop environment</span><span id="progress-percent" class="progress-percent">4%</span></div><div id="progress" class="track" role="progressbar" aria-label="Starting DeepSeek Harness" aria-valuemin="0" aria-valuemax="100" aria-valuenow="4"><div id="progress-bar" class="bar"></div></div></div>
         <button id="toggle-details" class="detail-link" type="button" hidden>View error details</button>
-        <div id="failure-details" class="failure-details" hidden><p id="failure-message" class="failure-message"></p><p id="log-path" class="log-path"></p></div>
+        <div id="failure-details" class="failure-details" hidden><strong id="failure-title"></strong><p id="failure-message" class="failure-message"></p><p id="failure-context" class="log-path"></p><p id="log-path" class="log-path"></p></div>
+        <div id="module-fallback-lock-recovery" class="lock-recovery" hidden><strong id="module-fallback-lock-title"></strong><p id="module-fallback-lock-detail" role="status"></p><button id="clear-module-fallback-lock" class="action" type="button" disabled></button></div>
       </section>
       <section id="slow" class="slow" aria-live="polite" hidden><p id="slow-message"></p><div class="actions"><button id="open-slow-log" class="action" type="button">Open Harness log</button></div></section>
       <section id="recovery-workspace" class="recovery-workspace" hidden>
@@ -106,7 +110,7 @@
           <section id="panel-plugins" class="panel" role="tabpanel"><h2 id="plugins-title" class="panel-title">Check installed plugins</h2><p id="plugins-description" class="panel-description">Core components are protected. Sessions and credentials are not affected.</p><div id="plugin-loading" class="empty-state">Loading installed plugins…</div><div id="plugin-table" class="plugin-table" hidden><div class="plugin-header"><span id="plugin-column-name">Plugin</span><span id="plugin-column-version">Version</span><span id="plugin-column-status">Status</span><span></span></div><div id="plugin-rows"></div></div><div id="plugin-empty" class="empty-state" hidden>No removable external plugins are installed.</div><div id="protected-components" class="protected" hidden></div><p id="plugin-status" class="status" role="status" hidden></p></section>
           <section id="panel-snapshots" class="panel" role="tabpanel" hidden><h2 id="snapshot-title" class="panel-title">Roll back plugin snapshot</h2><p id="snapshot-description" class="panel-description">Only plugin dependencies, versions, order and build permissions are restored.</p><div class="snapshot-surface"><select id="snapshot-select" aria-label="Plugin snapshot"></select><label class="snapshot-network"><input id="snapshot-network" type="checkbox"> Allow network if the local cache is incomplete</label><button id="snapshot-restore" class="action" type="button">Restore snapshot</button><p id="snapshot-status" class="status" role="status" hidden></p></div></section>
           <section id="panel-directory" class="panel" role="tabpanel" hidden><h2 id="directory-title" class="panel-title">Switch data directory</h2><p id="directory-description" class="panel-description">Choose another existing configuration, or select an empty folder to create a new one.</p><div class="action-surface"><button id="switch-data-home" class="action" type="button">Choose directory</button><p id="directory-error" class="status" role="status" hidden></p></div></section>
-          <section id="panel-diagnostics" class="panel" role="tabpanel" hidden><h2 id="diagnostics-title" class="panel-title">Export diagnostics</h2><p id="diagnostics-description" class="panel-description">Export a redacted startup and plugin summary, or open the local log folder for deeper inspection.</p><div class="action-surface"><div class="actions"><button id="export-diagnostics" class="action" type="button">Export report</button><button id="open-logs" class="action" type="button">Open log folder</button></div><p id="diagnostics-status" class="status" role="status" hidden></p></div></section>
+          <section id="panel-diagnostics" class="panel" role="tabpanel" hidden><h2 id="diagnostics-title" class="panel-title">Export diagnostics</h2><p id="diagnostics-description" class="panel-description">Export a redacted startup and plugin summary, or open the local log folder for deeper inspection.</p><div class="action-surface"><div class="actions"><button id="export-diagnostics" class="action" type="button">Export report</button><button id="open-logs" class="action" type="button">Open log folder</button><button id="reset-process-recovery" class="action" type="button" hidden>Reset background process record</button></div><p id="diagnostics-status" class="status" role="status" hidden></p></div></section>
         </div>
         <div class="safe-note"><span id="safe-note">Sessions and credentials are not changed in recovery mode.</span></div>
         <footer class="footer"><span id="footer-hint" class="footer-hint">You can continue without making any changes.</span><button id="exit" class="secondary" type="button">Quit</button><button id="retry" class="primary" type="button">Continue</button></footer>

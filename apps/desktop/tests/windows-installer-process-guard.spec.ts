@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const buildRoot = fileURLToPath(new URL('../build/', import.meta.url))
+const scriptsRoot = fileURLToPath(new URL('../scripts/', import.meta.url))
 
 describe('Windows installer process guard', () => {
   it('overrides the broad electron-builder process check', async () => {
@@ -22,8 +23,41 @@ describe('Windows installer process guard', () => {
     const installer = await readFile(`${buildRoot}/installer.nsh`, 'utf8')
     expect(installer).toContain('LangString CliPageTitle 2052 "命令行工具"')
     expect(installer).toContain('LangString CliPageTitle 1033 "Command-line tool"')
+    expect(installer).toContain('LangString UninstallDataPageTitle 2052 "本地配置和数据"')
+    expect(installer).toContain('LangString UninstallDataPageTitle 1033 "Local configuration and data"')
     expect(installer).not.toContain('${LANG_SIMPCHINESE}')
     expect(installer).not.toContain('${LANG_ENGLISH}')
+  })
+
+  it('offers explicit irreversible app-data deletion while preserving it by default', async () => {
+    const installer = await readFile(`${buildRoot}/installer.nsh`, 'utf8')
+
+    expect(installer).toContain('UninstPage custom un.UninstallDataPageCreate un.UninstallDataPageLeave')
+    expect(installer).not.toMatch(/^\s*Page custom un\.UninstallDataPageCreate un\.UninstallDataPageLeave$/m)
+    expect(installer).toContain(
+      'WriteINIStr "$PLUGINSDIR\\desktop-uninstall.ini" "data" "delete" "1"',
+    )
+    expect(installer).toContain(
+      'ReadINIStr $R0 "$PLUGINSDIR\\desktop-uninstall.ini" "data" "delete"',
+    )
+    expect(installer).toContain('${NSD_Uncheck} $R9')
+    expect(installer).toContain('${NSD_GetState} $R9 $0')
+    expect(installer).toContain('MB_YESNO|MB_DEFBUTTON2|MB_ICONEXCLAMATION')
+    expect(installer).toContain('LangString UninstallDataWarning 2052 "警告：删除后无法恢复。')
+    expect(installer).toContain('同一应用根目录内的源码开发版数据均不会被删除。')
+    expect(installer).toContain('${GetOptions} $R0 "--updated" $R1')
+    expect(installer).toContain('${If} $R0 == "1"')
+    expect(installer).not.toContain('${isUpdated}')
+    const uninstallSection = installer.slice(installer.indexOf('!ifdef BUILD_UNINSTALLER'))
+    expect(uninstallSection).toContain('!macro customHeader\n    Function un.UninstallDataPageCreate')
+    expect(installer).toContain('Function un.RemoveInstalledDesktopData')
+    expect(installer).toContain('StrCpy $R8 "0"')
+    expect(installer).toContain('StrCmp $R8 "0" uninstall_data_removed')
+    expect(installer).toContain('StrCmp $2 "development" uninstall_data_scan_continue')
+    expect(installer).not.toContain('RMDir /r "$APPDATA\\open-deepseek-harness-desktop"')
+    expect(installer).toContain('LangString UninstallDataDeleteFailed 2052')
+    expect(installer).not.toContain('RMDir /r "$PROFILE\\.dsh"')
+    expect(installer).not.toContain('data-home-setup.json')
   })
 
   it('matches only the exact app or the resources directory boundary', async () => {
@@ -45,5 +79,35 @@ describe('Windows installer process guard', () => {
     expect(guard).toContain('DshInstallerWindow')
     expect(guard).toContain('PostMessage($liveProcess.MainWindowHandle, 0x0010')
     expect(guard).toContain('DeepSeek-Harness-process-guard.log')
+  })
+
+  it('retries exit-code-2 atomic upgrade cleanup without bypassing the old uninstaller', async () => {
+    const installer = await readFile(`${buildRoot}/installer.nsh`, 'utf8')
+
+    expect(installer).toContain('!macro customUnInstallCheck')
+    expect(installer).toContain('!macro customUnInstallCheckCurrentUser')
+    expect(installer).toContain('Function DesktopRetryOldUninstall')
+    expect(installer).toContain('Function DesktopHandleOldCurrentUserUninstallResult')
+    expect(installer.match(/Call DesktopRetryOldUninstall/g)).toHaveLength(2)
+    expect(installer).toContain('${If} $R4 < 12')
+    expect(installer).toContain('Sleep 5000')
+    expect(installer).toContain('CopyFiles /SILENT "$UpgradeRetryInstallDir\\${UNINSTALL_FILENAME}"')
+    expect(installer).toContain('/S /KEEP_APP_DATA $UpgradeRetryMode --updated _?=$UpgradeRetryInstallDir')
+    expect(installer).toContain('DeepSeek-Harness-upgrade-cleanup.log')
+    expect(installer).toContain('SetErrorLevel 2\n        Quit')
+    expect(installer).not.toContain('DeleteRegValue HKCU "${UNINSTALL_REGISTRY_KEY}" "UninstallString"')
+    expect(installer).not.toContain('SetOverwrite on')
+  })
+
+  it('exercises a same-directory upgrade after an external file lock outlives the default retry', async () => {
+    const smoke = await readFile(`${scriptsRoot}/smoke-windows-package.ps1`, 'utf8')
+    const lockFixture = await readFile(`${scriptsRoot}/hold-file-lock.ps1`, 'utf8')
+
+    expect(smoke).toContain("Join-Path $PSScriptRoot 'hold-file-lock.ps1'")
+    expect(smoke).toContain("$lockStart.ArgumentList.Add('20')")
+    expect(smoke).toContain('$upgrade = [System.Diagnostics.Process]::Start($installStart)')
+    expect(smoke).toContain('if ($upgrade.ExitCode -ne 0)')
+    expect(lockFixture).toContain('[System.IO.FileShare]::None')
+    expect(lockFixture).toContain('$stream.Dispose()')
   })
 })

@@ -12,7 +12,12 @@ import { sourceCopyFor } from './locales/data-home-source.ts'
 type DataHomeMode = 'imported' | 'reused' | 'fresh'
 
 type DataHomeSourceResult =
-  | { readonly status: 'valid'; readonly path: string; readonly entries: readonly string[] }
+  | {
+    readonly status: 'valid'
+    readonly path: string
+    readonly entries: readonly string[]
+    readonly selectionId?: string
+  }
   | { readonly status: 'invalid' | 'unreadable'; readonly path: string }
   | { readonly status: 'cancelled' }
 
@@ -92,6 +97,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const facts = required('#facts')
   const operationPanel = required('#operation-panel')
   const operationChoices = [...document.querySelectorAll<HTMLButtonElement>('[data-operation]')]
+  const reuseOperationChoice = required('[data-operation="reused"]') as HTMLButtonElement
   const independentOperationTitle = required('[data-operation-copy="importTitle"]')
   const operationSummary = required('.operation-panel .destination-summary')
   const copyOperationSummary = required('#copy-operation-summary')
@@ -100,11 +106,13 @@ window.addEventListener('DOMContentLoaded', () => {
   const destinationSummary = required('#destination-summary')
   const targetChoicesGroup = required('#target-choices')
   const targetChoices = [...document.querySelectorAll<HTMLElement>('[data-target]')]
+  const defaultTargetChoice = required('[data-target="default"]')
   const defaultTargetPath = required('#default-target-path')
   const customTargetPath = required('#custom-target-path')
   const customTargetError = required('#custom-target-error')
   const chooseTargetButton = required('#choose-target') as HTMLButtonElement
   const backButton = required('#back') as HTMLButtonElement
+  const returnMainButton = required('#return-main') as HTMLButtonElement
   const continueButton = required('#continue') as HTMLButtonElement
   const risk = required('#risk')
   const comparisonTitle = required('#comparison-title')
@@ -117,6 +125,8 @@ window.addEventListener('DOMContentLoaded', () => {
   const builds = required('#builds-value')
   const parameters = new URLSearchParams(window.location.search)
   const development = parameters.get('development') === 'true'
+  const returnToMain = parameters.get('returnToMain') === 'true'
+  const defaultTargetAvailable = parameters.get('defaultTargetAvailable') !== 'false'
   const requestedMode = parameters.get('selected')
   const selectedSource = parameters.get('selectedSource') === 'community' ? 'community' : 'official'
   const officialSource = parameters.get('officialSource')?.trim() || undefined
@@ -130,6 +140,7 @@ window.addEventListener('DOMContentLoaded', () => {
     readonly defaultPath: string | undefined
     readonly candidate: string | undefined
     error: 'invalid' | 'unreadable' | undefined
+    selectionId: string | undefined
   }
   let selected: DataHomeMode = isDataHomeMode(requestedMode) ? requestedMode : 'imported'
   let origin: SourceCategory = selected === 'fresh' ? 'fresh' : selectedSource
@@ -142,6 +153,7 @@ window.addEventListener('DOMContentLoaded', () => {
       defaultPath: parameters.get('officialDefaultSource')?.trim() || undefined,
       candidate: parameters.get('officialSourceCandidate')?.trim() || undefined,
       error: undefined,
+      selectionId: undefined,
     },
     community: {
       path: communitySource,
@@ -149,19 +161,22 @@ window.addEventListener('DOMContentLoaded', () => {
       defaultPath: parameters.get('communityDefaultSource')?.trim() || undefined,
       candidate: parameters.get('communitySourceCandidate')?.trim() || undefined,
       error: undefined,
+      selectionId: undefined,
     },
   }
   let source = origin === 'fresh' ? undefined : sources[origin].path
   let sourceSelectionPending = false
   let submitting = false
   let step: DataHomeStep = 'details'
-  let targetMode: DataHomeTargetMode = 'default'
+  let targetMode: DataHomeTargetMode = defaultTargetAvailable ? 'default' : 'custom'
   let customTarget: { readonly selectionId: string; readonly path: string } | undefined
   let targetErrorKind: 'not-empty' | 'overlap' | 'unreadable' | undefined
   let simulateMissingSource = false
   let selectionBeforeSimulation: SourceCategory | undefined
 
   developmentTools.hidden = !development
+  returnMainButton.hidden = !returnToMain
+  defaultTargetChoice.hidden = !defaultTargetAvailable
 
   const displayedSource = (): string | undefined =>
     origin === 'official' && simulateMissingSource ? undefined : source
@@ -193,7 +208,7 @@ window.addEventListener('DOMContentLoaded', () => {
       view.summary.hidden = view.summary.textContent.length === 0
       const error = simulated ? undefined : entry.error
       view.error.textContent = error === 'invalid'
-        ? copy.sourceInvalid
+        ? category === 'community' ? sourceCopy.communitySourceInvalid : copy.sourceInvalid
         : error === 'unreadable' ? copy.sourceReadFailed : ''
       view.error.hidden = error === undefined
       view.button.textContent = category === 'official' ? sourceCopy.chooseOfficial : sourceCopy.chooseCommunity
@@ -233,10 +248,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const renderStep = (): void => {
     const destinationVisible = step === 'destination'
     const operationVisible = step === 'operation'
-    const originalDetail = detailsFor(language)[selected]
-    const detail = origin === 'community' && selected === 'imported'
-      ? { ...originalDetail, plugins: sourceCopyFor(language).retainedPlugins, builds: detailsFor(language).reused.builds }
-      : originalDetail
+    const detail = detailsFor(language)[selected]
     const sourceCopy = sourceCopyFor(language)
     operationSummary.textContent = origin === 'official'
       ? sourceCopy.officialOperationSummary : sourceCopy.operationSummary
@@ -257,6 +269,7 @@ window.addEventListener('DOMContentLoaded', () => {
     destinationPanel.ariaHidden = String(!destinationVisible)
     destinationPanel.inert = !destinationVisible
     for (const choice of operationChoices) choice.ariaChecked = String(choice.dataset.operation === selected)
+    reuseOperationChoice.hidden = origin === 'official'
     required('#operation-sharing').textContent = detail.sharing
     required('#operation-plugins').textContent = detail.plugins
     required('#operation-builds').textContent = detail.builds
@@ -333,7 +346,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   const leaveDestinationStep = (): void => {
-    step = origin === 'fresh' || step === 'operation' ? 'details' : 'operation'
+    step = origin === 'fresh' || origin === 'official' || step === 'operation' ? 'details' : 'operation'
     renderStep()
     if (step === 'operation') operationChoices.find(choice => choice.dataset.operation === selected)?.focus()
     else choices.find(choice => choice.dataset.source === origin)?.focus()
@@ -353,6 +366,7 @@ window.addEventListener('DOMContentLoaded', () => {
         simulateMissingSource = false
         selectionBeforeSimulation = undefined
         sources[category].error = result.status
+        sources[category].selectionId = undefined
         renderSource()
         return
       }
@@ -362,6 +376,7 @@ window.addEventListener('DOMContentLoaded', () => {
       sources[category].path = source
       sources[category].status = 'valid'
       sources[category].error = undefined
+      sources[category].selectionId = result.selectionId
       renderSource()
     } catch {
       sources[category].error = 'unreadable'
@@ -458,7 +473,10 @@ window.addEventListener('DOMContentLoaded', () => {
   ipcRenderer.on('dsh:data-home:source-error', (_event, result: DataHomeSourceResult) => {
     if (result.status !== 'invalid' && result.status !== 'unreadable') return
     submitting = false
-    if (origin !== 'fresh') sources[origin].error = result.status
+    if (origin !== 'fresh') {
+      sources[origin].error = result.status
+      sources[origin].selectionId = undefined
+    }
     renderSource()
     renderStep()
   })
@@ -551,14 +569,14 @@ window.addEventListener('DOMContentLoaded', () => {
       ], [
         { title: sourceCopy.officialTitle, tone: 'official', values: [
           sourceCopy.officialLocation,
-          `${copy.reuseTitle}: ${detailsFor(language).reused.sharing}\n\n${sourceCopy.officialImportTitle}: ${copy.compareImportLocation}`,
-          `${copy.reuseTitle}: ${copy.compareReusePlugins}\n\n${sourceCopy.officialImportTitle}: ${copy.compareImportPlugins}`,
+          copy.compareImportLocation,
+          copy.compareImportPlugins,
           sourceCopy.officialSuitable,
         ] },
         { title: sourceCopy.communityTitle, tone: 'community', values: [
           sourceCopy.communityLocation,
-          `${copy.reuseTitle}: ${sourceCopy.retainedData}\n\n${copy.importTitle}: ${sourceCopy.retainedData} ${sourceCopy.communityCopySummary}`,
-          sourceCopy.retainedPluginsBoth,
+          `${copy.importTitle}: ${copy.compareImportLocation}\n\n${copy.reuseTitle}: ${sourceCopy.retainedData}`,
+          `${copy.importTitle}: ${copy.compareImportPlugins}\n\n${copy.reuseTitle}: ${copy.compareReusePlugins}`,
           sourceCopy.communitySuitable,
         ] },
         { title: copy.freshTitle, tone: 'fresh', values: [
@@ -578,8 +596,7 @@ window.addEventListener('DOMContentLoaded', () => {
       ], [
         { title: origin === 'official' ? sourceCopy.officialImportTitle : copy.importTitle, tone: 'copy', values: [
           copied.location, copied.sharing,
-          origin === 'community' ? sourceCopy.retainedPlugins : copied.plugins,
-          origin === 'community' ? reused.builds : copied.builds, copiedSummary,
+          copied.plugins, copied.builds, copiedSummary,
         ] },
         { title: copy.reuseTitle, tone: 'reuse', values: [
           reused.location, reused.sharing, reused.plugins, reused.builds, reusedSummary,
@@ -622,7 +639,15 @@ window.addEventListener('DOMContentLoaded', () => {
     submitting = true
     renderStep()
     if (selected === 'reused') {
-      if (source !== undefined) ipcRenderer.send('dsh:data-home:selected', { mode: selected, source })
+      if (source !== undefined && origin === 'community') {
+        ipcRenderer.send('dsh:data-home:selected', {
+          mode: selected,
+          sourceKind: 'community',
+          source,
+          ...(sources.community.selectionId === undefined
+            ? {} : { sourceSelectionId: sources.community.selectionId }),
+        })
+      }
       return
     }
     const target = targetMode === 'default'
@@ -636,7 +661,11 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     ipcRenderer.send('dsh:data-home:selected', selected === 'fresh'
       ? { mode: selected, target }
-      : { mode: 'copied', sourceKind: origin, source, target })
+      : {
+        mode: 'copied', sourceKind: origin, source, target,
+        ...(origin !== 'community' || sources.community.selectionId === undefined
+          ? {} : { sourceSelectionId: sources.community.selectionId }),
+      })
   }
 
   continueButton.addEventListener('click', () => {
@@ -647,6 +676,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     if (step === 'details') {
       if (origin === 'fresh') enterDestinationStep()
+      else if (origin === 'official') enterDestinationStep()
       else {
         step = 'operation'
         renderStep()
@@ -667,6 +697,9 @@ window.addEventListener('DOMContentLoaded', () => {
   })
   backButton.addEventListener('click', () => {
     if (step !== 'details' && !submitting) leaveDestinationStep()
+  })
+  returnMainButton.addEventListener('click', () => {
+    if (!submitting) ipcRenderer.send('dsh:data-home:cancelled')
   })
   window.addEventListener('keydown', (event) => {
     if (event.defaultPrevented || submitting) return

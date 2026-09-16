@@ -11,6 +11,7 @@ const en = {
   recoveryFailedTitle: 'Plugin recovery failed',
   recoveryFailedMessage: 'The application can still start',
   transactionRecoveryFailed: 'Plugin activation could not be settled. The previous dependency state and recovery journal were retained.',
+  processRecoveryFailed: (message: string) => `Background process recovery could not be completed. Open Diagnostics to reset the derived recovery record, then restart. ${message}`,
   chooseEmpty: 'Choose an empty folder for a new configuration',
   chooseExisting: 'Choose an existing DSH data directory',
   switchData: 'Switch or create a DSH data directory',
@@ -22,6 +23,8 @@ const en = {
   permissionMessage: (capability: string) => `The current feature wants to ${capability}`,
   confirmPlugin: (name: string) => `Install ${name} anyway?`,
   initializeFailed: (message: string) => `Web Profile initialization failed: ${message}`,
+  harnessHttpFailed: (status: number) => `The local Harness page returned HTTP ${status}. Stale login state will be cleared when you retry.`,
+  bundledPreparationFailed: (detail: string) => `First-start plugin preparation is incomplete. The client has not started. Choose Continue to restart and retry, or open the logs. Uncommitted preparation will be rolled back before retrying. Details: ${detail}`,
 }
 
 const zh: typeof en = {
@@ -33,6 +36,7 @@ const zh: typeof en = {
   recoveryFailedTitle: '插件恢复失败',
   recoveryFailedMessage: '应用仍可继续启动',
   transactionRecoveryFailed: '插件激活未能完成或回滚。已保留原依赖状态和恢复日志，请进入恢复模式处理。',
+  processRecoveryFailed: (message: string) => `后台进程恢复未能完成。请在“导出诊断”中重置派生的进程恢复记录，然后重新启动。${message}`,
   chooseEmpty: '选择空文件夹以创建新配置',
   chooseExisting: '选择已有 DSH 配置目录',
   switchData: '切换或新建 DSH 配置目录',
@@ -44,6 +48,8 @@ const zh: typeof en = {
   permissionMessage: (capability: string) => `当前功能请求${capability}`,
   confirmPlugin: (name: string) => `仍要安装 ${name} 吗？`,
   initializeFailed: (message: string) => `Web Profile 初始化失败：${message}`,
+  harnessHttpFailed: (status: number) => `本机 Harness 页面返回 HTTP ${status}。点击重试时会清理失效的登录状态并重新认证。`,
+  bundledPreparationFailed: (detail: string) => `首次插件准备尚未完成，暂未进入客户端。点击“继续”将重启并重试，也可以打开日志。重试前会回滚尚未提交的准备事务。详情：${detail}`,
 }
 
 /** Select native-shell copy. @param locale - Electron locale. @returns The matching dictionary. */

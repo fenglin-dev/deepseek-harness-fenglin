@@ -2,14 +2,14 @@
 
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
+import { CandidatePreparationError } from './candidate-preparation.ts'
 import {
   assertBundledPluginManifestEntry,
   bundledPluginSeedIsSettled,
   hasBundledPluginQuarantineRecord,
-  hasLegacyBundledPluginSeedMarker,
-  hasBundledPluginSeedMarker,
   seedBundledPlugin,
   type BundledPluginManifestEntry,
+  type BundledPluginReconciliation,
   type BundledPluginSeedProgress,
   type BundledPluginSeedStage,
   type SeedBundledPluginResult,
@@ -46,6 +46,7 @@ export interface BundledPluginInstallerOptions {
   readonly manifest: BundledPluginManifest
   readonly resourcesDirectory: string
   readonly dshHome: string
+  readonly sourceDshHome?: string
   readonly install: (archivePath: string, entry: BundledPluginManifestEntry) => Promise<void>
   readonly prepare?: (entry: BundledPluginManifestEntry) => Promise<void>
   readonly onFailure?: (error: unknown, entry: BundledPluginManifestEntry) => Promise<void>
@@ -58,9 +59,16 @@ export interface BundledPluginInstallerOptions {
     operation: () => Promise<T>,
   ) => Promise<T>
   readonly startupBudgetMs?: number
+  /** First start attempts every entry; per-command deadlines still apply. */
+  readonly requireCompleteStartup?: boolean
+  readonly isStartupCancelled?: () => boolean
   readonly now?: () => number
   readonly shouldAttemptStartup?: (entry: BundledPluginManifestEntry) => Promise<boolean>
   readonly onStartupSuccess?: (entry: BundledPluginManifestEntry) => Promise<void>
+  readonly onStartupResult?: (entry: BundledPluginManifestEntry, result: SeedBundledPluginResult) => Promise<void>
+  readonly onReconciled?: (result: BundledPluginReconciliation) => void
+  /** Report unattempted entries without treating them as failed installs or starting cooldown. */
+  readonly onStartupDeferred?: (entry: BundledPluginManifestEntry, reason: 'budget' | 'cooldown' | 'preparation-failed') => Promise<void>
   readonly onManagedMutationStart?: (entry: BundledPluginManifestEntry) => void
   readonly onManagedMutationSettled?: (entry: BundledPluginManifestEntry) => void
   readonly createId?: () => string
@@ -166,7 +174,9 @@ export class BundledPluginInstaller {
     const results: Array<{ entry: BundledPluginManifestEntry; result?: SeedBundledPluginResult }> = []
     const entries = this.options.manifest.plugins.filter(entry => entry.installPolicy === 'startup')
     const deadline = (this.options.now?.() ?? Date.now()) + (this.options.startupBudgetMs ?? 120_000)
+    let preparationFailed = false
     for (const [index, entry] of entries.entries()) {
+      if (this.options.isStartupCancelled?.()) throw new Error('desktop: startup preparation cancelled')
       const report = (progress: BundledPluginSeedProgress): void => {
         try {
           onProgress?.({ ...progress, entry, index, total: entries.length })
@@ -175,35 +185,49 @@ export class BundledPluginInstaller {
         }
       }
       try {
-        if (await bundledPluginSeedIsSettled(
+        if (preparationFailed) {
+          results.push({ entry })
+          await this.options.onStartupDeferred?.(entry, 'preparation-failed')
+          continue
+        }
+        if (!this.options.requireCompleteStartup && await bundledPluginSeedIsSettled(
           this.options.dshHome,
           entry,
           this.options.repairLegacyMarkers ?? false,
+          this.options.sourceDshHome ?? this.options.dshHome,
         )) {
           report({ stage: 'configuring', progress: 100 })
-          results.push({ entry, result: 'already-seeded' })
+          results.push({ entry, result: 'verified' })
+          await this.options.onStartupResult?.(entry, 'verified')
           await this.options.onStartupSuccess?.(entry)
           continue
         }
-        if (this.options.shouldAttemptStartup !== undefined
+        if (!this.options.requireCompleteStartup && this.options.shouldAttemptStartup !== undefined
           && !await this.options.shouldAttemptStartup(entry)) {
           report({ stage: 'configuring', progress: 100 })
           results.push({ entry })
+          await this.options.onStartupDeferred?.(entry, 'cooldown')
           continue
         }
-        if ((this.options.now?.() ?? Date.now()) >= deadline) {
+        if (!this.options.requireCompleteStartup && (this.options.now?.() ?? Date.now()) >= deadline) {
           report({ stage: 'configuring', progress: 100 })
           results.push({ entry })
+          await this.options.onStartupDeferred?.(entry, 'budget')
           continue
         }
         report({ stage: 'verifying', progress: 0 })
         const result = this.options.withStartupTransaction === undefined
-          ? await this.seed(entry, false, report)
-          : await this.options.withStartupTransaction(entry, () => this.seed(entry, false, report))
-        if (result === 'already-seeded') report({ stage: 'configuring', progress: 100 })
+          ? await this.seed(entry, this.options.requireCompleteStartup ?? false, report)
+          : await this.options.withStartupTransaction(entry, () => this.seed(entry, this.options.requireCompleteStartup ?? false, report))
+        if (result === 'verified' || result === 'removed' || result === 'unresolved') {
+          report({ stage: 'configuring', progress: 100 })
+        }
         results.push({ entry, result })
-        await this.options.onStartupSuccess?.(entry)
+        await this.options.onStartupResult?.(entry, result)
+        if (result !== 'unresolved') await this.options.onStartupSuccess?.(entry)
       } catch (error) {
+        if (this.options.isStartupCancelled?.()) throw error
+        if (error instanceof CandidatePreparationError) preparationFailed = true
         results.push({ entry })
         try {
           await this.options.onFailure?.(error, entry)
@@ -227,9 +251,12 @@ export class BundledPluginInstaller {
   async startDeferred(profile: string, packageSpec: string): Promise<BundledPluginDeferredStartResult> {
     const entry = this.findManual(profile, packageSpec)
     if (entry === undefined) return { handled: false }
-    if (await hasBundledPluginSeedMarker(this.options.dshHome, entry)
-      && (!this.options.repairLegacyMarkers
-        || !await hasLegacyBundledPluginSeedMarker(this.options.dshHome, entry))) return { handled: true }
+    if (await bundledPluginSeedIsSettled(
+      this.options.dshHome,
+      entry,
+      this.options.repairLegacyMarkers ?? false,
+      this.options.sourceDshHome ?? this.options.dshHome,
+    )) return { handled: true }
     if (await hasBundledPluginQuarantineRecord(this.options.dshHome, entry)) return { handled: true }
     return this.startJob(entry, false)
   }
@@ -242,7 +269,7 @@ export class BundledPluginInstaller {
     ))
   }
 
-  private startJob(entry: BundledPluginManifestEntry, force: boolean): BundledPluginStartResult {
+  private startJob(entry: BundledPluginManifestEntry, restoreBundledVersion: boolean): BundledPluginStartResult {
     const packageSpec = bundledPluginRequestSpec(entry)
     const profile = entry.profile
 
@@ -266,7 +293,7 @@ export class BundledPluginInstaller {
     const job: InstallJob = { snapshot, target }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
-    void this.runJob(job, entry, force)
+    void this.runJob(job, entry, restoreBundledVersion)
     return { handled: true, snapshot }
   }
 
@@ -282,25 +309,31 @@ export class BundledPluginInstaller {
 
   private async seed(
     entry: BundledPluginManifestEntry,
-    force: boolean,
+    restoreBundledVersion: boolean,
     onProgress?: (progress: BundledPluginSeedProgress) => void,
   ): Promise<SeedBundledPluginResult> {
     return seedBundledPlugin({
       entry,
       resourcesDirectory: this.options.resourcesDirectory,
       dshHome: this.options.dshHome,
+      sourceDshHome: this.options.sourceDshHome ?? this.options.dshHome,
       install: this.options.install,
       ...(this.options.prepare === undefined ? {} : { prepare: this.options.prepare }),
-      force,
+      restoreBundledVersion,
       repairLegacyMarker: this.options.repairLegacyMarkers ?? false,
+      ...(this.options.onReconciled === undefined ? {} : { onReconciled: this.options.onReconciled }),
       ...(onProgress === undefined ? {} : { onProgress }),
     })
   }
 
-  private async runJob(job: InstallJob, entry: BundledPluginManifestEntry, force: boolean): Promise<void> {
+  private async runJob(
+    job: InstallJob,
+    entry: BundledPluginManifestEntry,
+    restoreBundledVersion: boolean,
+  ): Promise<void> {
     this.options.onManagedMutationStart?.(entry)
     try {
-      const operation = () => this.seed(entry, force, (progress) => {
+      const operation = () => this.seed(entry, restoreBundledVersion, (progress) => {
         if (job.snapshot.phase !== 'running') return
         job.snapshot = { ...job.snapshot, ...progress }
       })

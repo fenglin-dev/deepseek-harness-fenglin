@@ -10,6 +10,7 @@
  * @module @deepseek-ai/dsh/plugin
  */
 
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
@@ -29,6 +30,7 @@ import {
   inspectProfileHostCompatibility,
   inspectProfileImmutableAgentInputMutation,
   inspectProfileLegacySessionApi,
+  inspectProfileLoaderEntryCollisions,
   inspectOrphanedProfileBundles,
   inspectUnresolvableProfileBundleEntries,
   listProfilePluginSnapshots,
@@ -37,6 +39,7 @@ import {
   PROFILE_TEMPLATES,
   profileDependencyConflictDiagnostic,
   profileHostCompatibilityDiagnostic,
+  profileLoaderEntryCollisionDiagnostic,
   quarantineRemovalResidueDiagnostic,
   quarantineProfilePluginAfterLoadFailure,
   removeProfilePluginSnapshot,
@@ -64,6 +67,7 @@ import {
   activateProfilePluginTransaction, prepareProfilePluginTransaction, profilePluginCandidateHome,
   readProfilePluginTransaction, readyProfilePluginTransaction, settleProfilePluginTransaction,
   createProfileTransactionInterruptionExercise,
+  resumeProfilePluginPreparation,
 } from './profile-plugin-transaction.ts'
 
 export { resolvePnpmCommand } from './profile-package-manager.ts'
@@ -530,6 +534,11 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[], quie
         profile,
         installAnchor: INSTALL_ANCHOR,
       })
+      const loaderCollisions = inspectProfileLoaderEntryCollisions({
+        binName: NAME,
+        profile,
+        installAnchor: INSTALL_ANCHOR,
+      })
       outcome = {
         schema: 'dsh/profile-dependency-repair/v1' as const,
         diagnosticSchema: 'dsh/profile-diagnostic/v2' as const,
@@ -554,6 +563,13 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[], quie
           ...quarantineRemovalResidue.map(residue => quarantineRemovalResidueDiagnostic(
             residue.packageName,
             residue.staleComponents,
+          )),
+          ...loaderCollisions.map(collision => profileLoaderEntryCollisionDiagnostic(
+            collision.rootPackage,
+            collision.entryId,
+            collision.moduleName,
+            collision.installationPackage,
+            collision.installationModuleName,
           )),
           ...loaderFailures.map(failure => classifyProfileDiagnostic({
             source: 'profile',
@@ -614,6 +630,11 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[], quie
   const result = runProfilePackageManager(
     dir,
     packageManagerArgs.map(argument => anchorPathSpec(argument, process.cwd())),
+    {
+      ...(process.env.DSH_DESKTOP_INSTALL_PROGRESS_FILE === undefined
+        ? {}
+        : { progressFile: process.env.DSH_DESKTOP_INSTALL_PROGRESS_FILE }),
+    },
   )
   if (result.diagnostic !== undefined) process.stderr.write(`${result.diagnostic}\n`)
   const exitCode = result.exitCode ?? 1
@@ -695,7 +716,23 @@ function pluginInvocationMutates(args: readonly string[]): boolean {
 export function runPlugin(profile: string, args: readonly string[]): number {
   if (args[0] === 'transaction') {
     const home = resolveDshHome()
-    if (args.length === 2 && args[1] === 'prepare') {
+    if (args.length === 3 && args[1] === 'resume-preparation' && args[2] !== undefined) {
+      const ownerPid = Number(process.env.DSH_DESKTOP_MUTATION_OWNER_PID)
+      const release = acquireProfilePluginMutationLock({ home, profile, waitMs: 5_000 })
+      let handedOff = false
+      try {
+        resumeProfilePluginPreparation(home, profile, args[2], ownerPid)
+        beginProfilePluginMutationLease({ home, profile, ownerPid, token: args[2] })
+        handedOff = true
+        writeSnapshotJson({ id: args[2] })
+        return 0
+      } finally { if (!handedOff) release() }
+    }
+    if ((args.length === 2 || args.length === 3) && args[1] === 'prepare') {
+      const requestedId = args[2] ?? randomUUID()
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(requestedId)) {
+        throw new Error('dsh: invalid transaction ID')
+      }
       const ownerPid = Number(process.env.DSH_DESKTOP_MUTATION_OWNER_PID)
       if (!Number.isSafeInteger(ownerPid) || ownerPid <= 0) throw new Error('dsh: invalid desktop mutation owner')
       process.kill(ownerPid, 0)
@@ -706,7 +743,7 @@ export function runPlugin(profile: string, args: readonly string[]): number {
         if (process.env.DSH_PLUGIN_SNAPSHOT_BATCH !== '1') automatic = createProfilePluginSnapshot({
           home, profile, kind: 'automatic', trigger: pluginMutationTrigger(['install']), ...snapshotRuntimeMetadata(),
         })
-        const record = prepareProfilePluginTransaction(home, profile, ownerPid)
+        const record = prepareProfilePluginTransaction(home, profile, ownerPid, requestedId)
         beginProfilePluginMutationLease({ home, profile, ownerPid, token: record.id })
         handedOff = true
         writeSnapshotJson({ id: record.id })
@@ -715,7 +752,9 @@ export function runPlugin(profile: string, args: readonly string[]): number {
         if (!handedOff) {
           try {
             const record = readProfilePluginTransaction(home, profile)
-            if (record?.producerPid === ownerPid) settleProfilePluginTransaction(home, profile, record.id, false)
+            if (record?.producerPid === ownerPid && record.id === requestedId) {
+              settleProfilePluginTransaction(home, profile, record.id, false)
+            }
             if (automatic !== undefined) finalizeProfilePluginSnapshot({
               home, profile, snapshotId: automatic.snapshotId, preserveIfUnchanged: automatic.deduplicated === true,
             })

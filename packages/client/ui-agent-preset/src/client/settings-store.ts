@@ -63,7 +63,12 @@ const EMPTY_ROSTER: AgentPresetRoster = { presets: [], authorable: false }
  * @returns the roster, or the message to show in its place.
  */
 export async function readRoster(ctx: ClientContext): Promise<RosterRead> {
-  const result = await ctx.remote.agentPresets.list()
+  let result
+  try {
+    result = await ctx.remote.agentPresets.list()
+  } catch (error: unknown) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
   if (result.ok) return { ok: true, value: result.value }
   // Agent presets are optional: without that service every session uses the
   // Host composition, so callers receive the same empty roster as a mounted

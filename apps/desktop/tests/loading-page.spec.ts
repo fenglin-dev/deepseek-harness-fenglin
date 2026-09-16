@@ -51,6 +51,7 @@ describe('desktop loading page', () => {
     expect(main).toContain("ipcMain.handle('dsh:desktop:recovery-plugins:remove'")
     expect(main).toContain('isRecoveryPluginPackageName(packageName)')
     expect(main).toContain('inventory.plugins.some(plugin => plugin.packageName === packageName)')
+    expect(main).toContain('profileTransactionManager?.settleForRecoveryMutation()')
     expect(main).toContain("'plugin', '--profile', 'web', 'remove', packageName")
     expect(main).toContain('await stopAndRevokePersistentServicesForPlugin(packageName)')
   })
@@ -85,6 +86,7 @@ describe('desktop loading page', () => {
   it('keeps the paused startup bar while exposing four peer recovery tools', async () => {
     const html = await readFile(new URL('../src/loading.html', import.meta.url), 'utf8')
     const loadingPage = await readFile(new URL('../src/loading-page.ts', import.meta.url), 'utf8')
+    const main = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8')
 
     expect(html).toContain('id="recovery-home"')
     expect(html).toContain('data-open-panel="plugins"')
@@ -100,7 +102,21 @@ describe('desktop loading page', () => {
     expect(loadingPage).toContain('progressTask.textContent = shutdown ? copy.cleanupBlocked : copy.paused')
     expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:recovery-plugins:list')")
     expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:recovery-plugins:remove', plugin.packageName)")
+    expect(loadingPage).toContain("plugin.status === 'attention'")
+    expect(loadingPage).toContain('未被本次诊断标记为异常')
     expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:recovery:export')")
+    expect(html).toContain('id="reset-process-recovery"')
+    expect(html).toContain('id="module-fallback-lock-recovery"')
+    expect(html).toContain('id="clear-module-fallback-lock"')
+    expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:process-recovery:get')")
+    expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:process-recovery:reset')")
+    expect(main).toContain("ipcMain.handle('dsh:desktop:process-recovery:reset'")
+    expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:module-fallback-lock:get')")
+    expect(loadingPage).toContain("ipcRenderer.invoke('dsh:desktop:module-fallback-lock:clear')")
+    expect(loadingPage).toContain("diagnostic?.code === 'profile.module-fallback-lock-busy'")
+    expect(loadingPage).toContain("clearModuleFallbackLock.disabled = value.state !== 'dead'")
+    expect(main).toContain("ipcMain.handle('dsh:desktop:module-fallback-lock:get'")
+    expect(main).toContain("ipcMain.handle('dsh:desktop:module-fallback-lock:clear'")
   })
 
   it('keeps the diagnostic Profile behind the recovery page instead of opening it as the app', async () => {
@@ -117,5 +133,35 @@ describe('desktop loading page', () => {
     expect(loadingPage).toContain("recoveryTitle: '诊断模式'")
     expect(loadingPage).toContain('当前仅开放诊断与恢复工具')
     expect(loadingPage).toContain("'#retry': ['重新尝试启动', 'Retry startup']")
+  })
+
+  it('shows classified startup causes instead of repeating one generic process-exit message', async () => {
+    const html = await readFile(new URL('../src/loading.html', import.meta.url), 'utf8')
+    const loadingPage = await readFile(new URL('../src/loading-page.ts', import.meta.url), 'utf8')
+    const main = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8')
+    const diagnostics = await readFile(new URL('../../../packages/boot/app-boot/src/profile-diagnostics.ts', import.meta.url), 'utf8')
+
+    expect(html).toContain('id="failure-title"')
+    expect(html).toContain('id="failure-context"')
+    expect(loadingPage).toContain("'session.persistence-corrupt'")
+    expect(loadingPage).toContain("'loader.duplicate-entry'")
+    expect(loadingPage).toContain("'profile.immutable-agent-input-mutation'")
+    expect(loadingPage).toContain("'config.settings-invalid'")
+    expect(loadingPage).toContain("'runtime.launch-invalid'")
+    expect(loadingPage).toContain("'desktop.harness-http-response'")
+    expect(main).toContain("webRequest.onCompleted({ urls: ['http://127.0.0.1/*'] }")
+    expect(main).toContain('clearStaleHarnessAuthCookies')
+    expect(loadingPage).toContain('progressTask.textContent = diagnostic.title')
+    expect(main).toContain('readRecoveryFailureSummary(dshHome)')
+    expect(main).toContain('diagnosticCode: failure.diagnosticCode')
+    expect(main).toContain('latestRecoveryDiagnostic.evidence')
+    expect(main).toContain('if (!(error instanceof ProfileActivationRolledBackError)) desktopCandidateId = id')
+    const codeUnion = diagnostics.slice(
+      diagnostics.indexOf('export type ProfileDiagnosticCode'),
+      diagnostics.indexOf('/** Client-safe attribution'),
+    )
+    const diagnosticCodes = [...codeUnion.matchAll(/\| '([^']+)'/gu)].map(match => match[1])
+    expect(diagnosticCodes.length).toBeGreaterThan(20)
+    for (const code of diagnosticCodes) expect(loadingPage).toContain(`'${code}'`)
   })
 })

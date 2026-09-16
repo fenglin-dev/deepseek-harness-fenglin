@@ -23,7 +23,7 @@ The invoking directory is the default workspace root. The `web`, `headless`, `sd
 
 ## Plugin changes
 
-When hosted by Community Desktop, mutating plugin commands verify a same-disk candidate and hand activation to the desktop process. `batch` keeps build approval and retry in one transaction; `transaction status`, `activate`, `commit`, and `rollback` operate only on validated journal IDs and managed plugin state. The caller holds the existing Profile lock, and pnpm registers its worker PID before running package code. Standalone CLI commands retain their ordinary synchronous behavior. See [Desktop](../desktop/README.md#plugin-changes) for readiness and rollback behavior.
+With explicit Community Desktop transaction authorization, mutating plugin commands verify a same-disk candidate and hand activation to the desktop process. `batch` keeps build approval and retry in one transaction; `transaction status`, `activate`, `commit`, and `rollback` operate only on validated journal IDs and managed plugin state. Candidate-owned bundled archive references move back to the durable Desktop home across native and pnpm-normalized path separators; a later transaction repairs an older deleted-candidate reference only when the matching retained archive exists. The caller holds the existing Profile lock, and pnpm registers its worker PID before running package code. Standalone CLI commands retain their ordinary synchronous behavior. See [Desktop](../desktop/README.md#plugin-changes) for readiness and rollback behavior.
 
 Profile plugin operations keep the pnpm cache in `$DSH_HOME/.pnpm-store` (default `~/.dsh/.pnpm-store`), including repair and snapshot restore. A local dependency tree using the same store format keeps its installed files and build results while its cache locator is atomically rebound. Shared old caches are not moved or deleted. Different store formats and external virtual stores retain pnpm's compatibility checks. Uncached packages still need their original local archives or network access; changing the cache location does not make an offline snapshot complete.
 
@@ -56,6 +56,8 @@ Before a profile composes, the launcher checks identity-sensitive Host packages 
 On Windows, pnpm can briefly lose its atomic directory swap when antivirus software or indexing holds one of pnpm's generated `node_modules/*_tmp_<pid>_<sequence>` directories. `dsh plugin` retries only that exact `ERR_PNPM_EPERM` rename failure three times with bounded backoff. Other permission errors remain terminal, and a destination that stays locked after the retry budget still reports the original pnpm diagnostic so the user can stop the process that owns the files.
 
 `doctor` without an option is read-only and exits `0` when healthy or `2` when conflicts exist. `--repair` exits `10` after lossless convergence, `11` after quarantine, and `1` when the profile cannot be made safe. A quarantined plugin can be retried with `doctor --retry <quarantine-id>`; its original dependency specifier and bundle position are restored only if the ordinary health policy succeeds.
+
+Market-owned commands do not inherit Desktop transaction authorization: they update the active Profile synchronously under its write lock and retain automatic snapshots. Desktop-owned Web generations carry a separate launch marker; inherited same-home Web replacements exit without starting a second service, leaving restart to Supervisor.
 
 Plugin commands preserve their result as the process exit code and let Node drain pending output and native handles before exiting.
 

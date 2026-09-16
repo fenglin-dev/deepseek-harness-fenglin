@@ -1,5 +1,5 @@
 appId: ai.flaq.deepseek-harness
-productName: DeepSeek Harness
+productName: Open DeepSeek Harness Desktop
 asar: true
 npmRebuild: false
 directories:
@@ -13,14 +13,20 @@ extraResources:
     to: bundled-plugins
     filter:
       - "**/*"
-  - from: ../../.artifacts/desktop-runtime-darwin-${arch}.tar.gz
-    to: harness-runtime.tar.gz
+  - from: ../../.artifacts/desktop-runtime-darwin-${arch}.tar
+    to: harness-runtime.tar
+  - from: ../../.artifacts/desktop-runtime-darwin-${arch}.tar.sha256
+    to: harness-runtime.tar.sha256
+  - from: ../../.artifacts/desktop-prebuilt-darwin-${arch}.tar
+    to: prebuilt-profile.tar
+  - from: ../../.artifacts/desktop-prebuilt-darwin-${arch}.tar.sha256
+    to: prebuilt-profile.tar.sha256
   - from: lib/desktop-cli-launcher.js
     to: cli/desktop-cli.mjs
 mac:
   minimumSystemVersion: "13.5"
   extendInfo:
-    CFBundleDisplayName: Open DSH Desktop
+    CFBundleDisplayName: Open DeepSeek Harness Desktop
     NSMicrophoneUsageDescription: DeepSeek Harness uses the microphone only after you approve a voice-input or recording request.
     NSCameraUsageDescription: DeepSeek Harness uses the camera only after you approve a camera request.
     NSLocationWhenInUseUsageDescription: DeepSeek Harness uses your location only after you approve a location request.
@@ -28,6 +34,8 @@ mac:
   # Open-source release baseline: keep Apple Silicon code structurally signed
   # without binding artifacts to a short-lived development certificate.
   identity: "-"
+  # Keep signing bounded to one native process and independent from archive size.
+  sign: ./apps/desktop/scripts/sign-macos-adhoc.cjs
   hardenedRuntime: false
   timestamp: none
   target:

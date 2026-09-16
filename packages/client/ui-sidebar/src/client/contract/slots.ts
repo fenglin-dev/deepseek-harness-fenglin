@@ -92,6 +92,8 @@ export interface SidebarSectionOwnerProps {
   wide: boolean
   /** Rail icons request expansion; the browser rides the wide flip for focus. */
   expandSidebar: () => void
+  /** Close the phone drawer after a workspace or Session navigation action. */
+  dismissSidebar: () => void
 }
 
 /**
@@ -101,6 +103,8 @@ export interface SidebarSectionOwnerProps {
 export interface SidebarSettingsOwnerProps {
   /** Whether the sidebar renders wide content (false = 56px rail). */
   wide: boolean
+  /** Close the phone drawer before the settings dialog takes focus. */
+  dismissSidebar: () => void
 }
 
 /** Owner share of an action rendered immediately beside Settings. */

@@ -8,13 +8,13 @@
   <strong>开箱即用、依赖安全的 DeepSeek Harness 社区桌面版</strong>
 </p>
 
-语言：简体中文（默认） · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Português](README.pt-BR.md)
+语言：简体中文（默认） · [English](.github/readme/README.en.md) · [日本語](.github/readme/README.ja.md) · [한국어](.github/readme/README.ko.md) · [Español](.github/readme/README.es.md) · [Français](.github/readme/README.fr.md) · [Deutsch](.github/readme/README.de.md) · [Português](.github/readme/README.pt-BR.md)
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-rc.1.1 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1)。** 本维护版新增交互式启动失败恢复模式和更完整的插件诊断隔离，治理第二次启动卡顿与 Profile 写锁，并完善桌面与浏览器双向切换、按需权限确认、选中文字后的快速重启及 Windows 自定义 ICO 清晰度。
+> **[v0.1.5-rc.2.2 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2)。** 本次维护修复覆盖安装时预设插件版本标记与实际安装不一致的问题，并改进首次启动的预构建插件部署、Windows 升级清理、归档会话恢复、外部工具安装进度、配置目录识别和诊断恢复。
 >
-> 这是 Release Candidate 预发布版本。升级前建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈给我们。
+> 虽然版本名保留 `rc`，本次在 GitHub 上按正式 Release 发布。升级前仍建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈给我们。
 
 <p align="center">
   <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="下载量"></a>
@@ -33,7 +33,7 @@ Open DeepSeek Harness Desktop 是由社区独立维护的 [DeepSeek Harness](htt
 ## 当前功能亮点
 
 - [AI 会话工作台](#ai-会话工作台)：可调正文、回合导航、精确 Token、发送队列，以及更完整的图片与文件体验。
-- [首次启动与独立配置环境](#首次启动与独立配置环境)：导入官方配置、直接共享目录或全新开始。
+- [首次启动与独立配置环境](#首次启动与独立配置环境)：导入官方配置、复用社区桌面版配置或全新开始。
 - [插件发现、安装与更新](#插件发现安装与更新)：真实市场目录、分类推荐、本机状态、立即安装和联网更新。
 - [超级强化的诊断检查](#超级强化的诊断检查)：启动前检查 pnpm、Cordis 和 Loader，并提供演练、隔离与恢复。
 - [设置界面自定义](#设置界面自定义)：设置类型可以滚动、拖动排序并保存用户自己的排列。
@@ -44,6 +44,8 @@ Open DeepSeek Harness Desktop 是由社区独立维护的 [DeepSeek Harness](htt
 桌面客户端包含完整的 DeepSeek Harness 会话体验。已完成回答可以折叠过程内容和 System Prompt；正文宽度与字号可以调整，Markdown 表格会随正文字号缩放；紧凑的回合导航和精确 Token 用量便于检查长会话，流式生成的代码块会持续保持语法高亮。
 
 提问历史以更易读的问答卡片展示，并区分完成、取消与中断状态。切换会话会保留尚未提交的提问卡片；会话仍在运行时也可以继续输入，主按钮会切换为发送，新消息进入发送队列。
+
+会话归档后不会删除内容。可以从“设置 → 已归档会话”按 Workspace 搜索和筛选归档项，恢复单条或全部会话；恢复后会回到原 Workspace，历史消息保持不变。
 
 图片发送后会立即显示，压缩和上传在后台继续；超长截图会兼顾体积与清晰度，图片占用也会纳入上下文压缩计算。轨迹视图可以展示用户、助手和工具结果中的图片，本地文件模式可以定位已经上传的图片，编辑相邻文字不会使输入框中的文件或会话引用失效。
 
@@ -63,14 +65,16 @@ Open DeepSeek Harness Desktop 是由社区独立维护的 [DeepSeek Harness](htt
   <sub>导入到独立环境：复制受支持数据，来源目录保持不变</sub>
 </p>
 
-### 直接使用此配置
+### 复用社区桌面版配置
 
-让桌面客户端直接使用官方 `~/.dsh`，或用户手动选择的其他受支持目录。设置、凭据、会话、Agent 预设、Skill、Profile 和插件均与该目录共享；桌面客户端或官方 CLI/Web 的后续修改会作用于同一份数据。
+官方 `~/.dsh` 只能导入到独立环境，不再提供直接共享选项。Open DeepSeek Harness Desktop 创建或采用配置目录时会写入专用身份文件；具有该身份文件或有效旧版桌面设置记录的社区配置可以直接复用。对于只有可识别 DSH 数据、但缺少两种记录的旧目录，应用会明确询问是否确实来自旧版 Open DeepSeek Harness Desktop；用户确认后才允许继续。损坏或明确属于其他发行版的身份记录仍会拒绝，以免无提示地加载不兼容的 Profile、插件或桌面状态。
+
+通过身份检查后，设置、凭据、会话、Agent 预设、Skill、Profile 和插件均与所选社区配置共享；使用该目录的 Open DeepSeek Harness Desktop 实例会读写同一份数据。
 
 <p align="center">
-  <img src="./assets/readme/data-home-reuse-zh.png" width="900" alt="桌面客户端直接使用现有 DSH 配置目录">
+  <img src="./assets/readme/data-home-reuse-zh.png" width="900" alt="桌面客户端直接使用已识别的社区桌面版配置目录">
   <br>
-  <sub>直接使用此配置：桌面客户端与所选目录共享数据</sub>
+  <sub>复用社区桌面版配置：通过产品身份检查后与所选目录共享数据</sub>
 </p>
 
 ### 全新开始
@@ -263,12 +267,13 @@ Electron 不只是包住 Web 页面的外壳。桌面宿主负责运行时准备
 - **命令行注册**：可将客户端内置的 `dsh` 命令注册到系统 `PATH`，也可以从同一设置项安全移除。
 - **跨平台标题栏**：Windows 和 Linux 使用独立的原生标题栏视图与 Harness 内容视图。插件的 `100vh`、固定定位和高层 Overlay 只覆盖内容区域，无法遮挡最小化、最大化和关闭按钮；macOS 保留原生窗口行为。
 - **桌面权限**：消息、代码和对话复制继续直接使用受限的剪贴板写入；当可信主界面首次请求麦克风、摄像头、剪贴板读取、通知、定位或其他受支持的浏览器系统能力时，桌面端会显示原生确认框，只有用户允许后才放行。
+- **可选择的数据卸载**：Windows 卸载程序可以只移除应用，也可以一并删除正式版配置、会话、插件和缓存以释放空间或排除持久故障；删除不可恢复，但不会清除开发版数据。
 
 渲染页面只能调用经过白名单约束的桌面接口，不能访问任意文件、命令或 URL。异常状态和偏好存储均由 Electron 主进程管理，不向普通 Web 页面暴露。
 
 ### 设置界面自定义
 
-设置左侧导航拥有独立滚动区域，插件增加更多设置类型时也不会把后面的入口裁掉。设置类型可以通过拖动重新排列，拖动过程提供占位和自动滚动反馈；顺序保存在本地，安装或卸载插件后会在用户排列中稳定合并。配置文件、日志和其他受支持路径统一通过桌面宿主调用系统文件管理器打开。
+设置左侧导航拥有独立滚动区域，插件增加更多设置类型时也不会把后面的入口裁掉。设置类型可以通过拖动重新排列，拖动过程提供占位和自动滚动反馈；顺序保存在本地，安装或卸载插件后会在用户排列中稳定合并。设置右上角分别提供“打开日志文件目录”和“打开配置文件”，其他受支持路径也统一通过桌面宿主调用系统文件管理器打开。
 
 <p align="center">
   <img src="./assets/readme/settings-navigation-reorder-zh.png" width="900" alt="拖动设置侧栏中的三横线把手自由调整顺序">
@@ -289,9 +294,13 @@ Electron 不只是包住 Web 页面的外壳。桌面宿主负责运行时准备
 
 每一步都允许跳过；完成某项设置后会返回步骤页并显示绿色完成状态，全部完成后进入欢迎页。之后仍可在设置中修改相同配置，不维护另一套隐藏表单。
 
-### Codex 与 Claude Code 按需安装
+安装包已经按平台预构建完整的启动 Profile。首次进入时，客户端会把经过校验的模板事务性部署到选定配置目录，迁移路径并验证全部预设插件后才进入主界面，不再逐个联网安装。复制中断后可从已完成阶段继续；模板不匹配或用户存在明确的构建拒绝时，才回退到使用包内归档的有界安装流程。
 
-Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免携带用户不需要的平台依赖。用户在“设置 → 外部工具”点击安装后，客户端才会联网下载经过审核的官方包；Node 与 pnpm 由安装包提供，无需系统另行安装。打包/发布门禁会先验证精确 Provider、原生运行时、平台包和 SHA-512 坐标确实存在；已发布客户端还会读取由 GitHub OIDC/Sigstore 签名的兼容清单。签名身份、摘要、有效期或网络校验失败时只使用安装包内置的已知可用精确版本，不会猜测同版本包，也不会退回 `latest`。
+### 外部工具按需安装
+
+Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免携带用户不需要的平台依赖。用户在“设置 → 外部工具”点击安装后，客户端才会联网下载经过审核的官方包；同一页面还可以按需安装社区维护的 `dsh-workbuddy-connect@0.5.0`，复用本机已登录的 WorkBuddy 或 WorkBuddy AI。Node 与 pnpm 由安装包提供，无需系统另行安装。打包/发布门禁会验证精确 Provider、原生运行时、平台包和 SHA-512 坐标；官方 Provider 的远程兼容清单还需通过 GitHub OIDC/Sigstore 身份、摘要和有效期校验，不会回退到可变的 `latest`。
+
+安装过程会展示解析、下载和导入进度，并可查看脱敏后的实时输出。暂停会安全结束当前包管理事务，继续时复用 pnpm 缓存；停止则保留明确的终止状态供重新下载。关闭进度窗口本身不会取消后台安装。桌面管理的公开 npm 下载默认使用 npmmirror，后续操作仍遵守用户明确配置的 registry、代理、构建授权和 Profile 事务边界。
 
 连接成功后，完整模式的已有会话和新会话会在下一轮安全边界获得对应工具，正在运行的回合不会被中途改写，精简模式继续保持最小工具集。断开连接只撤下工具，不删除 Harness 会话或外部产品自身的数据。
 
@@ -303,11 +312,11 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 ### 预设插件
 
-安装包携带七个启动预设的完整性校验归档：插件市场、`dsh-im`、`dsh-skill-picker`、Better Sidebar、`dsh-pocket`、`@ychris12138/dsh-usage-stats` 和 `dsh-smooth-stream`；Usage Stats 提供 Token 用量、Provider 账户、会话费用估算、预算与导出能力，Smooth Stream 为回复中的 Markdown、代码块、表格和工具结果提供平滑流式渲染与滚动。`dsh-font`、最小离线 `@dsh-diagnostic-lab/scoped-loader-mismatch`、`@dsh-diagnostic-lab/loader-dependency-unavailable` 与 `@dsh-diagnostic-lab/loader-export-unavailable` 仅作为诊断演练样本提供。首次准备可以使用包内归档，不需要临时联网下载这些插件本体；插件仍保留包信息与来源身份，以便后续发现兼容的联网更新。普通传递依赖继续由 Profile 的 pnpm 解析规则管理。
+安装包携带八个启动预设的完整性校验归档及按平台预构建的完整 Profile：插件市场、`dsh-im`、`dsh-skill-picker`、Better Sidebar、`dsh-pocket`、`@ychris12138/dsh-usage-stats`、`dsh-smooth-stream` 和 `dsh-mermaid`；Usage Stats 提供 Token 用量、Provider 账户、会话费用估算、预算与导出能力，Smooth Stream 为回复中的 Markdown、代码块、表格和工具结果提供平滑流式渲染与滚动，Mermaid 可将 Mermaid 代码块渲染为可切换、缩放和导出的 SVG 图表。首次准备优先部署完整模板，不需要临时联网或逐个运行插件安装；包内归档仍用于维修和兼容回退。普通传递依赖继续由 Profile 的 pnpm 解析规则管理。
 
 #### 预设插件致谢
 
-感谢这些启动预设的作者与维护者：[`dshmarket`](https://github.com/dsh-market/dsh-market)、[`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im)、[`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker)、[`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar)、[`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket)、[`@ychris12138/dsh-usage-stats`](https://github.com/Ychris12138/dsh-usage-stats) 和 [`dsh-smooth-stream`](https://github.com/Laplace-bit/dsh-smooth-stream)。本项目负责桌面集成和经过校验的归档分发；各插件的版权、许可证与后续维护归各自项目。
+感谢这些启动预设的作者与维护者：[`dshmarket`](https://github.com/dsh-market/dsh-market)、[`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im)、[`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker)、[`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar)、[`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket)、[`@ychris12138/dsh-usage-stats`](https://github.com/Ychris12138/dsh-usage-stats)、[`dsh-smooth-stream`](https://github.com/Laplace-bit/dsh-smooth-stream) 和 [`dsh-mermaid`](https://github.com/MrmoLabs/dsh-mermaid)。本项目负责桌面集成和经过校验的归档分发；各插件的版权、许可证与后续维护归各自项目。
 
 <p align="center">
   <img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="通过 dsh-pocket 的二维码和局域网地址连接手机">
@@ -323,15 +332,15 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 > [!TIP]
 >
-> 首次启动使用的是安装包内的本地插件归档，适合离线准备，但本地来源不会直接跟随插件市场更新。联网后建议进入“插件市场 → 已安装”，逐个点击“恢复”：客户端会卸载本地版本并从线上来源重新安装，之后即可正常检查并及时获取更新。恢复操作不能自动回滚；若更看重固定版本或离线可用性，也可以继续保留本地版本。
+> 覆盖安装时，客户端会核对预设记录、依赖声明、Bundle 注册和插件包中的真实版本。由桌面管理的旧归档，以及命中已核验历史预设版本的 registry 插件，会事务性升级到当前安装包版本；用户安装的更高版本、自定义来源、明确卸载记录和快照版本保持不会被覆盖，也不会发生降级。
 
 <p align="center">
   <img src="./assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="在插件市场中点击恢复，把预装的本地插件转换为线上插件">
   <br>
-  <sub>推荐联网后点击“恢复”，将本地预装版本转换为可正常检查更新的线上版本</sub>
+  <sub>需要改用线上 registry 来源时，可以在插件市场明确执行“恢复”</sub>
 </p>
 
-这些插件仍是可卸载的普通 Harness 依赖。用户卸载后，客户端通过持久标记尊重该选择，不会在每次重启时擅自装回；需要时可以从插件市场或恢复流程重新安装。
+这些插件仍是可卸载的普通 Harness 依赖。新的 seed marker 会分别记录已处理的安装包版本、实际安装版本、状态和来源归属；用户卸载后，客户端尊重持久的卸载记录，不会在每次重启时擅自装回。记录与实际版本不一致时，诊断页会同时显示二者，并提供受控的“恢复预设版本”操作。
 
 ## 主题与背景
 
@@ -348,18 +357,18 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
   </tr>
 </table>
 
-## 同步 DeepSeek Harness 0.1.2-rc.1
+## 同步 DeepSeek Harness 0.1.5-rc.2
 
-当前桌面基线使用上游 `dsh-v0.1.2-rc.1`。会话、模型、子 Agent、图片和文件能力由同一套 Harness Runtime 提供，桌面客户端在其上增加环境选择、插件管理、诊断保护和系统集成。文件与 Session 引用、多查询并发 `web_search`、推理内容回传、持久 PowerShell PTY、动态客户端包、构建 Profile 与品牌插槽继续可用；Electron 默认不会额外打开系统浏览器，用户可以从通用设置、文件菜单或托盘菜单打开同一套本机 Web 界面，也可以选择在每次 Harness 就绪后自动打开。
+当前桌面基线使用上游 `dsh-v0.1.5-rc.2`。会话、模型、子 Agent、图片和文件能力由同一套 Harness Runtime 提供，桌面客户端在其上增加环境选择、插件管理、诊断保护和系统集成。Session V3、右侧栏与文件预览、外部工具生命周期及新版插件加载机制均已接入；Electron 默认不会额外打开系统浏览器，用户可以从通用设置、文件菜单或托盘菜单打开同一套本机 Web 界面，也可以选择在每次 Harness 就绪后自动打开。
 
 ## 下载安装
 
-请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1) 页面下载安装包。[`v0.1.2-rc.1.1`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-rc.1.1) 已提供以下发行产物：
+请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) 页面下载安装包。[`v0.1.5-rc.2.2`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) 已提供以下发行产物：
 
 | 平台      | 架构                     | 发行包                                | 状态  |
 | ------- | ---------------------- | ---------------------------------- | --- |
-| macOS   | Apple Silicon（`arm64`） | `DeepSeek-Harness-macos-arm64.dmg` | 已提供 |
-| macOS   | Intel（`x64`）           | `DeepSeek-Harness-macos-x64.dmg`   | 已提供 |
+| macOS   | Apple Silicon（`arm64`） | `DeepSeek-Harness-macos-arm64.dmg` / `.zip` | 已提供 |
+| macOS   | Intel（`x64`）           | `DeepSeek-Harness-macos-x64.dmg` / `.zip`   | 已提供 |
 | Windows | `x64`                  | `DeepSeek-Harness-windows-x64.exe` | 已提供 |
 | Linux   | Debian / Ubuntu（`x64`） | `DeepSeek-Harness-linux-x64.deb`   | 已提供 |
 | Linux   | Fedora / RHEL（`x64`）   | `DeepSeek-Harness-linux-x64.rpm`   | 已提供 |
@@ -369,13 +378,13 @@ Release 同时提供 `SHA256SUMS`。安装前建议校验下载文件；只有�
 ### macOS
 
 1. 下载与 Mac 处理器相符的 `.dmg`。
-2. 将 `DeepSeek Harness.app` 拖入“应用程序”文件夹。
+2. 将 `Open DeepSeek Harness Desktop.app` 拖入“应用程序”文件夹。
 3. 当前开源构建使用 ad-hoc 签名且未经 Apple 公证。若 Gatekeeper 阻止首次打开，请前往**系统设置 → 隐私与安全性 → 仍要打开**。
 
 也可以在确认文件来自本仓库后执行：
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/DeepSeek Harness.app"
+xattr -dr com.apple.quarantine "/Applications/Open DeepSeek Harness Desktop.app"
 ```
 
 > [!CAUTION]
@@ -479,10 +488,10 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 
 ### 加入交流群
 
-欢迎扫码加入 Open DSH Desktop 交流群，与其他用户和插件作者交流使用经验、问题排查与功能建议。
+欢迎扫码加入 Open DeepSeek Harness Desktop 交流群，与其他用户和插件作者交流使用经验、问题排查与功能建议。
 
 <p align="center">
-  <img src="./assets/readme/wechat-group-qr-2026-09-13.jpg" width="360" alt="Open DSH Desktop 微信交流群二维码">
+  <img src="./assets/readme/wechat-group-qr-2026-09-13.jpg" width="360" alt="Open DeepSeek Harness Desktop 微信交流群二维码">
   <br>
   <sub>当前二维码有效期至 2026 年 9 月 13 日；过期后请关注 README 中更新的二维码</sub>
 </p>
@@ -491,7 +500,7 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 
 感谢 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 上游维护核心运行时与官方 Provider，并感谢 [OpenAI Codex](https://github.com/openai/codex) 和 [Anthropic Claude Code](https://github.com/anthropics/claude-code) 提供产品运行时。
 
-感谢以下七个预设社区插件的作者与维护者：
+感谢以下八个预设社区插件的作者与维护者：
 
 - [`dsh-im`](https://github.com/xmanrui/dsh-im)，由 [xmanrui](https://github.com/xmanrui) 维护：连接微信、飞书等九种 IM 机器人。
 - [`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker)，由 [a735624258](https://github.com/a735624258) 维护：在输入区选择 Skill，并插入 Harness 的 Skill 调用指令。
@@ -500,6 +509,7 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 - [`DSH Better Sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar)：提供增强侧边栏。
 - [`DSH Usage Stats`](https://github.com/Ychris12138/dsh-usage-stats)：提供 Token 用量、账户、费用估算、预算和导出能力。
 - [`DSH Smooth Stream`](https://github.com/Laplace-bit/dsh-smooth-stream)：提供更平滑的流式渲染与滚动。
+- [`DSH Mermaid`](https://github.com/MrmoLabs/dsh-mermaid)，由 [MrmoLabs](https://github.com/MrmoLabs) 维护：将 Mermaid 代码块渲染为支持源码切换、全屏查看、缩放和 SVG 导出的图表。
 
 ## 关于 FLAQ AI 团队
 

@@ -16,10 +16,11 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
   const openInstaller = vi.fn(() => Promise.resolve({ error: '' }))
   const openDesktopWeb = vi.fn(() => Promise.resolve({ opened: true as const, hidden: true }))
   const enterRecoveryMode = vi.fn(() => Promise.resolve({ entered: true as const }))
+  const openDataHomeChooser = vi.fn(() => Promise.resolve({ restarting: false }))
   let downloadNetwork: DownloadNetworkSettings = {
     schema: 'open-dsh-desktop/download-network/v1' as const, revision: 0,
     application: { source: 'github' as const, proxy: { mode: 'system' as const, passwordSet: false } },
-    npm: { registry: 'existing' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
+    npm: { registry: 'npmmirror' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
     github: { download: 'original' as const, proxy: { mode: 'existing' as const, passwordSet: false } },
   }
   const updateDownloadNetwork = vi.fn((patch: Parameters<NonNullable<DesktopBridge['downloadNetwork']>['update']>[0]) => {
@@ -40,8 +41,7 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
         desktopPath: '/desktop/dsh-home', officialPath: '/home/user/.dsh',
         officialAvailable: true, managedExternally: false,
       })),
-      chooseDataHome: vi.fn(() => Promise.resolve({ status: 'cancelled' as const })),
-      switchDataHome: vi.fn(() => Promise.resolve({ restarting: true, activePath: '/home/user/.dsh' })),
+      openDataHomeChooser,
       getPreferences: vi.fn(() => Promise.resolve(preferences)),
       updatePreferences: vi.fn((patch: Partial<DesktopPreferences>) => {
         preferences = { ...preferences, ...patch }
@@ -49,6 +49,7 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
       }),
       onPreferences: vi.fn(() => () => {}),
       openLog: vi.fn(),
+      openLogDirectory: vi.fn(() => Promise.resolve({ error: '' })),
       openSettingsDocument: vi.fn(() => Promise.resolve({ error: '' })),
       getCommandLine: vi.fn(() => Promise.resolve({
         phase: 'uninstalled' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
@@ -97,7 +98,8 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
   }
   const controller = new DesktopShellController(bridge)
   return {
-    bridge, controller, openDownload, startDownload, openInstaller, openDesktopWeb, enterRecoveryMode, updateDownloadNetwork,
+    bridge, controller, openDownload, startDownload, openInstaller, openDesktopWeb, openDataHomeChooser,
+    enterRecoveryMode, updateDownloadNetwork,
   }
 }
 
@@ -138,10 +140,9 @@ describe('DesktopShellController', () => {
     expect(b.controller.getSnapshot().commandLine?.phase).toBe('uninstalled')
     await b.controller.enterRecoveryMode()
     expect(b.enterRecoveryMode).toHaveBeenCalledOnce()
-    await b.controller.chooseDataHome('existing')
-    expect(b.controller.getSnapshot().dataHomeSelection?.status).toBe('cancelled')
-    await b.controller.switchDataHome({ kind: 'official' })
-    expect(b.controller.getSnapshot().restartPending).toBe(true)
+    await b.controller.openDataHomeChooser()
+    expect(b.openDataHomeChooser).toHaveBeenCalledOnce()
+    expect(b.controller.getSnapshot().restartPending).toBe(false)
     b.controller.dispose()
   })
 

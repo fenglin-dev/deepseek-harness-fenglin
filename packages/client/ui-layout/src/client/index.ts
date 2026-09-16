@@ -55,8 +55,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * the seats it declares disappear with it. To add something to the
      * sidebar, register into one of those inner seats instead.
      *
-     * The occupant receives the frame's live column state (collapsed, width)
-     * and is expected to render the compact control rail while collapsed.
+     * The occupant receives the frame's live column or drawer presentation.
+     * Column mode renders the compact rail while collapsed; drawer mode
+     * renders only a menu trigger while closed and dismisses independently of
+     * the saved desktop width.
      */
     'sidebar': { kind: 'single'; scope: 'root'; owner: SidebarOwnerProps }
     /**
@@ -100,10 +102,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Sidebar owner share: live column state from the frame's concession solve. */
 export interface SidebarOwnerProps {
-  /** True when the sidebar is closed (the column renders the compact control rail). */
+  /** True when the sidebar is closed. Column presentation renders a compact rail; drawer presentation renders only its opener. */
   collapsed: boolean
-  /** Rendered column width in px (SIDEBAR_COLLAPSED when collapsed). */
+  /** Rendered column or drawer width in px. */
   width: number
+  /** Responsive presentation selected by the AppFrame. */
+  presentation: 'column' | 'drawer'
+  /** Close the transient phone drawer without changing desktop width preferences. */
+  dismiss: () => void
 }
 
 /** Right column owner share: resolved normal geometry and opening eligibility. */

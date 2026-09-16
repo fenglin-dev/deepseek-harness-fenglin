@@ -240,7 +240,8 @@ describe('RightbarSeat presentation', () => {
     const h = await mountSeat(500, false)
     const tab = h.open()
     const signal = h.bodies.get(tab.id)!.tab.signal
-    fireEvent.click(element(h.view.container, '[data-sidebar-right-mode]'))
+    expect(h.view.container.querySelector('[data-sidebar-right-mode]')).toBeNull()
+    fireEvent.click(element(h.view.container, '[data-sidebar-right-toggle]'))
     expect(h.layout().expanded).toBe(false)
     expect(h.layout().mode).toBe('push')
     const stored = h.instance.getSnapshot()
