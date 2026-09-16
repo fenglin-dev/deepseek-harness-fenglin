@@ -17,7 +17,9 @@ describe('read-only plugin mutation guard', () => {
   it('blocks an orphan pnpm worker and malformed worker ownership without deleting the lock', () => {
     const b = home()
     writeFileSync(b.lock, JSON.stringify({ pid: 99999999, workerPid: process.pid }))
-    expect(inspectProfileMutationLock(b.root)).toMatchObject({ active: true, state: 'live', workerPid: process.pid })
+    expect(inspectProfileMutationLock(b.root)).toMatchObject({
+      active: true, state: 'live', workerPid: process.pid, workerActive: true,
+    })
     for (const workerPid of [0, '123', -1]) {
       writeFileSync(b.lock, JSON.stringify({ pid: 99999999, workerPid }))
       expect(inspectProfileMutationLock(b.root)).toMatchObject({ active: true, state: 'malformed' })
@@ -75,5 +77,12 @@ describe('read-only plugin mutation guard', () => {
     expect(inspectProfileMutationLock(b.root)).toMatchObject({ active: false, state: 'dead', pid: 99999999 })
     probe.mockImplementation(() => { throw Object.assign(new Error('denied'), { code: 'EPERM' }) })
     expect(menuMutationActive(b.root)).toBe(true)
+  })
+  it('distinguishes a dead recorded worker from the live Desktop lease owner', () => {
+    const b = home()
+    writeFileSync(b.lock, JSON.stringify({ pid: process.pid, workerPid: 99999999 }))
+    expect(inspectProfileMutationLock(b.root)).toMatchObject({
+      active: true, state: 'live', pid: process.pid, workerPid: 99999999, workerActive: false,
+    })
   })
 })

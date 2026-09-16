@@ -74,6 +74,37 @@ export class ProfileTransactionManager {
     await this.#options.command(['transaction', 'rollback', record.id])
   }
 
+  /**
+   * Settle a retained failed transaction before diagnostic mode starts another mutation.
+   * @returns True when a retained journal or owned lease was released.
+   */
+  async settleForRecoveryMutation(): Promise<boolean> {
+    if (this.#disposed) throw new Error('desktop: plugin activation manager is disposed')
+    if (this.#operation !== undefined) throw new Error('desktop: plugin transaction settlement is still running')
+    const record = await this.#pending()
+    const id = this.#checking ?? record?.id
+    if (id === undefined) return false
+    if (record !== undefined && record.id !== id) {
+      throw new Error('desktop: retained plugin transaction changed before recovery')
+    }
+    const lock = inspectProfileMutationLock(this.#options.home)
+    let token: string | undefined
+    if (lock.active) {
+      if (lock.state !== 'live' || lock.pid !== process.pid || lock.workerActive === true) {
+        throw new Error('desktop: retained plugin transaction is owned by another process')
+      }
+      token = id
+    }
+    await this.#options.stopHarness()
+    if (record !== undefined) await this.#options.command(['transaction', 'rollback', id], token)
+    if (token !== undefined) await this.#release(id)
+    this.#checking = undefined
+    this.#readinessPhase = undefined
+    this.#clearDeadline()
+    if (this.#settlement?.id === id) this.#settlement.resolve(false)
+    return true
+  }
+
   /** Observe new handoffs without spawning a CLI for unchanged state. */
   start(): void {
     if (this.#timer !== undefined || this.#disposed) return

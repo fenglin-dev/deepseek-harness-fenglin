@@ -51,6 +51,7 @@ describe('desktop loading page', () => {
     expect(main).toContain("ipcMain.handle('dsh:desktop:recovery-plugins:remove'")
     expect(main).toContain('isRecoveryPluginPackageName(packageName)')
     expect(main).toContain('inventory.plugins.some(plugin => plugin.packageName === packageName)')
+    expect(main).toContain('profileTransactionManager?.settleForRecoveryMutation()')
     expect(main).toContain("'plugin', '--profile', 'web', 'remove', packageName")
     expect(main).toContain('await stopAndRevokePersistentServicesForPlugin(packageName)')
   })

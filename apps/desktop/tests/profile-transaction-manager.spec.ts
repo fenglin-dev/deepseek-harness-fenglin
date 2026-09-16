@@ -12,7 +12,13 @@ afterEach(async () => {
   vi.useRealTimers()
   for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
 })
-function fixture(phase = 'prepared', producerPid = 99999999, failActivation = false, resumePreparation?: (id: string) => Promise<boolean>) {
+function fixture(
+  phase = 'prepared',
+  producerPid = 99999999,
+  failActivation = false,
+  resumePreparation?: (id: string) => Promise<boolean>,
+  rollbackFailures = 0,
+) {
   const home = mkdtempSync(join(tmpdir(), 'desktop-transaction-'))
   homes.push(home)
   const id = randomUUID()
@@ -24,6 +30,7 @@ function fixture(phase = 'prepared', producerPid = 99999999, failActivation = fa
   const lock = join(lockRoot, '.profile-plugin-mutation.web.lock')
   writeFileSync(lock, JSON.stringify({ pid: process.pid, token: id }))
   const calls: string[] = []
+  let remainingRollbackFailures = rollbackFailures
   const onError = vi.fn()
   const onRollback = vi.fn()
   const manager = new ProfileTransactionManager({
@@ -32,6 +39,10 @@ function fixture(phase = 'prepared', producerPid = 99999999, failActivation = fa
     command: async (args, token) => {
       calls.push(`${args.join(' ')}:${token ?? 'new-lock'}`)
       if (failActivation && args[1] === 'activate') throw new Error('activation interrupted')
+      if (args[1] === 'rollback' && remainingRollbackFailures > 0) {
+        remainingRollbackFailures--
+        throw new Error('rollback interrupted')
+      }
     },
     stopHarness: async () => { calls.push('stop') },
     resumeHarness: () => { calls.push('resume') },
@@ -184,5 +195,41 @@ describe('desktop plugin activation ownership', () => {
     writeFileSync(f.lock, JSON.stringify({ pid: 99999999 }))
     await f.manager.recoverBeforeStartup()
     expect(f.calls).toEqual([`transaction rollback ${f.id}:new-lock`])
+  })
+
+  it('settles a same-process failed rollback before diagnostic mode starts another mutation', async () => {
+    const f = fixture('prepared', 99999999, false, undefined, 1)
+    f.manager.start()
+    await expect.poll(() => f.calls).toContain('resume')
+    f.manager.failed(new Error('candidate failed'))
+    await expect.poll(() => f.onError).toHaveBeenCalledWith(new Error('rollback interrupted'))
+
+    await expect(f.manager.settleForRecoveryMutation()).resolves.toBe(true)
+    expect(f.calls.slice(-3)).toEqual([
+      'stop',
+      `transaction rollback ${f.id}:${f.id}`,
+      `snapshot end-restore-lease:${f.id}`,
+    ])
+    expect(f.calls.filter(call => call === 'resume')).toHaveLength(1)
+  })
+
+  it('refuses to settle a recovery transaction while another live worker owns its lease', async () => {
+    const f = fixture('checking-startup')
+    writeFileSync(f.lock, JSON.stringify({ pid: 99999999, workerPid: process.pid, token: f.id }))
+
+    await expect(f.manager.settleForRecoveryMutation()).rejects.toThrow('owned by another process')
+    expect(f.calls).toEqual([])
+  })
+
+  it('ignores a dead recorded worker when the current Desktop still owns the lease', async () => {
+    const f = fixture('checking-startup')
+    writeFileSync(f.lock, JSON.stringify({ pid: process.pid, workerPid: 99999999, token: f.id }))
+
+    await expect(f.manager.settleForRecoveryMutation()).resolves.toBe(true)
+    expect(f.calls).toEqual([
+      'stop',
+      `transaction rollback ${f.id}:${f.id}`,
+      `snapshot end-restore-lease:${f.id}`,
+    ])
   })
 })

@@ -2933,6 +2933,13 @@ async function startApplication(): Promise<void> {
     } else if (supervisor === undefined) {
       recoveryRestartRequired = true
     }
+    const settledRetainedTransaction = await profileTransactionManager?.settleForRecoveryMutation() ?? false
+    if (settledRetainedTransaction) {
+      clearCandidateEnvironment()
+      recoveryOwnsCandidate = false
+      startupSafety.rollbackFailed = false
+      await appendDesktopStartupLog('Recovery mode settled the retained plugin transaction before removal.')
+    }
     await stopAndRevokePersistentServicesForPlugin(packageName)
     await appendDesktopStartupLog(`Recovery mode is removing external plugin ${packageName}.`)
     const remove = () => runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
