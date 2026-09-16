@@ -158,7 +158,12 @@
       "installPolicy": "startup",
       "registrySpec": "@linxin666/dsh-web-all@0.3.23",
       "archive": "dsh-web-all-0.3.23.tgz",
-      "integrity": "sha512-weCIA7OSWzRWFIO29AJP71J0GUQiFtMMXDE1niv/tjhG8AQKlphH67VofuvBLCGCPQmAtmQ1ZkYKxI4pKc5xww=="
+      "integrity": "sha512-weCIA7OSWzRWFIO29AJP71J0GUQiFtMMXDE1niv/tjhG8AQKlphH67VofuvBLCGCPQmAtmQ1ZkYKxI4pKc5xww==",
+      "approvedBuilds": [
+        "ssh2",
+        "cpu-features",
+        "cloudflared"
+      ]
     },
     {
       "seedId": "dsh-music-huazai",
