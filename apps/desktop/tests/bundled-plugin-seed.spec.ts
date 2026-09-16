@@ -176,7 +176,7 @@ describe('bundled plugin seed', () => {
     expect(manifest.plugins.find(entry => entry.packageName === '@dsh-diagnostic-lab/immutable-agent-input-mutation'))
       .toMatchObject({ version: '1.0.0', installPolicy: 'diagnostic' })
     expect(manifest.plugins.find(entry => entry.packageName === '@ychris12138/dsh-usage-stats'))
-      .toMatchObject({ version: '0.3.2', installPolicy: 'startup' })
+      .toMatchObject({ version: '0.3.3', installPolicy: 'startup' })
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-smooth-stream'))
       .toMatchObject({ version: '0.6.1', installPolicy: 'startup' })
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-mermaid'))
