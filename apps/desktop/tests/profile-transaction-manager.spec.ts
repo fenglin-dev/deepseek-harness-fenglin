@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ProfileTransactionManager } from '../src/profile-transaction-manager.ts'
+import { ProfileActivationRolledBackError, ProfileTransactionManager } from '../src/profile-transaction-manager.ts'
 
 const homes: string[] = []
 const managers: ProfileTransactionManager[] = []
@@ -56,6 +56,82 @@ function fixture(
 }
 
 describe('desktop plugin activation ownership', () => {
+  it('reports the bounded wait timeout without stealing a live writer lock', async () => {
+    const f = fixture()
+    writeFileSync(f.lock, JSON.stringify({ pid: 99999999, workerPid: process.pid }))
+    const deadline = new AbortController()
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal)
+    try {
+      const pending = f.manager.waitForExternalWriters(new AbortController().signal)
+      const rejected = expect(pending).rejects.toThrow('15 minutes')
+      deadline.abort()
+      await rejected
+      expect(timeout).toHaveBeenCalledWith(900_000)
+      expect(f.calls).toEqual([])
+    } finally { timeout.mockRestore() }
+  })
+
+  it('recovers a dead producer before admitting restart and preserves recovery failure', async () => {
+    const f = fixture()
+    rmSync(f.lock)
+    let fail = true
+    const command = vi.fn(async () => {
+      if (fail) throw new Error('rollback failed')
+      rmSync(join(f.home, 'plugin-transactions/web/pending.json'))
+    })
+    const manager = new ProfileTransactionManager({
+      home: f.home, command, stopHarness: async () => {}, resumeHarness: () => {},
+      onError: () => {}, onRollback: () => {}, onActivation: () => {},
+    })
+    managers.push(manager)
+    await expect(manager.waitForExternalWriters(new AbortController().signal)).rejects.toThrow('rollback failed')
+    fail = false
+    await manager.waitForExternalWriters(new AbortController().signal)
+    expect(command).toHaveBeenCalledTimes(2)
+    expect(command).toHaveBeenLastCalledWith(['transaction', 'rollback', f.id])
+  })
+
+  it('waits for a live external writer and cancels without activating a candidate', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    writeFileSync(f.lock, JSON.stringify({ pid: 99999999, workerPid: process.pid }))
+    const controller = new AbortController()
+    const pending = f.manager.waitForExternalWriters(controller.signal)
+    const rejected = expect(pending).rejects.toThrow()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(f.calls).toEqual([])
+    controller.abort()
+    await rejected
+  })
+
+  it('fails closed for unknown locks and its own retained lease', async () => {
+    const f = fixture()
+    await expect(f.manager.waitForExternalWriters(new AbortController().signal)).rejects.toThrow('retained Desktop lease')
+    writeFileSync(f.lock, 'broken')
+    await expect(f.manager.waitForExternalWriters(new AbortController().signal)).rejects.toThrow('malformed')
+    expect(f.calls).toEqual([])
+  })
+
+  it('allows restart after a live writer releases the lock and journal', async () => {
+    vi.useFakeTimers()
+    const f = fixture()
+    writeFileSync(f.lock, JSON.stringify({ pid: 99999999, workerPid: process.pid }))
+    const pending = f.manager.waitForExternalWriters(new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(1000)
+    rmSync(f.lock)
+    rmSync(join(f.home, 'plugin-transactions/web/pending.json'))
+    await vi.advanceTimersByTimeAsync(1000)
+    await pending
+    expect(f.calls).toEqual([])
+  })
+
+  it('refuses restart if abandoned transaction recovery leaves a journal', async () => {
+    const f = fixture()
+    writeFileSync(f.lock, JSON.stringify({ pid: 99999999 }))
+    await expect(f.manager.waitForExternalWriters(new AbortController().signal)).rejects.toThrow('did not settle')
+    expect(f.calls).toEqual([`transaction rollback ${f.id}:new-lock`])
+  })
+
   it('resumes matching dead-owner preparation but rolls back rejected fingerprints and never resumes live owners', async () => {
     const resume = vi.fn(async () => true)
     const f = fixture('preparing', 99999999, false, resume)
@@ -138,8 +214,9 @@ describe('desktop plugin activation ownership', () => {
   })
   it('rejects direct activation after rollback so first startup cannot continue with an incomplete Profile', async () => {
     const f = fixture('prepared', process.pid, true)
-    await expect(f.manager.activatePrepared(f.id, false)).rejects.toThrow('activation interrupted')
+    await expect(f.manager.activatePrepared(f.id, false)).rejects.toBeInstanceOf(ProfileActivationRolledBackError)
     await expect(f.manager.waitForSettlement(f.id)).resolves.toBe(false)
+    expect(f.calls.filter(call => call.includes('transaction rollback'))).toHaveLength(1)
     expect(f.calls).not.toContain('first-start-complete')
     expect(f.onRollback).toHaveBeenCalledOnce()
   })

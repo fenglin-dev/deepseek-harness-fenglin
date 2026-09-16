@@ -11,6 +11,60 @@ afterEach(async () => {
 })
 
 describe('Harness supervisor startup failures', () => {
+  it('does not delegate Desktop transaction authority to resident plugin children', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-resident-env-'))
+    roots.push(root)
+    const script = join(root, 'resident.mjs')
+    await writeFile(script, `
+      import { execFileSync } from 'node:child_process'
+      const keys = Object.keys(process.env).filter(k => /DSH_(DESKTOP_MUTATION|PLUGIN_SNAPSHOT|PLUGIN_TRANSACTION)/i.test(k))
+      if (keys.length) throw new Error(keys.join(','))
+      if (process.env.DSH_DESKTOP_WEB_GENERATION) throw new Error('inherited a previous Web generation')
+      if (process.env.DSH_DESKTOP_WEB_RESTART_OWNER !== ${JSON.stringify(String(process.pid))}) throw new Error('wrong supervisor owner')
+      execFileSync(process.execPath, ['-e', 'if (process.env.DSH_DESKTOP_MUTATION_OWNER_PID) process.exit(9)'])
+      console.log('dsh web: http://127.0.0.1:43129')
+      setInterval(() => {}, 1000)
+    `)
+    const ready = Promise.withResolvers<string>()
+    const supervisor = new HarnessSupervisor({
+      launch: { command: process.execPath, args: [script], environment: {
+        DSH_PLUGIN_SNAPSHOT_BATCH: '1', DSH_DESKTOP_WEB_GENERATION: 'stale', DSH_DESKTOP_WEB_RESTART_OWNER: '123',
+      } },
+      environment: { ...process.env, DSH_DESKTOP_MUTATION_OWNER_PID: String(process.pid),
+        DSH_PLUGIN_TRANSACTION_ORIGIN: root, DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN: 'private',
+        DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID: String(process.pid) },
+      logPath: join(root, 'harness.log'), onReady: ready.resolve, onDiagnosticReady: () => {},
+      onState: () => {}, onFailure: ready.reject,
+    })
+    try { supervisor.start(); await ready.promise } finally { await supervisor.stop() }
+  })
+
+  it('cancels pending restart inspection on stop and ignores its late completion', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-restart-wait-'))
+    roots.push(root)
+    const script = join(root, 'exit.mjs')
+    await writeFile(script, 'process.exit(1)')
+    const checking = Promise.withResolvers<AbortSignal>()
+    const completion = Promise.withResolvers<undefined>()
+    const failure = vi.fn()
+    const supervisor = new HarnessSupervisor({
+      launch: { command: process.execPath, args: [script] }, environment: { ...process.env },
+      logPath: join(root, 'harness.log'), onReady: () => {}, onDiagnosticReady: () => {},
+      onState: () => {}, onFailure: failure,
+      beforeRestart: (signal) => { checking.resolve(signal); return completion.promise },
+    })
+    try {
+      supervisor.start()
+      const signal = await checking.promise
+      await supervisor.stop()
+      expect(signal.aborted).toBe(true)
+      completion.resolve(undefined)
+      await new Promise(resolve => setTimeout(resolve, 600))
+      expect(failure).not.toHaveBeenCalled()
+      expect((await readFile(join(root, 'harness.log'), 'utf8')).match(/Harness exited/gu)).toHaveLength(1)
+    } finally { await supervisor.stop() }
+  })
+
   it('can open Diagnostics directly when a Profile mutation lock is unsafe', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-initial-diagnostic-mode-'))
     roots.push(root)

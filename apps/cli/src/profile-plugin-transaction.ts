@@ -4,7 +4,7 @@ import {
   closeSync, copyFileSync, cpSync, constants, existsSync, fsyncSync, lstatSync, mkdirSync, openSync,
   readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs'
-import { dirname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 'node:path'
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 'node:path'
 import { dump, load } from 'js-yaml'
 import { relocateProfilePluginMetadata } from './profile-plugin-relocation.ts'
 import {
@@ -301,13 +301,21 @@ function isWithin(root: string, target: string): boolean {
  * Internal pnpm links move as one tree and remain relative; only external links are stabilized.
  */
 function stabilizeExternalDependencyLinks(modules: string): void {
+  const generatedBinLink = (path: string): boolean => {
+    const bin = dirname(path)
+    return basename(bin) === '.bin' && (dirname(bin) === modules || basename(dirname(bin)) === 'node_modules')
+  }
   const visit = (directory: string): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name)
       const metadata = lstatSync(path)
       if (metadata.isSymbolicLink()) {
         let destination: string
-        try { destination = realpathSync(path) } catch {
+        try { destination = realpathSync(path) } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT' && generatedBinLink(path)) {
+            unlinkSync(path)
+            continue
+          }
           throw new Error(`dsh: candidate dependency link ${JSON.stringify(relative(modules, path))} has a missing target; activation refused`)
         }
         if (isWithin(modules, destination)) continue

@@ -155,6 +155,7 @@ describe('desktop loading page', () => {
     expect(main).toContain('readRecoveryFailureSummary(dshHome)')
     expect(main).toContain('diagnosticCode: failure.diagnosticCode')
     expect(main).toContain('latestRecoveryDiagnostic.evidence')
+    expect(main).toContain('if (!(error instanceof ProfileActivationRolledBackError)) desktopCandidateId = id')
     const codeUnion = diagnostics.slice(
       diagnostics.indexOf('export type ProfileDiagnosticCode'),
       diagnostics.indexOf('/** Client-safe attribution'),

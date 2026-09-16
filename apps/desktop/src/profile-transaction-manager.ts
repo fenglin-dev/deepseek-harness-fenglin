@@ -2,11 +2,20 @@
 import { lstat, readFile, realpath } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { inspectProfileMutationLock } from './menu-mutation-guard.ts'
+import { setTimeout as delay } from 'node:timers/promises'
 
 interface PendingTransaction {
   id: string
   producerPid: number
   phase: string
+}
+
+/** Activation failed, but the candidate and lease were restored and settled successfully. */
+export class ProfileActivationRolledBackError extends Error {
+  constructor(error: unknown) {
+    super(error instanceof Error ? error.message : String(error), { cause: error })
+    this.name = 'ProfileActivationRolledBackError'
+  }
 }
 
 /** Narrow CLI and Harness operations used to activate a checked candidate. */
@@ -22,6 +31,8 @@ export interface ProfileTransactionManagerOptions {
   onCommit?(): Promise<void>
   /** Reclaim a recognized interrupted first-start copy under a new lease; false uses normal rollback. */
   resumePreparation?(id: string): Promise<boolean>
+  /** Record lock waiting and recovery without exposing plugin credentials. */
+  log?(message: string): void
 }
 
 function alive(pid: number): boolean {
@@ -39,6 +50,7 @@ export class ProfileTransactionManager {
   #checking: string | undefined
   #readinessPhase: 'awaiting-launch' | 'server' | 'renderer' | undefined
   #disposed = false
+  #restartWaiters = 0
   #settlement: { id: string; promise: Promise<boolean>; resolve(value: boolean): void; reject(error: unknown): void } | undefined
 
   constructor(options: ProfileTransactionManagerOptions) { this.#options = options }
@@ -72,6 +84,60 @@ export class ProfileTransactionManager {
     if (lock.active || alive(record.producerPid)) return
     if (record.phase === 'preparing' && await this.#options.resumePreparation?.(record.id)) return
     await this.#options.command(['transaction', 'rollback', record.id])
+  }
+
+  /**
+   * Wait up to 15 minutes for external mutations and recover abandoned journals before restart.
+   * @param signal - Aborted by exit, directory switching, or deliberate candidate activation.
+   */
+  async waitForExternalWriters(signal: AbortSignal): Promise<void> {
+    const deadline = AbortSignal.timeout(15 * 60_000)
+    const waiting = AbortSignal.any([signal, deadline])
+    this.#restartWaiters++
+    let lastOwner: string | undefined
+    try {
+      while (true) {
+        waiting.throwIfAborted()
+        if (this.#disposed) throw new Error('desktop: plugin activation manager is disposed')
+        if (this.#checking !== undefined) throw new Error('desktop: candidate Harness exited before transaction commit')
+        if (this.#operation !== undefined) {
+          await delay(1000, undefined, { signal: waiting })
+          continue
+        }
+        const lock = inspectProfileMutationLock(this.#options.home)
+        if (lock.state === 'malformed' || lock.state === 'unreadable') {
+          throw new Error(`desktop: Profile writer lock is ${lock.state}; inspect Diagnostics before retrying`)
+        }
+        const record = await this.#pending()
+        waiting.throwIfAborted()
+        if (lock.active || (record !== undefined && alive(record.producerPid))) {
+          if (lock.pid === process.pid && lock.workerActive !== true) {
+            throw new Error('desktop: retained Desktop lease requires transaction recovery, not automatic restart')
+          }
+          const owner = `pid=${String(lock.pid ?? record?.producerPid)} worker=${String(lock.workerPid ?? 'none')}`
+          if (lastOwner !== owner) this.#options.log?.(`Harness restart waiting for Profile writer ${owner}`)
+          lastOwner = owner
+          await delay(1000, undefined, { signal: waiting })
+          continue
+        }
+        if (record !== undefined) {
+          this.#options.log?.(`Recovering abandoned plugin transaction ${record.id} before Harness restart`)
+          const recovery = this.#options.command(['transaction', 'rollback', record.id])
+          this.#operation = recovery
+          try { await recovery } finally { if (this.#operation === recovery) this.#operation = undefined }
+          waiting.throwIfAborted()
+          if (await this.#pending() !== undefined) throw new Error('desktop: plugin transaction recovery did not settle its journal')
+          continue
+        }
+        this.#options.log?.('Profile writers settled; automatic Harness restart permitted')
+        return
+      }
+    } catch (error) {
+      if (deadline.aborted && !signal.aborted) throw new Error('desktop: Harness restart timed out after 15 minutes waiting for Profile writers', { cause: error })
+      throw error
+    } finally {
+      this.#restartWaiters--
+    }
   }
 
   /**
@@ -109,7 +175,7 @@ export class ProfileTransactionManager {
   start(): void {
     if (this.#timer !== undefined || this.#disposed) return
     this.#timer = setInterval(() => {
-      if (this.#operation !== undefined || this.#checking !== undefined) return
+      if (this.#restartWaiters > 0 || this.#operation !== undefined || this.#checking !== undefined) return
       this.#run(async () => {
         const record = await this.#pending()
         if (this.#disposed || record === undefined || alive(record.producerPid)) return
@@ -140,7 +206,7 @@ export class ProfileTransactionManager {
         throw new Error('desktop: prepared plugin transaction is not owned by this desktop')
       }
       const failure = await this.#activate(id, resume)
-      if (failure !== undefined) throw failure.error
+      if (failure !== undefined) throw new ProfileActivationRolledBackError(failure.error)
     })()
     this.#operation = operation
     try { await operation } finally { if (this.#operation === operation) this.#operation = undefined }

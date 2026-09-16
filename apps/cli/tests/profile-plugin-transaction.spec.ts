@@ -184,6 +184,19 @@ describe('staged Profile activation', () => {
     expect(readFileSync(join(f.profile, 'node_modules', 'generation'), 'utf8')).toBe('old')
   })
 
+  it('removes a generated bin link whose package target is already absent', () => {
+    const f = fixture()
+    const bin = join(f.candidateProfile, 'node_modules', '.bin')
+    mkdirSync(bin)
+    symlinkSync('../cloudflared/lib/cloudflared.js', join(bin, 'cloudflared'))
+    readyProfilePluginTransaction(f.home, 'web', f.record.id)
+
+    activateProfilePluginTransaction(f.home, 'web', f.record.id)
+
+    expect(existsSync(join(f.profile, 'node_modules', '.bin', 'cloudflared'))).toBe(false)
+    expect(readFileSync(join(f.profile, 'node_modules', 'generation'), 'utf8')).toBe('old')
+  })
+
   it.each(['workspace:*', 'file:../../../outside'])('rejects an unsafe %s source without activating it', (spec) => {
     const f = fixture()
     settleProfilePluginTransaction(f.home, 'web', f.record.id, false)

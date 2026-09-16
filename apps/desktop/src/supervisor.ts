@@ -13,6 +13,11 @@ const RESTART_MAX_DELAY_MS = 15_000
 const PRE_READY_EXIT_LIMIT = 3
 const STOP_TIMEOUT_MS = 10_000
 const DIAGNOSTIC_MODE_ELIGIBLE_MARKER = 'dsh: profile diagnostic mode eligible '
+const ONE_SHOT_ENVIRONMENT = new Set([
+  'DSH_DESKTOP_MUTATION_OWNER_PID', 'DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN',
+  'DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID', 'DSH_PLUGIN_SNAPSHOT_BATCH', 'DSH_PLUGIN_TRANSACTION_ORIGIN',
+  'DSH_DESKTOP_WEB_GENERATION', 'DSH_DESKTOP_WEB_RESTART_OWNER',
+])
 
 /** Observable lifecycle states for the desktop chrome. */
 export type HarnessState = 'starting' | 'ready' | 'restarting' | 'failed' | 'stopped'
@@ -54,6 +59,8 @@ export interface HarnessSupervisorOptions {
   terminateProcessTree?(processId: number, force: boolean): Promise<void>
   /** Test override for the bounded graceful shutdown interval. */
   stopTimeoutMs?: number
+  /** Settle external Profile writers before an automatic restart; deliberate resume bypasses this check. */
+  beforeRestart?(signal: AbortSignal): Promise<void>
 }
 
 /** Owns one restartable Harness child and its durable combined log. */
@@ -68,6 +75,8 @@ export class HarnessSupervisor {
   #diagnosticMode = false
   #primaryStartupFailure: string | undefined
   #stopping = false
+  #restartCheck: AbortController | undefined
+  #generation = 0
 
   constructor(options: HarnessSupervisorOptions) {
     this.#options = options
@@ -94,18 +103,21 @@ export class HarnessSupervisor {
 
   /** Start the child process; repeated calls while it is running are ignored. */
   start(): void {
-    if (this.#child !== undefined || this.#stopping || this.#failed) return
+    if (this.#child !== undefined || this.#stopping || this.#failed || this.#restartCheck !== undefined) return
+    const generation = ++this.#generation
     mkdirSync(dirname(this.#options.logPath), { recursive: true })
     this.#log ??= createWriteStream(this.#options.logPath, { flags: 'a' })
     this.#options.onState(this.#diagnosticMode
       ? 'failed'
       : this.#restartCount === 0 ? 'starting' : 'restarting')
 
-    const environment = {
+    // Resident plugins may spawn ordinary CLI commands, never inherit Desktop's one-shot authority.
+    const environment = Object.fromEntries(Object.entries({
       ...this.#options.environment,
       ...this.#options.launch.environment,
       ...(this.#diagnosticMode ? { DSH_PROFILE_DIAGNOSTIC_MODE: '1' } : {}),
-    } as Record<string, string>
+    }).filter(([key]) => !ONE_SHOT_ENVIRONMENT.has(key.toUpperCase()))) as Record<string, string>
+    environment.DSH_DESKTOP_WEB_RESTART_OWNER = String(process.pid)
     let child: RunningHarness
     try {
       child = this.#spawn(environment)
@@ -162,10 +174,27 @@ export class HarnessSupervisor {
       if (stderrTail?.includes(DIAGNOSTIC_MODE_ELIGIBLE_MARKER) === true) diagnosticModeEligible = true
       this.#log?.write(`[desktop] Harness exited code=${String(code)} signal=${String(signal)}\n`)
       if (this.#child?.token === child.token) this.#child = undefined
+      if (generation !== this.#generation) return
       if (this.#stopping) {
         this.#options.onState('stopped')
         return
       }
+      const restartCheck = new AbortController()
+      this.#restartCheck = restartCheck
+      try {
+        this.#log?.write('[desktop] Unexpected Harness exit; checking Profile writers before restart.\n')
+        await this.#options.beforeRestart?.(restartCheck.signal)
+      } catch (error) {
+        if (!restartCheck.signal.aborted && generation === this.#generation) {
+          this.#failed = true
+          const message = `Harness restart blocked: ${error instanceof Error ? error.message : String(error)}`
+          this.#reportStartupFailure(message, `[desktop] ${message}\n`)
+        }
+        return
+      } finally {
+        if (this.#restartCheck === restartCheck) this.#restartCheck = undefined
+      }
+      if (restartCheck.signal.aborted || generation !== this.#generation) return
       if (!ready) {
         if (diagnosticModeEligible && !this.#diagnosticMode) {
           this.#primaryStartupFailure = spawnError === undefined
@@ -291,6 +320,10 @@ export class HarnessSupervisor {
   /** Stop automatic restarts and give the child a bounded graceful shutdown. */
   async stop(): Promise<void> {
     this.#stopping = true
+    this.#generation++
+    this.#log?.write('[desktop] Deliberate Harness stop; cancelling automatic restart.\n')
+    this.#restartCheck?.abort()
+    this.#restartCheck = undefined
     if (this.#restartTimer !== undefined) {
       clearTimeout(this.#restartTimer)
       this.#restartTimer = undefined

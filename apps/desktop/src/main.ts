@@ -50,7 +50,7 @@ import { ensurePackagedRuntime, packagedRuntimeArchiveRoot } from './packaged-ru
 import { HarnessSupervisor, type HarnessFailure, type HarnessState } from './supervisor.ts'
 import { readRecoveryFailureSummary, type RecoveryFailureSummary } from './recovery-failure.ts'
 import { clearDeadModuleFallbackLock, inspectModuleFallbackLock } from './module-fallback-lock.ts'
-import { ProfileTransactionManager } from './profile-transaction-manager.ts'
+import { ProfileActivationRolledBackError, ProfileTransactionManager } from './profile-transaction-manager.ts'
 import { terminateWindowsProcessTree } from './windows-process-tree.ts'
 import { revealHarnessLog, type OpenLogResult } from './log-reveal.ts'
 import { createNotificationThrottle, desktopNotificationDictionary } from './notifications.ts'
@@ -3089,7 +3089,7 @@ async function startApplication(): Promise<void> {
     clearCandidateEnvironment()
     if (profileTransactionManager === undefined) throw new Error('desktop: plugin activation manager unavailable')
     try { await profileTransactionManager.activatePrepared(id, resume) } catch (error) {
-      desktopCandidateId = id
+      if (!(error instanceof ProfileActivationRolledBackError)) desktopCandidateId = id
       throw error
     }
     if (resume && !await profileTransactionManager.waitForSettlement(id)) {
@@ -3133,9 +3133,11 @@ async function startApplication(): Promise<void> {
       await appendDesktopStartupLog('First-start bundled plugin preparation committed after normal readiness.')
     },
     onActivation: () => {
+      void appendDesktopStartupLog('Desktop candidate activation requested; deliberately stopping Harness.')
       cancelBootableSnapshot()
       publishStartupProgress({ stage: 'starting-harness', progress: 88 })
     },
+    log: (message) => { void appendDesktopStartupLog(message) },
     onRollback: (error) => {
       const detail = error instanceof Error ? error.message : String(error)
       void appendDesktopStartupLog(`Plugin activation failed; the previous Profile was restored: ${detail}`)
@@ -3673,10 +3675,9 @@ async function startApplication(): Promise<void> {
   }
   publishStartupProgress({ stage: 'starting-harness', progress: 88 })
   await appendDesktopStartupLog('Starting Harness supervisor.')
-  const launch = resolveHarnessLaunch({
-    ...harnessEnvironment, DSH_DESKTOP_MUTATION_OWNER_PID: String(process.pid),
-  }, launchOptions)
-  profileTransactionManager.start()
+  const launch = resolveHarnessLaunch(harnessEnvironment, launchOptions)
+  const transactionManager = profileTransactionManager
+  transactionManager.start()
   const notificationCopy = desktopNotificationDictionary(app.getLocale())
   const allowNotification = createNotificationThrottle(5 * 60_000)
   let recovering = false
@@ -3688,6 +3689,7 @@ async function startApplication(): Promise<void> {
   }
   supervisor = new HarnessSupervisor({
     launch,
+    beforeRestart: signal => transactionManager.waitForExternalWriters(signal),
     onSpawn: (pid) => { observeProcess(pid, 'Harness') },
     logPath: harnessLogPath,
     environment: { ...harnessEnvironment },
