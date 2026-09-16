@@ -656,20 +656,24 @@ export class DesktopReleaseDownloader {
           throwIfUserCancelled(signal)
           if (!isRetryableNetworkError(fallbackError)) throw fallbackError
           logFallbackFailure(fallbackError)
+          let mirrorDownloaded = false
           for (const mirror of GITHUB_DOWNLOAD_MIRRORS) {
             const mirroredUrl = `${mirror}/${asset.browserUrl}`
             const resumeFrom = accumulator.transferredBytes
             this.#publish({ phase: 'switching', version, fileName: asset.name, transferredBytes: resumeFrom, totalBytes: asset.size, resumeFromBytes: resumeFrom })
             try {
               await this.#downloadInstallerAttempt('github-mirror', this.#systemFetch, mirroredUrl, asset, version, file, accumulator, signal, accumulator.resumeValidator)
-              return
+              mirrorDownloaded = true
+              break
             } catch (mirrorError) {
               throwIfUserCancelled(signal)
               if (!isRetryableNetworkError(mirrorError)) throw mirrorError
               logFallbackFailure(mirrorError)
             }
           }
-          throw new Error('All download channels failed. Enable a system proxy or retry when GitHub mirrors are reachable.')
+          if (!mirrorDownloaded) {
+            throw new Error('All download channels failed. Enable a system proxy or retry when GitHub mirrors are reachable.')
+          }
         }
       }
       if (accumulator.transferredBytes !== asset.size) throw new Error('Release installer size did not match its metadata.')
