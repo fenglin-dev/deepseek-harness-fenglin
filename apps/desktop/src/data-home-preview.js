@@ -254,8 +254,8 @@
       ? value.communityReuseSummary : value.officialReuseSummary
     const reusing = state.operation === 'reused'
     text('#operation-sharing', reusing ? value.reuseSharing : value.importSharing)
-    text('#operation-plugins', reusing ? value.reusePlugins : state.origin === 'community' ? value.sourcePlugins : value.importPlugins)
-    text('#operation-builds', reusing || state.origin === 'community' ? value.reuseBuilds : value.importBuilds)
+    text('#operation-plugins', reusing ? value.reusePlugins : value.importPlugins)
+    text('#operation-builds', reusing ? value.reuseBuilds : value.importBuilds)
     text('#risk', value.risk)
     required('#risk').hidden = state.step !== 'operation' || !reusing || state.origin !== 'official'
     textAll('[data-copy="destinationTitle"]', value.destinationTitle)
@@ -385,8 +385,9 @@
           { title: value.officialChoice, tone: 'official', values: [value.officialLocation,
             value.officialRetained, value.officialPlugins, value.officialSuitable] },
           { title: value.communityChoice, tone: 'community', values: [value.communityLocation,
-            `${value.reuseTitle}: ${value.retainedData}\n\n${value.importTitle}: ${value.retainedData} ${value.communityCopySummary}`,
-            value.retainedPluginsBoth, value.communitySuitable] },
+            `${value.importTitle}: ${value.officialRetained}\n\n${value.reuseTitle}: ${value.retainedData}`,
+            `${value.importTitle}: ${value.officialPlugins}\n\n${value.reuseTitle}: ${value.reusePlugins}`,
+            value.communitySuitable] },
           { title: value.freshChoice, tone: 'fresh', values: [value.freshLocation, value.freshSharing, value.freshPlugins, value.freshSuitable] },
         ], 'source')
     } else if (state.step === 'operation') {
@@ -395,7 +396,7 @@
       renderComparisonTable(value.operationTitle, state.origin === 'official'
         ? value.officialOperationSummary : value.operationSummary,
         [value.locationLabel, value.sharingLabel, value.pluginsLabel, value.buildsLabel, value.suitableLabel], [
-          { title: state.origin === 'official' ? value.officialImportTitle : value.importTitle, tone: 'copy', values: [value.importSummary, value.importSharing, state.origin === 'community' ? value.sourcePlugins : value.importPlugins, state.origin === 'community' ? value.reuseBuilds : value.importBuilds, copiedSummary] },
+          { title: state.origin === 'official' ? value.officialImportTitle : value.importTitle, tone: 'copy', values: [value.importSummary, value.importSharing, value.importPlugins, value.importBuilds, copiedSummary] },
           { title: value.reuseTitle, tone: 'reuse', values: [value.reuseSummary, value.reuseSharing, value.reusePlugins, value.reuseBuilds, reusedSummary] },
         ], 'option')
     } else {

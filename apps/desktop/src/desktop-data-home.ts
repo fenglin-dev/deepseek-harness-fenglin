@@ -6,7 +6,6 @@ import {
 } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parseDocument } from 'yaml'
-import { copyCommunityHome } from './community-data-copy.ts'
 import {
   extractImportedPluginRestorePlan,
   writeImportedPluginRestorePlan,
@@ -19,6 +18,7 @@ const COMMUNITY_PROFILE_IDENTITY_SCHEMA = 'flaqai/open-deepseek-harness-desktop/
 export const COMMUNITY_PROFILE_IDENTITY_FILE = '.open-deepseek-harness-desktop.json'
 const ONBOARDING_SETTINGS_NAMESPACE = 'ui-onboarding'
 export const IMPORTED_ONBOARDING_RESET_VERSION = '1'
+export const PORTABLE_PLUGIN_RESTORE_VERSION = '1'
 const IMPORTABLE_ENTRIES = Object.freeze([
   '.agent-presets',
   '.credentials.yaml',
@@ -92,7 +92,15 @@ export interface DesktopDataHomeSetup {
   readonly dshHome: string
   readonly source?: string
   readonly importedOnboardingReset?: string
+  readonly portablePluginRestore?: string
   readonly completedAt: string
+}
+
+/** Older community copies contain a complete Profile and predate portable restore plans. */
+export function shouldPreserveLegacyCopiedProfile(
+  setup: DesktopDataHomeSetup | undefined,
+): boolean {
+  return setup?.mode === 'copied' && setup.portablePluginRestore !== PORTABLE_PLUGIN_RESTORE_VERSION
 }
 
 /** User-facing classification of the active Harness home. */
@@ -631,13 +639,12 @@ export function importOfficialDesktopData(
   return copyIndependentDesktopData(officialDshHome, targetDshHome, true)
 }
 
-/** Copy a compatible community desktop configuration without replaying first-run onboarding. */
-export async function copyCommunityDesktopData(
+/** Import compatible community desktop data without plugin runtimes or replaying onboarding. */
+export function copyCommunityDesktopData(
   communityDshHome: string,
   targetDshHome: string,
 ): Promise<DesktopDataImportResult> {
-  const copied = await copyCommunityHome(communityDshHome, targetDshHome)
-  return { copied, skippedSymlinks: [], restorablePlugins: 0, pluginRestoreIssues: [] }
+  return copyIndependentDesktopData(communityDshHome, targetDshHome, false)
 }
 
 /**
@@ -660,7 +667,9 @@ export async function readDesktopDataHomeSetup(path: string): Promise<DesktopDat
       || typeof value.completedAt !== 'string'
       || (value.source !== undefined && typeof value.source !== 'string')
       || (value.importedOnboardingReset !== undefined
-        && value.importedOnboardingReset !== IMPORTED_ONBOARDING_RESET_VERSION)) return undefined
+        && value.importedOnboardingReset !== IMPORTED_ONBOARDING_RESET_VERSION)
+      || (value.portablePluginRestore !== undefined
+        && value.portablePluginRestore !== PORTABLE_PLUGIN_RESTORE_VERSION)) return undefined
     return value as DesktopDataHomeSetup
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError) return undefined
@@ -699,6 +708,7 @@ export function desktopDataHomeSetup(
     dshHome,
     ...(source === undefined ? {} : { source }),
     ...(mode === 'imported' ? { importedOnboardingReset: IMPORTED_ONBOARDING_RESET_VERSION } : {}),
+    ...(mode === 'copied' ? { portablePluginRestore: PORTABLE_PLUGIN_RESTORE_VERSION } : {}),
     completedAt: new Date().toISOString(),
   }
 }

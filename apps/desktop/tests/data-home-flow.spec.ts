@@ -196,8 +196,8 @@ describe('configuration source and operation flow', () => {
     expect(document.querySelectorAll('#comparison-head th')).toHaveLength(4)
     expect(document.querySelectorAll('#comparison-body th')[1]?.textContent).toBe('保留范围')
     expect(document.querySelectorAll('#comparison-body tr')[1]?.textContent).toContain('历史对话、设置、凭据、Agent 预设、Skill、插件及插件配置全部保留。')
-    expect(document.querySelectorAll('#comparison-body tr')[2]?.textContent).toContain('全部保留。')
-    expect(document.querySelectorAll('#comparison-body tr')[2]?.textContent).toContain('两种方式均全部保留。')
+    expect(document.querySelectorAll('#comparison-body tr')[2]?.textContent).toContain('不复制插件本体')
+    expect(document.querySelectorAll('#comparison-body tr')[2]?.textContent).toContain('直接使用所选目录中已有插件')
     button('#acknowledge').click()
 
     button('#continue').click()
@@ -214,6 +214,8 @@ describe('configuration source and operation flow', () => {
     button('#acknowledge').click()
 
     button('[data-operation="imported"]').click()
+    expect(document.querySelector('#operation-plugins')?.textContent).toContain('插件恢复清单')
+    expect(document.querySelector('#operation-builds')?.textContent).toContain('精确 allowBuilds')
     button('#continue').click()
     expect(step()).toBe('destination')
     button('#help').click()

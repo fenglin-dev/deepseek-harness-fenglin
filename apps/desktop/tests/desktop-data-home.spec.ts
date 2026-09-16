@@ -13,6 +13,7 @@ import {
   importOfficialDesktopData,
   inspectDesktopDataHomeStatus,
   IMPORTED_ONBOARDING_RESET_VERSION,
+  PORTABLE_PLUGIN_RESTORE_VERSION,
   readDesktopDataHomeSetup,
   resetImportedDesktopOnboarding,
   resolveDesktopApplicationDataRoot,
@@ -24,6 +25,7 @@ import {
   resolveEmptyDesktopDataHome,
   resolveRecordedDesktopDataHome,
   resolveDesktopDataHomeLayout,
+  shouldPreserveLegacyCopiedProfile,
   writeDesktopDataHomeSetup,
 } from '../src/desktop-data-home.ts'
 
@@ -182,26 +184,54 @@ describe('desktop data home', () => {
     expect(await hasDesktopData(target)).toBe(true)
   })
 
-  it('copies a community desktop home without replaying its completed onboarding', async () => {
+  it('imports community data and a plugin restore plan without copying its plugin runtime', async () => {
     const root = await fixture()
     const community = join(root, 'community', 'dsh-home')
     const target = join(root, 'copied', 'dsh-home')
-    await mkdir(community, { recursive: true })
+    await mkdir(join(community, 'profiles', 'web', 'node_modules', 'plugin'), { recursive: true })
+    await mkdir(join(community, '.pnpm-store', 'v11', 'files'), { recursive: true })
     await writeFile(join(community, 'settings.yaml'), [
       'locale: zh',
       'ui-onboarding:',
       '  welcomeNoticeVersion: 2026-08-19.1',
       '',
     ].join('\n'))
+    await writeFile(join(community, 'profiles', 'web', 'package.json'), JSON.stringify({
+      dependencies: { plugin: '^2.0.0' },
+      dsh: { profile: { bundles: ['plugin'] } },
+    }))
+    await writeFile(join(community, 'profiles', 'web', 'pnpm-workspace.yaml'), 'allowBuilds:\n  native: false\n')
+    await writeFile(join(community, 'profiles', 'web', 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+    await writeFile(join(community, 'profiles', 'web', 'node_modules', 'plugin', 'index.js'), 'runtime')
+    await writeFile(join(community, '.pnpm-store', 'v11', 'files', 'content'), 'store')
 
-    await copyCommunityDesktopData(community, target)
+    const result = await copyCommunityDesktopData(community, target)
 
     const settings = await readFile(join(target, 'settings.yaml'), 'utf8')
     expect(settings).toContain('ui-onboarding')
     expect(settings).toContain('welcomeNoticeVersion')
+    expect(result).toMatchObject({ restorablePlugins: 1, pluginRestoreIssues: [] })
+    expect(JSON.parse(await readFile(join(target, 'imported-plugin-restore.v1.json'), 'utf8'))).toMatchObject({
+      profile: 'web',
+      allowBuilds: { native: false },
+      entries: [{ packageName: 'plugin', declaredSpec: '^2.0.0', state: 'pending' }],
+    })
+    await expect(readFile(join(target, 'profiles', 'web', 'package.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(join(target, '.pnpm-store', 'v11', 'files', 'content'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
     const setup = desktopDataHomeSetup('copied', target, community)
     expect(setup.importedOnboardingReset).toBeUndefined()
+    expect(setup.portablePluginRestore).toBe(PORTABLE_PLUGIN_RESTORE_VERSION)
     expect(resolveRecordedDesktopDataHome(resolveDesktopDataHomeLayout(join(root, 'app'), root, true, {}), setup)).toBe(target)
+  })
+
+  it('preserves only legacy complete community copies without a portable restore plan', () => {
+    const copied = desktopDataHomeSetup('copied', '/target', '/source')
+    const { portablePluginRestore, ...legacy } = copied
+    expect(portablePluginRestore).toBe(PORTABLE_PLUGIN_RESTORE_VERSION)
+    expect(shouldPreserveLegacyCopiedProfile(legacy)).toBe(true)
+    expect(shouldPreserveLegacyCopiedProfile(copied)).toBe(false)
+    expect(shouldPreserveLegacyCopiedProfile(desktopDataHomeSetup('imported', '/target', '/source'))).toBe(false)
+    expect(shouldPreserveLegacyCopiedProfile(desktopDataHomeSetup('reused', '/source', '/source'))).toBe(false)
   })
 
   it('refuses a non-empty destination and records setup atomically', async () => {
@@ -219,6 +249,11 @@ describe('desktop data home', () => {
     expect(setup.importedOnboardingReset).toBe(IMPORTED_ONBOARDING_RESET_VERSION)
     await writeDesktopDataHomeSetup(setupPath, setup)
     expect(await readDesktopDataHomeSetup(setupPath)).toEqual(setup)
+    const portableCopy = desktopDataHomeSetup('copied', target, official)
+    await writeDesktopDataHomeSetup(setupPath, portableCopy)
+    expect(await readDesktopDataHomeSetup(setupPath)).toEqual(portableCopy)
+    await writeFile(setupPath, JSON.stringify({ ...portableCopy, portablePluginRestore: 'unsupported' }))
+    expect(await readDesktopDataHomeSetup(setupPath)).toBeUndefined()
     await writeFile(setupPath, '{broken')
     expect(await readDesktopDataHomeSetup(setupPath)).toBeUndefined()
   })

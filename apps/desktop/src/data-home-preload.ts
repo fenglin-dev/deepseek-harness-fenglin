@@ -248,10 +248,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const renderStep = (): void => {
     const destinationVisible = step === 'destination'
     const operationVisible = step === 'operation'
-    const originalDetail = detailsFor(language)[selected]
-    const detail = origin === 'community' && selected === 'imported'
-      ? { ...originalDetail, plugins: sourceCopyFor(language).retainedPlugins, builds: detailsFor(language).reused.builds }
-      : originalDetail
+    const detail = detailsFor(language)[selected]
     const sourceCopy = sourceCopyFor(language)
     operationSummary.textContent = origin === 'official'
       ? sourceCopy.officialOperationSummary : sourceCopy.operationSummary
@@ -578,8 +575,8 @@ window.addEventListener('DOMContentLoaded', () => {
         ] },
         { title: sourceCopy.communityTitle, tone: 'community', values: [
           sourceCopy.communityLocation,
-          `${copy.reuseTitle}: ${sourceCopy.retainedData}\n\n${copy.importTitle}: ${sourceCopy.retainedData} ${sourceCopy.communityCopySummary}`,
-          sourceCopy.retainedPluginsBoth,
+          `${copy.importTitle}: ${copy.compareImportLocation}\n\n${copy.reuseTitle}: ${sourceCopy.retainedData}`,
+          `${copy.importTitle}: ${copy.compareImportPlugins}\n\n${copy.reuseTitle}: ${copy.compareReusePlugins}`,
           sourceCopy.communitySuitable,
         ] },
         { title: copy.freshTitle, tone: 'fresh', values: [
@@ -599,8 +596,7 @@ window.addEventListener('DOMContentLoaded', () => {
       ], [
         { title: origin === 'official' ? sourceCopy.officialImportTitle : copy.importTitle, tone: 'copy', values: [
           copied.location, copied.sharing,
-          origin === 'community' ? sourceCopy.retainedPlugins : copied.plugins,
-          origin === 'community' ? reused.builds : copied.builds, copiedSummary,
+          copied.plugins, copied.builds, copiedSummary,
         ] },
         { title: copy.reuseTitle, tone: 'reuse', values: [
           reused.location, reused.sharing, reused.plugins, reused.builds, reusedSummary,

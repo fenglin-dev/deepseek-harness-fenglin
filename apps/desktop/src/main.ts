@@ -110,6 +110,7 @@ import {
   resolveUnidentifiedCommunityDataHomeSource,
   resolveDesktopDataHomeRecoverySelection,
   resolveEmptyDesktopDataHome,
+  shouldPreserveLegacyCopiedProfile,
   resolveRecordedDesktopDataHome,
   resolveDesktopDataHomeLayout,
   writeDesktopDataHomeSetup,
@@ -1625,7 +1626,11 @@ async function startApplication(): Promise<void> {
   }
   applyStartupDockIcon()
   const dshHome = await prepareDesktopDshHome(DESKTOP_DATA_HOME)
-  const preserveCopiedPlugins = (await readDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile))?.mode === 'copied'
+  const dataHomeSetup = await readDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile)
+  // Releases before the portable community import copied the complete Profile and did not write a
+  // restore plan. Keep those deployments intact; new copies carry a plan and use normal first-start
+  // preparation so packaged presets come from local archives before optional plugin restoration.
+  const preserveCopiedPlugins = shouldPreserveLegacyCopiedProfile(dataHomeSetup)
   activeMenuHome = dshHome
   const persistentServicesPath = join(app.getPath('userData'), 'managed-processes', 'persistent-services-v1.json')
   persistentServiceAuthority = new FilePersistentServiceAuthorizer(
