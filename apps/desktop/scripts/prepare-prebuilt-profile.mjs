@@ -110,7 +110,7 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
     PATH: `${join(node, '..')}${delimiter}${process.env.PATH ?? ''}` })
   const command = (home, args) => runHarnessInvocation({ command: node,
     args: [join(harnessRoot, 'lib/bin.js'), 'plugin', '--profile', 'web', ...args], environment: environment(home), cwd: harnessRoot,
-  }, { kind: 'prebuilt-profile-prepare', timeoutMs: 600_000, signal: new AbortController().signal })
+  }, { kind: 'prebuilt-profile-prepare', timeoutMs: 20 * 60_000, signal: new AbortController().signal })
   for (const entry of manifest.plugins.filter(entry => entry.installPolicy === 'startup')) {
     await seedBundledPlugin({ entry, resourcesDirectory: resources, dshHome: destination,
       prepare: async () => { for (const name of entry.approvedBuilds ?? []) await command(destination, ['approve-build', name]) },
