@@ -618,17 +618,21 @@ export async function seedBundledPlugin(options: SeedBundledPluginOptions): Prom
     return 'unresolved'
   }
   const packagedAhead = packagedVersion !== null && installedVersion !== null && gt(packagedVersion, installedVersion)
+  const versionMismatch = dependency.installedVersion !== undefined
+    && dependency.installedVersion !== entry.version
   const shouldUpgradeManagedArchive = dependency.desktopOwned
     && marker !== undefined
     && ownership === 'desktop-archive'
-    && packagedAhead
+    && (packagedAhead || versionMismatch)
   const shouldUpgradeManagedRegistry = dependency.registryManaged
-    && packagedAhead
+    && (packagedAhead || (versionMismatch && exactHistoricalRegistry))
     && (ownership === 'desktop-registry' || exactHistoricalRegistry)
+  // Desktop-owned archives always snap to the packaged pin so marker/actual/preset stay aligned.
   const shouldInstall = restoreBundledVersion
     || !dependency.present
     || shouldUpgradeManagedArchive
     || shouldUpgradeManagedRegistry
+    || (dependency.desktopOwned && versionMismatch && !installedIsNewer)
 
   if (!shouldInstall) {
     await prepare?.(entry)

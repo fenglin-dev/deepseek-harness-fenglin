@@ -59,7 +59,7 @@ import {
   createDesktopPreferencesStore, DEFAULT_DESKTOP_PREFERENCES, parseDesktopPreferencesPatch,
   type DesktopPreferences, type DesktopPreferencesStore,
 } from './preferences.ts'
-import { DesktopReleaseChecker, fetchGitHubReleases, isAllowedReleaseUrl, type DesktopReleaseStatus } from './release-checker.ts'
+import { DesktopReleaseChecker, fetchGitHubReleases, isAllowedReleaseUrl, selectRelease, type DesktopReleaseStatus } from './release-checker.ts'
 import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus, type ReleaseFetch } from './release-downloader.ts'
 import { fetchCnbReleaseIndex, isAllowedCnbUrl, selectCnbRelease } from './cnb-release-source.ts'
 import {
@@ -1804,7 +1804,18 @@ async function startApplication(): Promise<void> {
       ? new DesktopReleaseChecker(app.getVersion(), undefined, async () => {
         return selectCnbRelease(app.getVersion(), await fetchCnbReleaseIndex(fetcher))
       })
-      : new DesktopReleaseChecker(app.getVersion(), () => fetchGitHubReleases(fetcher))
+      : new DesktopReleaseChecker(app.getVersion(), undefined, async () => {
+        try {
+          return selectRelease(app.getVersion(), await fetchGitHubReleases(fetcher))
+        } catch (githubError) {
+          // api.github.com is usually reachable; when it is not, fall back to CNB discovery.
+          try {
+            return selectCnbRelease(app.getVersion(), await fetchCnbReleaseIndex(fetcher))
+          } catch {
+            throw githubError
+          }
+        }
+      })
     releaseDownloader = new DesktopReleaseDownloader({
       platform: process.platform, arch: process.arch,
       downloadDirectory: join(app.getPath('userData'), 'updates'),
@@ -1818,6 +1829,10 @@ async function startApplication(): Promise<void> {
     })
     releaseDownloader.subscribe((status) => { mainSurface?.send('dsh:desktop:release-download-status', status) })
     stopReleaseChecks = releaseChecker.startPolling()
+    // Re-check immediately after proxy/source switches so the UI does not keep a stale failure.
+    void releaseChecker.check().then(status => {
+      mainSurface?.send('dsh:desktop:release-status', status)
+    }).catch(() => {})
   }
   await configureReleaseServices()
   externalToolCompatibility = new ExternalToolCompatibilityManager({
