@@ -149,6 +149,11 @@ async function injectWorkspaceClosure() {
   await indexWorkspacePackages(repositoryRoot, packages)
   const rootManifest = JSON.parse(await readFile(join(repositoryRoot, 'apps', 'cli', 'package.json'), 'utf8'))
   const queue = [...workspaceDependencies(rootManifest, packages)]
+  // Desktop process recovery resolves process-control from the packaged harness.
+  // apps/cli currently lists this package under devDependencies only.
+  if (packages.has('@deepseek-ai/dsh-subprocess-local')) {
+    queue.push('@deepseek-ai/dsh-subprocess-local')
+  }
   const injected = new Set()
   while (queue.length > 0) {
     const name = queue.shift()
