@@ -1642,7 +1642,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Owner share of the header title seat (the shell supplies nothing). */\nexport interface SettingsHeaderOwnerProps {\n  /** Marker field: header owner props are intentionally empty. */\n  children?: never\n}',
+      '/** Owner share of header actions that may follow the selected settings page. */\nexport interface SettingsActionOwnerProps {\n  /** Currently selected settings section, or undefined on the phone section list. */\n  activeSectionId?: string\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [
@@ -1661,6 +1661,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-desktop-shell DesktopLogDirectoryAction id \'desktop-log-directory\'',
       'client-ui-desktop-shell DesktopUpdateBadge id \'desktop-update\'',
       'client-ui-settings-general SettingsDocumentAction id \'open-document\'',
+      'client-ui-workspace ArchivedSessionsAction id \'restore-archived-sessions\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'settings.action\', () => ctx.slots.register(\n      { name: \'settings.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
