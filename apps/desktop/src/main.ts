@@ -79,6 +79,7 @@ import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycl
 import { ApplicationMenuController } from './application-menu-controller.ts'
 import { CLIENT_COMMANDS, menuCopy, type DesktopCommand } from './application-menu.ts'
 import { inspectProfileMutationLock, menuMutationActive } from './menu-mutation-guard.ts'
+import { candidatePreparationUsesLease, CANDIDATE_PREPARATION_TIMEOUT_MS, prepareDesktopCandidate } from './candidate-preparation.ts'
 import { isDesktopRenderer, withDesktopWindowMetadata } from './window-frame.ts'
 import {
   createDesktopWindowSurface,
@@ -3026,15 +3027,35 @@ async function startApplication(): Promise<void> {
   const beginDesktopCandidate = async (): Promise<void> => {
     if (desktopCandidateId !== undefined) return
     cancelBootableSnapshot()
-    const output = await runDesktopInvocation(resolveHarnessInvocation({
-      ...harnessEnvironment, DSH_HOME: dshHome, DSH_DESKTOP_MUTATION_OWNER_PID: String(process.pid),
-      ...(supervisor === undefined ? { DSH_PLUGIN_SNAPSHOT_BATCH: '1' } : {}),
-    }, ['plugin', '--profile', 'web', 'transaction', 'prepare'], launchOptions), 'plugin-candidate-prepare', 60_000)
-    const parsed = parsePluginSnapshotJson(output) as { id?: unknown }
-    if (typeof parsed.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(parsed.id)) {
-      throw new Error('desktop: invalid prepared transaction ID')
-    }
-    selectCandidate(parsed.id)
+    const preparationStartedAt = Date.now()
+    publishStartupProgress({ stage: 'configuring-plugin', progress: startupProgress.progress,
+      startedAt: preparationStartedAt, deadlineAt: preparationStartedAt + CANDIDATE_PREPARATION_TIMEOUT_MS })
+    await appendDesktopStartupLog('Preparing plugin candidate: snapshot metadata and copy installed dependencies.')
+    const id = await prepareDesktopCandidate({
+      prepare: id => runDesktopInvocation(resolveHarnessInvocation({
+        ...harnessEnvironment, DSH_HOME: dshHome, DSH_DESKTOP_MUTATION_OWNER_PID: String(process.pid),
+        ...(supervisor === undefined ? { DSH_PLUGIN_SNAPSHOT_BATCH: '1' } : {}),
+      }, ['plugin', '--profile', 'web', 'transaction', 'prepare', id], launchOptions),
+      'plugin-candidate-prepare', CANDIDATE_PREPARATION_TIMEOUT_MS),
+      parse: output => parsePluginSnapshotJson(output) as { id?: unknown },
+      cleanup: async (id) => {
+        const environment = { ...harnessEnvironment, DSH_HOME: dshHome,
+          DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN: undefined, DSH_PLUGIN_TRANSACTION_ORIGIN: undefined }
+        const output = await runDesktopInvocation(resolveHarnessInvocation(environment,
+          ['plugin', '--profile', 'web', 'transaction', 'status'], launchOptions), 'plugin-candidate-status', 15_000, [0], true)
+        const record = parsePluginSnapshotJson(output) as { id?: unknown; producerPid?: unknown; phase?: unknown } | null
+        if (record === null) return
+        const leased = candidatePreparationUsesLease(id, process.pid, record, inspectProfileMutationLock(dshHome))
+        await runDesktopInvocation(resolveHarnessInvocation({ ...environment, ...(leased ? { DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN: id } : {}) },
+          ['plugin', '--profile', 'web', 'transaction', 'rollback', id], launchOptions), 'plugin-candidate-abort', 60_000, [0], true)
+        if (leased) await runDesktopInvocation(resolveHarnessInvocation({ ...environment, DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN: id },
+          ['plugin', '--profile', 'web', 'snapshot', 'end-restore-lease'], launchOptions), 'plugin-candidate-release', 15_000, [0], true)
+        await appendDesktopStartupLog('Interrupted plugin candidate preparation rolled back after worker exit.')
+      },
+      cleanupFailed: () => { startupSafety.rollbackFailed = true },
+    })
+    await appendDesktopStartupLog(`Plugin candidate prepared in ${Date.now() - preparationStartedAt}ms.`)
+    selectCandidate(id)
   }
   const clearCandidateEnvironment = (): void => {
     desktopCandidateId = undefined
@@ -3047,11 +3068,11 @@ async function startApplication(): Promise<void> {
     const id = desktopCandidateId
     if (id === undefined) return
     const environment = candidateEnvironment(id)
-    clearCandidateEnvironment()
     await runDesktopInvocation(resolveHarnessInvocation(environment,
       ['plugin', '--profile', 'web', 'transaction', 'rollback', id], launchOptions), 'plugin-candidate-discard', 60_000, [0], true)
     await runDesktopInvocation(resolveHarnessInvocation(environment,
       ['plugin', '--profile', 'web', 'snapshot', 'end-restore-lease'], launchOptions), 'plugin-candidate-release', 15_000, [0], true)
+    clearCandidateEnvironment()
   }
   const activateDesktopCandidate = async (resume: boolean): Promise<void> => {
     const id = desktopCandidateId

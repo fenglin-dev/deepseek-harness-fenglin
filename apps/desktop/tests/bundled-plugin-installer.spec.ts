@@ -10,6 +10,7 @@ import {
   type BundledPluginManifest,
 } from '../src/bundled-plugin-installer.ts'
 import type { BundledPluginManifestEntry } from '../src/bundled-plugin-seed.ts'
+import { CandidatePreparationError } from '../src/candidate-preparation.ts'
 
 const roots: string[] = []
 
@@ -157,6 +158,22 @@ describe('BundledPluginInstaller', () => {
     expect(transactionCalls).toHaveBeenCalledTimes(2)
     expect(onFailure).toHaveBeenCalledOnce()
     expect(install).toHaveBeenCalledOnce()
+  })
+
+  it('defers the rest of a batch after shared preparation fails, including first start', async () => {
+    const f = await fixture()
+    const install = successfulInstall(f.root)
+    const prepare = vi.fn(async () => { throw new CandidatePreparationError('copy timed out') })
+    const onStartupDeferred = vi.fn(async () => {})
+    const installer = new BundledPluginInstaller({
+      manifest: twoStartupPlugins(f.manifest), resourcesDirectory: f.resourcesDirectory,
+      dshHome: join(f.root, 'home'), install, requireCompleteStartup: true,
+      withStartupTransaction: prepare, onStartupDeferred,
+    })
+    expect(await installer.seedStartup()).toHaveLength(2)
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(install).not.toHaveBeenCalled()
+    expect(onStartupDeferred).toHaveBeenCalledWith(expect.objectContaining({ packageName: 'startup-two' }), 'preparation-failed')
   })
 
   it('skips plugins that have not started when the total startup budget is exhausted', async () => {

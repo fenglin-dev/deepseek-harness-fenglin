@@ -18,6 +18,10 @@ Recovery inventory orders uniquely attributed plugins first. If a recovery-owned
 
 Before diagnostic removal prepares another candidate, the transaction manager settles any retained journal. It reclaims a live lease only when the current Desktop owns it and no worker remains, rolls back without resuming Harness, and releases the lease before removal continues. A foreign live owner or worker still blocks the mutation.
 
+Desktop allocates the candidate transaction UUID before invoking preparation. Failed preparation can therefore recover its own `preparing` journal even without CLI output. Recovery requires confirmed command-tree exit, matching transaction and producer identities, and no foreign live lock. CLI cleanup also matches the requested UUID, so a rejected preparation cannot settle another attempt owned by the same desktop. Desktop retains its selected candidate until rollback and lease release finish.
+
+Dependency copying has a five-minute command deadline because a large existing Profile can exceed a one-minute deadline on a slow disk. The startup view identifies plugin preparation and logs its duration. A shared preparation failure defers remaining startup mutations instead of retrying the same copy per preset. Ordinary independent plugin failures keep their existing policy; mandatory first preparation still requires the complete preset set. Snapshot metadata capture does not copy the dependency tree.
+
 ## Alternatives considered
 
 **Delete all Electron session data.** This also removes unrelated site state and treats a narrowly identifiable cookie leak as broad user-data corruption.
@@ -27,6 +31,8 @@ Before diagnostic removal prepares another candidate, the transaction manager se
 **Regenerate every dependency with pnpm after activation.** This adds network and build-script work after active state changes. Stabilizing only external links is bounded and preserves the already verified candidate.
 
 **Disable removal for healthy plugins.** Recovery remains a general manual tool, so healthy entries stay removable; attribution-first ordering and an explicit warning reduce accidental removal without taking control away from the user.
+
+**Delete journals on any timeout or remove large presets.** Neither proves ownership or worker termination. Retaining ambiguous state protects concurrent operations; reducing features hides rather than fixes the shared preparation failure. The longer finite deadline tolerates slow copying but does not claim faster disk throughput.
 
 ## Consequences
 

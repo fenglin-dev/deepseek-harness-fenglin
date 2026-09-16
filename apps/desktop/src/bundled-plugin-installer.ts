@@ -2,6 +2,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
+import { CandidatePreparationError } from './candidate-preparation.ts'
 import {
   assertBundledPluginManifestEntry,
   bundledPluginSeedIsSettled,
@@ -67,7 +68,7 @@ export interface BundledPluginInstallerOptions {
   readonly onStartupResult?: (entry: BundledPluginManifestEntry, result: SeedBundledPluginResult) => Promise<void>
   readonly onReconciled?: (result: BundledPluginReconciliation) => void
   /** Report unattempted entries without treating them as failed installs or starting cooldown. */
-  readonly onStartupDeferred?: (entry: BundledPluginManifestEntry, reason: 'budget' | 'cooldown') => Promise<void>
+  readonly onStartupDeferred?: (entry: BundledPluginManifestEntry, reason: 'budget' | 'cooldown' | 'preparation-failed') => Promise<void>
   readonly onManagedMutationStart?: (entry: BundledPluginManifestEntry) => void
   readonly onManagedMutationSettled?: (entry: BundledPluginManifestEntry) => void
   readonly createId?: () => string
@@ -173,6 +174,7 @@ export class BundledPluginInstaller {
     const results: Array<{ entry: BundledPluginManifestEntry; result?: SeedBundledPluginResult }> = []
     const entries = this.options.manifest.plugins.filter(entry => entry.installPolicy === 'startup')
     const deadline = (this.options.now?.() ?? Date.now()) + (this.options.startupBudgetMs ?? 120_000)
+    let preparationFailed = false
     for (const [index, entry] of entries.entries()) {
       if (this.options.isStartupCancelled?.()) throw new Error('desktop: startup preparation cancelled')
       const report = (progress: BundledPluginSeedProgress): void => {
@@ -183,6 +185,11 @@ export class BundledPluginInstaller {
         }
       }
       try {
+        if (preparationFailed) {
+          results.push({ entry })
+          await this.options.onStartupDeferred?.(entry, 'preparation-failed')
+          continue
+        }
         if (!this.options.requireCompleteStartup && await bundledPluginSeedIsSettled(
           this.options.dshHome,
           entry,
@@ -220,6 +227,7 @@ export class BundledPluginInstaller {
         if (result !== 'unresolved') await this.options.onStartupSuccess?.(entry)
       } catch (error) {
         if (this.options.isStartupCancelled?.()) throw error
+        if (error instanceof CandidatePreparationError) preparationFailed = true
         results.push({ entry })
         try {
           await this.options.onFailure?.(error, entry)
