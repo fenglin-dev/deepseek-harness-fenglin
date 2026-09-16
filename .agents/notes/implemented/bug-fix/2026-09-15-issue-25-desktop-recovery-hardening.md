@@ -22,6 +22,8 @@ Desktop allocates the candidate transaction UUID before invoking preparation. Fa
 
 Dependency copying has a five-minute command deadline because a large existing Profile can exceed a one-minute deadline on a slow disk. The startup view identifies plugin preparation and logs its duration. A shared preparation failure defers remaining startup mutations instead of retrying the same copy per preset. Ordinary independent plugin failures keep their existing policy; mandatory first preparation still requires the complete preset set. Snapshot metadata capture does not copy the dependency tree.
 
+Community copies use the portable official-import boundary instead of cloning a possibly damaged plugin runtime. Supported user data and plugin business storage are copied, while Profile files, `node_modules`, the pnpm store, lockfiles, seed markers, and plugin code are excluded. The source Profile produces a restore plan and exact boolean build rules. First preparation uses verified packaged archives for matching presets; the existing imported-plugin flow handles remaining portable sources. A versioned setup marker identifies this behavior, so legacy complete copies without the marker retain their Profile. Candidate activation also removes only generated `.bin` links whose targets are missing; any other broken dependency link remains an error. When activation fails after its internal rollback succeeds, the transaction manager returns a distinct rolled-back error so Desktop does not attempt to discard the same transaction again. An incomplete rollback still retains the candidate identity and evidence.
+
 ## Alternatives considered
 
 **Delete all Electron session data.** This also removes unrelated site state and treats a narrowly identifiable cookie leak as broad user-data corruption.
@@ -29,6 +31,8 @@ Dependency copying has a five-minute command deadline because a large existing P
 **Shorten cookie lifetime only.** This delays the header limit but does not bound rapid restart accumulation.
 
 **Regenerate every dependency with pnpm after activation.** This adds network and build-script work after active state changes. Stabilizing only external links is bounded and preserves the already verified candidate.
+
+**Clone the pnpm store while omitting only stale registrations.** This still imports a possibly inconsistent dependency graph and makes first-start success depend on historical package-manager state. A portable restore plan keeps user data while rebuilding plugin code through supported installation paths.
 
 **Disable removal for healthy plugins.** Recovery remains a general manual tool, so healthy entries stay removable; attribution-first ordering and an explicit warning reduce accidental removal without taking control away from the user.
 
