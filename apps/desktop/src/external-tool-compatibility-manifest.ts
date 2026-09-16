@@ -1,4 +1,4 @@
-/** Validated coordinates used by the desktop external-tool installer. */
+﻿/** Validated coordinates used by the desktop external-tool installer. */
 
 export const EXTERNAL_TOOL_IDS = ['codex', 'claude-code'] as const
 
@@ -44,7 +44,7 @@ export interface ExternalToolInstallResolution {
 export const EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY: ExternalToolCompatibilityManifest = {
   schema: 'dsh/desktop-external-tool-compatibility/v2',
   revision: 7,
-  desktopVersion: '0.1.5-rc.2.1',
+  desktopVersion: '3.0.0',
   reviewedSourceVersion: '0.1.5-rc.2',
   issuedAt: '2026-09-11T00:00:00.000Z',
   expiresAt: '2027-03-08T00:00:00.000Z',
