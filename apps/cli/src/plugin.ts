@@ -10,6 +10,7 @@
  * @module @deepseek-ai/dsh/plugin
  */
 
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
@@ -727,7 +728,11 @@ export function runPlugin(profile: string, args: readonly string[]): number {
         return 0
       } finally { if (!handedOff) release() }
     }
-    if (args.length === 2 && args[1] === 'prepare') {
+    if ((args.length === 2 || args.length === 3) && args[1] === 'prepare') {
+      const requestedId = args[2] ?? randomUUID()
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(requestedId)) {
+        throw new Error('dsh: invalid transaction ID')
+      }
       const ownerPid = Number(process.env.DSH_DESKTOP_MUTATION_OWNER_PID)
       if (!Number.isSafeInteger(ownerPid) || ownerPid <= 0) throw new Error('dsh: invalid desktop mutation owner')
       process.kill(ownerPid, 0)
@@ -738,7 +743,7 @@ export function runPlugin(profile: string, args: readonly string[]): number {
         if (process.env.DSH_PLUGIN_SNAPSHOT_BATCH !== '1') automatic = createProfilePluginSnapshot({
           home, profile, kind: 'automatic', trigger: pluginMutationTrigger(['install']), ...snapshotRuntimeMetadata(),
         })
-        const record = prepareProfilePluginTransaction(home, profile, ownerPid)
+        const record = prepareProfilePluginTransaction(home, profile, ownerPid, requestedId)
         beginProfilePluginMutationLease({ home, profile, ownerPid, token: record.id })
         handedOff = true
         writeSnapshotJson({ id: record.id })
@@ -747,7 +752,9 @@ export function runPlugin(profile: string, args: readonly string[]): number {
         if (!handedOff) {
           try {
             const record = readProfilePluginTransaction(home, profile)
-            if (record?.producerPid === ownerPid) settleProfilePluginTransaction(home, profile, record.id, false)
+            if (record?.producerPid === ownerPid && record.id === requestedId) {
+              settleProfilePluginTransaction(home, profile, record.id, false)
+            }
             if (automatic !== undefined) finalizeProfilePluginSnapshot({
               home, profile, snapshotId: automatic.snapshotId, preserveIfUnchanged: automatic.deduplicated === true,
             })

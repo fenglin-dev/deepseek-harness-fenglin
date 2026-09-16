@@ -356,9 +356,16 @@ function projectLocalSources(home: string, candidate: string, profile: string, v
  * @param home - Active data directory.
  * @param profile - Profile identity.
  * @param producerPid - Process retaining preparation ownership across CLI children.
+ * @param transactionId - Desktop-assigned identity available before preparation starts.
  * @returns The journal for the newly owned candidate.
  */
-export function prepareProfilePluginTransaction(home: string, profile: string, producerPid = process.pid): ProfilePluginTransaction {
+export function prepareProfilePluginTransaction(
+  home: string,
+  profile: string,
+  producerPid = process.pid,
+  transactionId: string = randomUUID(),
+): ProfilePluginTransaction {
+  if (!ID.test(transactionId)) throw new Error('dsh: invalid transaction ID')
   if (!Number.isSafeInteger(producerPid) || producerPid <= 0) throw new Error('dsh: invalid transaction producer')
   if (readProfilePluginTransaction(home, profile) !== undefined) throw new Error('dsh: a plugin transaction needs recovery first')
   const paths = locations(home, profile)
@@ -367,7 +374,7 @@ export function prepareProfilePluginTransaction(home: string, profile: string, p
   if (existsSync(modules) && !lstatSync(modules).isDirectory()) throw new Error('dsh: indirect Profile dependencies cannot be staged')
   const snapshot = createProfilePluginSnapshot({ home, profile, kind: 'safety', trigger: 'restore-safety', allowUninitialized: true })
   const record: ProfilePluginTransaction = {
-    schema: SCHEMA, id: randomUUID(), snapshotId: snapshot.snapshotId, profile,
+    schema: SCHEMA, id: transactionId, snapshotId: snapshot.snapshotId, profile,
     producerPid, hadModules: existsSync(modules), files: snapshot.files, phase: 'preparing',
   }
   publish(home, record)

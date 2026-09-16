@@ -35,6 +35,8 @@ On packaged macOS and Windows, General Settings, the File menu, and the tray men
 <a id="plugin-changes"></a>
 ## Plugin changes
 
+Shared candidate preparation allows up to five minutes for dependency copying and logs its duration. If preparation fails, remaining startup mutations are deferred instead of repeating the same copy for every preset. Cleanup requires the exact attempt identity and confirmed worker exit; ambiguous recovery state remains available for diagnosis. This bounds retries without removing presets or weakening first-start completeness.
+
 Desktop-hosted plugin commands prepare a same-disk candidate while the current Web Profile keeps running. After CLI verification, Desktop stops Harness, activates the candidate, and retains the previous dependency directory until both normal readiness markers arrive. Failed startup restores the previous managed files and dependencies; an interrupted activation is recovered before startup inspection. Build approval and its dependent retry stay in one candidate. Sessions, credentials, user patches, and plugin business data are not rolled back. Candidate preparation preserves local source specifiers; an unstageable relative or workspace source fails without changing the active Profile.
 
 The mutation lock tracks its controlling process and the actual pnpm Node worker. Either living process prevents stale-lock reclamation; release still requires the current owner token.

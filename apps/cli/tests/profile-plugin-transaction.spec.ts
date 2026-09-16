@@ -35,6 +35,25 @@ function dependencies(profile: string): Record<string, string> {
   return (JSON.parse(readFileSync(join(profile, 'package.json'), 'utf8')) as { dependencies: Record<string, string> }).dependencies
 }
 describe('staged Profile activation', () => {
+  it('retains a different transaction when a preallocated prepare request is rejected', () => {
+    const f = fixture()
+    vi.stubEnv('DSH_HOME', f.home)
+    vi.stubEnv('DSH_DESKTOP_MUTATION_OWNER_PID', String(process.pid))
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_BATCH', '1')
+    expect(() => runPlugin('web', ['transaction', 'prepare', '11111111-1111-4111-8111-111111111111'])).toThrow('needs recovery first')
+    expect(() => runPlugin('web', ['transaction', 'prepare'])).toThrow('needs recovery first')
+    expect(readProfilePluginTransaction(f.home, 'web')?.id).toBe(f.record.id)
+    expect(readFileSync(join(f.profile, 'node_modules/generation'), 'utf8')).toBe('old')
+  })
+
+  it('publishes the caller-assigned identity and rejects unsafe IDs before writing', () => {
+    const f = fixture()
+    settleProfilePluginTransaction(f.home, 'web', f.record.id, false)
+    expect(() => prepareProfilePluginTransaction(f.home, 'web', process.pid, '../bad')).toThrow('invalid transaction ID')
+    expect(readProfilePluginTransaction(f.home, 'web')).toBeUndefined()
+    const id = '11111111-1111-4111-8111-111111111111'
+    expect(prepareProfilePluginTransaction(f.home, 'web', process.pid, id).id).toBe(id)
+  })
   it('relocates pnpm-normalized Windows archive locators without changing other local sources', () => {
     const source = String.raw`C:\Users\Person\AppData\Roaming\open-deepseek-harness-desktop\dsh-home\plugin-transactions\web\3b6dade4-2ed0-48d7-aab4-660532802cba\candidate\bundled-plugins`
     const target = String.raw`C:\Users\Person\AppData\Roaming\open-deepseek-harness-desktop\dsh-home\bundled-plugins`
