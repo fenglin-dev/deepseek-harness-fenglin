@@ -26,6 +26,8 @@ describe('SettingsRoot.module.css geometry', () => {
     expect(declarations('.overlay').get('inset')).toBe('0')
     expect(declarations('.panel').get('height')).toBe('min(800px, calc(100vh - 48px))')
     expect(declarations('.onboardingPanel').get('height')).toBe('min(820px, calc(100vh - 48px))')
+    expect(declarations('.header').get('align-items')).toBe('center')
+    expect(declarations('.actions').get('align-items')).toBe('center')
   })
 
   it('gives contributed navigation its own non-collapsing scrollport', () => {

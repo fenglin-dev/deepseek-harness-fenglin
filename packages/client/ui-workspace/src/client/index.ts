@@ -31,6 +31,7 @@ import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
 import { ArchivedSessionsSection, type ArchivedSessionsSectionInjected } from './ArchivedSessionsSection.tsx'
+import { ArchivedSessionsAction } from './ArchivedSessionsAction.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
 export type { UiWorkspace } from './navigation.ts'
@@ -40,6 +41,7 @@ export type {
 } from './contract/slots.ts'
 export type { WorkspaceKey } from './locales.ts'
 export type { ArchivedSessionsSectionInjected, ArchivedSessionsSectionProps } from './ArchivedSessionsSection.tsx'
+export type { ArchivedSessionsActionProps } from './ArchivedSessionsAction.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface GlobalStandardProps {
@@ -173,4 +175,11 @@ export function apply(ctx: Context): void {
     locale: NS,
     inject: archivedInjected,
   }, ArchivedSessionsSection))
+  ctx.slots.inject('settings.action', () => ctx.slots.register({
+    name: 'settings.action',
+    id: 'restore-archived-sessions',
+    order: 10,
+    locale: NS,
+    inject: archivedInjected,
+  }, ArchivedSessionsAction))
 }

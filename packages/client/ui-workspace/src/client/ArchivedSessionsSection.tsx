@@ -43,7 +43,7 @@ export function ArchivedSessionsSection({
   const workspaces = useWorkspaces(value => value)
   const [query, setQuery] = useState('')
   const [workspaceFilter, setWorkspaceFilter] = useState(ALL_WORKSPACES)
-  const [busy, setBusy] = useState<SessionId | 'all' | null>(null)
+  const [busy, setBusy] = useState<SessionId | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const groups = useMemo<readonly ArchivedGroup[]>(() => {
@@ -87,19 +87,6 @@ export function ArchivedSessionsSection({
       setBusy(null)
     }
   }
-  const restoreAll = async (): Promise<void> => {
-    if (busy !== null || workspaces.archivedSessionIds.length === 0) return
-    setBusy('all')
-    setError(null)
-    try {
-      for (const sessionId of workspaces.archivedSessionIds) await restoreSession(sessionId)
-    } catch {
-      setError(t('archive.restoreFailed'))
-    } finally {
-      setBusy(null)
-    }
-  }
-
   const loading = sessions.phase !== 'ready' || workspaces.phase !== 'ready'
   const archivedCount = workspaces.archivedSessionIds.length
   return (
@@ -109,9 +96,6 @@ export function ArchivedSessionsSection({
           <h2>{t('archive.title')}</h2>
           <p>{t('archive.description')}</p>
         </div>
-        <Button variant="outline" size="sm" disabled={busy !== null || archivedCount === 0} onClick={() => { void restoreAll() }}>
-          {busy === 'all' ? t('archive.restoring') : t('archive.restoreAll')}
-        </Button>
       </header>
 
       <div className={css.toolbar}>

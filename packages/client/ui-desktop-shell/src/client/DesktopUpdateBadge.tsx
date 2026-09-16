@@ -1,6 +1,7 @@
 /** Quiet settings-header indicator for a newly discovered desktop Release. */
 
 import { useCallback, useSyncExternalStore } from 'react'
+import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DEVELOPMENT_RELEASE_VERSION, type DesktopShellController } from './controller.ts'
@@ -28,9 +29,15 @@ export function DesktopUpdateBadge({ controller, openUpdates, t }: DesktopUpdate
   if (version === undefined) return null
   const label = t('release.badge', { version })
   return (
-    <button type="button" className={css.badge} aria-label={label} onClick={openUpdates}>
-      <span className={css.dot} aria-hidden="true" />
-      <span>{label}</span>
-    </button>
+    <Button
+      variant="outline"
+      size="sm"
+      className={css.badge}
+      icon={<span className={css.dot} aria-hidden="true" />}
+      aria-label={label}
+      onClick={openUpdates}
+    >
+      {label}
+    </Button>
   )
 }

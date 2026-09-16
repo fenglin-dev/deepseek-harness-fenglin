@@ -259,7 +259,7 @@ describe('SettingsPanel chrome seats', () => {
     const { renderSlot } = mount()
     openPanel()
     expect(screen.getByText('Open configuration file')).toBeTruthy()
-    expect(renderSlot).toHaveBeenCalledWith('settings.action', {})
+    expect(renderSlot).toHaveBeenCalledWith('settings.action', { activeSectionId: 'general' })
   })
 })
 

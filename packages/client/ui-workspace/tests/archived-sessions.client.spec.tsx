@@ -6,6 +6,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ArchivedSessionsSection, type ArchivedSessionsSectionProps } from '../src/client/ArchivedSessionsSection.tsx'
+import { ArchivedSessionsAction, type ArchivedSessionsActionProps } from '../src/client/ArchivedSessionsAction.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -77,14 +78,6 @@ describe('ArchivedSessionsSection', () => {
     await waitFor(() => { expect(b.restoreSession).toHaveBeenCalledWith('one') })
   })
 
-  it('unarchives every archived Session even when results are filtered', async () => {
-    const b = mount()
-    fireEvent.change(screen.getByPlaceholderText('搜索已归档会话…'), { target: { value: 'design' } })
-    fireEvent.click(screen.getByRole('button', { name: '全部取消归档' }))
-    await waitFor(() => { expect(b.restoreSession).toHaveBeenCalledTimes(3) })
-    expect(b.restoreSession.mock.calls.map(call => call[0])).toEqual(['one', 'two', 'orphan'])
-  })
-
   it('shows an actionable error when restore fails', async () => {
     const restoreSession = vi.fn(async () => { throw new Error('offline') })
     mount({ restoreSession })
@@ -95,6 +88,37 @@ describe('ArchivedSessionsSection', () => {
   it('explains an empty archive instead of rendering an empty list', () => {
     mount({ useWorkspaces: hook(workspaces([], [])) })
     expect(screen.getByText('没有已归档会话')).toBeTruthy()
+  })
+})
+
+describe('ArchivedSessionsAction', () => {
+  const actionProps = (overrides: Partial<ArchivedSessionsActionProps> = {}) => ({
+    activeSectionId: 'archived-sessions',
+    useWorkspaces: hook(workspaces([], ['one', 'two', 'orphan'])),
+    restoreSession: vi.fn(async () => {}),
+    t: makeTranslate(zh),
+    ...overrides,
+  } as unknown as ArchivedSessionsActionProps)
+
+  it('renders only for the archived Sessions page and restores every Session', async () => {
+    const props = actionProps()
+    const { rerender } = render(<ArchivedSessionsAction {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: '全部取消归档' }))
+    await waitFor(() => { expect(props.restoreSession).toHaveBeenCalledTimes(3) })
+    expect(vi.mocked(props.restoreSession).mock.calls.map(call => call[0])).toEqual(['one', 'two', 'orphan'])
+
+    rerender(<ArchivedSessionsAction {...actionProps({ activeSectionId: 'general' })} />)
+    expect(screen.queryByRole('button', { name: '全部取消归档' })).toBeNull()
+  })
+
+  it('disables the action when the archive is empty and reports failures', async () => {
+    const empty = actionProps({ useWorkspaces: hook(workspaces([], [])) })
+    const { rerender } = render(<ArchivedSessionsAction {...empty} />)
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '全部取消归档' }).disabled).toBe(true)
+
+    const failed = actionProps({ restoreSession: vi.fn(async () => { throw new Error('offline') }) })
+    rerender(<ArchivedSessionsAction {...failed} />)
+    fireEvent.click(screen.getByRole('button', { name: '全部取消归档' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('无法恢复会话，请检查连接后重试。')
   })
 })

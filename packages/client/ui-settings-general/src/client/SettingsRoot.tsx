@@ -518,7 +518,7 @@ function SettingsPanel({
             <button type="button" className={css.mobileBack} aria-label={t('nav.back')} onClick={() => { onSelect(undefined) }}>
               <IconChevronLeftOutline14 size={18} />
             </button>
-            <div className={css.actions}>{renderSlot('settings.action', {})}</div>
+            <div className={css.actions}>{renderSlot('settings.action', active === undefined ? {} : { activeSectionId: active })}</div>
             <button ref={phone ? undefined : closeButton} type="button" className={css.close} onClick={onClose}>
               <IconCloseOutline16 size={14} />
               <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>

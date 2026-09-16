@@ -8,6 +8,7 @@ import type {
   ArchivedSessionsSectionInjected, WorkspaceBrowserInjected, WorkspacePickerInjected,
 } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { ArchivedSessionsSection } from '../src/client/ArchivedSessionsSection.tsx'
+import { ArchivedSessionsAction } from '../src/client/ArchivedSessionsAction.tsx'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
 import { apply as hostApply } from '../src/index.ts'
@@ -87,11 +88,12 @@ type HoleName =
   | 'conversation.hero.workspace'
   | 'conversation.empty.workspace'
   | 'settings.section'
+  | 'settings.action'
 
 /** Declare any subset of the holes with a single root registration ('root' is a single slot). */
 function declare(slots: SlotRegistry, ...names: HoleName[]): () => void {
   const children = Object.fromEntries(names.map(name => [name, {
-    kind: name === 'settings.section' ? 'list' : 'single', scope: 'root',
+    kind: name === 'settings.section' || name === 'settings.action' ? 'list' : 'single', scope: 'root',
   }]))
   return slots.register({ name: 'root', children } as never, () => null)
 }
@@ -168,7 +170,7 @@ describe('ui-workspace apply', () => {
 
   it('registers archived Sessions as a Settings section and restores through the Workspace service', async () => {
     const b = await bench()
-    declare(b.slots, 'settings.section')
+    declare(b.slots, 'settings.section', 'settings.action')
     await b.ctx.plugin({ inject: [...inject], apply }).await()
 
     const section = b.slots.entries('settings.section').find(entry => entry.options.id === 'archived-sessions')
@@ -178,6 +180,8 @@ describe('ui-workspace apply', () => {
     const injected = (section?.inject as unknown as () => ArchivedSessionsSectionInjected)()
     await injected.restoreSession('archived' as never)
     expect(b.unarchiveSession).toHaveBeenCalledWith('archived')
+    const action = b.slots.entries('settings.action').find(entry => entry.options.id === 'restore-archived-sessions')
+    expect(action?.component).toBe(ArchivedSessionsAction)
   })
 
   it('declares the two directory-flow holes and reports their occupancy per surface', async () => {
@@ -221,13 +225,14 @@ describe('ui-workspace apply', () => {
 
   it('unregisters every entry on teardown', async () => {
     const b = await bench()
-    declare(b.slots, 'sidebar.workspaces', 'conversation.hero.workspace', 'conversation.empty.workspace', 'settings.section')
+    declare(b.slots, 'sidebar.workspaces', 'conversation.hero.workspace', 'conversation.empty.workspace', 'settings.section', 'settings.action')
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     await fiber.dispose()
     expect(b.slots.entries('sidebar.workspaces')).toHaveLength(0)
     expect(b.slots.entries('conversation.hero.workspace')).toHaveLength(0)
     expect(b.slots.entries('settings.section')).toHaveLength(0)
+    expect(b.slots.entries('settings.action')).toHaveLength(0)
     // expect(b.slots.entries('conversation.empty.workspace')).toHaveLength(0)
   })
 })
