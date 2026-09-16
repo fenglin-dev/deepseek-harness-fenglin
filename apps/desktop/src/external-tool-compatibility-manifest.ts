@@ -1,4 +1,4 @@
-﻿/** Validated coordinates used by the desktop external-tool installer. */
+** Validated coordinates used by the desktop external-tool installer. */
 
 export const EXTERNAL_TOOL_IDS = ['codex', 'claude-code'] as const
 
