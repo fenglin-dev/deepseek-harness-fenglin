@@ -1,7 +1,7 @@
 {
-  "schema": "dsh/desktop-external-tool-compatibility/v1",
+  "schema": "dsh/desktop-external-tool-compatibility/v2",
   "revision": 7,
-  "desktopVersionLine": "0.1.5",
+  "desktopVersion": "0.1.5-rc.2.1",
   "reviewedSourceVersion": "0.1.5-rc.2",
   "issuedAt": "2026-09-11T00:00:00.000Z",
   "expiresAt": "2027-03-08T00:00:00.000Z",

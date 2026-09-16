@@ -1,7 +1,7 @@
 /** Release gate for exact external-tool provider and platform runtime coordinates. */
 
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import {
   EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY,
@@ -71,10 +71,22 @@ async function verifyRuntime(runtime: ExternalToolRuntimePackage): Promise<void>
   }))
 }
 
-const manifestPath = resolve('apps/desktop/external-tools/compatibility.v1.json')
+const desktopPackage = JSON.parse(await readFile(resolve('apps/desktop/package.json'), 'utf8')) as { version: string }
+const manifestsDirectory = resolve('apps/desktop/external-tools/manifests')
+const manifestVersions = (await readdir(manifestsDirectory, { withFileTypes: true }))
+  .filter(entry => entry.isDirectory())
+  .map(entry => entry.name)
+for (const version of manifestVersions) {
+  const archived = parseExternalToolCompatibilityManifest(JSON.parse(await readFile(
+    resolve(manifestsDirectory, version, 'external-tools-compatibility.v2.json'), 'utf8',
+  )) as unknown)
+  assert.equal(archived.desktopVersion, version, 'external-tool gate: immutable manifest directory must match desktopVersion')
+}
+const manifestPath = resolve(manifestsDirectory, desktopPackage.version, 'external-tools-compatibility.v2.json')
 const manifest = parseExternalToolCompatibilityManifest(
   JSON.parse(await readFile(manifestPath, 'utf8')) as unknown,
 )
+assert.equal(manifest.desktopVersion, desktopPackage.version, 'external-tool gate: current Desktop requires an exact manifest')
 assert.deepEqual(manifest, EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY, 'embedded pins must exactly match the signed source manifest')
 
 for (const toolId of EXTERNAL_TOOL_IDS) {

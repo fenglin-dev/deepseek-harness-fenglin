@@ -19,9 +19,9 @@ interface ExternalToolCoordinate {
 }
 
 export interface ExternalToolCompatibilityManifest {
-  readonly schema: 'dsh/desktop-external-tool-compatibility/v1'
+  readonly schema: 'dsh/desktop-external-tool-compatibility/v2'
   readonly revision: number
-  readonly desktopVersionLine: string
+  readonly desktopVersion: string
   readonly reviewedSourceVersion: string
   readonly issuedAt: string
   readonly expiresAt: string
@@ -42,9 +42,9 @@ export interface ExternalToolInstallResolution {
 
 /** Last-known-good pins shipped in the application and used only after signed lookup fails. */
 export const EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY: ExternalToolCompatibilityManifest = {
-  schema: 'dsh/desktop-external-tool-compatibility/v1',
+  schema: 'dsh/desktop-external-tool-compatibility/v2',
   revision: 7,
-  desktopVersionLine: '0.1.5',
+  desktopVersion: '0.1.5-rc.2.1',
   reviewedSourceVersion: '0.1.5-rc.2',
   issuedAt: '2026-09-11T00:00:00.000Z',
   expiresAt: '2027-03-08T00:00:00.000Z',
@@ -77,7 +77,6 @@ export const EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY: ExternalToolCompatibilityMani
 const PACKAGE_NAME = /^(?:@[a-z0-9._~-]+\/)?[a-z0-9._~-]+$/u
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u
 const INTEGRITY = /^sha512-[A-Za-z0-9+/]+={0,2}$/u
-const VERSION_LINE = /^\d+\.\d+\.\d+$/u
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -120,7 +119,7 @@ function parseCoordinate(value: unknown): ExternalToolCoordinate {
 /** Parse the signed compatibility document without accepting package-spec syntax. */
 export function parseExternalToolCompatibilityManifest(value: unknown): ExternalToolCompatibilityManifest {
   const record = requireRecord(value, 'external-tool manifest')
-  if (record.schema !== 'dsh/desktop-external-tool-compatibility/v1') {
+  if (record.schema !== 'dsh/desktop-external-tool-compatibility/v2') {
     throw new TypeError('desktop: unsupported external-tool manifest schema')
   }
   if (!Number.isSafeInteger(record.revision) || (record.revision as number) < 1) {
@@ -138,7 +137,7 @@ export function parseExternalToolCompatibilityManifest(value: unknown): External
   return {
     schema: record.schema,
     revision: record.revision as number,
-    desktopVersionLine: requireString(record, 'desktopVersionLine', VERSION_LINE),
+    desktopVersion: requireString(record, 'desktopVersion', VERSION),
     reviewedSourceVersion: requireString(record, 'reviewedSourceVersion', VERSION),
     issuedAt,
     expiresAt,
@@ -147,11 +146,6 @@ export function parseExternalToolCompatibilityManifest(value: unknown): External
       'claude-code': parseCoordinate(tools['claude-code']),
     },
   }
-}
-
-/** Return the compatibility line for a full semver, including prereleases. */
-export function desktopVersionLine(version: string): string | undefined {
-  return /^(\d+\.\d+\.\d+)(?:[-+].*)?$/u.exec(version)?.[1]
 }
 
 /** Resolve one closed tool identifier to an exact registry coordinate. */

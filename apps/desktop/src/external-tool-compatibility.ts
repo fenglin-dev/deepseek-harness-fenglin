@@ -5,7 +5,6 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { verify } from 'sigstore'
 import {
-  desktopVersionLine,
   EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY,
   parseExternalToolCompatibilityManifest,
   resolveExternalToolCoordinate,
@@ -14,9 +13,8 @@ import {
   type ExternalToolInstallResolution,
 } from './external-tool-compatibility-manifest.ts'
 
-const MANIFEST_NAME = 'external-tools-compatibility.v1.json'
-const BUNDLE_NAME = 'external-tools-compatibility.sigstore.json'
-const METADATA_BASE = 'https://flaqai.github.io/open-deepseek-harness-desktop/metadata/external-tools/v1'
+const BUNDLE_NAME = 'external-tools-compatibility.v2.sigstore.json'
+const METADATA_BASE = 'https://flaqai.github.io/open-deepseek-harness-desktop/metadata/external-tools/v2'
 const SIGNING_IDENTITY = 'https://github.com/flaqai/open-deepseek-harness-desktop/.github/workflows/external-tool-compatibility.yml@refs/heads/master'
 const SIGNING_ISSUER = 'https://token.actions.githubusercontent.com'
 const MAX_DOCUMENT_BYTES = 1024 * 1024
@@ -53,14 +51,21 @@ function parseStatement(bundle: unknown): InTotoStatement {
   return JSON.parse(Buffer.from(envelope.payload, 'base64').toString('utf8')) as InTotoStatement
 }
 
-function assertAttestedManifest(bundle: unknown, manifestBytes: Uint8Array): void {
+function manifestName(desktopVersion: string): string {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(desktopVersion)) {
+    throw new TypeError('desktop: invalid desktop version for external-tool compatibility lookup')
+  }
+  return `external-tools-compatibility-${desktopVersion}.v2.json`
+}
+
+function assertAttestedManifest(bundle: unknown, expectedName: string, manifestBytes: Uint8Array): void {
   const statement = parseStatement(bundle)
   if (statement._type !== 'https://in-toto.io/Statement/v1') {
     throw new TypeError('desktop: compatibility attestation has an unsupported statement type')
   }
   const expectedDigest = sha256(manifestBytes)
   const match = statement.subject?.some(subject => (
-    subject.name === MANIFEST_NAME && subject.digest?.sha256 === expectedDigest
+    subject.name === expectedName && subject.digest?.sha256 === expectedDigest
   )) ?? false
   if (!match) throw new TypeError('desktop: compatibility attestation does not cover the manifest digest')
 }
@@ -119,11 +124,11 @@ export class ExternalToolCompatibilityManager {
     if (Date.parse(manifest.issuedAt) > now + MAX_FUTURE_SKEW_MS || Date.parse(manifest.expiresAt) <= now) {
       throw new Error('desktop: signed external-tool compatibility manifest is expired or not yet valid')
     }
-    if (desktopVersionLine(this.options.desktopVersion) !== manifest.desktopVersionLine) {
+    if (this.options.desktopVersion !== manifest.desktopVersion) {
       throw new Error('desktop: signed external-tool compatibility manifest does not support this desktop version')
     }
-    if (manifest.revision < this.embedded.revision) {
-      throw new Error('desktop: signed external-tool compatibility manifest predates the embedded fallback')
+    if (JSON.stringify(manifest) !== JSON.stringify(this.embedded)) {
+      throw new Error('desktop: signed external-tool compatibility manifest differs from this installer release')
     }
   }
 
@@ -133,7 +138,7 @@ export class ExternalToolCompatibilityManager {
   ): Promise<ExternalToolCompatibilityManifest> {
     const bundle = JSON.parse(Buffer.from(bundleBytes).toString('utf8')) as unknown
     await (this.options.verifyBundle ?? defaultVerifyBundle)(bundle, this.options.cacheDirectory)
-    assertAttestedManifest(bundle, manifestBytes)
+    assertAttestedManifest(bundle, manifestName(this.options.desktopVersion), manifestBytes)
     const manifest = parseExternalToolCompatibilityManifest(
       JSON.parse(Buffer.from(manifestBytes).toString('utf8')) as unknown,
     )
@@ -142,10 +147,11 @@ export class ExternalToolCompatibilityManager {
   }
 
   private async loadSigned(): Promise<{ manifest: ExternalToolCompatibilityManifest; source: 'remote' | 'cache' } | undefined> {
+    const name = manifestName(this.options.desktopVersion)
     let cached: ExternalToolCompatibilityManifest | undefined
     try {
       const [manifestBytes, bundleBytes] = await Promise.all([
-        readFile(join(this.options.cacheDirectory, MANIFEST_NAME)),
+        readFile(join(this.options.cacheDirectory, name)),
         readFile(join(this.options.cacheDirectory, BUNDLE_NAME)),
       ])
       cached = await this.verifyDocuments(manifestBytes, bundleBytes)
@@ -158,7 +164,7 @@ export class ExternalToolCompatibilityManager {
       const timer = setTimeout(() => { controller.abort() }, 6000)
       try {
         const [manifestResponse, bundleResponse] = await Promise.all([
-          fetcher(`${METADATA_BASE}/${MANIFEST_NAME}`, { signal: controller.signal, redirect: 'follow' }),
+          fetcher(`${METADATA_BASE}/${encodeURIComponent(name)}`, { signal: controller.signal, redirect: 'follow' }),
           fetcher(`${METADATA_BASE}/${BUNDLE_NAME}`, { signal: controller.signal, redirect: 'follow' }),
         ])
         const [manifestBytes, bundleBytes] = await Promise.all([
@@ -166,12 +172,8 @@ export class ExternalToolCompatibilityManager {
           readLimited(bundleResponse),
         ])
         const manifest = await this.verifyDocuments(manifestBytes, bundleBytes)
-        if (cached !== undefined && manifest.revision < cached.revision) {
-          console.warn('desktop: refusing an older signed external-tool manifest than the verified cache')
-          return { manifest: cached, source: 'cache' }
-        }
         await Promise.all([
-          atomicWrite(join(this.options.cacheDirectory, MANIFEST_NAME), manifestBytes),
+          atomicWrite(join(this.options.cacheDirectory, name), manifestBytes),
           atomicWrite(join(this.options.cacheDirectory, BUNDLE_NAME), bundleBytes),
         ])
         return { manifest, source: 'remote' }
