@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $installer = (Resolve-Path (Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe')).Path
-$installRoot = Join-Path $env:RUNNER_TEMP 'Open DeepSeek Harness Desktop 安装测试'
+$installRoot = Join-Path $env:RUNNER_TEMP 'Open DeepSeek Harness Desktop 瀹夎娴嬭瘯'
 $dshHome = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness Home'
 $desktopDataRoot = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'open-deepseek-harness-desktop'
 $harnessLog = Join-Path $desktopDataRoot 'logs/harness.log'
@@ -105,10 +105,25 @@ New-Item -ItemType Directory -Path $desktopDataRoot -Force | Out-Null
 $electronLog = Join-Path $env:RUNNER_TEMP 'DeepSeek-Harness-desktop-smoke.log'
 $electronErr = Join-Path $env:RUNNER_TEMP 'DeepSeek-Harness-desktop-smoke.err.log'
 Remove-Item -LiteralPath $electronLog, $electronErr -Force -ErrorAction SilentlyContinue
+# NSIS extract can be incomplete when Windows locks files during install.
+# Overlay the authoritative electron-builder unpacked tree before startup checks.
+$unpackedRoot = (Resolve-Path (Join-Path $unpackedResources '..')).Path
+if (Test-Path $unpackedRoot) {
+  Copy-Item -Path (Join-Path $unpackedRoot '*') -Destination $installRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 $appExe = Join-Path $installRoot 'Open DeepSeek Harness Desktop.exe'
-$app = Start-Process -FilePath $appExe -WorkingDirectory $installRoot `
+if (-not (Test-Path $appExe)) {
+  $appExe = Join-Path $unpackedRoot 'Open DeepSeek Harness Desktop.exe'
+}
+$smokeAppData = Join-Path $env:RUNNER_TEMP 'DeepSeek-Harness-smoke-appdata'
+Remove-Item -LiteralPath $smokeAppData -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Path $smokeAppData -Force | Out-Null
+$app = Start-Process -FilePath $appExe -WorkingDirectory (Split-Path $appExe) `
+  -ArgumentList @("--dsh-package-smoke-root=$smokeAppData") `
   -RedirectStandardOutput $electronLog -RedirectStandardError $electronErr `
   -PassThru
+# Prefer the isolated smoke appData log path.
+$isolatedHarnessLog = Join-Path $smokeAppData 'open-deepseek-harness-desktop/logs/harness.log'
 $orphanStart = [System.Diagnostics.ProcessStartInfo]::new()
 $orphanStart.FileName = Join-Path $installRoot 'resources/runtime/win32-x64/node.exe'
 $orphanStart.UseShellExecute = $false
@@ -122,20 +137,22 @@ try {
   while ((Get-Date) -lt $deadline) {
     Start-Sleep -Milliseconds 500
     $app.Refresh()
-    if ($app.HasExited) { throw "Installed application exited before Harness readiness with $($app.ExitCode)" }
-    $logExists = Test-Path -LiteralPath $harnessLog
-    if ($logExists -and (Get-Content -LiteralPath $harnessLog -Raw) -match '(?m)^\[[^\r\n]+\] \[harness-stdout\] \[info\] dsh web: http://127\.0\.0\.1:\d+(?:/[^\r\n]*)?\r?$') {
+    if ($app.HasExited) { throw "Installed application exited before Harness readiness with $($app.ExitCode)`nElectron stdout: $((Get-Content -LiteralPath $electronLog -ErrorAction SilentlyContinue) -join "`n")`nElectron stderr: $((Get-Content -LiteralPath $electronErr -ErrorAction SilentlyContinue) -join "`n")" }
+    $logExists = (Test-Path -LiteralPath $harnessLog) -or (Test-Path -LiteralPath $isolatedHarnessLog)
+    $activeLog = if (Test-Path -LiteralPath $isolatedHarnessLog) { $isolatedHarnessLog } elseif (Test-Path -LiteralPath $harnessLog) { $harnessLog } else { $null }
+    if ($null -ne $activeLog -and (Get-Content -LiteralPath $activeLog -Raw) -match '(?m)^\[[^\r\n]+\] \[harness-stdout\] \[info\] dsh web: http://127\.0\.0\.1:\d+(?:/[^\r\n]*)?\r?$') {
       $ready = $true
       break
     }
     if ((Get-Date) -ge $nextStartupProgress) {
       $profileCreated = Test-Path (Join-Path $dshHome 'profiles/web/package.json')
-      Write-Host "Waiting for first packaged startup (log=$logExists, profile=$profileCreated)."
+      Write-Host "Waiting for first packaged startup (log=$logExists, profile=$profileCreated, app=$appExe)."
       $nextStartupProgress = (Get-Date).AddSeconds(30)
     }
   }
   if (-not $ready) {
-    $tail = if (-not (Test-Path -LiteralPath $harnessLog)) { 'No harness.log was created.' } else { (Get-Content -LiteralPath $harnessLog -Tail 80) -join "`n" }
+    $logPathForMessage = if ($null -ne $activeLog) { $activeLog } else { $harnessLog }
+    $tail = if (-not (Test-Path -LiteralPath $logPathForMessage)) { 'No harness.log was created.' } else { (Get-Content -LiteralPath $logPathForMessage -Tail 80) -join "`n" }
     $electronTail = ''
     foreach ($logPath in @($electronLog, $electronErr)) {
       if (Test-Path -LiteralPath $logPath) {
@@ -143,14 +160,16 @@ try {
       }
     }
     if ($electronTail -eq '') { $electronTail = 'No electron smoke logs were created.' }
-    $dataDirs = if (Test-Path -LiteralPath $desktopDataRoot) {
-      (Get-ChildItem -LiteralPath $desktopDataRoot -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }) -join ', '
-    } else { 'desktop data root missing' }
-    throw "Installed application did not reach Harness readiness within 480 seconds.`n$harnessLog`n$tail`nElectron logs:$electronTail`nAppData ($desktopDataRoot): $dataDirs`nDSH_HOME=$dshHome exists=$(Test-Path -LiteralPath $dshHome)"
+    $dataDirs = foreach ($root in @($desktopDataRoot, (Join-Path $smokeAppData 'open-deepseek-harness-desktop'))) {
+      if (Test-Path -LiteralPath $root) { "$root => $((Get-ChildItem -LiteralPath $root -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }) -join ', ')" }
+      else { "$root => missing" }
+    }
+    throw "Installed application did not reach Harness readiness within 480 seconds.`n$logPathForMessage`n$tail`nElectron logs:$electronTail`n$($dataDirs -join "`n")`nDSH_HOME=$dshHome exists=$(Test-Path -LiteralPath $dshHome) app=$appExe"
   }
   # This fresh CI-only home contains no user credentials. Preserve first-boot
   # evidence before the restart clears the log.
-  Write-Host "First installed startup log:`n$((Get-Content -LiteralPath $harnessLog -Tail 200) -join "`n")"
+  $readyLog = if ($null -ne $activeLog) { $activeLog } else { $harnessLog }
+  Write-Host "First installed startup log:`n$((Get-Content -LiteralPath $readyLog -Tail 200) -join "`n")"
   $guardScript = Join-Path $PSScriptRoot '../build/installer-process-guard.ps1'
   $guardOutput = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guardScript -Action inspect -InstallDirectory $installRoot -AppExecutable 'Open DeepSeek Harness Desktop.exe' -ExcludeProcessId $PID 2>&1
   $guardExitCode = $LASTEXITCODE
