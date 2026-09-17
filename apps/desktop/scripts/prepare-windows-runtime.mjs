@@ -154,6 +154,11 @@ async function injectWorkspaceClosure() {
   if (packages.has('@deepseek-ai/dsh-subprocess-local')) {
     queue.push('@deepseek-ai/dsh-subprocess-local')
   }
+  // Desktop main imports dsh-subprocess, whose ESM entry loads these peers.
+  // pnpm records them as peerDependencies, so electron-builder omits them.
+  for (const peer of ['@deepseek-ai/cordis', '@deepseek-ai/cosmokit', '@deepseek-ai/dsh-http-proxy']) {
+    if (packages.has(peer)) queue.push(peer)
+  }
   const injected = new Set()
   while (queue.length > 0) {
     const name = queue.shift()

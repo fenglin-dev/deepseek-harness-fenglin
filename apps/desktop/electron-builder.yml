@@ -2,12 +2,22 @@ appId: ai.flaq.deepseek-harness
 productName: Open DeepSeek Harness Desktop
 asar: true
 npmRebuild: false
+beforePack: scripts/before-pack-stage-runtime-deps.mjs
+afterPack: scripts/after-pack-inject-runtime-deps.mjs
 directories:
   buildResources: build
   output: ../../.artifacts/desktop-windows
 files:
   - lib/**/*
   - package.json
+  # pnpm peerDependencies are not packed automatically; desktop main imports
+  # dsh-subprocess which requires these at runtime.
+  - "node_modules/@deepseek-ai/cordis/**/*"
+  - "node_modules/@deepseek-ai/cosmokit/**/*"
+  - "node_modules/@deepseek-ai/dsh-http-proxy/**/*"
+  - "node_modules/@deepseek-ai/dsh-subprocess/**/*"
+  - "node_modules/@standard-schema/**/*"
+  - "node_modules/undici/**/*"
 extraResources:
   - from: bundled-plugins
     to: bundled-plugins
