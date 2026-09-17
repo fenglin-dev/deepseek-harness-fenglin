@@ -1,6 +1,6 @@
 /** Build preset dependencies with the packaged runtime; retain only portable, reviewed application state. */
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { parseBundledPluginManifest } from '../lib/bundled-plugin-installer.js'
