@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package contributes Electron-only General Settings rows for local-browser handoff, close behavior, native notifications, login launch, the managed `dsh` command-line entry, Release discovery, and a source-build recovery-page entry. A browser page opened by Desktop receives only a Return to Desktop action; an independent `dsh web` browser receives no contribution.
+This package contributes Electron-only General Settings rows for local-browser handoff, close behavior, native notifications, login launch, the managed `dsh` command-line entry, Release discovery, NAS runtime pairing, and a source-build recovery-page entry. A browser page opened by Desktop receives only a Return to Desktop action; an independent `dsh web` browser receives no contribution.
 
 ## Table of Contents
 
@@ -25,6 +25,8 @@ This package contributes Electron-only General Settings rows for local-browser h
 ## Use this package
 
 Mount the package in the desktop client bundle. It activates only when the narrow `window.deepSeekHarnessDesktop` preload bridge is present and reflects capabilities reported by the Electron main process.
+
+Runtime & NAS keeps server metadata separate from encrypted per-device credentials. Pairing accepts only a dedicated HTTPS origin, requires explicit TLS fingerprint confirmation, and never exposes the bearer token to the renderer. Switching runtime restarts Desktop without moving data. In NAS mode the preload omits local plugin, process, snapshot, diagnostic-lab, and filesystem-management bridges; the remote page retains device-local preferences, notifications, Release checks, and the fixed NAS management surface.
 
 On macOS and Windows, Use in a browser requests the current authenticated loopback page without receiving its URL. Electron opens the system browser and hides the desktop window only after a successful handoff. The browser shows Return to Desktop beside Settings; it reveals the same Electron client without starting another Harness. Open browser after startup is disabled by default and persists in Electron `userData`; each Harness generation consumes it at most once.
 

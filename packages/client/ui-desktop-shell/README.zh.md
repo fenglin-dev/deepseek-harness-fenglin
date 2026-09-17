@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包向“通用设置”贡献 Electron 专用的本机浏览器交接、关闭行为、原生通知、登录启动、受管 `dsh` 命令行入口、Release 发现，以及源码构建的恢复页面入口。由 Desktop 打开的浏览器页面只会收到“返回客户端”操作；独立的 `dsh web` 浏览器不会收到任何贡献。
+本包向“通用设置”贡献 Electron 专用的本机浏览器交接、关闭行为、原生通知、登录启动、受管 `dsh` 命令行入口、Release 发现、NAS 运行端配对，以及源码构建的恢复页面入口。由 Desktop 打开的浏览器页面只会收到“返回客户端”操作；独立的 `dsh web` 浏览器不会收到任何贡献。
 
 ## 目录
 
@@ -25,6 +25,8 @@ kind: "package-reference"
 ## 使用方式
 
 将本包挂载到桌面客户端 Bundle。它只在窄权限的 `window.deepSeekHarnessDesktop` 预加载桥存在时激活，并严格反映 Electron 主进程报告的能力。
+
+“运行端与 NAS”把服务器元数据和加密的逐设备凭据分开保存。配对只接受独立 HTTPS origin，要求用户明确核对 TLS 指纹，并且绝不把 Bearer 令牌暴露给渲染层。切换运行端会重启 Desktop，但不会移动数据。NAS 模式下 preload 不暴露本机插件、进程、快照、诊断演练及文件系统管理桥；远程页面仅保留设备偏好、通知、Release 检查与固定的 NAS 管理接口。
 
 在 macOS 和 Windows 中，“在浏览器中使用”只请求打开当前已认证回环页面，不接收其 URL。Electron 通过系统浏览器完成交接后才隐藏桌面窗口。浏览器会在“设置”旁显示“返回客户端”，用于唤醒同一个 Electron 客户端，不会启动另一套 Harness。“启动后自动打开浏览器”默认关闭并持久化在 Electron `userData`；每个 Harness 启动代次最多消费一次该偏好。
 

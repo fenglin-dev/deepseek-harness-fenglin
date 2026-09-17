@@ -10,6 +10,7 @@ import { bridge, DEFAULT_MAX_REQUEST_BODY_BYTES } from './http-bridge.ts'
 import { assertTrustedAuthority } from './api-request-trust.ts'
 import { BrowserAuth } from './browser-auth.ts'
 import { HostConnectionService } from './rpc-host.ts'
+import { NasAccess, type NasDeploymentConfig } from './nas-access.ts'
 import { ConnectionRecoveryConfigSchema, resolveConnectionConfig, type ConnectionRecoveryConfig } from './recovery-config.ts'
 
 export type {
@@ -85,6 +86,8 @@ export interface ConnectionConfig {
   cookieMaxAgeDays?: number
   /** Maximum buffered JSON body for every `/api` request. Default: 300 MiB. */
   maxRequestBodyBytes?: number
+  /** Enable the authenticated NAS deployment carrier and its pairing routes. */
+  nas?: Omit<NasDeploymentConfig, 'trustedHosts'>
 }
 
 export const Config: z<ConnectionConfig> = z.object({
@@ -92,6 +95,14 @@ export const Config: z<ConnectionConfig> = z.object({
   trustedHosts: z.array(String).default([]),
   cookieMaxAgeDays: z.natural().min(1).default(30),
   maxRequestBodyBytes: z.natural().min(1).default(DEFAULT_MAX_REQUEST_BODY_BYTES),
+  nas: z.object({
+    enabled: z.boolean().default(false),
+    name: String,
+    version: String,
+    protocolVersion: z.natural().min(1).default(1),
+    deviceLifetimeDays: z.natural().min(1).default(90),
+    pairingCode: z.string(),
+  }),
 })
 
 /**
@@ -111,10 +122,13 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
   // silently authorizing its hostname prefix at request time.
   for (const entry of trustedHosts) assertTrustedAuthority(entry)
   assertImageBodyCapacity(ctx, maxRequestBodyBytes)
+  const nasAccess = config?.nas?.enabled === true
+    ? await NasAccess.create(ctx.credentials, { ...config.nas, trustedHosts })
+    : undefined
   const connection = new HostConnectionService(
     ctx,
     trustedHosts,
-    await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays),
+    await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays, nasAccess),
   )
   ctx.inject(['webServer'], (webCtx) => {
     assertImageBodyCapacity(webCtx, maxRequestBodyBytes)
@@ -136,6 +150,9 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
       },
     }
     webCtx.effect(() => webCtx.webServer.register(route), 'client-connection: /api route')
+    for (const nasRoute of nasAccess?.routes ?? []) {
+      webCtx.effect(() => webCtx.webServer.register(nasRoute), `client-connection: ${nasRoute.path} NAS route`)
+    }
   })
   ctx.inject(['attachments'], (attachmentCtx) => {
     assertImageBodyCapacity(attachmentCtx, maxRequestBodyBytes)

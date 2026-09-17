@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-connection",
-  "description": "Authenticated RPC transport and generation lifecycle",
+  "description": "Authenticated RPC transport, NAS device pairing, and generation lifecycle",
   "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"

@@ -10,6 +10,7 @@ import { DesktopUpdateBadge } from '../src/client/DesktopUpdateBadge.tsx'
 import { DesktopSidebarUpdateButton } from '../src/client/DesktopSidebarUpdateButton.tsx'
 import { DesktopBrowserReturnButton } from '../src/client/DesktopBrowserReturnButton.tsx'
 import { DesktopLogDirectoryAction } from '../src/client/DesktopLogDirectoryAction.tsx'
+import { NasRuntimeSection } from '../src/client/NasRuntimeSection.tsx'
 
 afterEach(() => {
   delete (globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop
@@ -22,7 +23,7 @@ function installBridge(): ReturnType<typeof vi.fn> {
   ;(globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop = {
     shell: {
       getCapabilities: vi.fn(() => Promise.resolve({
-        platform: 'darwin', packaged: true, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
+        runtimeKind: 'local', platform: 'darwin', packaged: true, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
         commandLineAvailable: true, developmentRecoveryAvailable: false,
       })),
       getDataHome: vi.fn(() => Promise.resolve({
@@ -198,5 +199,22 @@ describe('ui-desktop-shell apply', () => {
     expect(b.slots.entries('settings.general.item')).toEqual([])
     expect(b.slots.entries('settings.action')).toEqual([])
     expect(b.slots.entries('sidebar.settings.action')).toEqual([])
+  })
+
+  it('registers the NAS settings page only when the desktop host exposes its narrow bridge', async () => {
+    installBridge()
+    const bridge = (globalThis as unknown as { deepSeekHarnessDesktop: Record<string, unknown> }).deepSeekHarnessDesktop
+    bridge.nas = {
+      get: vi.fn(() => Promise.resolve({ selection: { kind: 'local' }, servers: [], secureStorageAvailable: true })),
+      discover: vi.fn(), inspect: vi.fn(), pair: vi.fn(), select: vi.fn(), remove: vi.fn(), test: vi.fn(),
+      devices: vi.fn(), revokeDevice: vi.fn(), onStatus: vi.fn(() => () => {}),
+    }
+    const b = await bench()
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const section = b.slots.entries('settings.section').find(entry => entry.options.id === 'nas-runtime')
+    expect(section?.component).toBe(NasRuntimeSection)
+    await fiber.dispose()
+    expect(b.slots.entries('settings.section')).toEqual([])
   })
 })

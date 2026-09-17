@@ -55,6 +55,15 @@ export interface Config {
   surfaceContext: boolean
   /** Explicit `--trusted-host` authorities from this invocation. */
   trustedHosts: string[]
+  /** NAS deployment values, absent for an ordinary local Web app. */
+  nas?: {
+    enabled: true
+    name: string
+    version: string
+    protocolVersion: number
+    deviceLifetimeDays: number
+    pairingCode?: string
+  }
 }
 
 export const Config: z<Config> = z.object({
@@ -62,6 +71,14 @@ export const Config: z<Config> = z.object({
   printUrl: z.boolean().default(true),
   surfaceContext: z.boolean().default(true),
   trustedHosts: z.array(String).default([]),
+  nas: z.object({
+    enabled: z.const(true),
+    name: String,
+    version: String,
+    protocolVersion: z.natural().min(1),
+    deviceLifetimeDays: z.natural().min(1),
+    pairingCode: z.string(),
+  }),
 })
 
 /** Bind-dependent Web values shared by the trust fence and URL display. */
@@ -70,6 +87,8 @@ export interface WebRuntimeValues {
   lanAddresses: string[]
   /** LAN literals followed by explicit invocation authorities. */
   trustedHosts: string[]
+  /** NAS deployment configuration passed to Connection. */
+  nas?: Config['nas']
 }
 
 /** Environment variable naming the canonical local URL of this Web GUI. */
@@ -122,13 +141,13 @@ try {
  * @param extra - explicit `--trusted-host` values, in argument order.
  * @returns the LAN display addresses and invocation-derived fence authorities.
  */
-export function resolveLanTrust(bindHost: string, extra: readonly string[]): WebRuntimeValues {
+export function resolveLanTrust(bindHost: string, extra: readonly string[], nas?: Config['nas']): WebRuntimeValues {
   const lanAddresses = bindHost === ALL_INTERFACES_HOST
     ? Object.values(networkInterfaces()).flat()
       .filter((iface): iface is NonNullable<typeof iface> => iface !== undefined && iface.family === 'IPv4' && !iface.internal)
       .map(iface => iface.address)
     : []
-  return { lanAddresses, trustedHosts: [...lanAddresses, ...extra] }
+  return { lanAddresses, trustedHosts: [...lanAddresses, ...extra], ...(nas === undefined ? {} : { nas }) }
 }
 
 /** Model-visible orientation and acceptance boundary for sessions created through `dsh web`. */
@@ -227,7 +246,7 @@ export const internals: {
  * @param config - validated {@link Config}.
  */
 export function apply(ctx: Context, config: Config): void {
-  const runtime = resolveLanTrust(ctx.webServer.host, config.trustedHosts)
+  const runtime = resolveLanTrust(ctx.webServer.host, config.trustedHosts, config.nas)
   // The loopback URL belongs to this host. Under SSH, the operator reaches it
   // through a local forwarding address that this process cannot derive.
   const handoffBrowser = config.openBrowser && !launchedThroughSsh(launchEnvironmentOf(ctx))

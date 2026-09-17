@@ -80,10 +80,12 @@ export class DesktopShellController {
       this.bridge.shell.getPreferences(),
       this.bridge.releases.getStatus(),
       this.bridge.releases.getDownloadStatus(),
-      this.bridge.shell.getCommandLine(),
-      this.bridge.shell.getDataHome(),
-      this.bridge.desktopWeb.getStatus(),
-    ]).then(([capabilities, preferences, release, releaseDownload, commandLine, dataHome, desktopWeb]) => {
+    ]).then(async ([capabilities, preferences, release, releaseDownload]) => {
+      const [commandLine, dataHome, desktopWeb] = capabilities.runtimeKind === 'nas'
+        ? [null, null, { phase: 'error' as const, message: 'Open the paired NAS HTTPS address in a browser.' }]
+        : await Promise.all([
+          this.bridge.shell.getCommandLine(), this.bridge.shell.getDataHome(), this.bridge.desktopWeb.getStatus(),
+        ])
       this.#publish({ capabilities, preferences, release, releaseDownload, commandLine, dataHome, desktopWeb })
     }).catch((error: unknown) => {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })

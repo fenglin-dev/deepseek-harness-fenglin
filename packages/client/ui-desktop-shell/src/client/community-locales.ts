@@ -6,6 +6,7 @@ import { desktopLanguageTitles } from './locales.ts'
 import { COMMUNITY_TRANSLATIONS } from './community-translations/index.ts'
 import { COMMUNITY_SURFACE_TRANSLATIONS } from './community-translations/surfaces.ts'
 import { DOWNLOAD_NETWORK_TRANSLATIONS } from './download-network-locales.ts'
+import { NAS_TRANSLATIONS } from './nas-locales.ts'
 import { ru } from './locales.ts'
 
 /** Additional languages offered by Open DSH Desktop. */
@@ -42,6 +43,7 @@ export function registerDesktopLanguages(ctx: Context): () => void {
       dictionaries['desktop-shell'] = {
         ...dictionaries['desktop-shell'],
         ...(definition.id === 'ru' ? ru : DOWNLOAD_NETWORK_TRANSLATIONS[definition.id]),
+        ...(definition.id === 'ru' ? {} : NAS_TRANSLATIONS[definition.id]),
       }
       for (const [namespace, dictionary] of Object.entries(dictionaries)) {
         disposers.push(ctx.locale.register(namespace, definition.id, dictionary))

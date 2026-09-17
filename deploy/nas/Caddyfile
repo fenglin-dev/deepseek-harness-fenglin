@@ -1,0 +1,5 @@
+{$NAS_HOSTNAME:harness.local} {
+  tls internal
+  encode zstd gzip
+  reverse_proxy harness:3080
+}

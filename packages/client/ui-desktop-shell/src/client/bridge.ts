@@ -71,6 +71,53 @@ export interface DesktopWebBridge {
   onStatus(callback: (status: DesktopWebStatus) => void): () => void
 }
 
+export type DesktopRuntimeSelection = { readonly kind: 'local' } | { readonly kind: 'nas'; readonly serverId: string }
+
+export interface NasRuntimeRecord {
+  readonly id: string
+  readonly name: string
+  readonly baseUrl: string
+  readonly certificateFingerprint?: string
+  readonly deviceId?: string
+  readonly credentialExpiresAt?: string
+  readonly lastConnectedAt?: string
+}
+
+export interface NasRuntimeStatus {
+  readonly selection: DesktopRuntimeSelection
+  readonly servers: readonly NasRuntimeRecord[]
+  readonly secureStorageAvailable: boolean
+  readonly active?: NasRuntimeRecord
+}
+export interface NasDeviceSummary {
+  readonly id: string
+  readonly name: string
+  readonly createdAt: string
+  readonly expiresAt: string
+}
+export interface NasDiscoveryCandidate {
+  readonly baseUrl: string
+  readonly name: string
+}
+
+export interface DesktopNasBridge {
+  get(): Promise<NasRuntimeStatus>
+  discover(): Promise<readonly NasDiscoveryCandidate[]>
+  inspect(baseUrl: string): Promise<{ readonly fingerprint: string }>
+  pair(request: {
+    readonly baseUrl: string
+    readonly code: string
+    readonly deviceName: string
+    readonly certificateFingerprint: string
+  }): Promise<NasRuntimeStatus>
+  select(selection: DesktopRuntimeSelection): Promise<{ readonly restarting: true }>
+  remove(serverId: string): Promise<NasRuntimeStatus>
+  test(serverId: string): Promise<{ readonly healthy: true; readonly version: string }>
+  devices(serverId: string): Promise<readonly NasDeviceSummary[]>
+  revokeDevice(serverId: string, deviceId: string): Promise<readonly NasDeviceSummary[]>
+  onStatus(callback: (status: NasRuntimeStatus) => void): () => void
+}
+
 /** Redacted managed process state from Electron. */
 export interface DesktopProcessSnapshot {
   schema: 'open-dsh-desktop/managed-process/v1'
@@ -109,6 +156,7 @@ export interface DesktopPersistentServiceSummary {
 
 /** Platform and build-mode support reported by Electron. */
 export interface DesktopCapabilities {
+  runtimeKind: 'local' | 'nas'
   platform: string
   packaged: boolean
   launchAtLoginAvailable: boolean
@@ -220,6 +268,8 @@ export interface DesktopBridge {
   desktopWeb: DesktopWebBridge
   icons?: DesktopIconsBridge
   processes?: DesktopProcessesBridge
+  /** NAS runtime management, absent on older desktop hosts and ordinary Web. */
+  nas?: DesktopNasBridge
 }
 
 /**
@@ -235,12 +285,14 @@ export function readDesktopBridge(): DesktopBridge | null {
     desktopWeb?: DesktopWebBridge
     icons?: DesktopIconsBridge
     processes?: DesktopProcessesBridge
+    nas?: DesktopNasBridge
     menu?: DesktopBridge['menu']
   } | undefined
   return candidate?.shell === undefined || candidate.releases === undefined || candidate.desktopWeb === undefined
     ? null
     : { shell: candidate.shell, releases: candidate.releases, desktopWeb: candidate.desktopWeb,
       ...(candidate.downloadNetwork === undefined ? {} : { downloadNetwork: candidate.downloadNetwork }),
+      ...(candidate.nas === undefined ? {} : { nas: candidate.nas }),
       ...(candidate.menu === undefined ? {} : { menu: candidate.menu }),
       ...(candidate.icons === undefined ? {} : { icons: candidate.icons }),
       ...(candidate.processes === undefined ? {} : { processes: candidate.processes }) }

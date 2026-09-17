@@ -11,13 +11,15 @@ describe('community desktop locales', () => {
 
   it('registers each locale namespace exactly once after merging desktop additions', () => {
     const registrations = new Set<string>()
+    const dictionaries = new Map<string, Record<string, string>>()
     const ctx = {
       locale: {
         addLanguage: () => () => undefined,
-        register: (namespace: string, locale: string) => {
+        register: (namespace: string, locale: string, dictionary: Record<string, string>) => {
           const key = `${namespace}/${locale}`
           if (registrations.has(key)) throw new Error(`duplicate locale registration: ${key}`)
           registrations.add(key)
+          dictionaries.set(key, dictionary)
           return () => { registrations.delete(key) }
         },
       },
@@ -26,6 +28,7 @@ describe('community desktop locales', () => {
     const dispose = registerDesktopLanguages(ctx)
     for (const definition of DESKTOP_LANGUAGE_DEFINITIONS) {
       expect(registrations).toContain(`desktop-shell/${definition.id}`)
+      expect(dictionaries.get(`desktop-shell/${definition.id}`)?.['nas.title']).toBeTruthy()
     }
     dispose()
     expect(registrations).toHaveLength(0)

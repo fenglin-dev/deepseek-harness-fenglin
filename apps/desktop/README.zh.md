@@ -138,6 +138,12 @@ npm run package:desktop:linux:x64
 
 DEB 与 RPM 文件写入 `.artifacts/desktop-linux/`。与 macOS 相同，它们包含目标平台原生的 Node、pnpm 与 Harness 生产运行时归档。`Desktop packages` 工作流会运行四个原生任务，上传五种安装包并生成 `SHA256SUMS`。手动运行默认只保留 Actions artifact；仅从 `dsh-v*` 标签明确要求发布，或推送该标签时，才会使用固定平台文件名创建或更新对应 GitHub Release。
 
+## NAS 运行端模式
+
+Desktop 可以保存多个 Linux NAS 运行端，并在本地 Harness 与一个已选远程运行端之间切换。NAS 拥有插件、模型设置、会话与工作区；窗口等展示偏好仍保存在当前设备。选择 NAS 后会跳过本地 Profile 引导和本地 Harness 启动。连接失败会明确展示，未由用户显式切换时绝不会回退到本机。
+
+配对使用十分钟有效的八位码和随机逐设备 Bearer grant，grant 通过 Electron `safeStorage` 保存。自签名来源需要核对并固定 SHA-256 证书指纹。请求只向精确匹配的已选 HTTPS/WSS 来源附加 grant；远程 preload 不提供插件、进程、诊断、命令行、文件系统、环境变量或 Shell bridge。mDNS 结果只是不受信任的地址建议，仍必须核对证书并完成配对。Compose 部署与备份要求见 [`../../deploy/nas/README.zh.md`](../../deploy/nas/README.zh.md)。
+
 ## 进程生命周期
 
 Electron 主进程不经过 shell，直接启动 `node apps/cli/lib/bin.js web --host 127.0.0.1 --port 0`。所有打包平台都使用内置的目标平台原生 Node，不使用 Electron 或用户安装的 Node 可执行文件。宿主只把 `dsh web: http://127.0.0.1:<port>` 识别为就绪信号；应用退出时先发送 `SIGTERM`，超过固定期限后再发送 `SIGKILL`。Desktop 控制台输出以及 Harness 的 stdout 和 stderr 共用持久化 `harness.log`：每行都带 ISO 时间、来源与级别，每次重启追加会话标记，8 MiB 文件会在移除常见凭据形式后轮转并保留四份历史。设置页顶部操作会打开该固定文件，文件缺失时回退到所在目录。默认关闭窗口只会隐藏到系统托盘；用户可以改为关闭即请求完整退出，所有显式退出都会等待 Harness 清理。启动期间，单向确定进度条只按桌面环境、内置运行时、Profile 兼容性、预设插件与 Harness 的真实里程碑前进，同时显示当前操作和插件名称；Harness 就绪时达到 100%，随后才把窗口交给 Web GUI。Harness 数据目录尚未确定时，目录选择页跟随系统外观；完成选择后，持久化的 `ui-theme.preference` 会通过同一个 `system`／`light`／`dark` 来源同步加载页、原生边框、自定义顶栏、首次引导和 Web 主界面，并在用户切换主题时继续更新。Harness 在就绪前连续退出三次后会停止自动重启，并显示重试与日志操作。连接页等待十五秒后会显示当前有界操作、已等待时间、截止时间、自动降级策略和固定日志入口，而不是泛化的缓慢提示。

@@ -1,0 +1,102 @@
+name: open-dsh-nas
+
+services:
+  harness:
+    build:
+      context: ../..
+      dockerfile: deploy/nas/Dockerfile
+    restart: unless-stopped
+    init: true
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      DSH_HOME: /config
+      HOME: /config/.home
+      XDG_CACHE_HOME: /config/.cache
+      DSH_NAS_VERSION: "${DSH_NAS_VERSION:-0.1.6-alpha.1}"
+      NAS_HOSTNAME: "${NAS_HOSTNAME:-harness.local}"
+    command:
+      - node
+      - lib/bin.js
+      - --profile
+      - web
+      - --no-open
+      - --host
+      - 0.0.0.0
+      - --port
+      - "3080"
+      - --trusted-host
+      - "${NAS_HOSTNAME:-harness.local}"
+      - --nas
+      - --nas-name
+      - "${NAS_NAME:-Home NAS}"
+      - --device-lifetime-days
+      - "${DEVICE_LIFETIME_DAYS:-90}"
+    volumes:
+      - "${CONFIG_PATH:-./data/config}:/config"
+      - "${WORKSPACES_PATH:-./data/workspaces}:/workspaces"
+    networks: [frontend, backend]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3080/nas/health',{headers:{host:process.env.NAS_HOSTNAME||'harness.local'}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    security_opt:
+      - no-new-privileges:true
+
+  https:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      harness:
+        condition: service_healthy
+    environment:
+      NAS_HOSTNAME: "${NAS_HOSTNAME:-harness.local}"
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [backend]
+    security_opt:
+      - no-new-privileges:true
+
+  identity:
+    image: node:24-alpine
+    profiles: [tools]
+    depends_on:
+      https:
+        condition: service_started
+    environment:
+      NAS_HOSTNAME: "${NAS_HOSTNAME:-harness.local}"
+    volumes:
+      - ./print-fingerprint.mjs:/tool/print-fingerprint.mjs:ro
+      - caddy_data:/data:ro
+    command: ["node", "/tool/print-fingerprint.mjs"]
+    network_mode: none
+    security_opt:
+      - no-new-privileges:true
+
+  discovery:
+    image: node:24-alpine
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      NAS_HOSTNAME: "${NAS_HOSTNAME:-harness.local}"
+      NAS_NAME: "${NAS_NAME:-Home NAS}"
+      HTTPS_PORT: "${HTTPS_PORT:-443}"
+    volumes:
+      - ./mdns-advertiser.mjs:/app/mdns-advertiser.mjs:ro
+    command: ["node", "/app/mdns-advertiser.mjs"]
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  frontend:
+  backend:
+    internal: true
+
+volumes:
+  caddy_data:
+  caddy_config:

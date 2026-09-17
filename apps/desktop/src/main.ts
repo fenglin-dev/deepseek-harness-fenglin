@@ -184,6 +184,17 @@ import {
   persistentProfileFingerprint,
   type PersistentServiceSummary,
 } from '@deepseek-ai/dsh-subprocess'
+import {
+  NasRuntimeClient,
+  NasRuntimeStore,
+  discoverNasRuntimes,
+  inspectNasCertificate,
+  normalizeNasBaseUrl,
+  type DesktopRuntimeSelection,
+  type NasPairingRequest,
+  type NasRuntimeRecord,
+  type NasRuntimeStatus,
+} from './nas-runtime.ts'
 
 const APP_NAME = DESKTOP_PRODUCT_NAME
 const DESKTOP_WEB_SUPPORTED = process.platform === 'darwin' || process.platform === 'win32'
@@ -242,6 +253,7 @@ let mainSurface: DesktopWindowSurface | undefined
 let supervisor: HarnessSupervisor | undefined
 let harnessOrigin: string | undefined
 let harnessAuthenticationUrl: string | undefined
+let activeNasRuntime: NasRuntimeRecord | undefined
 let desktopWebAccess: DesktopWebAccess | undefined
 let desktopReturnControl: DesktopReturnControl | undefined
 let lifecycle: DesktopLifecycle | undefined
@@ -461,6 +473,9 @@ async function openSettingsDocument(): Promise<{ error: string }> {
 }
 let preferencesStore: DesktopPreferencesStore | undefined
 let preferences: DesktopPreferences = { ...DEFAULT_DESKTOP_PREFERENCES }
+let nasRuntimeStore: NasRuntimeStore | undefined
+let nasRuntimeClient: NasRuntimeClient | undefined
+const pendingNasCertificatePins = new Map<string, string>()
 let tray: Tray | undefined
 let quitReleased = false
 let hiddenLaunch = false
@@ -553,6 +568,7 @@ class DesktopDataHomeSelectionCancelledError extends Error {
 }
 
 interface DesktopCapabilities {
+  runtimeKind: 'local' | 'nas'
   platform: NodeJS.Platform
   packaged: boolean
   launchAtLoginAvailable: boolean
@@ -582,6 +598,7 @@ function applyDesktopThemeSource(source: DesktopThemeSource): void {
 
 function desktopCapabilities(): DesktopCapabilities {
   return {
+    runtimeKind: activeNasRuntime === undefined ? 'local' : 'nas',
     platform: process.platform,
     packaged: app.isPackaged,
     launchAtLoginAvailable: app.isPackaged && process.platform === 'darwin',
@@ -1464,6 +1481,7 @@ function configureNavigation(renderer: WebContents): void {
     return { action: 'deny' }
   })
   renderer.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
+    if (activeNasRuntime !== undefined && permission !== 'notifications') return false
     const origin = harnessOrigin
     const trustedContents = contents === renderer
       || (contents === null && details.embeddingOrigin === undefined)
@@ -1476,6 +1494,10 @@ function configureNavigation(renderer: WebContents): void {
     return keys.length > 0 && keys.every(key => permissionGrants.has(originGrantKey(origin, key)))
   })
   renderer.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    if (activeNasRuntime !== undefined && permission !== 'notifications') {
+      callback(false)
+      return
+    }
     const requestingUrl = details.requestingUrl
     const isMainFrame = 'isMainFrame' in details && details.isMainFrame
     const origin = harnessOrigin
@@ -1512,7 +1534,10 @@ function createWindow(): BrowserWindow {
     nodeIntegration: false,
     sandbox: true,
     preload: PRELOAD,
-    additionalArguments: [app.isPackaged ? '--dsh-packaged' : '--dsh-source'],
+    additionalArguments: [
+      app.isPackaged ? '--dsh-packaged' : '--dsh-source',
+      ...(activeNasRuntime === undefined ? [] : ['--dsh-nas-runtime']),
+    ],
   }
   const surface = createDesktopWindowSurface({
     platform: process.platform,
@@ -1541,7 +1566,7 @@ function createWindow(): BrowserWindow {
   })
   const { window } = surface
   configureNavigation(surface.renderer)
-  surface.renderer.session.webRequest.onCompleted({ urls: ['http://127.0.0.1/*'] }, (details) => {
+  surface.renderer.session.webRequest.onCompleted({ urls: ['http://127.0.0.1/*', 'https://*/*'] }, (details) => {
     if (details.webContentsId !== surface.renderer.id || details.resourceType !== 'mainFrame'
       || details.statusCode < 400 || lifecycle?.isQuitting === true || harnessOrigin === undefined) return
     let responseOrigin: string
@@ -1611,6 +1636,45 @@ function createWindow(): BrowserWindow {
   return window
 }
 
+async function connectSelectedNasRuntime(): Promise<void> {
+  const runtime = activeNasRuntime
+  const surface = mainSurface
+  const store = nasRuntimeStore
+  const client = nasRuntimeClient
+  if (runtime === undefined || surface === undefined || store === undefined || client === undefined) {
+    throw new Error('desktop: selected NAS runtime is unavailable')
+  }
+  const credential = store.credential(runtime.id)
+  if (credential === undefined) throw new Error('desktop: the selected NAS has no usable device credential; pair it again')
+  if (runtime.credentialExpiresAt !== undefined && Date.parse(runtime.credentialExpiresAt) <= Date.now()) {
+    throw new Error('desktop: the selected NAS device credential has expired; pair it again')
+  }
+  harnessOrigin = runtime.baseUrl
+  harnessAuthenticationUrl = undefined
+  reportedDesktopReadiness.clear()
+  publishStartupProgress({ stage: 'starting-harness', progress: 72, detail: 'connecting-nas' })
+  showLoading('starting')
+  try {
+    const health = await client.health(runtime.baseUrl, credential.token)
+    if (health.instanceId !== runtime.id) {
+      throw new Error('desktop: the NAS identity changed since pairing; remove it and pair again')
+    }
+    if (surface.window.isDestroyed() || mainSurface !== surface || activeNasRuntime !== runtime) return
+    publishStartupProgress({ stage: 'ready', progress: 100, detail: 'nas-ready' })
+    await surface.loadURL(withDesktopWindowMetadata(runtime.baseUrl, process.platform))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    await appendDesktopStartupLog(`NAS connection failed: ${message}`)
+    showLoading('failed', {
+      message,
+      diagnosticCode: 'desktop.nas-connection-failed',
+      evidence: runtime.baseUrl,
+      logPath: harnessLogPath,
+    })
+    throw error
+  }
+}
+
 async function startApplication(): Promise<void> {
   if (process.platform === 'win32') app.setAppUserModelId('ai.flaq.deepseek-harness')
   await app.whenReady()
@@ -1637,14 +1701,32 @@ async function startApplication(): Promise<void> {
     })
   }
   applyStartupDockIcon()
-  const dshHome = await prepareDesktopDshHome(DESKTOP_DATA_HOME)
-  const dataHomeSetup = await readDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile)
-  await applyFreshProfileDefaults(dshHome, dataHomeSetup)
+  nasRuntimeStore = new NasRuntimeStore(
+    join(app.getPath('userData'), 'nas-runtimes-v1.json'),
+    join(app.getPath('userData'), 'nas-device-credentials-v1.json'),
+    {
+      available: safeStorage.isEncryptionAvailable(),
+      seal: value => safeStorage.encryptString(value).toString('base64'),
+      open: value => safeStorage.decryptString(Buffer.from(value, 'base64')),
+    },
+    (error) => { console.error('desktop: could not read NAS runtime settings', error) },
+  )
+  nasRuntimeClient = new NasRuntimeClient(async (url, init) => net.fetch(url, init))
+  activeNasRuntime = nasRuntimeStore.status().active
+  // A saved NAS selection is a complete runtime choice. Do not force a new device
+  // through local Profile import or mutate its local Harness home before connecting.
+  const dshHome = activeNasRuntime === undefined
+    ? await prepareDesktopDshHome(DESKTOP_DATA_HOME)
+    : DESKTOP_DATA_HOME.dshHome
+  const dataHomeSetup = activeNasRuntime === undefined
+    ? await readDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile)
+    : undefined
+  if (activeNasRuntime === undefined) await applyFreshProfileDefaults(dshHome, dataHomeSetup)
   // Releases before the portable community import copied the complete Profile and did not write a
   // restore plan. Keep those deployments intact; new copies carry a plan and use normal first-start
   // preparation so packaged presets come from local archives before optional plugin restoration.
   const preserveCopiedPlugins = shouldPreserveLegacyCopiedProfile(dataHomeSetup)
-  activeMenuHome = dshHome
+  activeMenuHome = activeNasRuntime === undefined ? dshHome : undefined
   const persistentServicesPath = join(app.getPath('userData'), 'managed-processes', 'persistent-services-v1.json')
   persistentServiceAuthority = new FilePersistentServiceAuthorizer(
     persistentServicesPath,
@@ -1713,6 +1795,34 @@ async function startApplication(): Promise<void> {
     (error) => { console.error('desktop: could not read preferences; using defaults', error) },
   )
   preferences = preferencesStore.read()
+  app.on('certificate-error', (event, _webContents, url, _error, certificate, callback) => {
+    let origin: string
+    try { origin = new URL(url).origin } catch { callback(false); return }
+    const saved = nasRuntimeStore?.read().servers.find(server => server.baseUrl === origin)?.certificateFingerprint
+    const pending = pendingNasCertificatePins.get(origin)
+    const observed = certificate.fingerprint.toUpperCase()
+    if (observed === saved || observed === pending) {
+      event.preventDefault()
+      callback(true)
+      return
+    }
+    callback(false)
+  })
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://*/*', 'wss://*/*'] }, (details, callback) => {
+    let origin: string
+    try { origin = new URL(details.url).origin } catch { callback({ requestHeaders: details.requestHeaders }); return }
+    const directory = nasRuntimeStore?.read()
+    const selectedServerId = directory?.selection.kind === 'nas' ? directory.selection.serverId : undefined
+    const active = selectedServerId === undefined
+      ? undefined
+      : directory?.servers.find(server => server.id === selectedServerId)
+    const credential = active?.baseUrl === origin ? nasRuntimeStore?.credential(active.id) : undefined
+    callback({
+      requestHeaders: credential === undefined
+        ? details.requestHeaders
+        : { ...details.requestHeaders, Authorization: `Bearer ${credential.token}` },
+    })
+  })
   chatBackgroundStore = createDesktopChatBackgroundStore(
     join(app.getPath('userData'), 'chat-background.json'),
     (error) => { console.error('desktop: could not read chat background; using browser fallback', error) },
@@ -2130,6 +2240,118 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return updatePreferences(patch)
   })
+  const requireNasRuntime = (): { readonly store: NasRuntimeStore; readonly client: NasRuntimeClient } => {
+    if (nasRuntimeStore === undefined || nasRuntimeClient === undefined) {
+      throw new Error('desktop: NAS runtime settings are unavailable')
+    }
+    return { store: nasRuntimeStore, client: nasRuntimeClient }
+  }
+  const publishNasRuntimeStatus = (status: NasRuntimeStatus): NasRuntimeStatus => {
+    mainSurface?.send('dsh:desktop:nas:status', status)
+    return status
+  }
+  ipcMain.handle('dsh:desktop:nas:get', (event): NasRuntimeStatus => {
+    assertMainRenderer(event.sender)
+    return requireNasRuntime().store.status()
+  })
+  ipcMain.handle('dsh:desktop:nas:discover', async (event) => {
+    assertMainRenderer(event.sender)
+    return discoverNasRuntimes()
+  })
+  ipcMain.handle('dsh:desktop:nas:inspect', async (event, rawBaseUrl: unknown) => {
+    assertMainRenderer(event.sender)
+    if (typeof rawBaseUrl !== 'string') throw new TypeError('desktop: NAS address must be a string')
+    const baseUrl = normalizeNasBaseUrl(rawBaseUrl)
+    const fingerprint = await inspectNasCertificate(baseUrl)
+    pendingNasCertificatePins.set(baseUrl, fingerprint)
+    return { fingerprint }
+  })
+  ipcMain.handle('dsh:desktop:nas:pair', async (event, raw: unknown): Promise<NasRuntimeStatus> => {
+    assertMainRenderer(event.sender)
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      throw new TypeError('desktop: invalid NAS pairing request')
+    }
+    const source = raw as Record<string, unknown>
+    const allowed = new Set(['baseUrl', 'code', 'deviceName', 'certificateFingerprint'])
+    if (Object.keys(source).some(key => !allowed.has(key))
+      || typeof source.baseUrl !== 'string' || typeof source.code !== 'string'
+      || typeof source.deviceName !== 'string' || typeof source.certificateFingerprint !== 'string') {
+      throw new TypeError('desktop: invalid NAS pairing request')
+    }
+    const request: NasPairingRequest = {
+      baseUrl: normalizeNasBaseUrl(source.baseUrl),
+      code: source.code,
+      deviceName: source.deviceName,
+      certificateFingerprint: source.certificateFingerprint,
+    }
+    const expected = pendingNasCertificatePins.get(request.baseUrl)
+    if (expected === undefined || expected !== request.certificateFingerprint) {
+      throw new Error('desktop: inspect and confirm the current NAS certificate before pairing')
+    }
+    const { store, client } = requireNasRuntime()
+    const pairing = await client.pair(request)
+    pendingNasCertificatePins.delete(request.baseUrl)
+    return publishNasRuntimeStatus(store.savePairing(
+      request.baseUrl,
+      pairing,
+      request.certificateFingerprint,
+    ))
+  })
+  ipcMain.handle('dsh:desktop:nas:select', async (event, raw: unknown): Promise<{ restarting: true }> => {
+    assertMainRenderer(event.sender)
+    let selection: DesktopRuntimeSelection
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      throw new TypeError('desktop: invalid runtime selection')
+    }
+    const source = raw as Record<string, unknown>
+    if (source.kind === 'local') selection = { kind: 'local' }
+    else if (source.kind === 'nas' && typeof source.serverId === 'string') selection = { kind: 'nas', serverId: source.serverId }
+    else throw new TypeError('desktop: invalid runtime selection')
+    publishNasRuntimeStatus(requireNasRuntime().store.select(selection))
+    await stopPersistentServicesForActiveProfile()
+    setTimeout(requestDesktopRestart, 250)
+    return { restarting: true }
+  })
+  ipcMain.handle('dsh:desktop:nas:remove', (event, serverId: unknown): NasRuntimeStatus => {
+    assertMainRenderer(event.sender)
+    if (typeof serverId !== 'string' || serverId === '') throw new TypeError('desktop: invalid NAS id')
+    return publishNasRuntimeStatus(requireNasRuntime().store.remove(serverId))
+  })
+  ipcMain.handle('dsh:desktop:nas:test', async (event, serverId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (typeof serverId !== 'string' || serverId === '') throw new TypeError('desktop: invalid NAS id')
+    const { store, client } = requireNasRuntime()
+    const server = store.read().servers.find(candidate => candidate.id === serverId)
+    const credential = store.credential(serverId)
+    if (server === undefined || credential === undefined) throw new Error('desktop: NAS device credential is unavailable')
+    const health = await client.health(server.baseUrl, credential.token)
+    return { healthy: true as const, version: health.version }
+  })
+  ipcMain.handle('dsh:desktop:nas:devices', async (event, serverId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (typeof serverId !== 'string' || serverId === '') throw new TypeError('desktop: invalid NAS id')
+    const { store, client } = requireNasRuntime()
+    const server = store.read().servers.find(candidate => candidate.id === serverId)
+    const credential = store.credential(serverId)
+    if (server === undefined || credential === undefined) throw new Error('desktop: NAS credential is unavailable')
+    return client.devices(server.baseUrl, credential.token)
+  })
+  ipcMain.handle('dsh:desktop:nas:revoke-device', async (event, serverId: unknown, deviceId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (typeof serverId !== 'string' || serverId === '' || typeof deviceId !== 'string') {
+      throw new TypeError('desktop: invalid NAS device revocation request')
+    }
+    const { store, client } = requireNasRuntime()
+    const server = store.read().servers.find(candidate => candidate.id === serverId)
+    const credential = store.credential(serverId)
+    if (server === undefined || credential === undefined) throw new Error('desktop: NAS credential is unavailable')
+    const devices = await client.revokeDevice(server.baseUrl, credential.token, deviceId)
+    if (credential.deviceId === deviceId) {
+      publishNasRuntimeStatus(store.remove(serverId))
+      setTimeout(requestDesktopRestart, 250)
+    }
+    return devices
+  })
   ipcMain.handle('dsh:desktop:download-network:get', (event): DownloadNetworkSettings => {
     assertMainRenderer(event.sender)
     if (downloadNetworkStore === undefined) throw new Error('desktop: download network settings are unavailable')
@@ -2443,6 +2665,14 @@ async function startApplication(): Promise<void> {
   })
   ipcMain.handle('dsh:harness:retry', async (event) => {
     assertMainRenderer(event.sender)
+    if (activeNasRuntime !== undefined) {
+      try {
+        await connectSelectedNasRuntime()
+        return { started: true }
+      } catch {
+        return { started: false }
+      }
+    }
     await recoveryActivateCandidate?.()
     if (recoveryRestartRequired) {
       setTimeout(() => { requestDesktopRestart() }, 150)
@@ -2865,6 +3095,13 @@ async function startApplication(): Promise<void> {
     console.error('desktop: system tray unavailable; closing will keep the window accessible', error)
   }
   createWindow()
+
+  if (activeNasRuntime !== undefined) {
+    await appendDesktopStartupLog(`Connecting to selected NAS runtime ${activeNasRuntime.name} at ${activeNasRuntime.baseUrl}.`)
+    try { await connectSelectedNasRuntime() } catch { /* recovery controls remain visible */ }
+    app.on('activate', () => { lifecycle?.showWindow() })
+    return
+  }
 
   publishStartupProgress(app.isPackaged
     ? { stage: 'preparing-runtime', progress: 10 }

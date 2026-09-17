@@ -40,6 +40,9 @@ import type { DesktopWebOpenResult, DesktopWebStatus } from './desktop-web-acces
 import type {
   DownloadNetworkPatch, DownloadNetworkSettings, DownloadNetworkTarget, DownloadNetworkTestStatus,
 } from './download-network-settings.ts'
+import type {
+  DesktopRuntimeSelection, NasDeviceSummary, NasDiscoveryCandidate, NasPairingRequest, NasRuntimeStatus,
+} from './nas-runtime.ts'
 
 /** Renderer-visible update methods; no generic process or filesystem access is exposed. */
 export interface DesktopUpdateBridge {
@@ -56,6 +59,7 @@ const bridge: DesktopUpdateBridge = {
 
 /** Capability flags returned by the trusted main process. */
 export interface DesktopCapabilities {
+  runtimeKind: 'local' | 'nas'
   platform: NodeJS.Platform
   packaged: boolean
   launchAtLoginAvailable: boolean
@@ -113,6 +117,20 @@ export interface DesktopWebBridge {
   getStatus(): Promise<DesktopWebStatus>
   open(): Promise<DesktopWebOpenResult>
   onStatus(callback: (status: DesktopWebStatus) => void): () => void
+}
+
+/** Saved NAS runtimes and fixed pairing operations; tokens never reach the renderer. */
+export interface DesktopNasBridge {
+  get(): Promise<NasRuntimeStatus>
+  discover(): Promise<readonly NasDiscoveryCandidate[]>
+  inspect(baseUrl: string): Promise<{ readonly fingerprint: string }>
+  pair(request: NasPairingRequest): Promise<NasRuntimeStatus>
+  select(selection: DesktopRuntimeSelection): Promise<{ readonly restarting: true }>
+  remove(serverId: string): Promise<NasRuntimeStatus>
+  test(serverId: string): Promise<{ readonly healthy: true; readonly version: string }>
+  devices(serverId: string): Promise<readonly NasDeviceSummary[]>
+  revokeDevice(serverId: string, deviceId: string): Promise<readonly NasDeviceSummary[]>
+  onStatus(callback: (status: NasRuntimeStatus) => void): () => void
 }
 
 /** Exact allowlisted bundled-plugin operations; no arbitrary package path is exposed. */
@@ -262,6 +280,25 @@ const downloadNetworkBridge: DesktopDownloadNetworkBridge = {
   },
 }
 
+const nasBridge: DesktopNasBridge = {
+  get: () => ipcRenderer.invoke('dsh:desktop:nas:get') as Promise<NasRuntimeStatus>,
+  discover: () => ipcRenderer.invoke('dsh:desktop:nas:discover') as Promise<readonly NasDiscoveryCandidate[]>,
+  inspect: baseUrl => ipcRenderer.invoke('dsh:desktop:nas:inspect', baseUrl) as Promise<{ fingerprint: string }>,
+  pair: request => ipcRenderer.invoke('dsh:desktop:nas:pair', request) as Promise<NasRuntimeStatus>,
+  select: selection => ipcRenderer.invoke('dsh:desktop:nas:select', selection) as Promise<{ restarting: true }>,
+  remove: serverId => ipcRenderer.invoke('dsh:desktop:nas:remove', serverId) as Promise<NasRuntimeStatus>,
+  test: serverId => ipcRenderer.invoke('dsh:desktop:nas:test', serverId) as Promise<{ healthy: true; version: string }>,
+  devices: serverId => ipcRenderer.invoke('dsh:desktop:nas:devices', serverId) as Promise<readonly NasDeviceSummary[]>,
+  revokeDevice: (serverId, deviceId) => ipcRenderer.invoke(
+    'dsh:desktop:nas:revoke-device', serverId, deviceId,
+  ) as Promise<readonly NasDeviceSummary[]>,
+  onStatus(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, status: NasRuntimeStatus): void => { callback(status) }
+    ipcRenderer.on('dsh:desktop:nas:status', listener)
+    return () => { ipcRenderer.removeListener('dsh:desktop:nas:status', listener) }
+  },
+}
+
 const desktopWebBridge: DesktopWebBridge = {
   getStatus: () => ipcRenderer.invoke('dsh:desktop:web:get') as Promise<DesktopWebStatus>,
   open: () => ipcRenderer.invoke('dsh:desktop:web:open') as Promise<DesktopWebOpenResult>,
@@ -376,6 +413,7 @@ const chatBackgroundBridge: DesktopChatBackgroundBridge = {
 }
 
 const sourceMode = process.argv.includes('--dsh-source')
+const nasMode = process.argv.includes('--dsh-nas-runtime')
 const iconsBridge: DesktopIconsBridge = {
   getStatus: () => ipcRenderer.invoke('dsh:desktop:icons:get') as Promise<DesktopIconStatus>,
   choose: () => ipcRenderer.invoke('dsh:desktop:icons:choose') as Promise<IconSelection | null>,
@@ -391,7 +429,27 @@ const iconsBridge: DesktopIconsBridge = {
     return () => { ipcRenderer.removeListener('dsh:desktop:icons:status', listener) }
   },
 }
-contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
+const unavailableInNasMode = (): Promise<never> => Promise.reject(new Error(
+  'desktop: this device-local operation is unavailable while connected to a NAS runtime',
+))
+const remoteShellBridge: DesktopShellBridge = {
+  ...shellBridge,
+  getDataHome: unavailableInNasMode,
+  openDataHomeChooser: unavailableInNasMode,
+  openSettingsDocument: unavailableInNasMode,
+  backupAndResetSettings: unavailableInNasMode,
+  getCommandLine: unavailableInNasMode,
+  installCommandLine: unavailableInNasMode,
+  removeCommandLine: unavailableInNasMode,
+  enterRecoveryMode: unavailableInNasMode,
+}
+const remoteDesktopWebBridge: DesktopWebBridge = {
+  getStatus: () => Promise.resolve({ phase: 'error', message: 'Open the paired NAS HTTPS address in a browser.' }),
+  open: unavailableInNasMode,
+  onStatus: () => () => {},
+}
+
+const commonDesktopBridge = {
   menu: Object.freeze({
     reportState(state: { ready: boolean; locale: string }): void {
       ipcRenderer.send('dsh:menu:client-state', state)
@@ -408,24 +466,30 @@ contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
       return () => { ipcRenderer.removeListener('dsh:menu:command', listener) }
     },
   }),
-  shell: Object.freeze(shellBridge),
-  icons: Object.freeze(iconsBridge),
+  shell: Object.freeze(nasMode ? remoteShellBridge : shellBridge),
   releases: Object.freeze(releasesBridge),
-  downloadNetwork: Object.freeze(downloadNetworkBridge),
-  desktopWeb: Object.freeze(desktopWebBridge),
-  bundledPlugins: Object.freeze(bundledPluginsBridge),
-  externalTools: Object.freeze(externalToolsBridge),
-  importedPlugins: Object.freeze(sourceMode
-    ? { ...importedPluginsBridge, development: true as const }
-    : importedPluginsBridge),
-  diagnosticLab: Object.freeze(diagnosticLabBridge),
-  pluginSnapshots: Object.freeze(pluginSnapshotsBridge),
-  startupDiagnostics: Object.freeze(startupDiagnosticsBridge),
-  processes: Object.freeze(processesBridge),
-  chatBackground: Object.freeze(chatBackgroundBridge),
-  ...(sourceMode ? {
-    updater: Object.freeze(bridge),
-  } : {}),
+  nas: Object.freeze(nasBridge),
+  desktopWeb: Object.freeze(nasMode ? remoteDesktopWebBridge : desktopWebBridge),
+}
+contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
+  ...commonDesktopBridge,
+  ...(nasMode ? {} : {
+    icons: Object.freeze(iconsBridge),
+    downloadNetwork: Object.freeze(downloadNetworkBridge),
+    bundledPlugins: Object.freeze(bundledPluginsBridge),
+    externalTools: Object.freeze(externalToolsBridge),
+    importedPlugins: Object.freeze(sourceMode
+      ? { ...importedPluginsBridge, development: true as const }
+      : importedPluginsBridge),
+    diagnosticLab: Object.freeze(diagnosticLabBridge),
+    pluginSnapshots: Object.freeze(pluginSnapshotsBridge),
+    startupDiagnostics: Object.freeze(startupDiagnosticsBridge),
+    processes: Object.freeze(processesBridge),
+    chatBackground: Object.freeze(chatBackgroundBridge),
+    ...(sourceMode ? {
+      updater: Object.freeze(bridge),
+    } : {}),
+  }),
 }))
 
 type DesktopThemeSource = 'system' | 'light' | 'dark'

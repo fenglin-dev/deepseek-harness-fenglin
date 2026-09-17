@@ -135,7 +135,7 @@
       name: '@deepseek-ai/dsh-host-webserver'
       inject: [webStartup]
       config:
-        host: !!js ctx.webStartup.host ?? '127.0.0.1'
+        host: !!js ctx.webStartup.host ?? (ctx.webStartup.nas ? '0.0.0.0' : '127.0.0.1')
         port: !!js ctx.webStartup.port ?? 3080
         compression: gzip
         compressionLevel: 1
@@ -158,6 +158,7 @@
         printUrl: true
         surfaceContext: true
         trustedHosts: !!js ctx.webStartup.trustedHosts
+        nas: !!js "ctx.webStartup.nas ? ({ enabled: true, name: ctx.webStartup.nasName ?? 'Open DSH NAS', version: process.env.DSH_NAS_VERSION ?? '0.1.6-alpha.1', protocolVersion: 1, deviceLifetimeDays: ctx.webStartup.deviceLifetimeDays, ...(ctx.webStartup.pairingCode === undefined ? {} : { pairingCode: ctx.webStartup.pairingCode }) }) : undefined"
 
     # The client-plugin reload chain, always mounted: it is idle until a
     # rebuild watcher (pnpm run dev:web) actually rewrites client bundles. It
@@ -190,6 +191,7 @@
         # A deployment adding authorities keeps this expression and concatenates
         # its literals, for example: ['app.internal', ...ctx.webRuntime.trustedHosts].
         trustedHosts: !!js ctx.webRuntime.trustedHosts
+        nas: !!js ctx.webRuntime.nas
 
     # Raw Blob and ReadableStream uploads run independently of Connection's
     # RPC and generation service.

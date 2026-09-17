@@ -11,6 +11,7 @@ import { DesktopBrowserReturnButton } from './DesktopBrowserReturnButton.tsx'
 import { DesktopLogDirectoryAction } from './DesktopLogDirectoryAction.tsx'
 import { DesktopSidebarUpdateButton } from './DesktopSidebarUpdateButton.tsx'
 import { DesktopUpdateBadge } from './DesktopUpdateBadge.tsx'
+import { NasRuntimeSection } from './NasRuntimeSection.tsx'
 import { readDesktopBridge } from './bridge.ts'
 import { captureDesktopReturnTarget, requestDesktopReturn } from './browser-return.ts'
 import { DesktopShellController } from './controller.ts'
@@ -91,6 +92,11 @@ export function apply(ctx: Context): void {
       openLog: () => bridge.shell.openLog(),
     }),
   }, DesktopPreferencesRow))
+  const nasBridge = bridge.nas
+  if (nasBridge !== undefined) ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section', id: 'nas-runtime', order: 45, label: () => ctx.locale.bind(NS)('nas.nav'), locale: NS,
+    inject: () => ({ bridge: nasBridge }),
+  }, NasRuntimeSection))
   ctx.slots.inject('settings.action', () => ctx.slots.register({
     name: 'settings.action', id: 'desktop-log-directory', order: -10, locale: NS,
     inject: () => ({ openLog: () => bridge.shell.openLog() }),
