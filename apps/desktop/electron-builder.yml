@@ -2,9 +2,6 @@ appId: ai.flaq.deepseek-harness
 productName: Open DeepSeek Harness Desktop
 asar: true
 npmRebuild: false
-# Paths are resolved from the monorepo cwd used by package:desktop:win:x64.
-beforePack: apps/desktop/scripts/before-pack-stage-runtime-deps.cjs
-afterPack: apps/desktop/scripts/after-pack-inject-runtime-deps.cjs
 directories:
   buildResources: build
   output: ../../.artifacts/desktop-windows
