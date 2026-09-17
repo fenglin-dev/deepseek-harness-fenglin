@@ -8,7 +8,7 @@
 
 > [!IMPORTANT]
 >
-> **[v0.1.5-rc.2.2가 출시되었습니다](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2).** 이번 유지보수 업데이트는 덮어쓰기 설치 중 번들 플러그인의 기록 버전과 실제 설치 버전이 어긋나는 문제를 수정했습니다. 또한 첫 실행용 사전 구성 플러그인 배포, Windows 업그레이드 정리, 보관된 세션 복원, 외부 도구 설치 진행률, 데이터 디렉터리 식별 및 진단 복구를 개선합니다.
+> **[v0.1.5-rc.2.3가 출시되었습니다](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3).** 공식 DeepSeek Harness `0.1.5-rc.2`를 기반으로 휴대폰 및 작은 창 레이아웃, 모델 검색과 긴 응답 성능, 커뮤니티 설정 가져오기, 번들 플러그인 업그레이드와 복구, 플러그인 마켓 재시작 확인, 영구 진단 로그를 개선했습니다.
 >
 > 버전 이름에는 `rc`가 남아 있지만 GitHub에서는 일반 Release로 게시되었습니다. 업그레이드 전에 중요한 설정을 백업하고, 문제를 보고할 때 관련 로그나 진단 보고서를 첨부해 주세요.
 
@@ -186,7 +186,7 @@ Cordis Context, Service, Symbol은 버전 번호뿐 아니라 물리 모듈의 �
 
 ## 다운로드 및 설치
 
-[GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2)에서 운영체제에 맞는 파일을 다운로드하세요.
+[GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3)에서 운영체제에 맞는 파일을 다운로드하세요.
 
 | 운영체제 | 아키텍처 | 패키지 |
 | --- | --- | --- |

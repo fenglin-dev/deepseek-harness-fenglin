@@ -8,7 +8,7 @@ Idiomas: [简体中文](../../README.md) · [English](README.en.md) · [日本�
 
 > [!IMPORTANT]
 >
-> **[v0.1.5-rc.2.2 ya está disponible](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2).** Esta actualización corrige la discrepancia entre las versiones registradas de los plugins preinstalados y las versiones realmente instaladas durante una actualización sobre la instalación existente. También mejora el despliegue preconstruido del primer inicio, la limpieza de actualizaciones en Windows, la recuperación de sesiones archivadas, el progreso de instalación de herramientas externas, la identificación del directorio de datos y la recuperación mediante diagnósticos.
+> **[v0.1.5-rc.2.3 ya está disponible](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3).** Basada en DeepSeek Harness `0.1.5-rc.2`, esta versión mejora el diseño para móviles y ventanas pequeñas, la búsqueda de modelos y el rendimiento de respuestas largas, la importación de configuraciones comunitarias, la actualización y recuperación de plugins incluidos, la confirmación de reinicio del mercado y los registros de diagnóstico persistentes.
 >
 > Aunque el nombre conserva `rc`, se publica como una versión normal en GitHub. Haz una copia de seguridad de la configuración importante antes de actualizar y adjunta registros o informes de diagnóstico al comunicar problemas.
 
@@ -186,7 +186,7 @@ Admite sistema, claro, oscuro y ocho temas de producto, ocho ilustraciones inclu
 
 ## Descargar e instalar
 
-Descarga el archivo apropiado desde [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2).
+Descarga el archivo apropiado desde [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3).
 
 | Sistema | Arquitectura | Paquete |
 | --- | --- | --- |
