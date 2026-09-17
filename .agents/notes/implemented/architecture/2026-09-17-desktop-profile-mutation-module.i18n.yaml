@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-17-desktop-profile-mutation-module.md
+2026-09-17-desktop-profile-mutation-module.md: 1cc1f055efcdf1eb7663fb2f2cacac796fccfb87
+2026-09-17-desktop-profile-mutation-module.zh.md: f61810c28b3c853ab7103c6ab12064e9ed12705c

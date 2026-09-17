@@ -12,7 +12,7 @@
 
 > [!IMPORTANT]
 >
-> **[v0.1.5-rc.2.2 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2)。** 本次维护修复覆盖安装时预设插件版本标记与实际安装不一致的问题，并改进首次启动的预构建插件部署、Windows 升级清理、归档会话恢复、外部工具安装进度、配置目录识别和诊断恢复。
+> **[v0.1.5-rc.2.3 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3)。** 本版本继续以官方 DeepSeek Harness `0.1.5-rc.2` 为核心基线，重点改进手机端和小窗口布局、模型搜索及长回答性能、社区配置导入、预设插件升级恢复、插件市场重启确认和持久化诊断日志。
 >
 > 虽然版本名保留 `rc`，本次在 GitHub 上按正式 Release 发布。升级前仍建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈给我们。
 
@@ -369,7 +369,7 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 ## 下载安装
 
-请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) 页面下载安装包。[`v0.1.5-rc.2.2`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) 已提供以下发行产物：
+请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) 页面下载安装包。[`v0.1.5-rc.2.3`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) 已提供以下发行产物：
 
 | 平台 | 架构 | 发行包 | 状态 |
 | --- | --- | --- | --- |

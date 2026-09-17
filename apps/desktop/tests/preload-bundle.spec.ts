@@ -43,8 +43,30 @@ it('boots every bundled preload before DOM globals are available with only Elect
         const exposed = exposeInMainWorld.mock.calls[0]?.[1] as {
           shell: { openLogDirectory(): Promise<{ error: string }> }
         }
+        expect(Object.keys(exposed)).toEqual([
+          'menu', 'shell', 'releases', 'nas', 'desktopWeb', 'icons', 'downloadNetwork', 'bundledPlugins', 'externalTools',
+          'importedPlugins', 'diagnosticLab', 'pluginSnapshots', 'startupDiagnostics', 'processes', 'chatBackground',
+        ])
+        expect(exposed).not.toHaveProperty('invoke')
+        expect(exposed).not.toHaveProperty('send')
+        expect(Object.isFrozen(exposed)).toBe(true)
         await expect(exposed.shell.openLogDirectory()).resolves.toEqual({ error: '' })
         expect(invoke).toHaveBeenCalledWith('dsh:desktop:log-directory:open')
+
+        const remoteExposeInMainWorld = vi.fn()
+        const remoteRequire = vi.fn((id: string) => {
+          if (id !== 'electron') throw new Error(`Sandbox cannot require ${id}`)
+          return { contextBridge: { exposeInMainWorld: remoteExposeInMainWorld }, ipcRenderer: { invoke } }
+        })
+        runInNewContext(await readFile(join(outDir, `${name}.cjs`), 'utf8'), {
+          require: remoteRequire,
+          window: { addEventListener: vi.fn() },
+          process: { platform: 'darwin', argv: ['--dsh-nas-runtime'] },
+        }, { timeout: 1000 })
+        const remoteExposed = remoteExposeInMainWorld.mock.calls[0]?.[1] as Record<string, unknown>
+        expect(Object.keys(remoteExposed)).toEqual(['menu', 'shell', 'releases', 'nas', 'desktopWeb'])
+        expect(remoteExposed).not.toHaveProperty('icons')
+        expect(remoteExposed).not.toHaveProperty('downloadNetwork')
       }
     }
   } finally {

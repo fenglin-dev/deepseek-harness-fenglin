@@ -2,6 +2,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 import { CLIENT_COMMANDS } from './application-menu.ts'
+import { DESKTOP_IPC } from './desktop-ipc-protocol.ts'
 import type { DesktopIconsBridge, DesktopIconStatus, IconSelection } from './icon-protocol.ts'
 import type { OpenLogResult } from './log-reveal.ts'
 import type { DesktopPreferences, DesktopPreferencesPatch } from './preferences.ts'
@@ -52,9 +53,9 @@ export interface DesktopUpdateBridge {
 }
 
 const bridge: DesktopUpdateBridge = {
-  check: () => ipcRenderer.invoke('dsh:source-update:check') as Promise<SourceUpdateStatus>,
-  upgrade: expectedCommit => ipcRenderer.invoke('dsh:source-update:upgrade', expectedCommit) as Promise<SourceUpdateResult>,
-  restart: () => ipcRenderer.invoke('dsh:source-update:restart') as Promise<{ restarting: true }>,
+  check: () => ipcRenderer.invoke(DESKTOP_IPC.sourceUpdateCheck) as Promise<SourceUpdateStatus>,
+  upgrade: expectedCommit => ipcRenderer.invoke(DESKTOP_IPC.sourceUpdateUpgrade, expectedCommit) as Promise<SourceUpdateResult>,
+  restart: () => ipcRenderer.invoke(DESKTOP_IPC.sourceUpdateRestart) as Promise<{ restarting: true }>,
 }
 
 /** Capability flags returned by the trusted main process. */
@@ -206,227 +207,229 @@ export interface DesktopChatBackgroundBridge {
 }
 
 const shellBridge: DesktopShellBridge = {
-  getCapabilities: () => ipcRenderer.invoke('dsh:desktop:capabilities') as Promise<DesktopCapabilities>,
-  getDataHome: () => ipcRenderer.invoke('dsh:desktop:data-home:get') as Promise<DesktopDataHomeStatus>,
+  getCapabilities: () => ipcRenderer.invoke(DESKTOP_IPC.capabilities) as Promise<DesktopCapabilities>,
+  getDataHome: () => ipcRenderer.invoke(DESKTOP_IPC.dataHomeGet) as Promise<DesktopDataHomeStatus>,
   openDataHomeChooser: () => ipcRenderer.invoke(
-    'dsh:desktop:data-home:open-chooser',
+    DESKTOP_IPC.dataHomeOpenChooser,
   ) as Promise<{ restarting: boolean }>,
-  getPreferences: () => ipcRenderer.invoke('dsh:desktop:preferences:get') as Promise<DesktopPreferences>,
-  updatePreferences: patch => ipcRenderer.invoke('dsh:desktop:preferences:update', patch) as Promise<DesktopPreferences>,
+  getPreferences: () => ipcRenderer.invoke(DESKTOP_IPC.preferencesGet) as Promise<DesktopPreferences>,
+  updatePreferences: patch => ipcRenderer.invoke(DESKTOP_IPC.preferencesUpdate, patch) as Promise<DesktopPreferences>,
   onPreferences(callback) {
     const listener = (_event: Electron.IpcRendererEvent, next: DesktopPreferences): void => { callback(next) }
-    ipcRenderer.on('dsh:desktop:preferences', listener)
-    return () => { ipcRenderer.removeListener('dsh:desktop:preferences', listener) }
+    ipcRenderer.on(DESKTOP_IPC.preferencesChanged, listener)
+    return () => { ipcRenderer.removeListener(DESKTOP_IPC.preferencesChanged, listener) }
   },
-  openLog: () => ipcRenderer.invoke('dsh:desktop:log:open') as Promise<OpenLogResult>,
-  openLogDirectory: () => ipcRenderer.invoke('dsh:desktop:log-directory:open') as Promise<{ error: string }>,
-  openSettingsDocument: () => ipcRenderer.invoke('dsh:desktop:settings:open') as Promise<{ error: string }>,
+  openLog: () => ipcRenderer.invoke(DESKTOP_IPC.logOpen) as Promise<OpenLogResult>,
+  openLogDirectory: () => ipcRenderer.invoke(DESKTOP_IPC.logDirectoryOpen) as Promise<{ error: string }>,
+  openSettingsDocument: () => ipcRenderer.invoke(DESKTOP_IPC.settingsOpen) as Promise<{ error: string }>,
   backupAndResetSettings: () => ipcRenderer.invoke(
-    'dsh:desktop:settings:reset',
+    DESKTOP_IPC.settingsReset,
   ) as Promise<{ backupName?: string; restarting: true }>,
-  restart: () => ipcRenderer.invoke('dsh:desktop:restart') as Promise<{ restarting: true }>,
-  getCommandLine: () => ipcRenderer.invoke('dsh:desktop:cli:get') as Promise<DesktopCliStatus>,
-  installCommandLine: force => ipcRenderer.invoke('dsh:desktop:cli:install', force) as Promise<DesktopCliStatus>,
-  removeCommandLine: () => ipcRenderer.invoke('dsh:desktop:cli:remove') as Promise<DesktopCliStatus>,
+  restart: () => ipcRenderer.invoke(DESKTOP_IPC.restart) as Promise<{ restarting: true }>,
+  getCommandLine: () => ipcRenderer.invoke(DESKTOP_IPC.cliGet) as Promise<DesktopCliStatus>,
+  installCommandLine: force => ipcRenderer.invoke(DESKTOP_IPC.cliInstall, force) as Promise<DesktopCliStatus>,
+  removeCommandLine: () => ipcRenderer.invoke(DESKTOP_IPC.cliRemove) as Promise<DesktopCliStatus>,
   enterRecoveryMode: () => ipcRenderer.invoke(
-    'dsh:desktop:recovery:enter',
+    DESKTOP_IPC.recoveryEnter,
   ) as Promise<{ entered: true }>,
-  reportReadiness: (phase) => { ipcRenderer.send('dsh:desktop:readiness', phase) },
+  reportReadiness: (phase) => { ipcRenderer.send(DESKTOP_IPC.readiness, phase) },
 }
 
 const releasesBridge: DesktopReleasesBridge = {
-  getStatus: () => ipcRenderer.invoke('dsh:desktop:releases:get') as Promise<DesktopReleaseStatus>,
-  check: () => ipcRenderer.invoke('dsh:desktop:releases:check') as Promise<DesktopReleaseStatus>,
+  getStatus: () => ipcRenderer.invoke(DESKTOP_IPC.releasesGet) as Promise<DesktopReleaseStatus>,
+  check: () => ipcRenderer.invoke(DESKTOP_IPC.releasesCheck) as Promise<DesktopReleaseStatus>,
   onStatus(callback) {
     const listener = (_event: Electron.IpcRendererEvent, next: DesktopReleaseStatus): void => { callback(next) }
-    ipcRenderer.on('dsh:desktop:release-status', listener)
-    return () => { ipcRenderer.removeListener('dsh:desktop:release-status', listener) }
+    ipcRenderer.on(DESKTOP_IPC.releaseStatus, listener)
+    return () => { ipcRenderer.removeListener(DESKTOP_IPC.releaseStatus, listener) }
   },
-  openDownload: releaseUrl => ipcRenderer.invoke('dsh:desktop:releases:open', releaseUrl) as Promise<{ error: string }>,
+  openDownload: releaseUrl => ipcRenderer.invoke(DESKTOP_IPC.releasesOpen, releaseUrl) as Promise<{ error: string }>,
   getDownloadStatus: () => ipcRenderer.invoke(
-    'dsh:desktop:releases:download:get',
+    DESKTOP_IPC.releasesDownloadGet,
   ) as Promise<DesktopReleaseDownloadStatus>,
   startDownload: () => ipcRenderer.invoke(
-    'dsh:desktop:releases:download:start',
+    DESKTOP_IPC.releasesDownloadStart,
   ) as Promise<DesktopReleaseDownloadStatus>,
   cancelDownload: () => ipcRenderer.invoke(
-    'dsh:desktop:releases:download:cancel',
+    DESKTOP_IPC.releasesDownloadCancel,
   ) as Promise<DesktopReleaseDownloadStatus>,
   openInstaller: () => ipcRenderer.invoke(
-    'dsh:desktop:releases:download:open',
+    DESKTOP_IPC.releasesDownloadOpen,
   ) as Promise<{ error: string }>,
   onDownloadStatus(callback) {
     const listener = (_event: Electron.IpcRendererEvent, next: DesktopReleaseDownloadStatus): void => { callback(next) }
-    ipcRenderer.on('dsh:desktop:release-download-status', listener)
-    return () => { ipcRenderer.removeListener('dsh:desktop:release-download-status', listener) }
+    ipcRenderer.on(DESKTOP_IPC.releaseDownloadStatus, listener)
+    return () => { ipcRenderer.removeListener(DESKTOP_IPC.releaseDownloadStatus, listener) }
   },
 }
 
 const downloadNetworkBridge: DesktopDownloadNetworkBridge = {
-  get: () => ipcRenderer.invoke('dsh:desktop:download-network:get') as Promise<DownloadNetworkSettings>,
-  update: patch => ipcRenderer.invoke('dsh:desktop:download-network:update', patch) as Promise<DownloadNetworkSettings>,
-  reset: target => ipcRenderer.invoke('dsh:desktop:download-network:reset', target) as Promise<DownloadNetworkSettings>,
-  getTestStatus: () => ipcRenderer.invoke('dsh:desktop:download-network:test:get') as Promise<DownloadNetworkTestStatus>,
-  test: target => ipcRenderer.invoke('dsh:desktop:download-network:test', target) as Promise<DownloadNetworkTestStatus>,
+  get: () => ipcRenderer.invoke(DESKTOP_IPC.downloadNetworkGet) as Promise<DownloadNetworkSettings>,
+  update: patch => ipcRenderer.invoke(DESKTOP_IPC.downloadNetworkUpdate, patch) as Promise<DownloadNetworkSettings>,
+  reset: target => ipcRenderer.invoke(DESKTOP_IPC.downloadNetworkReset, target) as Promise<DownloadNetworkSettings>,
+  getTestStatus: () => ipcRenderer.invoke(DESKTOP_IPC.downloadNetworkTestGet) as Promise<DownloadNetworkTestStatus>,
+  test: target => ipcRenderer.invoke(DESKTOP_IPC.downloadNetworkTest, target) as Promise<DownloadNetworkTestStatus>,
   onSettings(callback) {
     const listener = (_event: Electron.IpcRendererEvent, settings: DownloadNetworkSettings): void => { callback(settings) }
-    ipcRenderer.on('dsh:desktop:download-network', listener)
-    return () => { ipcRenderer.removeListener('dsh:desktop:download-network', listener) }
+    ipcRenderer.on(DESKTOP_IPC.downloadNetworkChanged, listener)
+    return () => { ipcRenderer.removeListener(DESKTOP_IPC.downloadNetworkChanged, listener) }
   },
   onTestStatus(callback) {
     const listener = (_event: Electron.IpcRendererEvent, status: DownloadNetworkTestStatus): void => { callback(status) }
-    ipcRenderer.on('dsh:desktop:download-network:test-status', listener)
-    return () => { ipcRenderer.removeListener('dsh:desktop:download-network:test-status', listener) }
+    ipcRenderer.on(DESKTOP_IPC.downloadNetworkTestStatus, listener)
+    return () => { ipcRenderer.removeListener(DESKTOP_IPC.downloadNetworkTestStatus, listener) }
   },
 }
 
 const nasBridge: DesktopNasBridge = {
-  get: () => ipcRenderer.invoke('dsh:desktop:nas:get') as Promise<NasRuntimeStatus>,
-  discover: () => ipcRenderer.invoke('dsh:desktop:nas:discover') as Promise<readonly NasDiscoveryCandidate[]>,
-  inspect: baseUrl => ipcRenderer.invoke('dsh:desktop:nas:inspect', baseUrl) as Promise<{ fingerprint: string }>,
-  pair: request => ipcRenderer.invoke('dsh:desktop:nas:pair', request) as Promise<NasRuntimeStatus>,
-  select: selection => ipcRenderer.invoke('dsh:desktop:nas:select', selection) as Promise<{ restarting: true }>,
-  remove: serverId => ipcRenderer.invoke('dsh:desktop:nas:remove', serverId) as Promise<NasRuntimeStatus>,
-  test: serverId => ipcRenderer.invoke('dsh:desktop:nas:test', serverId) as Promise<{ healthy: true; version: string }>,
-  devices: serverId => ipcRenderer.invoke('dsh:desktop:nas:devices', serverId) as Promise<readonly NasDeviceSummary[]>,
+  get: () => ipcRenderer.invoke(DESKTOP_IPC.nasGet) as Promise<NasRuntimeStatus>,
+  discover: () => ipcRenderer.invoke(DESKTOP_IPC.nasDiscover) as Promise<readonly NasDiscoveryCandidate[]>,
+  inspect: baseUrl => ipcRenderer.invoke(DESKTOP_IPC.nasInspect, baseUrl) as Promise<{ fingerprint: string }>,
+  pair: request => ipcRenderer.invoke(DESKTOP_IPC.nasPair, request) as Promise<NasRuntimeStatus>,
+  select: selection => ipcRenderer.invoke(DESKTOP_IPC.nasSelect, selection) as Promise<{ restarting: true }>,
+  remove: serverId => ipcRenderer.invoke(DESKTOP_IPC.nasRemove, serverId) as Promise<NasRuntimeStatus>,
+  test: serverId => ipcRenderer.invoke(DESKTOP_IPC.nasTest, serverId) as Promise<{ healthy: true; version: string }>,
+  devices: serverId => ipcRenderer.invoke(DESKTOP_IPC.nasDevices, serverId) as Promise<readonly NasDeviceSummary[]>,
   revokeDevice: (serverId, deviceId) => ipcRenderer.invoke(
-    'dsh:desktop:nas:revoke-device', serverId, deviceId,
+    DESKTOP_IPC.nasRevokeDevice, serverId, deviceId,
   ) as Promise<readonly NasDeviceSummary[]>,
   onStatus(callback) {
     const listener = (_event: Electron.IpcRendererEvent, status: NasRuntimeStatus): void => { callback(status) }
-    ipcRenderer.on('dsh:desktop:nas:status', listener)
-    return () => { ipcRenderer.removeListener('dsh:desktop:nas:status', listener) }
+    ipcRenderer.on(DESKTOP_IPC.nasStatus, listener)
+    return () => { ipcRenderer.removeListener(DESKTOP_IPC.nasStatus, listener) }
   },
 }
 
 const desktopWebBridge: DesktopWebBridge = {
-  getStatus: () => ipcRenderer.invoke('dsh:desktop:web:get') as Promise<DesktopWebStatus>,
-  open: () => ipcRenderer.invoke('dsh:desktop:web:open') as Promise<DesktopWebOpenResult>,
+  getStatus: () => ipcRenderer.invoke(DESKTOP_IPC.webGet) as Promise<DesktopWebStatus>,
+  open: () => ipcRenderer.invoke(DESKTOP_IPC.webOpen) as Promise<DesktopWebOpenResult>,
   onStatus(callback) {
     const listener = (_event: Electron.IpcRendererEvent, status: DesktopWebStatus): void => { callback(status) }
-    ipcRenderer.on('dsh:desktop:web:status', listener)
-    return () => { ipcRenderer.removeListener('dsh:desktop:web:status', listener) }
+    ipcRenderer.on(DESKTOP_IPC.webStatus, listener)
+    return () => { ipcRenderer.removeListener(DESKTOP_IPC.webStatus, listener) }
   },
 }
 
 const bundledPluginsBridge: DesktopBundledPluginsBridge = {
-  startInstall: request => ipcRenderer.invoke('dsh:desktop:bundled-plugins:start', request) as Promise<BundledPluginStartResult>,
-  startDeferred: request => ipcRenderer.invoke('dsh:desktop:bundled-plugins:start-deferred', request) as Promise<BundledPluginDeferredStartResult>,
-  getInstall: installId => ipcRenderer.invoke('dsh:desktop:bundled-plugins:get', installId) as Promise<BundledPluginInstallSnapshot>,
+  startInstall: request => ipcRenderer.invoke(DESKTOP_IPC.bundledPluginsStart, request) as Promise<BundledPluginStartResult>,
+  startDeferred: request => ipcRenderer.invoke(
+    DESKTOP_IPC.bundledPluginsStartDeferred, request,
+  ) as Promise<BundledPluginDeferredStartResult>,
+  getInstall: installId => ipcRenderer.invoke(DESKTOP_IPC.bundledPluginsGet, installId) as Promise<BundledPluginInstallSnapshot>,
 }
 
 const externalToolsBridge: DesktopExternalToolsBridge = {
   resolve: toolId => ipcRenderer.invoke(
-    'dsh:desktop:external-tools:resolve', toolId,
+    DESKTOP_IPC.externalToolsResolve, toolId,
   ) as Promise<ExternalToolInstallResolution>,
 }
 
 const importedPluginsBridge: DesktopImportedPluginsBridge = {
-  get: () => ipcRenderer.invoke('dsh:desktop:imported-plugins:get') as Promise<ImportedPluginRestoreSnapshot | undefined>,
+  get: () => ipcRenderer.invoke(DESKTOP_IPC.importedPluginsGet) as Promise<ImportedPluginRestoreSnapshot | undefined>,
   checkSources: () => ipcRenderer.invoke(
-    'dsh:desktop:imported-plugins:check-sources',
+    DESKTOP_IPC.importedPluginsCheckSources,
   ) as Promise<ImportedPluginRestoreSnapshot | undefined>,
   start: restoreIds => ipcRenderer.invoke(
-    'dsh:desktop:imported-plugins:start', [...restoreIds],
+    DESKTOP_IPC.importedPluginsStart, [...restoreIds],
   ) as Promise<ImportedPluginRestoreSnapshot>,
   chooseLocalDirectory: restoreId => ipcRenderer.invoke(
-    'dsh:desktop:imported-plugins:choose-directory', restoreId,
+    DESKTOP_IPC.importedPluginsChooseDirectory, restoreId,
   ) as Promise<ImportedPluginRestoreSnapshot | undefined>,
   chooseLocalArchive: restoreId => ipcRenderer.invoke(
-    'dsh:desktop:imported-plugins:choose-archive', restoreId,
+    DESKTOP_IPC.importedPluginsChooseArchive, restoreId,
   ) as Promise<ImportedPluginRestoreSnapshot | undefined>,
   dismiss: () => ipcRenderer.invoke(
-    'dsh:desktop:imported-plugins:dismiss',
+    DESKTOP_IPC.importedPluginsDismiss,
   ) as Promise<ImportedPluginRestoreSnapshot | undefined>,
   ignore: () => ipcRenderer.invoke(
-    'dsh:desktop:imported-plugins:ignore',
+    DESKTOP_IPC.importedPluginsIgnore,
   ) as Promise<ImportedPluginRestoreSnapshot | undefined>,
 }
 
 const diagnosticLabBridge: DesktopDiagnosticLabBridge = {
-  catalog: () => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:catalog') as Promise<readonly DiagnosticLabScenario[]>,
-  current: () => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:current') as Promise<DiagnosticLabRunSnapshot | undefined>,
-  start: request => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:start', request) as Promise<DiagnosticLabRunSnapshot>,
-  getRun: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:get', runId) as Promise<DiagnosticLabRunSnapshot>,
-  cancel: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:cancel', runId) as Promise<DiagnosticLabRunSnapshot>,
-  restoreAll: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:restore-all', runId) as Promise<DiagnosticLabRunSnapshot>,
-  exportReport: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:export', runId) as Promise<string>,
+  catalog: () => ipcRenderer.invoke(DESKTOP_IPC.diagnosticLabCatalog) as Promise<readonly DiagnosticLabScenario[]>,
+  current: () => ipcRenderer.invoke(DESKTOP_IPC.diagnosticLabCurrent) as Promise<DiagnosticLabRunSnapshot | undefined>,
+  start: request => ipcRenderer.invoke(DESKTOP_IPC.diagnosticLabStart, request) as Promise<DiagnosticLabRunSnapshot>,
+  getRun: runId => ipcRenderer.invoke(DESKTOP_IPC.diagnosticLabGet, runId) as Promise<DiagnosticLabRunSnapshot>,
+  cancel: runId => ipcRenderer.invoke(DESKTOP_IPC.diagnosticLabCancel, runId) as Promise<DiagnosticLabRunSnapshot>,
+  restoreAll: runId => ipcRenderer.invoke(DESKTOP_IPC.diagnosticLabRestoreAll, runId) as Promise<DiagnosticLabRunSnapshot>,
+  exportReport: runId => ipcRenderer.invoke(DESKTOP_IPC.diagnosticLabExport, runId) as Promise<string>,
   onStatus(callback) {
     const listener = (_event: Electron.IpcRendererEvent, snapshot: DiagnosticLabRunSnapshot): void => { callback(snapshot) }
-    ipcRenderer.on('dsh:desktop:diagnostic-lab:status', listener)
-    return () => { ipcRenderer.removeListener('dsh:desktop:diagnostic-lab:status', listener) }
+    ipcRenderer.on(DESKTOP_IPC.diagnosticLabStatus, listener)
+    return () => { ipcRenderer.removeListener(DESKTOP_IPC.diagnosticLabStatus, listener) }
   },
 }
 
 const pluginSnapshotsBridge: DesktopPluginSnapshotsBridge = {
-  list: () => ipcRenderer.invoke('dsh:desktop:plugin-snapshots:list') as Promise<readonly PluginSnapshotSummary[]>,
-  create: label => ipcRenderer.invoke('dsh:desktop:plugin-snapshots:create', label) as Promise<{ readonly snapshotId: string }>,
+  list: () => ipcRenderer.invoke(DESKTOP_IPC.pluginSnapshotsList) as Promise<readonly PluginSnapshotSummary[]>,
+  create: label => ipcRenderer.invoke(DESKTOP_IPC.pluginSnapshotsCreate, label) as Promise<{ readonly snapshotId: string }>,
   remove: snapshotId => ipcRenderer.invoke(
-    'dsh:desktop:plugin-snapshots:remove', snapshotId,
+    DESKTOP_IPC.pluginSnapshotsRemove, snapshotId,
   ) as Promise<readonly PluginSnapshotSummary[]>,
   startRestore: (snapshotId, networkAllowed) => ipcRenderer.invoke(
-    'dsh:desktop:plugin-snapshots:restore', snapshotId, networkAllowed,
+    DESKTOP_IPC.pluginSnapshotsRestore, snapshotId, networkAllowed,
   ) as Promise<PluginSnapshotRestoreSnapshot>,
   getRestore: operationId => ipcRenderer.invoke(
-    'dsh:desktop:plugin-snapshots:restore:get', operationId,
+    DESKTOP_IPC.pluginSnapshotsRestoreGet, operationId,
   ) as Promise<PluginSnapshotRestoreSnapshot>,
   onStatus(callback) {
     const listener = (_event: Electron.IpcRendererEvent, snapshot: PluginSnapshotRestoreSnapshot): void => { callback(snapshot) }
-    ipcRenderer.on('dsh:desktop:plugin-snapshots:status', listener)
-    return () => { ipcRenderer.removeListener('dsh:desktop:plugin-snapshots:status', listener) }
+    ipcRenderer.on(DESKTOP_IPC.pluginSnapshotsStatus, listener)
+    return () => { ipcRenderer.removeListener(DESKTOP_IPC.pluginSnapshotsStatus, listener) }
   },
 }
 
 const startupDiagnosticsBridge: DesktopStartupDiagnosticsBridge = {
   list: () => ipcRenderer.invoke(
-    'dsh:desktop:startup-diagnostics:list',
+    DESKTOP_IPC.startupDiagnosticsList,
   ) as Promise<readonly StartupDiagnosticIncident[]>,
   retry: incidentId => ipcRenderer.invoke(
-    'dsh:desktop:startup-diagnostics:retry', incidentId,
+    DESKTOP_IPC.startupDiagnosticsRetry, incidentId,
   ) as Promise<{
     readonly status: 'plugin-started' | 'restarting' | 'unsupported'
     readonly installId?: string
   }>,
-  openLog: () => ipcRenderer.invoke('dsh:desktop:log:open') as Promise<OpenLogResult>,
+  openLog: () => ipcRenderer.invoke(DESKTOP_IPC.logOpen) as Promise<OpenLogResult>,
 }
 
 const processesBridge: DesktopProcessesBridge = {
-  list: () => ipcRenderer.invoke('dsh:desktop:processes:list') as Promise<readonly DesktopProcessSnapshot[]>,
-  stop: id => ipcRenderer.invoke('dsh:desktop:processes:stop', id) as Promise<readonly DesktopProcessSnapshot[]>,
-  persistentServices: () => ipcRenderer.invoke('dsh:desktop:persistent-services:list') as Promise<readonly PersistentServiceSummary[]>,
+  list: () => ipcRenderer.invoke(DESKTOP_IPC.processesList) as Promise<readonly DesktopProcessSnapshot[]>,
+  stop: id => ipcRenderer.invoke(DESKTOP_IPC.processesStop, id) as Promise<readonly DesktopProcessSnapshot[]>,
+  persistentServices: () => ipcRenderer.invoke(DESKTOP_IPC.persistentServicesList) as Promise<readonly PersistentServiceSummary[]>,
   approvePersistentService: key => ipcRenderer.invoke(
-    'dsh:desktop:persistent-services:approve', key,
+    DESKTOP_IPC.persistentServicesApprove, key,
   ) as Promise<readonly PersistentServiceSummary[]>,
   revokePersistentService: key => ipcRenderer.invoke(
-    'dsh:desktop:persistent-services:revoke', key,
+    DESKTOP_IPC.persistentServicesRevoke, key,
   ) as Promise<readonly PersistentServiceSummary[]>,
   preparePluginUninstall: pluginName => ipcRenderer.invoke(
-    'dsh:desktop:persistent-services:prepare-plugin-uninstall', pluginName,
+    DESKTOP_IPC.persistentServicesPreparePluginUninstall, pluginName,
   ) as Promise<{ readonly prepared: true }>,
 }
 
 const chatBackgroundBridge: DesktopChatBackgroundBridge = {
-  read: () => ipcRenderer.invoke('dsh:desktop:chat-background:read') as Promise<DesktopChatBackground | undefined>,
+  read: () => ipcRenderer.invoke(DESKTOP_IPC.chatBackgroundRead) as Promise<DesktopChatBackground | undefined>,
   write: background => ipcRenderer.invoke(
-    'dsh:desktop:chat-background:write', background,
+    DESKTOP_IPC.chatBackgroundWrite, background,
   ) as Promise<DesktopChatBackground>,
 }
 
 const sourceMode = process.argv.includes('--dsh-source')
 const nasMode = process.argv.includes('--dsh-nas-runtime')
 const iconsBridge: DesktopIconsBridge = {
-  getStatus: () => ipcRenderer.invoke('dsh:desktop:icons:get') as Promise<DesktopIconStatus>,
-  choose: () => ipcRenderer.invoke('dsh:desktop:icons:choose') as Promise<IconSelection | null>,
-  discard: id => ipcRenderer.invoke('dsh:desktop:icons:discard', id) as Promise<void>,
-  apply: (id, target, crop) => ipcRenderer.invoke('dsh:desktop:icons:apply', id, target, crop) as Promise<DesktopIconStatus>,
-  followTray: follow => ipcRenderer.invoke('dsh:desktop:icons:follow', follow) as Promise<DesktopIconStatus>,
-  reset: target => ipcRenderer.invoke('dsh:desktop:icons:reset', target) as Promise<DesktopIconStatus>,
-  repairShortcuts: () => ipcRenderer.invoke('dsh:desktop:icons:repair') as Promise<DesktopIconStatus>,
-  createShortcut: () => ipcRenderer.invoke('dsh:desktop:icons:create-shortcut') as Promise<DesktopIconStatus>,
+  getStatus: () => ipcRenderer.invoke(DESKTOP_IPC.iconsGet) as Promise<DesktopIconStatus>,
+  choose: () => ipcRenderer.invoke(DESKTOP_IPC.iconsChoose) as Promise<IconSelection | null>,
+  discard: id => ipcRenderer.invoke(DESKTOP_IPC.iconsDiscard, id) as Promise<void>,
+  apply: (id, target, crop) => ipcRenderer.invoke(DESKTOP_IPC.iconsApply, id, target, crop) as Promise<DesktopIconStatus>,
+  followTray: follow => ipcRenderer.invoke(DESKTOP_IPC.iconsFollow, follow) as Promise<DesktopIconStatus>,
+  reset: target => ipcRenderer.invoke(DESKTOP_IPC.iconsReset, target) as Promise<DesktopIconStatus>,
+  repairShortcuts: () => ipcRenderer.invoke(DESKTOP_IPC.iconsRepair) as Promise<DesktopIconStatus>,
+  createShortcut: () => ipcRenderer.invoke(DESKTOP_IPC.iconsCreateShortcut) as Promise<DesktopIconStatus>,
   onStatus(callback) {
     const listener = (_event: Electron.IpcRendererEvent, status: DesktopIconStatus): void => { callback(status) }
-    ipcRenderer.on('dsh:desktop:icons:status', listener)
-    return () => { ipcRenderer.removeListener('dsh:desktop:icons:status', listener) }
+    ipcRenderer.on(DESKTOP_IPC.iconsStatus, listener)
+    return () => { ipcRenderer.removeListener(DESKTOP_IPC.iconsStatus, listener) }
   },
 }
 const unavailableInNasMode = (): Promise<never> => Promise.reject(new Error(
@@ -452,18 +455,18 @@ const remoteDesktopWebBridge: DesktopWebBridge = {
 const commonDesktopBridge = {
   menu: Object.freeze({
     reportState(state: { ready: boolean; locale: string }): void {
-      ipcRenderer.send('dsh:menu:client-state', state)
+      ipcRenderer.send(DESKTOP_IPC.menuClientState, state)
     },
     onCommand(callback: (command: string) => void | Promise<void>): () => void {
       const listener = (_event: Electron.IpcRendererEvent, request: { id: string; command: string }): void => {
         if (typeof request.id !== 'string' || !(CLIENT_COMMANDS as readonly string[]).includes(request.command)) return
         void Promise.resolve().then(() => callback(request.command)).then(
-          () => { ipcRenderer.send('dsh:menu:result', { id: request.id }) },
-          (error: unknown) => { ipcRenderer.send('dsh:menu:result', { id: request.id, error: String(error).slice(0, 1000) }) },
+          () => { ipcRenderer.send(DESKTOP_IPC.menuResult, { id: request.id }) },
+          (error: unknown) => { ipcRenderer.send(DESKTOP_IPC.menuResult, { id: request.id, error: String(error).slice(0, 1000) }) },
         )
       }
-      ipcRenderer.on('dsh:menu:command', listener)
-      return () => { ipcRenderer.removeListener('dsh:menu:command', listener) }
+      ipcRenderer.on(DESKTOP_IPC.menuCommand, listener)
+      return () => { ipcRenderer.removeListener(DESKTOP_IPC.menuCommand, listener) }
     },
   }),
   shell: Object.freeze(nasMode ? remoteShellBridge : shellBridge),
@@ -506,7 +509,7 @@ function installDesktopThemeSync(): void {
     const source = readDesktopThemeSource()
     if (source === undefined || source === published) return
     published = source
-    ipcRenderer.send('dsh:desktop:theme-source', source)
+    ipcRenderer.send(DESKTOP_IPC.themeSource, source)
   }
   publish()
   const observer = new MutationObserver(publish)

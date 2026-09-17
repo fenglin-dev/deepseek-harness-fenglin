@@ -88,7 +88,7 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item', id: 'desktop-shell', order: 75, locale: NS,
     inject: () => ({
-      controller, icons: bridge.icons, processes: bridge.processes, downloadNetwork: bridge.downloadNetwork,
+      controller, icons: bridge.icons, processes: bridge.processes, downloadNetwork: controller.downloadNetwork,
       openLog: () => bridge.shell.openLog(),
     }),
   }, DesktopPreferencesRow))

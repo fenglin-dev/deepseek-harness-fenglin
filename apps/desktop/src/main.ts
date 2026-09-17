@@ -51,7 +51,8 @@ import { ensurePackagedPrebuiltProfile, ensurePackagedRuntime, packagedPrebuiltP
 import { HarnessSupervisor, type HarnessFailure, type HarnessState } from './supervisor.ts'
 import { readRecoveryFailureSummary, type RecoveryFailureSummary } from './recovery-failure.ts'
 import { clearDeadModuleFallbackLock, inspectModuleFallbackLock } from './module-fallback-lock.ts'
-import { ProfileActivationRolledBackError, ProfileTransactionManager } from './profile-transaction-manager.ts'
+import { DesktopProfileMutation } from './desktop-profile-mutation/index.ts'
+import { DESKTOP_IPC } from './desktop-ipc-protocol.ts'
 import { terminateWindowsProcessTree } from './windows-process-tree.ts'
 import { revealHarnessLog, type OpenLogResult } from './log-reveal.ts'
 import { startDesktopLogSession } from './persistent-log.ts'
@@ -81,7 +82,7 @@ import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycl
 import { ApplicationMenuController } from './application-menu-controller.ts'
 import { CLIENT_COMMANDS, menuCopy, type DesktopCommand } from './application-menu.ts'
 import { inspectProfileMutationLock, menuMutationActive } from './menu-mutation-guard.ts'
-import { candidatePreparationUsesLease, CANDIDATE_PREPARATION_TIMEOUT_MS, prepareDesktopCandidate } from './candidate-preparation.ts'
+import { CANDIDATE_PREPARATION_TIMEOUT_MS } from './candidate-preparation.ts'
 import { isDesktopRenderer, withDesktopWindowMetadata } from './window-frame.ts'
 import {
   createDesktopWindowSurface,
@@ -95,34 +96,21 @@ import {
 } from './diagnostic-lab.ts'
 import { parseStartupBuildApproval } from './startup-build-approval.ts'
 import {
-  desktopDataHomeSetup,
-  desktopDataHomesOverlap,
-  ensureCommunityProfileIdentity,
-  hasDesktopData,
-  IMPORTED_ONBOARDING_RESET_VERSION,
-  copyCommunityDesktopData,
-  importOfficialDesktopData,
-  inspectDesktopDataHomeStatus,
   readDesktopDataHomeSetup,
-  resetImportedDesktopOnboarding,
   resolveDesktopApplicationDataRoot,
-  resolveDesktopDataHomeSwitch,
-  resolveDesktopDataHomeSource,
-  resolveCommunityDataHomeSource,
-  resolveUnidentifiedCommunityDataHomeSource,
-  resolveDesktopDataHomeRecoverySelection,
-  resolveEmptyDesktopDataHome,
   shouldPreserveLegacyCopiedProfile,
-  resolveRecordedDesktopDataHome,
   resolveDesktopDataHomeLayout,
-  writeDesktopDataHomeSetup,
-  type DesktopDataHomeSource,
-  type DesktopDataHomeLayout,
   type DesktopDataHomeSelectionResult,
-  type DesktopDataHomeSelectionKind,
-  type DesktopDataHomeSwitchRequest,
   type DesktopDataHomeSwitchResult,
 } from './desktop-data-home.ts'
+import {
+  DesktopDataHomeAuthority,
+  DesktopDataHomeSelectionCancelledError,
+  type DesktopDataHomeChoice,
+  type DesktopDataHomeChooserSession,
+  type DesktopDataHomeSourceResult,
+  type DesktopDataHomeTargetResult,
+} from './desktop-data-home-authority.ts'
 import { mapBundledPluginProgress, type DesktopStartupProgress } from './startup-progress.ts'
 import {
   isRecoveryPluginPackageName,
@@ -171,7 +159,6 @@ import {
 } from './startup-diagnostics.ts'
 import { DesktopWebAccess, type DesktopWebStatus } from './desktop-web-access.ts'
 import { clearStaleHarnessAuthCookies } from './harness-auth-cookies.ts'
-import { activateOrDiscardRecoveryCandidate } from './recovery-candidate.ts'
 import { shellMessages, trayMessages, dataHomeMessages } from './locales/shell.ts'
 import { sourceCopyFor } from './locales/data-home-source.ts'
 import { DesktopReturnControl } from './desktop-return-control.ts'
@@ -206,7 +193,6 @@ const TITLEBAR_PAGE = fileURLToPath(new URL('./titlebar.html', import.meta.url))
 const TITLEBAR_PRELOAD = fileURLToPath(new URL('./titlebar-preload.cjs', import.meta.url))
 const DATA_HOME_PAGE = fileURLToPath(new URL('./data-home.html', import.meta.url))
 const DATA_HOME_PRELOAD = fileURLToPath(new URL('./data-home-preload.cjs', import.meta.url))
-const DATA_HOME_SELECTION_LIFETIME_MS = 5 * 60_000
 const DESKTOP_PNPM_VERSION = '11.7.0'
 const PROFILE_CHECK_TIMEOUT_MS = 15_000
 const PROFILE_LOCK_WAIT_MS = 5_000
@@ -266,11 +252,7 @@ let persistedProfileLocale: string | undefined
 let menuClientReady = false
 let snapshotMutationActive = false
 let recoveryHarnessSuspended = false
-let recoveryCandidateHome: (() => string | undefined) | undefined
-let recoveryActivateCandidate: (() => Promise<void>) | undefined
-let recoveryDiscardCandidate: (() => Promise<void>) | undefined
 let recoveryRestartRequired = false
-let recoveryPluginRemove: ((packageName: string) => Promise<void>) | undefined
 let blockedProcessRecoveryPath: string | undefined
 let latestRecoveryFailure: string | undefined
 let latestRecoveryDiagnostic: RecoveryFailureSummary | undefined
@@ -419,7 +401,7 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
         reject(new Error(menuCopy(menuLocale).unavailable))
       }, 5000)
       pendingMenuCommands.set(id, { resolve, reject, timer })
-      mainSurface?.send('dsh:menu:command', { id, command })
+      mainSurface?.send(DESKTOP_IPC.menuCommand, { id, command })
     })
     return
   }
@@ -498,73 +480,17 @@ let pluginSnapshotManager: PluginSnapshotManager | undefined
 let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
 let desktopThemeSource: DesktopThemeSource = 'system'
 const reportedDesktopReadiness = new Set<'client' | 'event-dispatch'>()
-let profileTransactionManager: ProfileTransactionManager | undefined
+let profileMutation: DesktopProfileMutation | undefined
 let dataHomeChooserWindow: BrowserWindow | undefined
-const pendingDataHomeSelections = new Map<string, {
-  readonly rendererId: number
-  readonly selectionKind: DesktopDataHomeSelectionKind
-  readonly path: string
-  readonly expiresAt: number
-}>()
+const desktopDataHomes = new DesktopDataHomeAuthority({
+  layout: DESKTOP_DATA_HOME,
+  stopActiveProfile: () => stopPersistentServicesForActiveProfile(),
+  scheduleRestart: () => { setTimeout(requestDesktopRestart, 250) },
+})
 
 function appendDesktopStartupLog(message: string): Promise<void> {
   desktopLogSession.append('desktop-startup', 'info', message)
   return Promise.resolve()
-}
-
-type DataHomeSelection = 'copied' | 'reused' | 'fresh'
-type ExistingDataHomeSourceKind = 'official' | 'community'
-
-type DataHomeChoice =
-  | { readonly mode: 'fresh'; readonly target: string; readonly customTarget: boolean }
-  | {
-    readonly mode: 'copied'
-    readonly sourceKind: ExistingDataHomeSourceKind
-    readonly source: string
-    readonly target: string
-    readonly customTarget: boolean
-  }
-  | { readonly mode: 'reused'; readonly sourceKind: 'community'; readonly source: string }
-
-type DataHomeChoiceRequest =
-  | {
-    readonly mode: 'fresh'
-    readonly target: { readonly kind: 'default' } | { readonly kind: 'custom'; readonly selectionId: string }
-  }
-  | {
-    readonly mode: 'copied'
-    readonly sourceKind: ExistingDataHomeSourceKind
-    readonly source: string
-    readonly sourceSelectionId?: string
-    readonly target: { readonly kind: 'default' } | { readonly kind: 'custom'; readonly selectionId: string }
-  }
-  | {
-    readonly mode: 'reused'
-    readonly sourceKind: 'community'
-    readonly source: string
-    readonly sourceSelectionId?: string
-  }
-
-type DataHomeSourceResult =
-  | {
-    readonly status: 'valid'
-    readonly path: string
-    readonly entries: readonly string[]
-    readonly selectionId?: string
-  }
-  | { readonly status: 'invalid' | 'unreadable'; readonly path: string }
-  | { readonly status: 'cancelled' }
-
-type DataHomeTargetResult =
-  | { readonly status: 'selected'; readonly selectionId: string; readonly path: string }
-  | { readonly status: 'not-empty' | 'overlap' | 'unreadable'; readonly path: string }
-  | { readonly status: 'cancelled' }
-
-class DesktopDataHomeSelectionCancelledError extends Error {
-  constructor() {
-    super('desktop: data-home selection was cancelled')
-    this.name = 'DesktopDataHomeSelectionCancelledError'
-  }
 }
 
 interface DesktopCapabilities {
@@ -575,13 +501,6 @@ interface DesktopCapabilities {
   sourceUpdateAvailable: boolean
   commandLineAvailable: boolean
   developmentRecoveryAvailable: boolean
-}
-
-interface DataHomeChooserOptions {
-  readonly parent?: BrowserWindow
-  readonly returnToMain?: boolean
-  readonly defaultTargetAvailable?: boolean
-  readonly currentDataHome?: string
 }
 
 function applyDesktopThemeSource(source: DesktopThemeSource): void {
@@ -615,53 +534,11 @@ function desktopCopy() { return trayMessages(menuLocale) }
 
 function dataHomeCopy() { return dataHomeMessages(app.getLocale()) }
 
-function isDataHomeSelection(value: unknown): value is DataHomeSelection {
-  return value === 'copied' || value === 'reused' || value === 'fresh'
-}
-
-function isDataHomeChoiceRequest(value: unknown): value is DataHomeChoiceRequest {
-  if (typeof value !== 'object' || value === null || !('mode' in value)
-    || !isDataHomeSelection(value.mode)) return false
-  const sourceSelectionValid = !('sourceSelectionId' in value)
-    || (typeof value.sourceSelectionId === 'string' && /^[0-9a-f-]{36}$/u.test(value.sourceSelectionId))
-  if (!sourceSelectionValid) return false
-  if ('sourceSelectionId' in value
-    && (value.mode === 'fresh' || !('sourceKind' in value) || value.sourceKind !== 'community')) return false
-  if (value.mode === 'reused') {
-    return 'sourceKind' in value && value.sourceKind === 'community'
-      && 'source' in value && typeof value.source === 'string' && value.source.trim().length > 0
-  }
-  if (value.mode === 'copied'
-    && (!('source' in value) || typeof value.source !== 'string' || value.source.trim().length === 0
-      || !('sourceKind' in value) || (value.sourceKind !== 'official' && value.sourceKind !== 'community'))) return false
-  if (!('target' in value) || typeof value.target !== 'object' || value.target === null
-    || !('kind' in value.target)) return false
-  if (value.target.kind === 'default') return true
-  return value.target.kind === 'custom'
-    && 'selectionId' in value.target
-    && typeof value.target.selectionId === 'string'
-    && /^[0-9a-f-]{36}$/u.test(value.target.selectionId)
-}
-
-function isDesktopDataHomeSwitchRequest(value: unknown): value is DesktopDataHomeSwitchRequest {
-  if (typeof value !== 'object' || value === null || !('kind' in value)) return false
-  if (value.kind === 'desktop' || value.kind === 'official') return true
-  return (value.kind === 'custom' || value.kind === 'create')
-    && 'selectionId' in value
-    && typeof value.selectionId === 'string'
-    && /^[0-9a-f-]{36}$/u.test(value.selectionId)
-}
-
 async function showDataHomeChooser(
-  officialSource: DesktopDataHomeSource | undefined,
-  officialSourceUnreadable: boolean,
-  officialSourceCandidate: string,
-  communitySource: DesktopDataHomeSource | undefined,
-  communitySourceUnreadable: boolean,
-  communitySourceCandidate: string,
-  defaultTarget: string,
-  options: DataHomeChooserOptions = {},
-): Promise<DataHomeChoice> {
+  session: DesktopDataHomeChooserSession,
+  parent?: BrowserWindow,
+): Promise<DesktopDataHomeChoice> {
+  const presentation = session.presentation
   const chooser = new BrowserWindow({
     title: APP_NAME,
     width: 1080,
@@ -672,7 +549,7 @@ async function showDataHomeChooser(
     backgroundColor: desktopThemeBackground('system', nativeTheme.shouldUseDarkColors),
     icon: desktopWindowIcon(),
     show: false,
-    ...(options.parent === undefined ? {} : { parent: options.parent }),
+    ...(parent === undefined ? {} : { parent }),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -684,24 +561,21 @@ async function showDataHomeChooser(
   chooser.webContents.on('will-navigate', (event) => { event.preventDefault() })
   chooser.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
-  return new Promise<DataHomeChoice>((resolve, reject) => {
+  return new Promise<DesktopDataHomeChoice>((resolve, reject) => {
     let settled = false
-    const pendingTargets = new Map<string, { readonly path: string; readonly expiresAt: number }>()
-    const pendingCommunitySources = new Map<string, { readonly path: string; readonly expiresAt: number }>()
     const cleanup = (): void => {
       ipcMain.removeListener('dsh:data-home:selected', handleSelection)
       ipcMain.removeListener('dsh:data-home:cancelled', handleCancellation)
       ipcMain.removeHandler('dsh:data-home:choose-source')
       ipcMain.removeHandler('dsh:data-home:choose-target')
-      pendingTargets.clear()
-      pendingCommunitySources.clear()
+      session.clear()
       if (dataHomeChooserWindow === chooser) dataHomeChooserWindow = undefined
     }
     const closeChooser = (): void => {
       cleanup()
       if (!chooser.isDestroyed()) chooser.destroy()
     }
-    const finish = (selection?: DataHomeChoice): void => {
+    const finish = (selection?: DesktopDataHomeChoice): void => {
       if (settled) return
       settled = true
       closeChooser()
@@ -715,85 +589,12 @@ async function showDataHomeChooser(
       reject(error instanceof Error ? error : new Error(String(error)))
     }
     const handleSelection = (event: Electron.IpcMainEvent, value: unknown): void => {
-      if (event.sender !== chooser.webContents || !isDataHomeChoiceRequest(value)) return
+      if (event.sender !== chooser.webContents) return
       void (async () => {
-        let source: DesktopDataHomeSource | undefined
-        if (value.mode !== 'fresh') {
-          try {
-            source = await (value.sourceKind === 'community'
-              ? resolveCommunityDataHomeSource(value.source)
-              : resolveDesktopDataHomeSource(value.source))
-            if (source === undefined && value.sourceKind === 'community'
-              && value.sourceSelectionId !== undefined) {
-              const pending = pendingCommunitySources.get(value.sourceSelectionId)
-              if (pending !== undefined && pending.expiresAt >= Date.now() && pending.path === value.source) {
-                source = await resolveUnidentifiedCommunityDataHomeSource(value.source)
-              }
-            }
-          } catch {
-            if (!settled) event.sender.send('dsh:data-home:source-error', { status: 'unreadable', path: value.source })
-            return
-          }
-          if (source === undefined) {
-            if (!settled) event.sender.send('dsh:data-home:source-error', { status: 'invalid', path: value.source })
-            return
-          }
-        }
-        if (value.mode === 'reused') {
-          if (source === undefined) return
-          if (value.sourceSelectionId !== undefined) await ensureCommunityProfileIdentity(source.path)
-          if (value.sourceSelectionId !== undefined) pendingCommunitySources.delete(value.sourceSelectionId)
-          finish({ mode: 'reused', sourceKind: 'community', source: source.path })
-          return
-        }
-        if (source !== undefined && options.currentDataHome !== undefined
-          && desktopDataHomesOverlap(options.currentDataHome, source.path)) {
-          event.sender.send('dsh:data-home:source-error', { status: 'invalid', path: source.path })
-          return
-        }
-        let target = defaultTarget
-        let customTarget = false
-        if (value.target.kind === 'default' && options.defaultTargetAvailable === false) {
-          event.sender.send('dsh:data-home:target-error', { status: 'not-empty', path: defaultTarget })
-          return
-        }
-        if (value.target.kind === 'custom') {
-          const pending = pendingTargets.get(value.target.selectionId)
-          if (pending === undefined || pending.expiresAt < Date.now()) {
-            pendingTargets.delete(value.target.selectionId)
-            event.sender.send('dsh:data-home:target-error', { status: 'unreadable', path: '' })
-            return
-          }
-          pendingTargets.delete(value.target.selectionId)
-          let resolvedTarget: string | undefined
-          try {
-            resolvedTarget = await resolveEmptyDesktopDataHome(pending.path)
-          } catch {
-            event.sender.send('dsh:data-home:target-error', { status: 'unreadable', path: pending.path })
-            return
-          }
-          if (resolvedTarget === undefined) {
-            event.sender.send('dsh:data-home:target-error', { status: 'not-empty', path: pending.path })
-            return
-          }
-          target = resolvedTarget
-          customTarget = true
-        }
-        if (value.mode === 'copied' && source !== undefined && desktopDataHomesOverlap(source.path, target)) {
-          event.sender.send('dsh:data-home:target-error', { status: 'overlap', path: target })
-          return
-        }
-        if (options.currentDataHome !== undefined
-          && desktopDataHomesOverlap(options.currentDataHome, target)) {
-          event.sender.send('dsh:data-home:target-error', { status: 'overlap', path: target })
-          return
-        }
-        if (value.mode === 'fresh') finish({ mode: 'fresh', target, customTarget })
-        else {
-          if (source === undefined) return
-          if (value.sourceSelectionId !== undefined) pendingCommunitySources.delete(value.sourceSelectionId)
-          finish({ mode: 'copied', sourceKind: value.sourceKind, source: source.path, target, customTarget })
-        }
+        const submission = await session.submit(value)
+        if (submission.status === 'source-error') event.sender.send('dsh:data-home:source-error', submission.result)
+        else if (submission.status === 'target-error') event.sender.send('dsh:data-home:target-error', submission.result)
+        else if (submission.status === 'selected') finish(submission.choice)
       })().catch(fail)
     }
     const handleCancellation = (event: Electron.IpcMainEvent): void => {
@@ -801,73 +602,41 @@ async function showDataHomeChooser(
     }
     ipcMain.on('dsh:data-home:selected', handleSelection)
     ipcMain.on('dsh:data-home:cancelled', handleCancellation)
-    ipcMain.handle('dsh:data-home:choose-source', async (event, origin: unknown): Promise<DataHomeSourceResult> => {
+    ipcMain.handle('dsh:data-home:choose-source', async (event, origin: unknown): Promise<DesktopDataHomeSourceResult> => {
       if (event.sender !== chooser.webContents) throw new Error('desktop: invalid data-home source requester')
       if (origin !== 'official' && origin !== 'community') throw new Error('desktop: invalid data-home source category')
-      const result = await dialog.showOpenDialog(chooser, {
+      const dialogResult = await dialog.showOpenDialog(chooser, {
         title: shellMessages(app.getLocale()).chooseSource,
         properties: ['openDirectory'],
       })
-      const candidate = result.filePaths[0]
-      if (result.canceled || candidate === undefined) return { status: 'cancelled' }
-      try {
-        let source = await (origin === 'community'
-          ? resolveCommunityDataHomeSource(candidate)
-          : resolveDesktopDataHomeSource(candidate))
-        if (source === undefined && origin === 'community') {
-          source = await resolveUnidentifiedCommunityDataHomeSource(candidate)
-          if (source !== undefined) {
-            const copy = sourceCopyFor(resolveDesktopLocale(app.getLocale()))
-            const confirmation = await dialog.showMessageBox(chooser, {
-              type: 'warning',
-              title: copy.communityConfirmTitle,
-              message: copy.communityConfirmMessage,
-              detail: `${copy.communityConfirmDetail}\n\n${source.path}`,
-              buttons: [copy.communityConfirmCancel, copy.communityConfirmAccept],
-              defaultId: 0,
-              cancelId: 0,
-              noLink: true,
-            })
-            if (confirmation.response !== 1) return { status: 'cancelled' }
-            const selectionId = randomUUID()
-            for (const [id, pending] of pendingCommunitySources) {
-              if (pending.expiresAt < Date.now()) pendingCommunitySources.delete(id)
-            }
-            pendingCommunitySources.set(selectionId, {
-              path: source.path,
-              expiresAt: Date.now() + DATA_HOME_SELECTION_LIFETIME_MS,
-            })
-            return { status: 'valid', path: source.path, entries: source.entries, selectionId }
-          }
-        }
-        return source === undefined
-          ? { status: 'invalid', path: candidate }
-          : { status: 'valid', path: source.path, entries: source.entries }
-      } catch {
-        return { status: 'unreadable', path: candidate }
+      const candidate = dialogResult.canceled ? undefined : dialogResult.filePaths[0]
+      const result = await session.chooseSource(origin, candidate)
+      if (result.status !== 'confirmation-required') return result
+      const copy = sourceCopyFor(resolveDesktopLocale(app.getLocale()))
+      const confirmation = await dialog.showMessageBox(chooser, {
+        type: 'warning',
+        title: copy.communityConfirmTitle,
+        message: copy.communityConfirmMessage,
+        detail: `${copy.communityConfirmDetail}\n\n${result.path}`,
+        buttons: [copy.communityConfirmCancel, copy.communityConfirmAccept],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      if (confirmation.response !== 1) return { status: 'cancelled' }
+      const confirmed = await session.chooseSource('community', result.path, true)
+      if (confirmed.status === 'confirmation-required') {
+        return { status: 'invalid', path: confirmed.path }
       }
+      return confirmed
     })
-    ipcMain.handle('dsh:data-home:choose-target', async (event): Promise<DataHomeTargetResult> => {
+    ipcMain.handle('dsh:data-home:choose-target', async (event): Promise<DesktopDataHomeTargetResult> => {
       if (event.sender !== chooser.webContents) throw new Error('desktop: invalid data-home target requester')
       const result = await dialog.showOpenDialog(chooser, {
         title: shellMessages(app.getLocale()).chooseTarget,
         properties: ['openDirectory', 'createDirectory'],
       })
-      const candidate = result.filePaths[0]
-      if (result.canceled || candidate === undefined) return { status: 'cancelled' }
-      let path: string | undefined
-      try {
-        path = await resolveEmptyDesktopDataHome(candidate)
-      } catch {
-        return { status: 'unreadable', path: candidate }
-      }
-      if (path === undefined) return { status: 'not-empty', path: candidate }
-      const selectionId = randomUUID()
-      for (const [id, pending] of pendingTargets) {
-        if (pending.expiresAt < Date.now()) pendingTargets.delete(id)
-      }
-      pendingTargets.set(selectionId, { path, expiresAt: Date.now() + DATA_HOME_SELECTION_LIFETIME_MS })
-      return { status: 'selected', selectionId, path }
+      return session.chooseTarget(result.canceled ? undefined : result.filePaths[0])
     })
     chooser.once('closed', () => { finish() })
     chooser.once('ready-to-show', () => {
@@ -876,140 +645,43 @@ async function showDataHomeChooser(
     })
     void chooser.loadFile(DATA_HOME_PAGE, { query: {
       locale: menuLocale,
-      selected: officialSource === undefined && communitySource === undefined ? 'fresh' : 'imported',
-      selectedSource: officialSource === undefined && communitySource !== undefined ? 'community' : 'official',
-      officialSource: officialSource?.path ?? '',
-      officialDefaultSource: officialSource?.path ?? '',
-      officialSourceCandidate,
-      officialSourceStatus: officialSourceUnreadable ? 'unreadable' : officialSource === undefined ? 'missing' : 'valid',
-      communitySource: communitySource?.path ?? '',
-      communityDefaultSource: communitySource?.path ?? '',
-      communitySourceCandidate,
-      communitySourceStatus: communitySourceUnreadable ? 'unreadable' : communitySource === undefined ? 'missing' : 'valid',
-      defaultTarget,
+      selected: presentation.officialSource === undefined && presentation.communitySource === undefined ? 'fresh' : 'imported',
+      selectedSource: presentation.officialSource === undefined && presentation.communitySource !== undefined ? 'community' : 'official',
+      officialSource: presentation.officialSource?.path ?? '',
+      officialDefaultSource: presentation.officialSource?.path ?? '',
+      officialSourceCandidate: presentation.officialSourceCandidate,
+      officialSourceStatus: presentation.officialSourceUnreadable
+        ? 'unreadable' : presentation.officialSource === undefined ? 'missing' : 'valid',
+      communitySource: presentation.communitySource?.path ?? '',
+      communityDefaultSource: presentation.communitySource?.path ?? '',
+      communitySourceCandidate: presentation.communitySourceCandidate,
+      communitySourceStatus: presentation.communitySourceUnreadable
+        ? 'unreadable' : presentation.communitySource === undefined ? 'missing' : 'valid',
+      defaultTarget: presentation.defaultTarget,
       development: app.isPackaged ? 'false' : 'true',
-      returnToMain: options.returnToMain === true ? 'true' : 'false',
-      defaultTargetAvailable: options.defaultTargetAvailable === false ? 'false' : 'true',
+      returnToMain: presentation.returnToMain ? 'true' : 'false',
+      defaultTargetAvailable: presentation.defaultTargetAvailable ? 'true' : 'false',
     } }).catch(fail)
   })
 }
 
-interface PreparedDataHomeChoice {
-  readonly path: string
-  readonly setup: ReturnType<typeof desktopDataHomeSetup>
-  readonly copied: boolean
-}
-
-async function prepareDataHomeChoice(selection: DataHomeChoice): Promise<PreparedDataHomeChoice> {
-  if (selection.mode === 'copied') {
-    if (selection.sourceKind === 'official') {
-      await importOfficialDesktopData(selection.source, selection.target)
-    } else {
-      await copyCommunityDesktopData(selection.source, selection.target)
-    }
-    await ensureCommunityProfileIdentity(selection.target)
-    return {
-      path: selection.target,
-      setup: desktopDataHomeSetup(
-        selection.sourceKind === 'official' ? 'imported' : 'copied',
-        selection.target,
-        selection.source,
-      ),
-      copied: true,
-    }
-  }
-  if (selection.mode === 'reused') {
-    await ensureCommunityProfileIdentity(selection.source)
-    return {
-      path: selection.source,
-      setup: desktopDataHomeSetup('reused', selection.source, selection.source),
-      copied: false,
-    }
-  }
-  if (await hasDesktopData(selection.target)) {
-    throw new Error(`desktop: refusing to initialize non-empty Harness home ${selection.target}`)
-  }
-  await ensureCommunityProfileIdentity(selection.target)
-  return {
-    path: selection.target,
-    setup: desktopDataHomeSetup(selection.customTarget ? 'created' : 'fresh', selection.target),
-    copied: false,
-  }
-}
-
-async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<string> {
-  let previous = await readDesktopDataHomeSetup(layout.setupFile)
-  if (previous?.mode === 'imported'
-    && previous.importedOnboardingReset !== IMPORTED_ONBOARDING_RESET_VERSION) {
-    await resetImportedDesktopOnboarding(previous.dshHome)
-    previous = { ...previous, importedOnboardingReset: IMPORTED_ONBOARDING_RESET_VERSION }
-    await writeDesktopDataHomeSetup(layout.setupFile, previous)
-  }
-  if (layout.explicitDshHome) {
-    await writeDesktopDataHomeSetup(
-      layout.setupFile,
-      desktopDataHomeSetup('explicit', layout.dshHome),
-    )
-    return layout.dshHome
-  }
-  const recordedHome = resolveRecordedDesktopDataHome(layout, previous)
-  if (recordedHome !== undefined && previous?.mode !== 'reused') {
-    await ensureCommunityProfileIdentity(recordedHome)
-    return recordedHome
-  }
-  if (recordedHome !== undefined) {
-    try {
-      const recordedSource = await resolveDesktopDataHomeSource(recordedHome)
-      if (recordedSource?.path === recordedHome) return recordedHome
-    } catch {
-      // An unreadable reused source returns to the chooser below.
-    }
-  }
-  if (await hasDesktopData(layout.dshHome)) {
-    await ensureCommunityProfileIdentity(layout.dshHome)
-    await writeDesktopDataHomeSetup(
-      layout.setupFile,
-      desktopDataHomeSetup('existing', layout.dshHome),
-    )
-    return layout.dshHome
-  }
-  let defaultSource: DesktopDataHomeSource | undefined
-  let defaultSourceUnreadable = false
-  try {
-    defaultSource = await resolveDesktopDataHomeSource(layout.officialDshHome)
-  } catch {
-    defaultSourceUnreadable = true
-  }
-  let communitySource: DesktopDataHomeSource | undefined
-  let communitySourceUnreadable = false
-  try {
-    communitySource = await resolveCommunityDataHomeSource(layout.communityDesktopRoot)
-  } catch {
-    communitySourceUnreadable = true
-  }
-
+async function prepareDesktopDshHome(): Promise<string> {
   const copy = dataHomeCopy()
-  const selection = await showDataHomeChooser(
-    defaultSource,
-    defaultSourceUnreadable,
-    layout.officialDshHome,
-    communitySource,
-    communitySourceUnreadable,
-    layout.communityDesktopRoot,
-    layout.dshHome,
-  )
   try {
-    const prepared = await prepareDataHomeChoice(selection)
-    await writeDesktopDataHomeSetup(layout.setupFile, prepared.setup)
-    if (prepared.copied) {
+    const result = await desktopDataHomes.initialize(async (session) => {
+      return showDataHomeChooser(session)
+    })
+    if (result.copied) {
       await dialog.showMessageBox({
         type: 'info', title: copy.completeTitle, message: copy.completeMessage,
-        detail: prepared.path, buttons: ['OK'], noLink: true,
+        detail: result.path, buttons: ['OK'], noLink: true,
       })
     }
-    return prepared.path
+    return result.path
   } catch (error) {
-    dialog.showErrorBox(copy.failedTitle, error instanceof Error ? error.message : String(error))
+    if (!(error instanceof DesktopDataHomeSelectionCancelledError)) {
+      dialog.showErrorBox(copy.failedTitle, error instanceof Error ? error.message : String(error))
+    }
     throw error
   }
 }
@@ -1020,12 +692,12 @@ function applyLaunchAtLogin(enabled: boolean): void {
 }
 
 function publishPreferences(): void {
-  mainSurface?.send('dsh:desktop:preferences', preferences)
+  mainSurface?.send(DESKTOP_IPC.preferencesChanged, preferences)
   refreshTrayMenu()
 }
 
 function publishDesktopWebStatus(status: DesktopWebStatus): void {
-  mainSurface?.send('dsh:desktop:web:status', status)
+  mainSurface?.send(DESKTOP_IPC.webStatus, status)
   applicationMenu?.refresh()
   refreshTrayMenu()
 }
@@ -1697,7 +1369,7 @@ async function startApplication(): Promise<void> {
       defaultApplication: loadDefaultApplicationIcon(process.platform),
       defaultTray: nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : WINDOW_ICON),
       apply: applyDesktopIcons,
-      notify: status => mainSurface?.send('dsh:desktop:icons:status', status),
+      notify: status => mainSurface?.send(DESKTOP_IPC.iconsStatus, status),
     })
   }
   applyStartupDockIcon()
@@ -1716,7 +1388,7 @@ async function startApplication(): Promise<void> {
   // A saved NAS selection is a complete runtime choice. Do not force a new device
   // through local Profile import or mutate its local Harness home before connecting.
   const dshHome = activeNasRuntime === undefined
-    ? await prepareDesktopDshHome(DESKTOP_DATA_HOME)
+    ? await prepareDesktopDshHome()
     : DESKTOP_DATA_HOME.dshHome
   const dataHomeSetup = activeNasRuntime === undefined
     ? await readDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile)
@@ -1868,7 +1540,7 @@ async function startApplication(): Promise<void> {
   })
   const publishDownloadNetworkTest = (status: DownloadNetworkTestStatus): DownloadNetworkTestStatus => {
     downloadNetworkTestStatus = status
-    mainSurface?.send('dsh:desktop:download-network:test-status', status)
+    mainSurface?.send(DESKTOP_IPC.downloadNetworkTestStatus, status)
     return status
   }
   const testDownloadNetwork = async (target: DownloadNetworkTarget): Promise<DownloadNetworkTestStatus> => {
@@ -1925,9 +1597,9 @@ async function startApplication(): Promise<void> {
     })
     releaseChecker.subscribe((status) => {
       releaseDownloader?.resetForRelease(status)
-      mainSurface?.send('dsh:desktop:release-status', status)
+      mainSurface?.send(DESKTOP_IPC.releaseStatus, status)
     })
-    releaseDownloader.subscribe((status) => { mainSurface?.send('dsh:desktop:release-download-status', status) })
+    releaseDownloader.subscribe((status) => { mainSurface?.send(DESKTOP_IPC.releaseDownloadStatus, status) })
     stopReleaseChecks = releaseChecker.startPolling()
   }
   await configureReleaseServices()
@@ -1935,15 +1607,15 @@ async function startApplication(): Promise<void> {
     cacheDirectory: join(app.getPath('userData'), 'external-tool-compatibility'),
     desktopVersion: app.getVersion(),
   })
-  ipcMain.handle('dsh:desktop:capabilities', (event) => {
+  ipcMain.handle(DESKTOP_IPC.capabilities, (event) => {
     assertMainRenderer(event.sender)
     return desktopCapabilities()
   })
-  ipcMain.handle('dsh:desktop:processes:list', (event) => {
+  ipcMain.handle(DESKTOP_IPC.processesList, (event) => {
     assertMainRenderer(event.sender)
     return processObserver?.list() ?? []
   })
-  ipcMain.handle('dsh:desktop:processes:stop', async (event, id: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.processesStop, async (event, id: unknown) => {
     assertMainRenderer(event.sender)
     if (typeof id !== 'string' || id.length < 1 || id.length > 128) {
       throw new TypeError('desktop: invalid managed process id')
@@ -1953,11 +1625,11 @@ async function startApplication(): Promise<void> {
     await processObserver?.stop(id)
     return processObserver?.list() ?? []
   })
-  ipcMain.handle('dsh:desktop:persistent-services:list', (event): readonly PersistentServiceSummary[] => {
+  ipcMain.handle(DESKTOP_IPC.persistentServicesList, (event): readonly PersistentServiceSummary[] => {
     assertMainRenderer(event.sender)
     return persistentServiceAuthority?.list() ?? []
   })
-  ipcMain.handle('dsh:desktop:persistent-services:approve', (event, key: unknown): readonly PersistentServiceSummary[] => {
+  ipcMain.handle(DESKTOP_IPC.persistentServicesApprove, (event, key: unknown): readonly PersistentServiceSummary[] => {
     assertMainRenderer(event.sender)
     if (typeof key !== 'string' || !/^[a-f0-9]{64}$/u.test(key)) {
       throw new TypeError('desktop: invalid persistent service request')
@@ -1965,7 +1637,7 @@ async function startApplication(): Promise<void> {
     if (persistentServiceAuthority === undefined) throw new Error('desktop: persistent service authority is unavailable')
     return persistentServiceAuthority.approve(key)
   })
-  ipcMain.handle('dsh:desktop:persistent-services:revoke', async (event, key: unknown): Promise<readonly PersistentServiceSummary[]> => {
+  ipcMain.handle(DESKTOP_IPC.persistentServicesRevoke, async (event, key: unknown): Promise<readonly PersistentServiceSummary[]> => {
     assertMainRenderer(event.sender)
     if (typeof key !== 'string' || !/^[a-f0-9]{64}$/u.test(key)) {
       throw new TypeError('desktop: invalid persistent service request')
@@ -1982,18 +1654,18 @@ async function startApplication(): Promise<void> {
     }
     return persistentServiceAuthority.revoke(key)
   })
-  ipcMain.handle('dsh:desktop:persistent-services:prepare-plugin-uninstall', async (event, packageName: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.persistentServicesPreparePluginUninstall, async (event, packageName: unknown) => {
     assertMainRenderer(event.sender)
     if (!isRecoveryPluginPackageName(packageName)) throw new TypeError('desktop: invalid plugin identity')
     await stopAndRevokePersistentServicesForPlugin(packageName)
     return { prepared: true as const }
   })
-  ipcMain.handle('dsh:desktop:data-home:get', (event) => {
+  ipcMain.handle(DESKTOP_IPC.dataHomeGet, (event) => {
     assertMainRenderer(event.sender)
-    return inspectDesktopDataHomeStatus(DESKTOP_DATA_HOME, dshHome)
+    return desktopDataHomes.status(dshHome)
   })
   let runningDataHomeChooser: Promise<{ restarting: boolean }> | undefined
-  ipcMain.handle('dsh:desktop:data-home:open-chooser', (event): Promise<{ restarting: boolean }> => {
+  ipcMain.handle(DESKTOP_IPC.dataHomeOpenChooser, (event): Promise<{ restarting: boolean }> => {
     assertMainRenderer(event.sender)
     if (DESKTOP_DATA_HOME.explicitDshHome) {
       throw new Error('desktop: DSH_HOME is managed by the launch environment')
@@ -2008,43 +1680,12 @@ async function startApplication(): Promise<void> {
     const operation = (async (): Promise<{ restarting: boolean }> => {
       const surface = mainSurface
       if (surface === undefined) throw new Error('desktop: main window is unavailable')
-      let officialSource: DesktopDataHomeSource | undefined
-      let officialSourceUnreadable = false
       try {
-        officialSource = await resolveDesktopDataHomeSource(DESKTOP_DATA_HOME.officialDshHome)
-      } catch {
-        officialSourceUnreadable = true
-      }
-      let communitySource: DesktopDataHomeSource | undefined
-      let communitySourceUnreadable = false
-      try {
-        communitySource = await resolveCommunityDataHomeSource(dshHome)
-        if (communitySource === undefined) {
-          communitySource = await resolveCommunityDataHomeSource(DESKTOP_DATA_HOME.communityDesktopRoot)
-        }
-      } catch {
-        communitySourceUnreadable = true
-      }
-      const status = await inspectDesktopDataHomeStatus(DESKTOP_DATA_HOME, dshHome)
-      const defaultTargetAvailable = !desktopDataHomesOverlap(status.desktopPath, dshHome)
-        && !await hasDesktopData(status.desktopPath)
-      let selection: DataHomeChoice
-      try {
-        selection = await showDataHomeChooser(
-          officialSource,
-          officialSourceUnreadable,
-          DESKTOP_DATA_HOME.officialDshHome,
-          communitySource,
-          communitySourceUnreadable,
-          communitySource?.path ?? DESKTOP_DATA_HOME.communityDesktopRoot,
-          status.desktopPath,
-          {
-            parent: surface.window,
-            returnToMain: true,
-            defaultTargetAvailable,
-            currentDataHome: dshHome,
-          },
+        const result = await desktopDataHomes.change(
+          dshHome,
+          session => showDataHomeChooser(session, surface.window),
         )
+        return { restarting: result.restarting }
       } catch (error) {
         if (error instanceof DesktopDataHomeSelectionCancelledError) {
           if (!surface.window.isDestroyed()) {
@@ -2055,12 +1696,6 @@ async function startApplication(): Promise<void> {
         }
         throw error
       }
-      const prepared = await prepareDataHomeChoice(selection)
-      if (desktopDataHomesOverlap(prepared.path, dshHome)) return { restarting: false }
-      await stopPersistentServicesForActiveProfile()
-      await writeDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile, prepared.setup)
-      setTimeout(requestDesktopRestart, 250)
-      return { restarting: true }
     })()
     runningDataHomeChooser = operation
     const clearOperation = (): void => {
@@ -2085,37 +1720,11 @@ async function startApplication(): Promise<void> {
         : shellMessages(app.getLocale()).chooseExisting,
       properties: ['openDirectory'],
     })
-    const candidate = result.filePaths[0]
-    if (result.canceled || candidate === undefined) return { status: 'cancelled' }
-    let selectedPath: string | undefined
-    let entries: readonly string[] = []
-    try {
-      if (selectionKind === 'empty') {
-        selectedPath = await resolveEmptyDesktopDataHome(candidate)
-        if (selectedPath === undefined) return { status: 'not-empty', path: candidate }
-      } else {
-        const source: DesktopDataHomeSource | undefined = await resolveDesktopDataHomeSource(candidate)
-        if (source === undefined) return { status: 'invalid', path: candidate }
-        selectedPath = source.path
-        entries = source.entries
-      }
-    } catch {
-      return { status: 'unreadable', path: candidate }
-    }
-    const now = Date.now()
-    for (const [selectionId, pending] of pendingDataHomeSelections) {
-      if (pending.expiresAt <= now || pending.rendererId === event.sender.id) {
-        pendingDataHomeSelections.delete(selectionId)
-      }
-    }
-    const selectionId = randomUUID()
-    pendingDataHomeSelections.set(selectionId, {
-      rendererId: event.sender.id,
+    return desktopDataHomes.chooseDirectory(
+      event.sender.id,
       selectionKind,
-      path: selectedPath,
-      expiresAt: now + DATA_HOME_SELECTION_LIFETIME_MS,
-    })
-    return { status: 'selected', selectionKind, selectionId, path: selectedPath, entries }
+      result.canceled ? undefined : result.filePaths[0],
+    )
   })
   ipcMain.handle('dsh:desktop:data-home:choose-recovery', async (
     event,
@@ -2127,74 +1736,19 @@ async function startApplication(): Promise<void> {
       title: shellMessages(app.getLocale()).switchData,
       properties: ['openDirectory', 'createDirectory'],
     })
-    const candidate = result.filePaths[0]
-    if (result.canceled || candidate === undefined) return { status: 'cancelled' }
-    let selection
-    try {
-      selection = await resolveDesktopDataHomeRecoverySelection(candidate)
-    } catch {
-      return { status: 'unreadable', path: candidate }
-    }
-    if (selection === undefined) return { status: 'invalid', path: candidate }
-    const now = Date.now()
-    for (const [selectionId, pending] of pendingDataHomeSelections) {
-      if (pending.expiresAt <= now || pending.rendererId === event.sender.id) {
-        pendingDataHomeSelections.delete(selectionId)
-      }
-    }
-    const selectionId = randomUUID()
-    pendingDataHomeSelections.set(selectionId, {
-      rendererId: event.sender.id,
-      selectionKind: selection.kind,
-      path: selection.path,
-      expiresAt: now + DATA_HOME_SELECTION_LIFETIME_MS,
-    })
-    return {
-      status: 'selected',
-      selectionKind: selection.kind,
-      selectionId,
-      path: selection.path,
-      entries: selection.kind === 'existing' ? selection.entries : [],
-    }
+    return desktopDataHomes.chooseRecoveryDirectory(
+      event.sender.id,
+      result.canceled ? undefined : result.filePaths[0],
+    )
   })
   ipcMain.handle('dsh:desktop:data-home:switch', async (
     event,
     request: unknown,
   ): Promise<DesktopDataHomeSwitchResult> => {
     assertMainRenderer(event.sender)
-    if (!isDesktopDataHomeSwitchRequest(request)) throw new TypeError('desktop: invalid data-home switch request')
-    let target: { readonly kind: 'desktop' }
-      | { readonly kind: 'official' }
-      | { readonly kind: 'custom' | 'create'; readonly path: string }
-    if (request.kind === 'custom' || request.kind === 'create') {
-      const pending = pendingDataHomeSelections.get(request.selectionId)
-      const expectedSelectionKind: DesktopDataHomeSelectionKind = request.kind === 'create' ? 'empty' : 'existing'
-      if (pending === undefined
-        || pending.rendererId !== event.sender.id
-        || pending.selectionKind !== expectedSelectionKind
-        || pending.expiresAt <= Date.now()) {
-        pendingDataHomeSelections.delete(request.selectionId)
-        throw new Error('desktop: selected data directory expired; choose it again')
-      }
-      target = { kind: request.kind, path: pending.path }
-    } else {
-      target = request
-    }
-    const decision = await resolveDesktopDataHomeSwitch(
-      DESKTOP_DATA_HOME,
-      dshHome,
-      target,
-    )
-    if (request.kind === 'custom' || request.kind === 'create') {
-      pendingDataHomeSelections.delete(request.selectionId)
-    }
-    if (!decision.changed) return { restarting: false, activePath: dshHome }
-    await stopPersistentServicesForActiveProfile()
-    await writeDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile, decision.setup)
-    setTimeout(requestDesktopRestart, 250)
-    return { restarting: true, activePath: decision.path }
+    return desktopDataHomes.switch(dshHome, event.sender.id, request)
   })
-  ipcMain.handle('dsh:desktop:preferences:get', (event) => {
+  ipcMain.handle(DESKTOP_IPC.preferencesGet, (event) => {
     assertMainRenderer(event.sender)
     return preferences
   })
@@ -2203,8 +1757,8 @@ async function startApplication(): Promise<void> {
     if (iconManager === undefined) throw new Error('icon.unsupported')
     return iconManager
   }
-  ipcMain.handle('dsh:desktop:icons:get', event => requireIcons(event.sender).status())
-  ipcMain.handle('dsh:desktop:icons:choose', async (event) => {
+  ipcMain.handle(DESKTOP_IPC.iconsGet, event => requireIcons(event.sender).status())
+  ipcMain.handle(DESKTOP_IPC.iconsChoose, async (event) => {
     const manager = requireIcons(event.sender)
     const owner = event.sender.id
     const options = {
@@ -2222,21 +1776,21 @@ async function startApplication(): Promise<void> {
     const path = picked.filePaths[0]
     return picked.canceled || path === undefined ? null : manager.select(owner, path)
   })
-  ipcMain.handle('dsh:desktop:icons:discard', (event, id: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.iconsDiscard, (event, id: unknown) => {
     requireIcons(event.sender).discard(event.sender.id, id)
   })
-  ipcMain.handle('dsh:desktop:icons:apply', (event, id: unknown, target: unknown, crop: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.iconsApply, (event, id: unknown, target: unknown, crop: unknown) => {
     return requireIcons(event.sender).apply(event.sender.id, id, target, crop)
   })
-  ipcMain.handle('dsh:desktop:icons:follow', (event, follow: unknown) => requireIcons(event.sender).followTray(follow))
-  ipcMain.handle('dsh:desktop:icons:reset', (event, target: IconTarget) => requireIcons(event.sender).reset(target))
-  ipcMain.handle('dsh:desktop:icons:repair', event => requireIcons(event.sender).refresh(true))
-  ipcMain.handle('dsh:desktop:icons:create-shortcut', (event) => {
+  ipcMain.handle(DESKTOP_IPC.iconsFollow, (event, follow: unknown) => requireIcons(event.sender).followTray(follow))
+  ipcMain.handle(DESKTOP_IPC.iconsReset, (event, target: IconTarget) => requireIcons(event.sender).reset(target))
+  ipcMain.handle(DESKTOP_IPC.iconsRepair, event => requireIcons(event.sender).refresh(true))
+  ipcMain.handle(DESKTOP_IPC.iconsCreateShortcut, (event) => {
     const manager = requireIcons(event.sender)
     if (!app.isPackaged || process.platform !== 'win32') throw new Error('icon.unsupported')
     return manager.refresh(true, true)
   })
-  ipcMain.handle('dsh:desktop:preferences:update', (event, patch: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.preferencesUpdate, (event, patch: unknown) => {
     assertMainRenderer(event.sender)
     return updatePreferences(patch)
   })
@@ -2247,18 +1801,18 @@ async function startApplication(): Promise<void> {
     return { store: nasRuntimeStore, client: nasRuntimeClient }
   }
   const publishNasRuntimeStatus = (status: NasRuntimeStatus): NasRuntimeStatus => {
-    mainSurface?.send('dsh:desktop:nas:status', status)
+    mainSurface?.send(DESKTOP_IPC.nasStatus, status)
     return status
   }
-  ipcMain.handle('dsh:desktop:nas:get', (event): NasRuntimeStatus => {
+  ipcMain.handle(DESKTOP_IPC.nasGet, (event): NasRuntimeStatus => {
     assertMainRenderer(event.sender)
     return requireNasRuntime().store.status()
   })
-  ipcMain.handle('dsh:desktop:nas:discover', async (event) => {
+  ipcMain.handle(DESKTOP_IPC.nasDiscover, async (event) => {
     assertMainRenderer(event.sender)
     return discoverNasRuntimes()
   })
-  ipcMain.handle('dsh:desktop:nas:inspect', async (event, rawBaseUrl: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.nasInspect, async (event, rawBaseUrl: unknown) => {
     assertMainRenderer(event.sender)
     if (typeof rawBaseUrl !== 'string') throw new TypeError('desktop: NAS address must be a string')
     const baseUrl = normalizeNasBaseUrl(rawBaseUrl)
@@ -2266,7 +1820,7 @@ async function startApplication(): Promise<void> {
     pendingNasCertificatePins.set(baseUrl, fingerprint)
     return { fingerprint }
   })
-  ipcMain.handle('dsh:desktop:nas:pair', async (event, raw: unknown): Promise<NasRuntimeStatus> => {
+  ipcMain.handle(DESKTOP_IPC.nasPair, async (event, raw: unknown): Promise<NasRuntimeStatus> => {
     assertMainRenderer(event.sender)
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
       throw new TypeError('desktop: invalid NAS pairing request')
@@ -2297,7 +1851,7 @@ async function startApplication(): Promise<void> {
       request.certificateFingerprint,
     ))
   })
-  ipcMain.handle('dsh:desktop:nas:select', async (event, raw: unknown): Promise<{ restarting: true }> => {
+  ipcMain.handle(DESKTOP_IPC.nasSelect, async (event, raw: unknown): Promise<{ restarting: true }> => {
     assertMainRenderer(event.sender)
     let selection: DesktopRuntimeSelection
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
@@ -2312,12 +1866,12 @@ async function startApplication(): Promise<void> {
     setTimeout(requestDesktopRestart, 250)
     return { restarting: true }
   })
-  ipcMain.handle('dsh:desktop:nas:remove', (event, serverId: unknown): NasRuntimeStatus => {
+  ipcMain.handle(DESKTOP_IPC.nasRemove, (event, serverId: unknown): NasRuntimeStatus => {
     assertMainRenderer(event.sender)
     if (typeof serverId !== 'string' || serverId === '') throw new TypeError('desktop: invalid NAS id')
     return publishNasRuntimeStatus(requireNasRuntime().store.remove(serverId))
   })
-  ipcMain.handle('dsh:desktop:nas:test', async (event, serverId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.nasTest, async (event, serverId: unknown) => {
     assertMainRenderer(event.sender)
     if (typeof serverId !== 'string' || serverId === '') throw new TypeError('desktop: invalid NAS id')
     const { store, client } = requireNasRuntime()
@@ -2327,7 +1881,7 @@ async function startApplication(): Promise<void> {
     const health = await client.health(server.baseUrl, credential.token)
     return { healthy: true as const, version: health.version }
   })
-  ipcMain.handle('dsh:desktop:nas:devices', async (event, serverId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.nasDevices, async (event, serverId: unknown) => {
     assertMainRenderer(event.sender)
     if (typeof serverId !== 'string' || serverId === '') throw new TypeError('desktop: invalid NAS id')
     const { store, client } = requireNasRuntime()
@@ -2336,7 +1890,7 @@ async function startApplication(): Promise<void> {
     if (server === undefined || credential === undefined) throw new Error('desktop: NAS credential is unavailable')
     return client.devices(server.baseUrl, credential.token)
   })
-  ipcMain.handle('dsh:desktop:nas:revoke-device', async (event, serverId: unknown, deviceId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.nasRevokeDevice, async (event, serverId: unknown, deviceId: unknown) => {
     assertMainRenderer(event.sender)
     if (typeof serverId !== 'string' || serverId === '' || typeof deviceId !== 'string') {
       throw new TypeError('desktop: invalid NAS device revocation request')
@@ -2352,95 +1906,95 @@ async function startApplication(): Promise<void> {
     }
     return devices
   })
-  ipcMain.handle('dsh:desktop:download-network:get', (event): DownloadNetworkSettings => {
+  ipcMain.handle(DESKTOP_IPC.downloadNetworkGet, (event): DownloadNetworkSettings => {
     assertMainRenderer(event.sender)
     if (downloadNetworkStore === undefined) throw new Error('desktop: download network settings are unavailable')
     return downloadNetworkStore.read()
   })
-  ipcMain.handle('dsh:desktop:download-network:update', async (event, patch: unknown): Promise<DownloadNetworkSettings> => {
+  ipcMain.handle(DESKTOP_IPC.downloadNetworkUpdate, async (event, patch: unknown): Promise<DownloadNetworkSettings> => {
     assertMainRenderer(event.sender)
     if (downloadNetworkStore === undefined || downloadNetworkProxy === undefined) throw new Error('desktop: download network settings are unavailable')
     const previous = downloadNetworkStore.read()
     const next = downloadNetworkStore.update(patch)
     delete harnessEnvironment.npm_config_registry
     Object.assign(harnessEnvironment, pluginDownloadEnvironment(downloadNetworkStore, downloadNetworkProxy.pluginUrl))
-    mainSurface?.send('dsh:desktop:download-network', next)
+    mainSurface?.send(DESKTOP_IPC.downloadNetworkChanged, next)
     if (previous.application.source !== next.application.source
       || JSON.stringify(previous.application.proxy) !== JSON.stringify(next.application.proxy)) {
       await configureReleaseServices()
-      mainSurface?.send('dsh:desktop:release-status', releaseChecker?.status ?? { phase: 'unsupported' })
-      mainSurface?.send('dsh:desktop:release-download-status', releaseDownloader?.status ?? { phase: 'unsupported' })
+      mainSurface?.send(DESKTOP_IPC.releaseStatus, releaseChecker?.status ?? { phase: 'unsupported' })
+      mainSurface?.send(DESKTOP_IPC.releaseDownloadStatus, releaseDownloader?.status ?? { phase: 'unsupported' })
     }
     return next
   })
-  ipcMain.handle('dsh:desktop:download-network:reset', async (event, target: unknown): Promise<DownloadNetworkSettings> => {
+  ipcMain.handle(DESKTOP_IPC.downloadNetworkReset, async (event, target: unknown): Promise<DownloadNetworkSettings> => {
     assertMainRenderer(event.sender)
     if (!['application', 'npm', 'github'].includes(String(target))) throw new TypeError('desktop: invalid download network target')
     if (downloadNetworkStore === undefined || downloadNetworkProxy === undefined) throw new Error('desktop: download network settings are unavailable')
     const next = downloadNetworkStore.reset(target as DownloadNetworkTarget)
     delete harnessEnvironment.npm_config_registry
     Object.assign(harnessEnvironment, pluginDownloadEnvironment(downloadNetworkStore, downloadNetworkProxy.pluginUrl))
-    mainSurface?.send('dsh:desktop:download-network', next)
+    mainSurface?.send(DESKTOP_IPC.downloadNetworkChanged, next)
     if (target === 'application') await configureReleaseServices()
     return next
   })
-  ipcMain.handle('dsh:desktop:download-network:test:get', (event): DownloadNetworkTestStatus => {
+  ipcMain.handle(DESKTOP_IPC.downloadNetworkTestGet, (event): DownloadNetworkTestStatus => {
     assertMainRenderer(event.sender); return downloadNetworkTestStatus
   })
-  ipcMain.handle('dsh:desktop:download-network:test', (event, target: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.downloadNetworkTest, (event, target: unknown) => {
     assertMainRenderer(event.sender)
     if (!['application', 'npm', 'github'].includes(String(target))) throw new TypeError('desktop: invalid download network test target')
     return testDownloadNetwork(target as DownloadNetworkTarget)
   })
-  ipcMain.handle('dsh:desktop:web:get', (event) => {
+  ipcMain.handle(DESKTOP_IPC.webGet, (event) => {
     assertMainRenderer(event.sender)
     return desktopWebAccess?.status() ?? { phase: 'starting' }
   })
-  ipcMain.handle('dsh:desktop:web:open', async (event) => {
+  ipcMain.handle(DESKTOP_IPC.webOpen, async (event) => {
     assertMainRenderer(event.sender)
     if (desktopWebAccess === undefined) throw new Error('desktop: local Web interface is unavailable')
     return desktopWebAccess.open()
   })
-  ipcMain.handle('dsh:desktop:chat-background:read', (event) => {
+  ipcMain.handle(DESKTOP_IPC.chatBackgroundRead, (event) => {
     assertMainRenderer(event.sender)
     return chatBackgroundStore?.read()
   })
-  ipcMain.handle('dsh:desktop:chat-background:write', (event, background: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.chatBackgroundWrite, (event, background: unknown) => {
     assertMainRenderer(event.sender)
     if (chatBackgroundStore === undefined) throw new Error('desktop: chat background store is unavailable')
     return chatBackgroundStore.write(background)
   })
-  ipcMain.handle('dsh:desktop:log:open', (event) => {
+  ipcMain.handle(DESKTOP_IPC.logOpen, (event) => {
     assertMainRenderer(event.sender)
     return openHarnessLog()
   })
-  ipcMain.handle('dsh:desktop:log-directory:open', async (event): Promise<{ error: string }> => {
+  ipcMain.handle(DESKTOP_IPC.logDirectoryOpen, async (event): Promise<{ error: string }> => {
     assertMainRenderer(event.sender)
     await mkdir(DESKTOP_DATA_HOME.logs, { recursive: true, mode: 0o700 })
     return { error: await shell.openPath(DESKTOP_DATA_HOME.logs) }
   })
-  ipcMain.handle('dsh:desktop:settings:open', async (event): Promise<{ error: string }> => {
+  ipcMain.handle(DESKTOP_IPC.settingsOpen, async (event): Promise<{ error: string }> => {
     assertMainRenderer(event.sender)
     return openSettingsDocument()
   })
-  ipcMain.handle('dsh:desktop:settings:reset', async (event): Promise<{ backupName?: string; restarting: true }> => {
+  ipcMain.handle(DESKTOP_IPC.settingsReset, async (event): Promise<{ backupName?: string; restarting: true }> => {
     assertMainRenderer(event.sender)
     const { backupName } = await backupAndResetDesktopSettings(dshHome)
     setTimeout(() => { requestDesktopRestart() }, 250)
     return { ...(backupName === undefined ? {} : { backupName }), restarting: true }
   })
-  ipcMain.handle('dsh:desktop:cli:get', async (event): Promise<DesktopCliStatus> => {
+  ipcMain.handle(DESKTOP_IPC.cliGet, async (event): Promise<DesktopCliStatus> => {
     assertMainRenderer(event.sender)
     if (desktopCliManager === undefined) throw new Error('desktop: command-line manager is unavailable')
     return desktopCliManager.getStatus()
   })
-  ipcMain.handle('dsh:desktop:cli:install', async (event, force: unknown): Promise<DesktopCliStatus> => {
+  ipcMain.handle(DESKTOP_IPC.cliInstall, async (event, force: unknown): Promise<DesktopCliStatus> => {
     assertMainRenderer(event.sender)
     if (typeof force !== 'boolean') throw new TypeError('desktop: invalid command-line conflict confirmation')
     if (desktopCliManager === undefined) throw new Error('desktop: command-line manager is unavailable')
     return desktopCliManager.install(force)
   })
-  ipcMain.handle('dsh:desktop:cli:remove', async (event): Promise<DesktopCliStatus> => {
+  ipcMain.handle(DESKTOP_IPC.cliRemove, async (event): Promise<DesktopCliStatus> => {
     assertMainRenderer(event.sender)
     if (desktopCliManager === undefined) throw new Error('desktop: command-line manager is unavailable')
     return desktopCliManager.remove()
@@ -2449,12 +2003,12 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return startupProgress
   })
-  ipcMain.on('dsh:desktop:theme-source', (event, source: unknown) => {
+  ipcMain.on(DESKTOP_IPC.themeSource, (event, source: unknown) => {
     assertMainRenderer(event.sender)
     if (!isDesktopThemeSource(source)) throw new TypeError('desktop: invalid theme source')
     applyDesktopThemeSource(source)
   })
-  ipcMain.on('dsh:desktop:readiness', (event, phase: unknown) => {
+  ipcMain.on(DESKTOP_IPC.readiness, (event, phase: unknown) => {
     assertMainRenderer(event.sender)
     if (phase !== 'client' && phase !== 'event-dispatch') {
       throw new TypeError('desktop: invalid readiness phase')
@@ -2471,7 +2025,7 @@ async function startApplication(): Promise<void> {
     reportedDesktopReadiness.add(phase)
     void appendDesktopStartupLog(phase === 'client' ? 'client ready' : 'event-dispatch is ready')
     if (supervisor?.isDiagnosticMode === true) {
-      profileTransactionManager?.failed()
+      profileMutation?.observeHarness({ type: 'diagnostic-ready' })
       void appendDesktopStartupLog('Diagnostic Profile readiness does not verify the active Profile or its plugin snapshots.')
       if (phase === 'client') void pluginSnapshotManager?.handleHarnessFailure(
         'The active Profile failed to start; only the installation-owned diagnostic Profile became ready.',
@@ -2481,7 +2035,7 @@ async function startApplication(): Promise<void> {
       return
     }
     const readinessComplete = reportedDesktopReadiness.size === 2
-    if (readinessComplete) profileTransactionManager?.ready()
+    if (readinessComplete) profileMutation?.observeHarness({ type: 'normal-ready' })
     const manager = pluginSnapshotManager
     if (manager !== undefined) void (async () => {
       await manager.reportReadiness(phase)
@@ -2496,26 +2050,26 @@ async function startApplication(): Promise<void> {
       console.warn('desktop: could not retain the latest bootable plugin snapshot', error)
     })
   })
-  ipcMain.handle('dsh:desktop:releases:get', (event): DesktopReleaseStatus => {
+  ipcMain.handle(DESKTOP_IPC.releasesGet, (event): DesktopReleaseStatus => {
     assertMainRenderer(event.sender)
     return releaseChecker?.status ?? { phase: 'unsupported' }
   })
-  ipcMain.handle('dsh:desktop:releases:check', (event) => {
+  ipcMain.handle(DESKTOP_IPC.releasesCheck, (event) => {
     assertMainRenderer(event.sender)
     return releaseChecker?.check() ?? Promise.resolve({ phase: 'unsupported' } satisfies DesktopReleaseStatus)
   })
-  ipcMain.handle('dsh:desktop:releases:open', async (event, releaseUrl: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.releasesOpen, async (event, releaseUrl: unknown) => {
     assertMainRenderer(event.sender)
     if (typeof releaseUrl !== 'string' || (!isAllowedReleaseUrl(releaseUrl) && !isAllowedCnbUrl(releaseUrl))) {
       throw new TypeError('desktop: invalid Release URL')
     }
     return { error: await shell.openExternal(releaseUrl).then(() => '') }
   })
-  ipcMain.handle('dsh:desktop:releases:download:get', (event): DesktopReleaseDownloadStatus => {
+  ipcMain.handle(DESKTOP_IPC.releasesDownloadGet, (event): DesktopReleaseDownloadStatus => {
     assertMainRenderer(event.sender)
     return releaseDownloader?.status ?? { phase: 'unsupported' }
   })
-  ipcMain.handle('dsh:desktop:releases:download:start', async (event) => {
+  ipcMain.handle(DESKTOP_IPC.releasesDownloadStart, async (event) => {
     assertMainRenderer(event.sender)
     if (releaseChecker === undefined || releaseDownloader === undefined) {
       return { phase: 'unsupported' } satisfies DesktopReleaseDownloadStatus
@@ -2523,40 +2077,40 @@ async function startApplication(): Promise<void> {
     await releaseChecker.check()
     return releaseDownloader.start()
   })
-  ipcMain.handle('dsh:desktop:releases:download:cancel', (event): DesktopReleaseDownloadStatus => {
+  ipcMain.handle(DESKTOP_IPC.releasesDownloadCancel, (event): DesktopReleaseDownloadStatus => {
     assertMainRenderer(event.sender)
     return releaseDownloader?.cancel() ?? { phase: 'unsupported' }
   })
-  ipcMain.handle('dsh:desktop:releases:download:open', (event) => {
+  ipcMain.handle(DESKTOP_IPC.releasesDownloadOpen, (event) => {
     assertMainRenderer(event.sender)
     return releaseDownloader?.open() ?? Promise.resolve({ error: 'Release downloads are unavailable.' })
   })
-  ipcMain.handle('dsh:source-update:check', (event) => {
+  ipcMain.handle(DESKTOP_IPC.sourceUpdateCheck, (event) => {
     assertMainRenderer(event.sender)
     return updater.check()
   })
-  ipcMain.handle('dsh:source-update:upgrade', (event, expectedCommit: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.sourceUpdateUpgrade, (event, expectedCommit: unknown) => {
     assertMainRenderer(event.sender)
     if (typeof expectedCommit !== 'string' || !/^[0-9a-f]{40}$/u.test(expectedCommit)) {
       throw new TypeError('desktop: invalid expected update commit')
     }
     return updater.upgrade(expectedCommit)
   })
-  ipcMain.handle('dsh:source-update:restart', (event) => {
+  ipcMain.handle(DESKTOP_IPC.sourceUpdateRestart, (event) => {
     assertMainRenderer(event.sender)
     setTimeout(() => {
       requestDesktopRestart()
     }, 250)
     return { restarting: true as const }
   })
-  ipcMain.handle('dsh:desktop:restart', (event) => {
+  ipcMain.handle(DESKTOP_IPC.restart, (event) => {
     assertMainRenderer(event.sender)
     setTimeout(() => {
       requestDesktopRestart()
     }, 250)
     return { restarting: true as const }
   })
-  ipcMain.handle('dsh:desktop:recovery:enter', (event) => {
+  ipcMain.handle(DESKTOP_IPC.recoveryEnter, (event) => {
     assertMainRenderer(event.sender)
     if (app.isPackaged) throw new Error('desktop: recovery preview is available only in development mode')
     if (harnessOrigin === undefined) throw new Error('desktop: Harness must be ready before opening recovery mode')
@@ -2569,21 +2123,32 @@ async function startApplication(): Promise<void> {
   })
   ipcMain.handle('dsh:desktop:recovery-plugins:list', (event) => {
     assertMainRenderer(event.sender)
-    if (activeMenuHome === undefined) throw new Error('desktop: active Profile is unavailable')
-    return readRecoveryPluginInventory(recoveryCandidateHome?.() ?? activeMenuHome)
+    if (activeMenuHome === undefined || profileMutation === undefined) throw new Error('desktop: active Profile is unavailable')
+    return profileMutation.readRecovery(activeMenuHome, readRecoveryPluginInventory)
   })
   ipcMain.handle('dsh:desktop:recovery-plugins:remove', async (event, packageName: unknown) => {
     assertMainRenderer(event.sender)
     if (!isRecoveryPluginPackageName(packageName)) throw new TypeError('desktop: invalid recovery plugin identity')
-    if (activeMenuHome === undefined || recoveryPluginRemove === undefined) {
+    if (activeMenuHome === undefined || profileMutation === undefined) {
       throw new Error('desktop: recovery plugin removal is not ready')
     }
-    const inventory = await readRecoveryPluginInventory(recoveryCandidateHome?.() ?? activeMenuHome)
+    const inventory = await profileMutation.readRecovery(activeMenuHome, readRecoveryPluginInventory)
     if (!inventory.plugins.some(plugin => plugin.packageName === packageName)) {
       throw new Error('desktop: recovery plugin is not a direct removable dependency')
     }
-    await recoveryPluginRemove(packageName)
-    return readRecoveryPluginInventory(recoveryCandidateHome?.() ?? activeMenuHome)
+    await profileMutation.stageRecovery({
+      operation: `recovery-plugin-remove:${packageName}`,
+      run: async (context) => {
+        await stopAndRevokePersistentServicesForPlugin(packageName)
+        await appendDesktopStartupLog(`Recovery mode is removing external plugin ${packageName}.`)
+        await context.write({
+          kind: 'remove', packageName, operation: `recovery-plugin-remove:${packageName}`,
+          timeoutMs: BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS,
+        })
+        await appendDesktopStartupLog(`Recovery mode removed external plugin ${packageName}.`)
+      },
+    })
+    return profileMutation.readRecovery(activeMenuHome, readRecoveryPluginInventory)
   })
   ipcMain.handle('dsh:desktop:recovery:export', async (event) => {
     assertMainRenderer(event.sender)
@@ -2653,7 +2218,7 @@ async function startApplication(): Promise<void> {
   })
   ipcMain.handle('dsh:desktop:recovery:exit', async (event) => {
     assertMainRenderer(event.sender)
-    if (recoveryCandidateHome?.() !== undefined) await recoveryDiscardCandidate?.()
+    if (profileMutation?.hasRecoveryCandidate === true) await profileMutation.settleRecovery('discard')
     else if (menuBusy()) throw new Error(menuCopy(menuLocale).busy)
     setTimeout(() => { void lifecycle?.requestQuit() }, 0)
     return { exiting: true as const }
@@ -2673,7 +2238,7 @@ async function startApplication(): Promise<void> {
         return { started: false }
       }
     }
-    await recoveryActivateCandidate?.()
+    await profileMutation?.settleRecovery('activate')
     if (recoveryRestartRequired) {
       setTimeout(() => { requestDesktopRestart() }, 150)
       return { started: true }
@@ -2705,7 +2270,7 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return openHarnessLog()
   })
-  ipcMain.handle('dsh:desktop:bundled-plugins:start', (event, request: unknown): BundledPluginStartResult => {
+  ipcMain.handle(DESKTOP_IPC.bundledPluginsStart, (event, request: unknown): BundledPluginStartResult => {
     assertMainRenderer(event.sender)
     if (request === null || typeof request !== 'object') throw new TypeError('desktop: invalid bundled plugin request')
     const { profile, packageSpec } = request as { profile?: unknown; packageSpec?: unknown }
@@ -2714,7 +2279,7 @@ async function startApplication(): Promise<void> {
     }
     return bundledPluginInstaller?.startManual(profile, packageSpec) ?? { handled: false }
   })
-  ipcMain.handle('dsh:desktop:external-tools:resolve', async (event, toolId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.externalToolsResolve, async (event, toolId: unknown) => {
     assertMainRenderer(event.sender)
     if (typeof toolId !== 'string' || !EXTERNAL_TOOL_IDS.includes(toolId as DesktopExternalToolId)) {
       throw new TypeError('desktop: invalid external tool id')
@@ -2724,7 +2289,7 @@ async function startApplication(): Promise<void> {
     }
     return externalToolCompatibility.resolve(toolId as DesktopExternalToolId)
   })
-  ipcMain.handle('dsh:desktop:bundled-plugins:start-deferred', async (
+  ipcMain.handle(DESKTOP_IPC.bundledPluginsStartDeferred, async (
     event,
     request: unknown,
   ): Promise<BundledPluginDeferredStartResult> => {
@@ -2736,21 +2301,21 @@ async function startApplication(): Promise<void> {
     }
     return bundledPluginInstaller?.startDeferred(profile, packageSpec) ?? { handled: false }
   })
-  ipcMain.handle('dsh:desktop:bundled-plugins:get', (event, installId: unknown): BundledPluginInstallSnapshot => {
+  ipcMain.handle(DESKTOP_IPC.bundledPluginsGet, (event, installId: unknown): BundledPluginInstallSnapshot => {
     assertMainRenderer(event.sender)
     if (typeof installId !== 'string') throw new TypeError('desktop: invalid bundled plugin install id')
     if (bundledPluginInstaller === undefined) throw new Error('desktop: bundled plugin installer is unavailable')
     return bundledPluginInstaller.getInstall(installId)
   })
-  ipcMain.handle('dsh:desktop:imported-plugins:get', (event): ImportedPluginRestoreSnapshot | undefined => {
+  ipcMain.handle(DESKTOP_IPC.importedPluginsGet, (event): ImportedPluginRestoreSnapshot | undefined => {
     assertMainRenderer(event.sender)
     return importedPluginRestoreManager?.snapshot()
   })
-  ipcMain.handle('dsh:desktop:imported-plugins:check-sources', (event): ImportedPluginRestoreSnapshot | undefined => {
+  ipcMain.handle(DESKTOP_IPC.importedPluginsCheckSources, (event): ImportedPluginRestoreSnapshot | undefined => {
     assertMainRenderer(event.sender)
     return importedPluginRestoreManager?.startSourceCheck()
   })
-  ipcMain.handle('dsh:desktop:imported-plugins:start', async (
+  ipcMain.handle(DESKTOP_IPC.importedPluginsStart, async (
     event,
     restoreIds: unknown,
   ): Promise<ImportedPluginRestoreSnapshot> => {
@@ -2768,13 +2333,13 @@ async function startApplication(): Promise<void> {
       restartBootableSnapshotStabilityWindow('imported plugin restore settled')
     }
   })
-  ipcMain.handle('dsh:desktop:imported-plugins:dismiss', async (
+  ipcMain.handle(DESKTOP_IPC.importedPluginsDismiss, async (
     event,
   ): Promise<ImportedPluginRestoreSnapshot | undefined> => {
     assertMainRenderer(event.sender)
     return importedPluginRestoreManager?.dismissPrompt()
   })
-  ipcMain.handle('dsh:desktop:imported-plugins:ignore', async (
+  ipcMain.handle(DESKTOP_IPC.importedPluginsIgnore, async (
     event,
   ): Promise<ImportedPluginRestoreSnapshot | undefined> => {
     assertMainRenderer(event.sender)
@@ -2836,25 +2401,25 @@ async function startApplication(): Promise<void> {
       await staged?.cleanup()
     }
   }
-  ipcMain.handle('dsh:desktop:imported-plugins:choose-directory', async (event, restoreId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.importedPluginsChooseDirectory, async (event, restoreId: unknown) => {
     assertMainRenderer(event.sender)
     return installSelectedImportedPlugin(restoreId, 'directory')
   })
-  ipcMain.handle('dsh:desktop:imported-plugins:choose-archive', async (event, restoreId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.importedPluginsChooseArchive, async (event, restoreId: unknown) => {
     assertMainRenderer(event.sender)
     return installSelectedImportedPlugin(restoreId, 'archive')
   })
-  ipcMain.handle('dsh:desktop:diagnostic-lab:catalog', (event) => {
+  ipcMain.handle(DESKTOP_IPC.diagnosticLabCatalog, (event) => {
     assertMainRenderer(event.sender)
     if (diagnosticLabManager === undefined) throw new Error('desktop: diagnostic lab is unavailable')
     return diagnosticLabManager.catalog()
   })
-  ipcMain.handle('dsh:desktop:startup-diagnostics:list', async (event) => {
+  ipcMain.handle(DESKTOP_IPC.startupDiagnosticsList, async (event) => {
     assertMainRenderer(event.sender)
     if (activeMenuHome === undefined) return []
     return readStartupDiagnostics(activeMenuHome)
   })
-  ipcMain.handle('dsh:desktop:startup-diagnostics:retry', async (event, incidentId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.startupDiagnosticsRetry, async (event, incidentId: unknown) => {
     assertMainRenderer(event.sender)
     if (activeMenuHome === undefined || typeof incidentId !== 'string' || incidentId.length > 80) {
       throw new TypeError('desktop: invalid startup diagnostic retry request')
@@ -2881,63 +2446,63 @@ async function startApplication(): Promise<void> {
     }
     return { status: 'unsupported' as const }
   })
-  ipcMain.handle('dsh:desktop:diagnostic-lab:current', (event) => {
+  ipcMain.handle(DESKTOP_IPC.diagnosticLabCurrent, (event) => {
     assertMainRenderer(event.sender)
     if (diagnosticLabManager === undefined) throw new Error('desktop: diagnostic lab is unavailable')
     return diagnosticLabManager.current()
   })
-  ipcMain.handle('dsh:desktop:diagnostic-lab:start', (event, request: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.diagnosticLabStart, (event, request: unknown) => {
     assertMainRenderer(event.sender)
     if (diagnosticLabManager === undefined) throw new Error('desktop: diagnostic lab is unavailable')
     if (request === null || typeof request !== 'object') throw new TypeError('desktop: invalid diagnostic lab request')
     return diagnosticLabManager.start(request as DiagnosticLabStartRequest)
   })
-  ipcMain.handle('dsh:desktop:diagnostic-lab:get', (event, runId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.diagnosticLabGet, (event, runId: unknown) => {
     assertMainRenderer(event.sender)
     if (diagnosticLabManager === undefined || typeof runId !== 'string') {
       throw new TypeError('desktop: invalid diagnostic lab run id')
     }
     return diagnosticLabManager.get(runId)
   })
-  ipcMain.handle('dsh:desktop:diagnostic-lab:cancel', (event, runId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.diagnosticLabCancel, (event, runId: unknown) => {
     assertMainRenderer(event.sender)
     if (diagnosticLabManager === undefined || typeof runId !== 'string') {
       throw new TypeError('desktop: invalid diagnostic lab run id')
     }
     return diagnosticLabManager.cancel(runId)
   })
-  ipcMain.handle('dsh:desktop:diagnostic-lab:restore-all', async (event, runId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.diagnosticLabRestoreAll, async (event, runId: unknown) => {
     assertMainRenderer(event.sender)
     if (diagnosticLabManager === undefined || typeof runId !== 'string') {
       throw new TypeError('desktop: invalid diagnostic lab run id')
     }
     return diagnosticLabManager.restoreAll(runId)
   })
-  ipcMain.handle('dsh:desktop:diagnostic-lab:export', (event, runId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.diagnosticLabExport, (event, runId: unknown) => {
     assertMainRenderer(event.sender)
     if (diagnosticLabManager === undefined || typeof runId !== 'string') {
       throw new TypeError('desktop: invalid diagnostic lab run id')
     }
     return diagnosticLabManager.exportReport(runId)
   })
-  ipcMain.handle('dsh:desktop:plugin-snapshots:list', (event): Promise<readonly PluginSnapshotSummary[]> => {
+  ipcMain.handle(DESKTOP_IPC.pluginSnapshotsList, (event): Promise<readonly PluginSnapshotSummary[]> => {
     assertMainRenderer(event.sender)
     if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
     return pluginSnapshotManager.list()
   })
-  ipcMain.handle('dsh:desktop:plugin-snapshots:create', (event, label: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.pluginSnapshotsCreate, (event, label: unknown) => {
     assertMainRenderer(event.sender)
     if (label !== undefined && typeof label !== 'string') throw new TypeError('desktop: invalid plugin snapshot label')
     if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
     return pluginSnapshotManager.create(label)
   })
-  ipcMain.handle('dsh:desktop:plugin-snapshots:remove', (event, snapshotId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.pluginSnapshotsRemove, (event, snapshotId: unknown) => {
     assertMainRenderer(event.sender)
     if (typeof snapshotId !== 'string') throw new TypeError('desktop: invalid plugin snapshot id')
     if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
     return pluginSnapshotManager.remove(snapshotId)
   })
-  ipcMain.handle('dsh:desktop:plugin-snapshots:restore', (
+  ipcMain.handle(DESKTOP_IPC.pluginSnapshotsRestore, (
     event,
     snapshotId: unknown,
     networkAllowed: unknown,
@@ -2949,7 +2514,7 @@ async function startApplication(): Promise<void> {
     if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
     return pluginSnapshotManager.startRestore(snapshotId, networkAllowed)
   })
-  ipcMain.handle('dsh:desktop:plugin-snapshots:restore:get', (event, operationId: unknown) => {
+  ipcMain.handle(DESKTOP_IPC.pluginSnapshotsRestoreGet, (event, operationId: unknown) => {
     assertMainRenderer(event.sender)
     if (typeof operationId !== 'string') throw new TypeError('desktop: invalid plugin snapshot restore operation')
     if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
@@ -2970,7 +2535,7 @@ async function startApplication(): Promise<void> {
     const surface = mainSurface
     if (surface !== undefined && isDesktopRenderer(event.sender, surface.titlebarRenderer)) surface.window.close()
   })
-  ipcMain.on('dsh:menu:client-state', (event, state: unknown) => {
+  ipcMain.on(DESKTOP_IPC.menuClientState, (event, state: unknown) => {
     if (event.sender !== mainSurface?.renderer || typeof state !== 'object' || state === null) return
     const { ready, locale } = state as { ready?: unknown; locale?: unknown }
     if (typeof ready !== 'boolean' || typeof locale !== 'string' || locale.length > 64) return
@@ -2987,7 +2552,7 @@ async function startApplication(): Promise<void> {
     applicationMenu?.refresh()
     refreshTrayMenu()
   })
-  ipcMain.on('dsh:menu:result', (event, result: unknown) => {
+  ipcMain.on(DESKTOP_IPC.menuResult, (event, result: unknown) => {
     if (event.sender !== mainSurface?.renderer || typeof result !== 'object' || result === null) return
     const { id, error } = result as { id?: unknown; error?: unknown }
     if (typeof id !== 'string' || (error !== undefined && typeof error !== 'string')) return
@@ -3027,7 +2592,7 @@ async function startApplication(): Promise<void> {
       showLoading('restarting')
       const outcomes: PromiseSettledResult<unknown>[] = []
       outcomes.push(...await Promise.allSettled([
-        releaseDownloader?.dispose(), downloadNetworkProxy?.close(), oneShotOperations.dispose(), profileTransactionManager?.dispose(),
+        releaseDownloader?.dispose(), downloadNetworkProxy?.close(), oneShotOperations.dispose(), profileMutation?.dispose(),
       ]))
       const taskFailures = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
       if (taskFailures.length > 0) {
@@ -3178,41 +2743,6 @@ async function startApplication(): Promise<void> {
   } catch (error) {
     console.warn('desktop: could not refresh the registered dsh command', error)
   }
-  recoveryPluginRemove = async (packageName) => {
-    if (!recoveryHarnessSuspended && supervisor !== undefined) {
-      cancelBootableSnapshot()
-      await supervisor.stop()
-      recoveryHarnessSuspended = true
-      harnessOrigin = undefined
-      harnessAuthenticationUrl = undefined
-      desktopReturnControl?.clear()
-      desktopWebAccess?.clear()
-    } else if (supervisor === undefined) {
-      recoveryRestartRequired = true
-    }
-    const settledRetainedTransaction = await profileTransactionManager?.settleForRecoveryMutation() ?? false
-    if (settledRetainedTransaction) {
-      clearCandidateEnvironment()
-      recoveryOwnsCandidate = false
-      startupSafety.rollbackFailed = false
-      await appendDesktopStartupLog('Recovery mode settled the retained plugin transaction before removal.')
-    }
-    await stopAndRevokePersistentServicesForPlugin(packageName)
-    await appendDesktopStartupLog(`Recovery mode is removing external plugin ${packageName}.`)
-    const remove = () => runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
-      'plugin', '--profile', 'web', 'remove', packageName,
-    ], launchOptions), `recovery-plugin-remove:${packageName}`, BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS)
-    if (supervisor === undefined) await remove()
-    else {
-      if (recoveryMutationBusy || managedCandidateActive || (desktopCandidateId !== undefined && !recoveryOwnsCandidate)) {
-        throw new Error('desktop: another plugin mutation is active')
-      }
-      recoveryMutationBusy = true
-      recoveryOwnsCandidate = true
-      try { await withProfileMutationSafety('recovery-plugin-remove', remove) } finally { recoveryMutationBusy = false }
-    }
-    await appendDesktopStartupLog(`Recovery mode removed external plugin ${packageName}.`)
-  }
   const runSnapshotCommand = async <T>(
     args: readonly string[],
     timeoutMs?: number,
@@ -3224,7 +2754,6 @@ async function startApplication(): Promise<void> {
     timeoutMs ?? SNAPSHOT_COMMAND_TIMEOUT_MS, [0], allowDuringDisposal)
     return parsePluginSnapshotJson(output) as T
   }
-  const startupSafety = { rollbackFailed: false }
   const firstStartPreparation = new FirstStartPreparation(dshHome)
   let firstStartPending = await firstStartPreparation.begin(
     !await lstat(join(dshHome, 'profiles/web/package.json')).then(stat => stat.isFile(), () => false) && !preserveCopiedPlugins,
@@ -3280,139 +2809,85 @@ async function startApplication(): Promise<void> {
       return
     }
   }
-  let desktopCandidateId: string | undefined
-  const mutationHome = (): string => harnessEnvironment.DSH_HOME ?? dshHome
-  const candidateEnvironment = (id: string): NodeJS.ProcessEnv => ({
-    ...harnessEnvironment, DSH_HOME: dshHome,
-    DSH_PLUGIN_TRANSACTION_ORIGIN: undefined,
-    DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN: id,
-  })
-  const selectCandidate = (id: string): void => {
-    desktopCandidateId = id
-    harnessEnvironment.DSH_HOME = join(dshHome, 'plugin-transactions', 'web', id, 'candidate')
-    harnessEnvironment.DSH_PLUGIN_TRANSACTION_ORIGIN = dshHome
-    harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = id
-    harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID = String(process.pid)
-  }
-  const beginDesktopCandidate = async (): Promise<void> => {
-    if (desktopCandidateId !== undefined) return
-    cancelBootableSnapshot()
-    const preparationStartedAt = Date.now()
-    publishStartupProgress({ stage: 'configuring-plugin', progress: startupProgress.progress,
-      startedAt: preparationStartedAt, deadlineAt: preparationStartedAt + CANDIDATE_PREPARATION_TIMEOUT_MS })
-    await appendDesktopStartupLog('Preparing plugin candidate: snapshot metadata and copy installed dependencies.')
-    const id = await prepareDesktopCandidate({
-      prepare: id => runDesktopInvocation(resolveHarnessInvocation({
-        ...harnessEnvironment, DSH_HOME: dshHome, DSH_DESKTOP_MUTATION_OWNER_PID: String(process.pid),
-        ...(supervisor === undefined ? { DSH_PLUGIN_SNAPSHOT_BATCH: '1' } : {}),
-      }, ['plugin', '--profile', 'web', 'transaction', 'prepare', id], launchOptions),
-      'plugin-candidate-prepare', CANDIDATE_PREPARATION_TIMEOUT_MS),
-      parse: output => parsePluginSnapshotJson(output) as { id?: unknown },
-      cleanup: async (id) => {
-        const environment = { ...harnessEnvironment, DSH_HOME: dshHome,
-          DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN: undefined, DSH_PLUGIN_TRANSACTION_ORIGIN: undefined }
-        const output = await runDesktopInvocation(resolveHarnessInvocation(environment,
-          ['plugin', '--profile', 'web', 'transaction', 'status'], launchOptions), 'plugin-candidate-status', 15_000, [0], true)
-        const record = parsePluginSnapshotJson(output) as { id?: unknown; producerPid?: unknown; phase?: unknown } | null
-        if (record === null) return
-        const leased = candidatePreparationUsesLease(id, process.pid, record, inspectProfileMutationLock(dshHome))
-        await runDesktopInvocation(resolveHarnessInvocation({ ...environment, ...(leased ? { DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN: id } : {}) },
-          ['plugin', '--profile', 'web', 'transaction', 'rollback', id], launchOptions), 'plugin-candidate-abort', 60_000, [0], true)
-        if (leased) await runDesktopInvocation(resolveHarnessInvocation({ ...environment, DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN: id },
-          ['plugin', '--profile', 'web', 'snapshot', 'end-restore-lease'], launchOptions), 'plugin-candidate-release', 15_000, [0], true)
-        await appendDesktopStartupLog('Interrupted plugin candidate preparation rolled back after worker exit.')
-      },
-      cleanupFailed: () => { startupSafety.rollbackFailed = true },
-    })
-    await appendDesktopStartupLog(`Plugin candidate prepared in ${Date.now() - preparationStartedAt}ms.`)
-    selectCandidate(id)
-  }
-  const clearCandidateEnvironment = (): void => {
-    desktopCandidateId = undefined
-    harnessEnvironment.DSH_HOME = dshHome
-    delete harnessEnvironment.DSH_PLUGIN_TRANSACTION_ORIGIN
-    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
-    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
-  }
-  const discardDesktopCandidate = async (): Promise<void> => {
-    const id = desktopCandidateId
-    if (id === undefined) return
-    const environment = candidateEnvironment(id)
-    await runDesktopInvocation(resolveHarnessInvocation(environment,
-      ['plugin', '--profile', 'web', 'transaction', 'rollback', id], launchOptions), 'plugin-candidate-discard', 60_000, [0], true)
-    await runDesktopInvocation(resolveHarnessInvocation(environment,
-      ['plugin', '--profile', 'web', 'snapshot', 'end-restore-lease'], launchOptions), 'plugin-candidate-release', 15_000, [0], true)
-    clearCandidateEnvironment()
-  }
-  const activateDesktopCandidate = async (resume: boolean, expectedPackages: readonly string[] = []): Promise<void> => {
-    const id = desktopCandidateId
-    if (id === undefined) return
-    await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment,
-      ['plugin', '--profile', 'web', 'doctor'], launchOptions), 'plugin-candidate-check', PROFILE_CHECK_TIMEOUT_MS)
-    await runDesktopInvocation(resolveHarnessInvocation(candidateEnvironment(id),
-      ['plugin', '--profile', 'web', 'transaction', 'ready', id], launchOptions), 'plugin-candidate-ready', 15_000)
-    clearCandidateEnvironment()
-    if (profileTransactionManager === undefined) throw new Error('desktop: plugin activation manager unavailable')
-    try { await profileTransactionManager.activatePrepared(id, resume, expectedPackages) } catch (error) {
-      if (!(error instanceof ProfileActivationRolledBackError)) desktopCandidateId = id
-      throw error
-    }
-    if (resume && !await profileTransactionManager.waitForSettlement(id)) {
-      throw new Error('desktop: plugin startup failed; the previous Profile was restored')
-    }
-  }
-  profileTransactionManager = new ProfileTransactionManager({
+  const desktopMutations = new DesktopProfileMutation({
     home: dshHome,
-    resumePreparation: async (id) => {
+    ownerPid: process.pid,
+    environment: harnessEnvironment,
+    commands: {
+      run: (environment, args, operation, timeoutMs, acceptedExitCodes = [0], allowDuringDisposal = false) => (
+        runDesktopInvocation(
+          resolveHarnessInvocation(environment, ['plugin', '--profile', 'web', ...args], launchOptions),
+          operation,
+          timeoutMs,
+          acceptedExitCodes,
+          allowDuringDisposal,
+        )
+      ),
+    },
+    harness: {
+      available: () => supervisor !== undefined,
+      stop: async () => { await supervisor?.stop() },
+      resume: () => { supervisor?.resume() },
+      suspendForRecovery: async () => {
+        if (!recoveryHarnessSuspended && supervisor !== undefined) {
+          cancelBootableSnapshot()
+          await supervisor.stop()
+          recoveryHarnessSuspended = true
+          harnessOrigin = undefined
+          harnessAuthenticationUrl = undefined
+          desktopReturnControl?.clear()
+          desktopWebAccess?.clear()
+        } else if (supervisor === undefined) recoveryRestartRequired = true
+      },
+    },
+    timeouts: {
+      preparationMs: CANDIDATE_PREPARATION_TIMEOUT_MS,
+      profileCheckMs: PROFILE_CHECK_TIMEOUT_MS,
+      snapshotMs: SNAPSHOT_COMMAND_TIMEOUT_MS,
+      installMs: BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS,
+    },
+    isFirstStart: () => firstStartPending,
+    canResumeFirstStart: async (candidateHome) => {
       if (!firstStartPending || prebuilt === undefined) return false
-      const progressPath = join(dshHome, 'plugin-transactions/web', id, 'candidate/prebuilt-deployment.json')
-      let progress: { fingerprint?: unknown }
+      const progressPath = join(candidateHome, 'prebuilt-deployment.json')
       try {
         if (!(await lstat(progressPath)).isFile()) return false
-        progress = JSON.parse(await readFile(progressPath, 'utf8')) as { fingerprint?: unknown }
+        const progress = JSON.parse(await readFile(progressPath, 'utf8')) as { fingerprint?: unknown }
+        return progress.fingerprint === prebuilt.fingerprint
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError) return false
         throw error
       }
-      if (progress.fingerprint !== prebuilt.fingerprint) return false
-      await runDesktopInvocation(resolveHarnessInvocation({ ...harnessEnvironment,
-        DSH_HOME: dshHome, DSH_DESKTOP_MUTATION_OWNER_PID: String(process.pid),
-      }, ['plugin', '--profile', 'web', 'transaction', 'resume-preparation', id], launchOptions), 'plugin-candidate-resume', 15_000)
-      selectCandidate(id)
-      return true
     },
-    command: async (args, token) => {
-      const environment: NodeJS.ProcessEnv = { ...harnessEnvironment, DSH_HOME: dshHome, DSH_PLUGIN_TRANSACTION_ORIGIN: undefined }
-      if (token !== undefined) environment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = token
-      await runDesktopInvocation(resolveHarnessInvocation(environment, [
-        'plugin', '--profile', 'web', ...args,
-      ], launchOptions), 'profile-transaction', 60_000)
-    },
-    stopHarness: async () => { await supervisor?.stop() },
-    resumeHarness: () => { if (!firstStartPending) supervisor?.resume() },
-    onCommit: async () => {
+    onFirstStartCommit: async () => {
       if (!firstStartPending) return
       await firstStartPreparation.complete()
       firstStartPending = false
       preparingFirstStart = false
       await appendDesktopStartupLog('First-start bundled plugin preparation committed after normal readiness.')
     },
-    onActivation: () => {
-      void appendDesktopStartupLog('Desktop candidate activation requested; deliberately stopping Harness.')
-      cancelBootableSnapshot()
-      publishStartupProgress({ stage: 'starting-harness', progress: 88 })
+    runSnapshot: (args, timeoutMs, allowDuringDisposal) => runSnapshotCommand(args, timeoutMs, allowDuringDisposal),
+    cancelBootableSnapshot,
+    restartBootableSnapshotWindow: restartBootableSnapshotStabilityWindow,
+    onCandidatePreparation: (startedAt) => {
+      publishStartupProgress({ stage: 'configuring-plugin', progress: startupProgress.progress,
+        startedAt, deadlineAt: startedAt + CANDIDATE_PREPARATION_TIMEOUT_MS })
     },
-    log: (message) => { void appendDesktopStartupLog(message) },
+    onActivation: () => { publishStartupProgress({ stage: 'starting-harness', progress: 88 }) },
+    log: appendDesktopStartupLog,
     onRollback: (error) => {
       const detail = error instanceof Error ? error.message : String(error)
       void appendDesktopStartupLog(`Plugin activation failed; the previous Profile was restored: ${detail}`)
       if (firstStartPending) showIncompletePreparation(detail)
     },
-    onError: (error) => {
-      startupSafety.rollbackFailed = true
+    onRecoveryRequired: (error, operation) => {
       cancelBootableSnapshot()
       console.error('desktop: plugin transaction requires recovery', error)
       void appendDesktopStartupLog('Plugin transaction could not be settled; its recovery journal was retained.')
+      if (operation !== undefined) void retainStartupWarning(
+        'runtime.startup-rollback-failed', `${operation}:rollback`,
+        ['diagnostics', 'open-log', 'snapshot-restore'],
+      )
       if (supervisor !== undefined) void supervisor.stop().then(() => {
         showLoading('failed', {
           message: shellMessages(app.getLocale()).transactionRecoveryFailed,
@@ -3422,96 +2897,10 @@ async function startApplication(): Promise<void> {
       })
     },
   })
-  try { await profileTransactionManager.recoverBeforeStartup() } catch (error) {
-    startupSafety.rollbackFailed = true
+  profileMutation = desktopMutations
+  try { await desktopMutations.recoverBeforeStartup() } catch (error) {
     await appendDesktopStartupLog('Interrupted plugin transaction recovery failed; using diagnostic mode.')
     console.error('desktop: interrupted plugin transaction recovery failed', error)
-  }
-  const withProfileMutationSafety = async <T>(
-    operationKind: string,
-    operation: () => Promise<T>,
-  ): Promise<T> => {
-    await beginDesktopCandidate()
-    let safetySnapshotId: string | undefined
-    try {
-      const safety = await runSnapshotCommand<{ snapshotId: string }>(['create-safety'], SNAPSHOT_COMMAND_TIMEOUT_MS)
-      safetySnapshotId = safety.snapshotId
-      try {
-        const result = await operation()
-        return result
-      } catch (operationError) {
-        try {
-          await runSnapshotCommand(['restore-files', safety.snapshotId], SNAPSHOT_COMMAND_TIMEOUT_MS, true)
-          await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
-            'plugin', '--profile', 'web', 'install', '--offline', '--frozen-lockfile',
-          ], launchOptions), `${operationKind}:rollback`, BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS, [0], true)
-          await appendDesktopStartupLog(`Rolled back candidate mutation ${operationKind}.`)
-        } catch (rollbackError) {
-          startupSafety.rollbackFailed = true
-          safetySnapshotId = undefined
-          const detail = rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
-          await retainStartupWarning(
-            'runtime.startup-rollback-failed',
-            `${operationKind}:rollback`,
-            ['diagnostics', 'open-log', 'snapshot-restore'],
-          )
-          throw new Error(`desktop: could not roll back startup mutation ${operationKind}: ${detail}`, {
-            cause: operationError,
-          })
-        }
-        throw operationError
-      }
-    } finally {
-      try {
-        if (safetySnapshotId !== undefined) {
-          await runSnapshotCommand(['settle-safety', safetySnapshotId], SNAPSHOT_COMMAND_TIMEOUT_MS, true)
-        }
-      } finally {
-        if (startupSafety.rollbackFailed) await discardDesktopCandidate()
-      }
-    }
-  }
-  let managedCandidateActive = false
-  let recoveryOwnsCandidate = false
-  let recoveryMutationBusy = false
-  recoveryCandidateHome = () => recoveryOwnsCandidate && desktopCandidateId !== undefined ? mutationHome() : undefined
-  recoveryActivateCandidate = async () => {
-    if (!recoveryOwnsCandidate) return
-    if (recoveryMutationBusy) throw new Error('desktop: recovery plugin removal is still running')
-    try {
-      await activateOrDiscardRecoveryCandidate({
-        activate: () => activateDesktopCandidate(false),
-        discard: discardDesktopCandidate,
-        onRollback: () => appendDesktopStartupLog('Recovery plugin candidate failed validation and was rolled back before retry.'),
-      })
-    } finally {
-      recoveryOwnsCandidate = desktopCandidateId !== undefined
-    }
-  }
-  recoveryDiscardCandidate = async () => {
-    if (!recoveryOwnsCandidate) return
-    if (recoveryMutationBusy) throw new Error('desktop: recovery plugin removal is still running')
-    try { await discardDesktopCandidate() } finally { recoveryOwnsCandidate = desktopCandidateId !== undefined }
-  }
-  const runManagedPluginMutation = async <T>(operation: () => Promise<T>, expectedPackages: readonly string[] = []): Promise<T> => {
-    if (managedCandidateActive || desktopCandidateId !== undefined) throw new Error('desktop: another plugin mutation is active')
-    managedCandidateActive = true
-    try {
-      await beginDesktopCandidate()
-      const result = await operation()
-      await activateDesktopCandidate(true, expectedPackages)
-      return result
-    } catch (error) {
-      try { await discardDesktopCandidate() } catch (rollbackError) {
-        startupSafety.rollbackFailed = true
-        console.error('desktop: managed plugin recovery journal retained', rollbackError)
-        await supervisor?.stop()
-      }
-      throw error
-    } finally {
-      managedCandidateActive = false
-      restartBootableSnapshotStabilityWindow('managed plugin mutation settled')
-    }
   }
   const profileCheckStartedAt = Date.now()
   publishStartupProgress({
@@ -3553,7 +2942,7 @@ async function startApplication(): Promise<void> {
   firstStartPending = await firstStartPreparation.begin(!profileInitialized && !preserveCopiedPlugins)
   preparingFirstStart = firstStartPending
   let profileMutationLock = inspectProfileMutationLock(dshHome)
-  if (profileMutationLock.active && desktopCandidateId === undefined) {
+  if (profileMutationLock.active && !desktopMutations.hasCandidate) {
     const lockWaitStartedAt = Date.now()
     publishStartupProgress({
       stage: 'checking-profile', progress: 28,
@@ -3565,8 +2954,8 @@ async function startApplication(): Promise<void> {
     profileMutationLock = inspectProfileMutationLock(dshHome)
   }
   const profileMutationBlocked = profileMutationLock.active
-    && !(desktopCandidateId !== undefined && profileMutationLock.pid === process.pid && profileMutationLock.workerPid === undefined)
-  let startupProfileMutationAllowed = !profileMutationBlocked && !startupSafety.rollbackFailed
+    && !(desktopMutations.hasCandidate && profileMutationLock.pid === process.pid && profileMutationLock.workerPid === undefined)
+  let startupProfileMutationAllowed = !profileMutationBlocked && !desktopMutations.recoveryRequired
   let profileNeedsRepair = prebuilt === undefined && !profileInitialized && startupProfileMutationAllowed
   if (profileMutationBlocked) {
     const created = profileMutationLock.createdAt === undefined
@@ -3594,7 +2983,7 @@ async function startApplication(): Promise<void> {
       detail: 'profile-lock-diagnostics',
       state: 'degraded',
     })
-  } else if (prebuilt === undefined && profileInitialized && !startupSafety.rollbackFailed) {
+  } else if (prebuilt === undefined && profileInitialized && !desktopMutations.recoveryRequired) {
     try {
       await appendDesktopStartupLog('Checking Web Profile compatibility without modifying it.')
       const inspection = await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
@@ -3650,7 +3039,7 @@ async function startApplication(): Promise<void> {
         [0, 10, 11],
       )
       initialProfileRepairDiagnostic = profileInitialized
-        ? await withProfileMutationSafety('profile-repair', runProfileRepair)
+        ? await desktopMutations.applyAtStartup({ operation: 'profile-repair', run: () => runProfileRepair() })
         : await runProfileRepair()
       await appendDesktopStartupLog('Web Profile compatibility repair completed.')
     } catch (error) {
@@ -3707,15 +3096,15 @@ async function startApplication(): Promise<void> {
     packageName: string,
     operation: () => Promise<T>,
   ): Promise<T> => {
-    if (startupSafety.rollbackFailed) {
+    if (desktopMutations.recoveryRequired) {
       throw new Error('desktop: bundled plugin startup stopped after rollback failure')
     }
-    return withProfileMutationSafety(`bundled-plugin:${packageName}`, operation)
+    return desktopMutations.applyAtStartup({ operation: `bundled-plugin:${packageName}`, run: () => operation() })
   }
   bundledPluginInstaller = new BundledPluginInstaller({
     manifest,
     resourcesDirectory: bundledDirectory,
-    get dshHome() { return mutationHome() },
+    get dshHome() { return desktopMutations.mutationHome },
     sourceDshHome: dshHome,
     repairLegacyMarkers: !app.isPackaged,
     startupBudgetMs: 120_000,
@@ -3771,7 +3160,11 @@ async function startApplication(): Promise<void> {
       restartBootableSnapshotStabilityWindow(`bundled plugin ${plugin.packageName} settled`)
     },
     withStartupTransaction: (plugin, operation) => withStartupPluginTransaction(plugin.packageName, operation),
-    withManagedTransaction: (plugin, operation) => runManagedPluginMutation(operation, [plugin.packageName]),
+    withManagedTransaction: (plugin, operation) => desktopMutations.applyManaged({
+      operation: `bundled-plugin:${plugin.packageName}`,
+      expectedPackages: [plugin.packageName],
+      run: () => operation(),
+    }),
     prepare: async (plugin) => {
       await appendDesktopStartupLog(`Preparing bundled plugin ${plugin.packageName}@${plugin.version}.`)
       for (const packageName of plugin.approvedBuilds ?? []) {
@@ -3817,10 +3210,10 @@ async function startApplication(): Promise<void> {
     }
     if (startupProfileMutationAllowed && !preserveCopiedPlugins) {
       // Even a retry with settled markers needs a readiness-verified commit before clearing the gate.
-      if (firstStartPending) await beginDesktopCandidate()
+      if (firstStartPending) await desktopMutations.prepareStartup()
       if (prebuilt !== undefined && prebuiltDirectory !== undefined) {
         const startedAt = Date.now()
-        const candidate = mutationHome()
+        const candidate = desktopMutations.mutationHome
         const receipt = join(candidate, 'prebuilt-deployment.json')
         await writeFile(`${receipt}.tmp`, JSON.stringify({ fingerprint: prebuilt.fingerprint, stage: 'copying' }))
         await rename(`${receipt}.tmp`, receipt)
@@ -3836,8 +3229,8 @@ async function startApplication(): Promise<void> {
         await mergeImportedAllowBuilds(join(candidate, 'profiles/web'), startupBuildRules)
         await appendDesktopStartupLog(`Prebuilt Profile deployment completed in ${Date.now() - startedAt}ms; fingerprint=${prebuilt.fingerprint}; no package installation invoked.`)
       } else if (firstStartPending) {
-        await mergeImportedAllowBuilds(join(mutationHome(), 'profiles/web'), startupBuildRules)
-        await seedBundledPluginsBatch(manifest.plugins.filter(entry => entry.installPolicy === 'startup'), bundledDirectory, mutationHome(),
+        await mergeImportedAllowBuilds(join(desktopMutations.mutationHome, 'profiles/web'), startupBuildRules)
+        await seedBundledPluginsBatch(manifest.plugins.filter(entry => entry.installPolicy === 'startup'), bundledDirectory, desktopMutations.mutationHome,
           async (entry) => {
             for (const name of entry.approvedBuilds ?? []) {
               if (Object.values(startupBuildRules).includes(false)) continue
@@ -3885,7 +3278,7 @@ async function startApplication(): Promise<void> {
   const installedProfileDependencies: Record<string, string> = {}
   try {
     const profileManifest = JSON.parse(
-      await readFile(join(mutationHome(), 'profiles', 'web', 'package.json'), 'utf8'),
+      await readFile(join(desktopMutations.mutationHome, 'profiles', 'web', 'package.json'), 'utf8'),
     ) as { dependencies?: Record<string, unknown> }
     for (const [packageName, declaredSpec] of Object.entries(profileManifest.dependencies ?? {})) {
       if (typeof declaredSpec === 'string') installedProfileDependencies[packageName] = declaredSpec
@@ -3894,17 +3287,19 @@ async function startApplication(): Promise<void> {
     console.warn('desktop: could not identify installed startup plugins for imported restore', error)
   }
   importedPluginRestoreManager = new ImportedPluginRestoreManager({
-    get dshHome() { return mutationHome() },
+    get dshHome() { return desktopMutations.mutationHome },
     providedDependencies: installedProfileDependencies,
     inspectSource: packageSpec => inspectImportedPluginSource(packageSpec, harnessEnvironment, launchOptions),
     install: packageSpec => runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
       'plugin', '--profile', 'web', 'add', packageSpec,
     ], launchOptions), 'imported-plugin-install', IMPORTED_PLUGIN_INSTALL_TIMEOUT_MS),
-    mergeAllowBuilds: (_profileDir, rules) => withProfileMutationSafety(
-      'imported-plugin-allow-builds',
-      () => mergeImportedAllowBuilds(join(mutationHome(), 'profiles', 'web'), rules),
-    ),
-    withMutation: (operation, expectedPackages) => runManagedPluginMutation(operation, expectedPackages),
+    mergeAllowBuilds: (_profileDir, rules) => desktopMutations.applyAtStartup({
+      operation: 'imported-plugin-allow-builds',
+      run: () => mergeImportedAllowBuilds(join(desktopMutations.mutationHome, 'profiles', 'web'), rules),
+    }),
+    withMutation: (operation, expectedPackages) => desktopMutations.applyManaged({
+      operation: 'imported-plugin-restore', expectedPackages, run: () => operation(),
+    }),
   })
   try {
     if (startupProfileMutationAllowed && !preserveCopiedPlugins) await importedPluginRestoreManager.prepare()
@@ -3917,21 +3312,17 @@ async function startApplication(): Promise<void> {
     console.warn('desktop: imported plugin restore metadata is unavailable; startup will continue', error)
   }
   try {
-    if (startupSafety.rollbackFailed) {
-      await discardDesktopCandidate()
+    if (desktopMutations.recoveryRequired) {
+      await desktopMutations.abortStartup()
       if (firstStartPending) {
         showIncompletePreparation('Profile transaction recovery did not complete.')
         return
       }
     }
-    else await activateDesktopCandidate(false, firstStartPending
+    else await desktopMutations.finishStartup(firstStartPending
       ? manifest.plugins.filter(entry => entry.installPolicy === 'startup').map(entry => entry.packageName)
       : [])
   } catch (error) {
-    try { await discardDesktopCandidate() } catch (rollbackError) {
-      startupSafety.rollbackFailed = true
-      console.error('desktop: candidate startup rollback needs recovery', rollbackError)
-    }
     await appendDesktopStartupLog('Startup candidate could not be activated; preserved the prior Profile.')
     console.error('desktop: startup plugin candidate failed', error)
     if (firstStartPending) {
@@ -3942,8 +3333,7 @@ async function startApplication(): Promise<void> {
   publishStartupProgress({ stage: 'starting-harness', progress: 88 })
   await appendDesktopStartupLog('Starting Harness supervisor.')
   const launch = resolveHarnessLaunch(harnessEnvironment, launchOptions)
-  const transactionManager = profileTransactionManager
-  transactionManager.start()
+  desktopMutations.start()
   const notificationCopy = desktopNotificationDictionary(app.getLocale())
   const allowNotification = createNotificationThrottle(5 * 60_000)
   let recovering = false
@@ -3955,13 +3345,15 @@ async function startApplication(): Promise<void> {
   }
   supervisor = new HarnessSupervisor({
     launch,
-    beforeRestart: signal => transactionManager.waitForExternalWriters(signal),
+    beforeRestart: signal => desktopMutations.beforeHarnessRestart(signal),
     onSpawn: (pid) => { observeProcess(pid, 'Harness') },
     logPath: harnessLogPath,
     environment: { ...harnessEnvironment },
     managedRuntime: processObserver,
-    onOptionalStartupFailures: (failures) => { profileTransactionManager?.optionalStartupFailures(failures) },
-    ...(profileMutationBlocked || startupSafety.rollbackFailed
+    onOptionalStartupFailures: (failures) => {
+      profileMutation?.observeHarness({ type: 'optional-startup-failures', failures })
+    },
+    ...(profileMutationBlocked || desktopMutations.recoveryRequired
       ? {
         initialDiagnosticMode: true,
         initialDiagnosticReason: profileMutationBlocked
@@ -3971,7 +3363,7 @@ async function startApplication(): Promise<void> {
       : {}),
     ...(process.platform === 'win32' ? { terminateProcessTree: terminateWindowsProcessTree } : {}),
     onReady: (url) => {
-      profileTransactionManager?.serverReady()
+      profileMutation?.observeHarness({ type: 'server-ready' })
       recoveryHarnessSuspended = false
       recoveryRestartRequired = false
       latestRecoveryFailure = undefined
@@ -4018,7 +3410,7 @@ async function startApplication(): Promise<void> {
       )
       const diagnosticSummary = profileMutationBlocked
         ? { diagnosticCode: 'desktop.profile-lock-busy' }
-        : startupSafety.rollbackFailed
+        : desktopMutations.recoveryRequired
           ? { diagnosticCode: 'desktop.profile-transaction-rollback-failed' }
           : readRecoveryFailureSummary(dshHome) ?? { diagnosticCode: 'desktop.harness-startup-failed' }
       showLoading('failed', {
@@ -4029,7 +3421,7 @@ async function startApplication(): Promise<void> {
       showNotification('failed', notificationCopy.failed)
     },
     onState: (state) => {
-      if (state === 'starting') profileTransactionManager?.harnessStarting()
+      if (state === 'starting') profileMutation?.observeHarness({ type: 'starting' })
       if (state === 'restarting' || state === 'failed' || state === 'stopped') {
         cancelBootableSnapshot()
         harnessOrigin = undefined
@@ -4048,10 +3440,10 @@ async function startApplication(): Promise<void> {
       }
     },
     onFailure: (failure) => {
-      profileTransactionManager?.failed()
+      profileMutation?.observeHarness({ type: 'failed', error: failure })
       const diagnosticSummary = profileMutationBlocked
         ? { diagnosticCode: 'desktop.profile-lock-busy' }
-        : startupSafety.rollbackFailed
+        : desktopMutations.recoveryRequired
           ? { diagnosticCode: 'desktop.profile-transaction-rollback-failed' }
           : readRecoveryFailureSummary(dshHome) ?? { diagnosticCode: 'desktop.harness-startup-failed' }
       const detailedFailure = {
@@ -4132,7 +3524,7 @@ async function startApplication(): Promise<void> {
     onStatus: (snapshot) => {
       snapshotMutationActive = !['needs-network', 'succeeded', 'rolled-back', 'failed'].includes(snapshot.phase)
       applicationMenu?.refresh()
-      mainSurface?.send('dsh:desktop:plugin-snapshots:status', snapshot)
+      mainSurface?.send(DESKTOP_IPC.pluginSnapshotsStatus, snapshot)
     },
     journalPath: join(dshHome, 'plugin-snapshots', 'v1', 'restore-journal.json'),
   })
@@ -4236,7 +3628,7 @@ async function startApplication(): Promise<void> {
     },
     onSnapshot: (snapshot: DiagnosticLabRunSnapshot) => {
       applicationMenu?.refresh()
-      mainSurface?.send('dsh:desktop:diagnostic-lab:status', snapshot)
+      mainSurface?.send(DESKTOP_IPC.diagnosticLabStatus, snapshot)
     },
   })
   try {

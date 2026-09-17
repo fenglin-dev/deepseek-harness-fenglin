@@ -5,6 +5,7 @@ import type {
   DesktopReleaseDownloadStatus, DesktopReleaseStatus,
   DesktopWebStatus,
 } from './bridge.ts'
+import { DownloadNetworkProjection } from './download-network-projection.ts'
 
 /** Immutable renderer state shared by the desktop settings and footer action. */
 export interface DesktopShellSnapshot {
@@ -42,8 +43,13 @@ export class DesktopShellController {
   }
   readonly #listeners = new Set<() => void>()
   #disposers: (() => void)[] = []
+  readonly downloadNetwork: DownloadNetworkProjection | undefined
 
-  constructor(readonly bridge: DesktopBridge) {}
+  constructor(private readonly bridge: DesktopBridge) {
+    this.downloadNetwork = bridge.downloadNetwork === undefined
+      ? undefined
+      : new DownloadNetworkProjection(bridge.downloadNetwork)
+  }
 
   /** Queue or consume a native-menu destination after General Settings mounts.
    * @param destination - Existing panel to reveal, or undefined to consume the request.
@@ -75,6 +81,7 @@ export class DesktopShellController {
       this.bridge.releases.onDownloadStatus((releaseDownload) => { this.#publish({ releaseDownload }) }),
       this.bridge.desktopWeb.onStatus((desktopWeb) => { this.#publish({ desktopWeb }) }),
     ]
+    this.downloadNetwork?.start()
     void Promise.all([
       this.bridge.shell.getCapabilities(),
       this.bridge.shell.getPreferences(),
@@ -94,6 +101,7 @@ export class DesktopShellController {
 
   /** Remove bridge subscriptions and local observers. */
   dispose(): void {
+    this.downloadNetwork?.dispose()
     for (const dispose of this.#disposers.splice(0)) dispose()
     this.#listeners.clear()
   }
@@ -222,18 +230,11 @@ export class DesktopShellController {
 
   /** Explicitly move an update retry to the other configured source. */
   async switchReleaseSource(): Promise<void> {
-    const network = this.bridge.downloadNetwork
+    const network = this.downloadNetwork
     if (network === undefined) return
     this.#publish({ busy: true, error: null })
     try {
-      const current = await network.get()
-      await network.update({
-        target: 'application',
-        application: {
-          source: current.application.source === 'github' ? 'cnb' : 'github',
-          proxy: current.application.proxy,
-        },
-      })
+      await network.switchApplicationSource()
       this.#publish({
         releaseDownload: { phase: 'idle' },
         release: await this.bridge.releases.check(),
