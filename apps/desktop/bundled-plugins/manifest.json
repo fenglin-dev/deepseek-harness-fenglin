@@ -184,12 +184,15 @@
     {
       "seedId": "dsh-whale-widget-bowl",
       "packageName": "dsh-whale-widget-bowl",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dsh-whale-widget-bowl@0.4.0",
-      "archive": "dsh-whale-widget-bowl-0.4.0.tgz",
-      "integrity": "sha512-315h5N6lnneY9+RdO3xgX28rV/w91Ju/8V3rOxX+GOKNNYrL/Sb/mqVLUZlAOCYA8qihcpnvZ2UEwmhrNirucA=="
+      "registrySpec": "dsh-whale-widget-bowl@0.4.1",
+      "archive": "dsh-whale-widget-bowl-0.4.1.tgz",
+      "managedUpgradeFrom": [
+        "0.3.0",
+        "0.4.0"
+      ]
     }
   ]
 }
