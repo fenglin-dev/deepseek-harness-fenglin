@@ -135,6 +135,23 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
     if (name !== 'web') await rm(join(destination, 'profiles', name), { recursive: true, force: true })
   }
   await rm(join(destination, 'profiles/web/cordis.patch.yml'), { force: true })
+  // Stock web-all ships LiangShen disabled; restore the composer lever and
+  // keep official attachment/file-upload rows in the Loader graph.
+  await writeFile(join(destination, 'profiles', 'web', 'cordis.patch.yml'), `# Fenglin default after 0.1.6 merge.
+- insert:
+    - id: ui-attachment
+      name: "@deepseek-ai/dsh-client-ui-attachment"
+    - id: file-upload
+      name: "@deepseek-ai/dsh-client-file-upload"
+    - id: liangshen
+      name: "@linxin666/dsh-liangshen"
+
+- id: web-ui-liangshen
+  name: "@linxin666/dsh-web-all/liangshen"
+  config:
+    plugin: "@linxin666/dsh-liangshen"
+  disabled: false
+`)
   // Seal after native signing. Builder must not rewrite these checksummed data resources.
   if (target.startsWith('darwin-')) await signNativeResources(destination, run)
   const sealed = await sealPrebuiltProfile(destination, {

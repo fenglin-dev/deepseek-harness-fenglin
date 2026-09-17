@@ -169,6 +169,16 @@
       ]
     },
     {
+      "seedId": "linxin666-dsh-liangshen",
+      "packageName": "@linxin666/dsh-liangshen",
+      "version": "0.3.23",
+      "profile": "web",
+      "installPolicy": "startup",
+      "registrySpec": "@linxin666/dsh-liangshen@0.3.23",
+      "archive": "dsh-liangshen-0.3.23.tgz",
+      "integrity": "sha512-/EpO5GPUvbLcwZkBNxSRhkOTXFdCULsWB6uPgiX/2gkfvhmf9EklbJktJLHCvySeN7IIWF0ugjmYBtmvPWEPkA=="
+    },
+    {
       "seedId": "dsh-music-huazai",
       "packageName": "dsh-music-huazai",
       "version": "0.1.0",
