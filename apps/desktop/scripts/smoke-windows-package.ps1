@@ -120,7 +120,6 @@ Remove-Item -LiteralPath $smokeAppData -Recurse -Force -ErrorAction SilentlyCont
 New-Item -ItemType Directory -Path $smokeAppData -Force | Out-Null
 $app = Start-Process -FilePath $appExe -WorkingDirectory (Split-Path $appExe) `
   -ArgumentList @("--dsh-package-smoke-root=$smokeAppData") `
-  -RedirectStandardOutput $electronLog -RedirectStandardError $electronErr `
   -PassThru
 # Prefer the isolated smoke appData log path.
 $isolatedHarnessLog = Join-Path $smokeAppData 'open-deepseek-harness-desktop/logs/harness.log'
