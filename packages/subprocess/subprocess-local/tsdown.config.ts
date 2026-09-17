@@ -5,6 +5,8 @@ export default defineConfig({
     index: 'lib/types/index.js',
     runner: 'lib/types/bin.js',
     output: 'lib/types/output.js',
+    // Desktop process recovery resolve this subpath from the packaged harness.
+    'process-control': 'lib/types/process-control.js',
   },
   outDir: 'lib',
   format: ['esm'],

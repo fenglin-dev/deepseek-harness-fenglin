@@ -24,6 +24,7 @@
     },
     "./process-control": {
       "types": "./lib/types/process-control.d.ts",
+      "import": "./lib/process-control.js",
       "default": "./lib/process-control.js"
     },
     "./src/*": "./src/*",

@@ -176,6 +176,22 @@ async function injectWorkspaceClosure() {
     })
   }
   console.log(`prepare-windows-runtime: injected ${injected.size} workspace packages`)
+  await ensureSubprocessLocalProcessControl()
+}
+
+/** Desktop recovery resolves @deepseek-ai/dsh-subprocess-local/process-control → lib/process-control.js. */
+async function ensureSubprocessLocalProcessControl() {
+  const packageRoot = join(harnessRoot, 'node_modules', '@deepseek-ai', 'dsh-subprocess-local')
+  const libRoot = join(packageRoot, 'lib')
+  const typesRoot = join(libRoot, 'types')
+  if (!existsSync(typesRoot)) return
+  const target = join(libRoot, 'process-control.js')
+  if (existsSync(target)) return
+  for (const entry of await readdir(typesRoot, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.js')) continue
+    await cp(join(typesRoot, entry.name), join(libRoot, entry.name), { force: true })
+  }
+  console.log('prepare-windows-runtime: staged subprocess-local lib/*.js from lib/types for process-control resolve')
 }
 
 async function injectVendoredDependencies() {

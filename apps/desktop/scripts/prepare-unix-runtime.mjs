@@ -175,6 +175,33 @@ async function injectWorkspaceClosure() {
     if (project === undefined) continue
     injected.add(name)
     for (const dependency of workspaceDependencies(project.manifest, packages)) queue.push(dependency)
+    const destination = join(harnessRoot, 'node_modules', ...name.split('/'))
+    await rm(destination, { recursive: true, force: true })
+    await cp(project.directory, destination, {
+      recursive: true,
+      dereference: true,
+      filter: path => !relative(project.directory, path).split(sep).includes('node_modules'),
+    })
+  }
+  console.log(`prepare-unix-runtime: injected ${injected.size} workspace packages`)
+  const packageRoot = join(harnessRoot, 'node_modules', '@deepseek-ai', 'dsh-subprocess-local')
+  const libRoot = join(packageRoot, 'lib')
+  const typesRoot = join(libRoot, 'types')
+  if (existsSync(typesRoot) && !existsSync(join(libRoot, 'process-control.js'))) {
+    for (const entry of await readdir(typesRoot, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.js')) continue
+      await cp(join(typesRoot, entry.name), join(libRoot, entry.name), { force: true })
+    }
+  }
+}
+  const injected = new Set()
+  while (queue.length > 0) {
+    const name = queue.shift()
+    if (name === undefined || injected.has(name)) continue
+    const project = packages.get(name)
+    if (project === undefined) continue
+    injected.add(name)
+    for (const dependency of workspaceDependencies(project.manifest, packages)) queue.push(dependency)
     const destination = join(staging, 'node_modules', ...name.split('/'))
     await rm(destination, { recursive: true, force: true })
     await cp(project.directory, destination, {
