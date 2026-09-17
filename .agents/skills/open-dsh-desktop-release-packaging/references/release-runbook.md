@@ -4,7 +4,22 @@
 
 This runbook qualifies native desktop installers. The source of truth is the manually dispatched `.github/workflows/desktop-packages.yml`. Read `release-publication.md` only when the requested endpoint includes notes or a public Release.
 
-## 1. Establish the release base
+## 1. Check the release download route
+
+Before creating a release branch, editing a version, or dispatching a native build, sample a non-expired desktop installer artifact through its GitHub Actions signed download address:
+
+```sh
+skill=.agents/skills/open-dsh-desktop-release-packaging
+
+"$skill/scripts/check-release-download-speed.sh" \
+  flaqai/open-deepseek-harness-desktop
+```
+
+The check selects the newest non-expired desktop artifact, preferring the larger artifact when timestamps match, unless `--run-id`, `--artifact-name`, or `--artifact-id` narrows it. It downloads at most 32 MiB for up to 15 seconds and reports the Actions run, artifact, measured rate, and floor. `ODSH_MIN_DOWNLOAD_MIBPS` sets the floor and defaults to `1.0`; zero disables enforcement only after the user explicitly accepts proceeding without a minimum.
+
+Exit status 75 means the route is slower than the configured floor. Report the result and stop before consuming native-runner time. Ask the user to switch network, proxy, or node, or to select a different floor. A missing non-expired artifact means the exact Actions storage route is unverified, not that the network passed.
+
+## 2. Establish the release base
 
 Inspect current state before switching branches:
 
@@ -19,7 +34,7 @@ For every worktree with changes, determine whether the change is already merged,
 
 Fetch the remote when current remote state matters. Confirm the exact commit intended for the release. If the user requests the latest `master`, do not silently use a local branch that is behind or has unrelated commits.
 
-## 2. Prepare branches and version
+## 3. Prepare branches and version
 
 The established names are:
 
@@ -34,7 +49,7 @@ Before pushing, run the checks selected by the changed surface. For ordinary rel
 
 As soon as the version and release-bound compatibility files are prepared, derive `odsh-v<version>`, `v<version>`, and the filled bilingual notes file. Present that draft before asking to commit or push. At this stage omit bundled-plugin changes and native qualification claims that still depend on accepted workflows. Refresh the same file after artifact verification; do not maintain a second divergent notes document.
 
-## 3. Dispatch native builds
+## 4. Dispatch native builds
 
 Use the final packaging branch and keep publication disabled:
 
@@ -79,7 +94,7 @@ gh run view <run-id> --log-failed
 
 Fix the actual failure on the packaging-fix branch. After any source commit changes, previous platform artifacts are stale even if their earlier run was green.
 
-## 4. Bundled plugin consistency
+## 5. Bundled plugin consistency
 
 ### Prebuilt resource qualification
 
@@ -101,7 +116,7 @@ Each workflow run resolves registry-backed entries at their current stable versi
 
 The download helper computes one complete content digest for each run's `bundled-plugin-snapshot` artifact in temporary storage. The three digests must match. If they differ, do not combine those artifacts into one release. Re-run the stale targets close together, or use one `target=all` run when a single shared snapshot is more important than staged platform diagnosis.
 
-## 5. Download one flat release set
+## 6. Download one flat release set
 
 After Windows, macOS, and Linux have successful runs, pass all three run IDs to one helper. It derives the version from `apps/desktop/package.json`, verifies the runs in temporary storage, resolves the main checkout through Git's common directory, and atomically creates the ignored `<primary-checkout>/release/<version>/` directory. Running the helper from a release or fix worktree does not change this destination. In this workspace the root is `/Users/6677h/StudioProjects/flaq-deepseek-harness/open-deepseek-harness-desktop/release/`:
 
@@ -132,11 +147,13 @@ GitHub displays ten Release assets because it adds `Source code (zip)` and `Sour
 
 The helper requires all three runs to name the same source commit and bundled-plugin snapshot. It validates each run conclusion, exact artifact ID, expected filename, and workflow checksum; validates ZIP payloads and optionally DMGs on macOS; combines the seven checksum entries; and refuses to replace an existing release directory.
 
-Downloads use a stable directory below the system temporary directory, keyed by repository, run IDs, and version. When `aria2c` is present, each archive uses 16 parallel ranges by default; otherwise `curl` resumes serially. A failed run retains the staging directory, and a retry refreshes the signed URL while continuing the same artifact ID. Completed archives are reused only when both the API-reported size and ZIP integrity match. Extraction is always non-interactive. A successful atomic handoff removes its staging directory.
+Downloads use a stable directory below the system temporary directory, keyed by repository, run IDs, and version. Before each large incomplete artifact starts or resumes, the helper measures that exact artifact's signed route against `ODSH_MIN_DOWNLOAD_MIBPS`. With `aria2c`, a monitor observes aggregate download telemetry after a 15-second warmup and exits with status 75 when it remains below the floor for 30 seconds; `ODSH_LOW_SPEED_WARMUP_SECONDS` and `ODSH_LOW_SPEED_WINDOW_SECONDS` change those windows. With `curl`, the equivalent speed floor and sustained window stop the transfer. A speed stop prints the measured condition and preserves the resumable staging directory; do not lower the floor or resume until the user chooses another network or threshold.
+
+When `aria2c` is present, each archive uses 16 parallel ranges by default and prints its transfer summary every 10 seconds; `ODSH_DOWNLOAD_SUMMARY_INTERVAL_SECONDS` changes that positive-integer interval. Otherwise `curl` resumes serially. A failed run retains the staging directory, and a retry refreshes the signed URL while continuing the same artifact ID. Completed archives are reused only when both the API-reported size and ZIP integrity match. Extraction is always non-interactive. A successful atomic handoff removes its staging directory.
 
 Do not delete a retained staging directory just to retry, and do not introduce a one-off download script for large artifacts. Never rename unknown temporary files by process ID, file size, or download order. Never resume one artifact with another artifact's URL. If intentional cleanup is needed later, use the exact retained path printed by the helper after confirming that no retry needs it.
 
-## 6. Final verification
+## 7. Final verification
 
 Run the exact-set check again:
 
@@ -146,6 +163,6 @@ Run the exact-set check again:
 
 The verifier requires exactly seven installers and one checksum file at the directory root. Any nested directory, workflow metadata, bundled-plugin snapshot, source archive, partial download, or unrelated file makes verification fail. Artifact-container ZIPs are transport files, not GitHub Release assets. A successful CI run does not imply that a local download exists.
 
-## 7. Publication boundary
+## 8. Publication boundary
 
 The packaging workflow does not run on tag pushes and never publishes a Release. Publication uses the eight files already verified in `<primary-checkout>/release/<version>/`; it does not rebuild or replace them. Do not create a tag, create a GitHub Release, or upload assets until the user explicitly selects publication, reviews the notes and asset plan, and gives fresh authorization immediately before the external mutation. Packaging authorization alone is insufficient.
