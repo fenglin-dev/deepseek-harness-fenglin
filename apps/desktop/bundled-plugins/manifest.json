@@ -192,7 +192,8 @@
       "managedUpgradeFrom": [
         "0.3.0",
         "0.4.0"
-      ]
+      ],
+      "integrity": "sha512-erpyly3E+WQf2IdsYJvV3Jx6dJMD2mPhOw5p/NOXPpUeRCTvMZAKj+tyjcu45uGnWIKq2SFSwAj66jLY4/6QTw=="
     }
   ]
 }
