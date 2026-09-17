@@ -103,19 +103,12 @@ $env:ELECTRON_ENABLE_LOGGING = '1'
 Remove-Item -LiteralPath $harnessLog -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $desktopDataRoot -Force | Out-Null
 $electronLog = Join-Path $env:RUNNER_TEMP 'DeepSeek-Harness-desktop-smoke.log'
-Remove-Item -LiteralPath $electronLog -Force -ErrorAction SilentlyContinue
-$appStart = [System.Diagnostics.ProcessStartInfo]::new()
-$appStart.FileName = Join-Path $installRoot 'Open DeepSeek Harness Desktop.exe'
-$appStart.UseShellExecute = $false
-$appStart.RedirectStandardOutput = $true
-$appStart.RedirectStandardError = $true
-$appStart.Environment['ELECTRON_ENABLE_LOGGING'] = '1'
-$appStart.Environment['DSH_HOME'] = $dshHome
-$app = [System.Diagnostics.Process]::Start($appStart)
-$null = $app.BeginOutputReadLine()
-$null = $app.BeginErrorReadLine()
-$app.add_OutputDataReceived({ param($s, $e) if ($e.Data) { Add-Content -LiteralPath $electronLog -Value $e.Data } })
-$app.add_ErrorDataReceived({ param($s, $e) if ($e.Data) { Add-Content -LiteralPath $electronLog -Value $e.Data } })
+$electronErr = Join-Path $env:RUNNER_TEMP 'DeepSeek-Harness-desktop-smoke.err.log'
+Remove-Item -LiteralPath $electronLog, $electronErr -Force -ErrorAction SilentlyContinue
+$appExe = Join-Path $installRoot 'Open DeepSeek Harness Desktop.exe'
+$app = Start-Process -FilePath $appExe -WorkingDirectory $installRoot `
+  -RedirectStandardOutput $electronLog -RedirectStandardError $electronErr `
+  -PassThru
 $orphanStart = [System.Diagnostics.ProcessStartInfo]::new()
 $orphanStart.FileName = Join-Path $installRoot 'resources/runtime/win32-x64/node.exe'
 $orphanStart.UseShellExecute = $false
@@ -143,11 +136,17 @@ try {
   }
   if (-not $ready) {
     $tail = if (-not (Test-Path -LiteralPath $harnessLog)) { 'No harness.log was created.' } else { (Get-Content -LiteralPath $harnessLog -Tail 80) -join "`n" }
-    $electronTail = if (-not (Test-Path -LiteralPath $electronLog)) { 'No electron smoke log was created.' } else { (Get-Content -LiteralPath $electronLog -Tail 80) -join "`n" }
+    $electronTail = ''
+    foreach ($logPath in @($electronLog, $electronErr)) {
+      if (Test-Path -LiteralPath $logPath) {
+        $electronTail += "`n--- $logPath ---`n" + ((Get-Content -LiteralPath $logPath -Tail 60) -join "`n")
+      }
+    }
+    if ($electronTail -eq '') { $electronTail = 'No electron smoke logs were created.' }
     $dataDirs = if (Test-Path -LiteralPath $desktopDataRoot) {
       (Get-ChildItem -LiteralPath $desktopDataRoot -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }) -join ', '
     } else { 'desktop data root missing' }
-    throw "Installed application did not reach Harness readiness within 480 seconds.`n$harnessLog`n$tail`nElectron log ($electronLog):`n$electronTail`nAppData ($desktopDataRoot): $dataDirs`nDSH_HOME=$dshHome exists=$(Test-Path -LiteralPath $dshHome)"
+    throw "Installed application did not reach Harness readiness within 480 seconds.`n$harnessLog`n$tail`nElectron logs:$electronTail`nAppData ($desktopDataRoot): $dataDirs`nDSH_HOME=$dshHome exists=$(Test-Path -LiteralPath $dshHome)"
   }
   # This fresh CI-only home contains no user credentials. Preserve first-boot
   # evidence before the restart clears the log.
