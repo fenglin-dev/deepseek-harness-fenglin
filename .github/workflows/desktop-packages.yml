@@ -102,12 +102,26 @@ jobs:
         shell: pwsh
         run: apps/desktop/scripts/smoke-windows-package.ps1
 
+      # Keep the installer downloadable even when runner GUI smoke fails, so
+      # local D-drive install and UI verification can proceed independently.
       - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
         with:
           name: desktop-windows-x64
           path: .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
           if-no-files-found: error
           retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() }}
+        with:
+          name: desktop-windows-smoke-diagnostics
+          path: |
+            ${{ runner.temp }}/DeepSeek-Harness-desktop-smoke*.log
+            ${{ runner.temp }}/DeepSeek-Harness-smoke-appdata/**
+            ${{ runner.temp }}/dsh-smoke-install/**
+          if-no-files-found: ignore
+          retention-days: 7
 
   linux:
     name: Linux x64
