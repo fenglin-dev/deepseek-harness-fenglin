@@ -30,9 +30,10 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@electron/notarize": "2.5.0",
     "@types/semver": "^7.7.1",
     "@types/node": "^22.20.0",
-    "electron": "43.2.0",
+    "electron": "44.0.0",
     "electron-builder": "26.15.3",
     "pnpm": "11.7.0",
     "typescript": "^6.0.3",

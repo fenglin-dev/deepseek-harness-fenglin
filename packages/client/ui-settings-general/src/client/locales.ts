@@ -25,7 +25,7 @@ export const zh = {
   'connection.connecting': '自动重连中',
   'connection.connected': '连接成功',
   'connection.reconnect': '连接异常，点击立即重连',
-  'connection.restart': '连接中断，正在自动重试，点击立即重连',
+  'connection.restart': '连接中断，正在重试，点击立即重连',
 } satisfies Record<string, string>
 
 /** The settings namespace key union. */
@@ -56,5 +56,5 @@ export const en = {
   'connection.connecting': 'Reconnecting',
   'connection.connected': 'Connected',
   'connection.reconnect': 'Disconnected, reconnect now',
-  'connection.restart': 'Reconnecting automatically, reconnect now',
+  'connection.restart': 'Reconnecting, reconnect now',
 } satisfies Record<SettingsKey, string>

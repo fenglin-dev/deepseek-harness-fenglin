@@ -35,6 +35,12 @@ export interface ProfileTransactionManagerOptions {
   log?(message: string): void
 }
 
+/** Loader identity of one optional entry that failed activation. */
+export interface CandidateOptionalFailure {
+  readonly id: string
+  readonly name: string
+}
+
 function alive(pid: number): boolean {
   try { process.kill(pid, 0); return true } catch (error) {
     return (error as NodeJS.ErrnoException).code !== 'ESRCH'
@@ -49,6 +55,7 @@ export class ProfileTransactionManager {
   #operation: Promise<void> | undefined
   #checking: string | undefined
   #readinessPhase: 'awaiting-launch' | 'server' | 'renderer' | undefined
+  #expectedPackages: ReadonlySet<string> = new Set()
   #disposed = false
   #restartWaiters = 0
   #settlement: { id: string; promise: Promise<boolean>; resolve(value: boolean): void; reject(error: unknown): void } | undefined
@@ -197,7 +204,7 @@ export class ProfileTransactionManager {
    * @param id - Verified transaction ID returned by the owned CLI.
    * @param resume - False during initial startup, before the Harness supervisor exists.
    */
-  async activatePrepared(id: string, resume: boolean): Promise<void> {
+  async activatePrepared(id: string, resume: boolean, expectedPackages: readonly string[] = []): Promise<void> {
     if (this.#disposed || this.#operation !== undefined || this.#checking !== undefined) throw new Error('desktop: another plugin activation is active')
     const operation = (async () => {
       const record = await this.#pending()
@@ -205,11 +212,21 @@ export class ProfileTransactionManager {
       if (record?.id !== id || record.phase !== 'prepared' || lock.pid !== process.pid || lock.workerPid !== undefined) {
         throw new Error('desktop: prepared plugin transaction is not owned by this desktop')
       }
+      this.#expectedPackages = new Set(expectedPackages)
       const failure = await this.#activate(id, resume)
       if (failure !== undefined) throw new ProfileActivationRolledBackError(failure.error)
     })()
     this.#operation = operation
     try { await operation } finally { if (this.#operation === operation) this.#operation = undefined }
+  }
+
+  /** Roll back only when an optional activation failure belongs to this candidate's explicit targets. */
+  optionalStartupFailures(failures: readonly CandidateOptionalFailure[]): void {
+    if (this.#checking === undefined || this.#expectedPackages.size === 0) return
+    const matched = failures.filter(failure => this.#expectedPackages.has(failure.name))
+    if (matched.length === 0) return
+    const detail = matched.map(failure => `${failure.id} (${failure.name})`).join(', ')
+    this.failed(new Error(`desktop: candidate target did not activate: ${detail}`))
   }
 
   /**
@@ -297,6 +314,7 @@ export class ProfileTransactionManager {
     await this.#release(id)
     this.#checking = undefined
     this.#readinessPhase = undefined
+    this.#expectedPackages = new Set()
     if (this.#settlement?.id === id) this.#settlement.resolve(false)
     if (!this.#disposed) this.#options.resumeHarness()
   }
@@ -312,6 +330,7 @@ export class ProfileTransactionManager {
       await this.#release(id)
       this.#checking = undefined
       this.#readinessPhase = undefined
+      this.#expectedPackages = new Set()
       await this.#options.onCommit?.()
       if (this.#settlement?.id === id) this.#settlement.resolve(true)
     })

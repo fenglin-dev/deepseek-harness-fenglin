@@ -8,6 +8,10 @@ DeepSeek Harness 的领域词汇为每个概念规定一个规范术语。各术
 
 - **seam**：一种包含三种角色的*可替换能力*：**Service Definition**（拥有自身 `ctx.<key>` 和词汇类型的 Cordis `Service`——可以是 `ShellExecutor` 这样的抽象类，也可以是 `WebRuntime` 这样的具体注册表，绝不是 TypeScript `interface`）、一个或多个 **Service Provider**，以及一个或多个注入该服务的 **Consumer**。`packages/shell` 是规范范例：`dsh-shell`（Service Definition）、`dsh-bash-local` / `dsh-bash-sandbox`（提供方），以及 `dsh-tool-bash`（Consumer）。角色需要独立演进时通常位于不同包，但属于同一关注点时，一个包也可以承担多个角色（`dsh-user-approval` 在同一个包中承担 approval seam 的 Service Definition 与其具体实现）。seam 是完整能力，绝不是其中一个角色；该术语仅保留此义，能力成员应按其角色、类、服务、约定或扩展点命名。
 
+## desktop-profile-mutation
+
+- **Desktop Profile mutation**：由 Desktop 发起、作用于 Web Profile 托管插件状态的变更，包括 Desktop 启动、托管插件、导入插件和恢复变更；插件市场命令和用户主动执行的 Profile 快照恢复保留各自的所有权，不属于 Desktop Profile mutation。
+
 ## agent-scope
 
 - **scope**：按 agent（智能体）划分的注册单位。一项贡献（工具、提示词段、变量、限制、监听器）要么是*全局的*（对所有 agent 可见），要么是*带作用域的*（归属于恰好一个 [scope key](#scope-key)）。只有两层，采用扁平结构：带作用域的注册不会向下继承给 subagent；子树行为通过 [lineage](#lineage) 数据表达，从不通过 scope 结构。
@@ -17,7 +21,7 @@ DeepSeek Harness 的领域词汇为每个概念规定一个规范术语。各术
 - **scoped dispatch**：规则是：关于某个 agent 的活动的事件以该 agent 的 carrier 进行分发。关于注册表本身的事件（如「一个工具被添加了」）属于*注册表主体*事件，保持不过滤。
 - **shadowing**：最具体者胜出的名称解析：一个带作用域的工具／片段／变量仅在该 scope 内替换同名的全局对应项。这是按 agent 定制 persona 和按 agent 定制工具变体的机制。
 - **restriction / scope-local 注册**：restriction（`tools.restrict`）为单个 scope 过滤全局工具集合（多个 restriction 取交集组合）；scope-local 注册在过滤之后合并。被过滤掉的全局工具既不出现在提示词中，也拒绝执行，与不存在的工具无法区分。
-- **setup window**：创建者组装 agent 作用域环境的创建时隙（`CreateAgentOptions.setup`）：此时 scope 和 agent 对象已存在，但 agent 或会话尚未发布，`agent/session-start` 尚未触发，首次提示词尚未组装。setup 只做注册，从不驱动 agent。
+- **setup window**：创建者组装 agent 作用域环境的创建时隙（`CreateAgentOptions.setup`）：此时 scope 和 agent 对象已存在，但 agent 或会话尚未发布，`agent/created` 尚未触发，首次提示词尚未组装。setup 只做注册，从不驱动 agent。
 - **lineage**：以数据形式携带的父子关系事实（`parentSession`、持久的 `delegationDepth`、运行时 `subagentDepth`）；从不影响可见性。<a id="lineage"></a>
 
 ## 目标

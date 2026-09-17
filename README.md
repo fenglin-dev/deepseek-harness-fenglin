@@ -12,7 +12,7 @@
 
 > [!IMPORTANT]
 >
-> **[v0.1.5-rc.2.2 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2)。** 本次维护修复覆盖安装时预设插件版本标记与实际安装不一致的问题，并改进首次启动的预构建插件部署、Windows 升级清理、归档会话恢复、外部工具安装进度、配置目录识别和诊断恢复。
+> **[v0.1.5-rc.2.3 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3)。** 本版本继续以官方 DeepSeek Harness `0.1.5-rc.2` 为核心基线，重点改进手机端和小窗口布局、模型搜索及长回答性能、社区配置导入、预设插件升级恢复、插件市场重启确认和持久化诊断日志。
 >
 > 虽然版本名保留 `rc`，本次在 GitHub 上按正式 Release 发布。升级前仍建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈给我们。
 
@@ -357,13 +357,13 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
   </tr>
 </table>
 
-## 同步 DeepSeek Harness 0.1.5-rc.2
+## 同步 DeepSeek Harness 0.1.6-alpha.1
 
-当前桌面基线使用上游 `dsh-v0.1.5-rc.2`。会话、模型、子 Agent、图片和文件能力由同一套 Harness Runtime 提供，桌面客户端在其上增加环境选择、插件管理、诊断保护和系统集成。Session V3、右侧栏与文件预览、外部工具生命周期及新版插件加载机制均已接入；Electron 默认不会额外打开系统浏览器，用户可以从通用设置、文件菜单或托盘菜单打开同一套本机 Web 界面，也可以选择在每次 Harness 就绪后自动打开。
+当前开发基线已合入上游 `dsh-v0.1.6-alpha.1`。PTC、Workflow、MCP v2、异步 Agent 创建、官方终端和新版会话事件均由同一套 Harness Runtime 提供，桌面客户端继续负责环境选择、候选插件事务、诊断恢复、安装器和系统集成。普通启动会容忍可选插件激活失败并列出失败项目；核心服务、根配置、事务恢复或 Profile 锁失败仍进入诊断模式。该基线尚未作为新的社区桌面安装版发布，下载安装部分继续指向最近已发布版本。
 
 ## 下载安装
 
-请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) 页面下载安装包。[`v0.1.5-rc.2.2`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) 已提供以下发行产物：
+请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) 页面下载安装包。[`v0.1.5-rc.2.3`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) 已提供以下发行产物：
 
 | 平台      | 架构                     | 发行包                                | 状态  |
 | ------- | ---------------------- | ---------------------------------- | --- |
@@ -518,6 +518,18 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 相关开源项目包括 [Backlink Skills](https://github.com/flaqai/backlink_skills)、[Awesome Codex Skills](https://github.com/flaqai/awesome_codex_skills) 和 [Awesome Claude Code Skills](https://github.com/flaqai/awesome_claude_code_skills)。
 
 FLAQ.AI 只是可选的兼容提供商或配套平台。运行本仓库不依赖 FLAQ.AI，项目也不会将其设为隐藏默认服务；提及 FLAQ.AI 不代表 DeepSeek 对其背书。提供商能力、可用性和商业条款可能变化，投入生产前请在 [FLAQ.AI 文档](https://flaq.ai/docs/)中核对最新信息。
+
+## 引用
+
+```bibtex
+@misc{deepseek-harness2026,
+  title={DeepSeek Harness: Everything is a Plugin},
+  author={DeepSeek-AI},
+  year={2026},
+  publisher={GitHub},
+  howpublished={\url{https://github.com/deepseek-ai/deepseek-harness}},
+}
+```
 
 ## 许可证
 

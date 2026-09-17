@@ -15,7 +15,7 @@ describe('desktop loading page', () => {
     expect(html).toContain('color-scheme: light dark')
     expect(html).toContain('@media (prefers-color-scheme: dark)')
     expect(preload).toContain("getAttribute('data-dsh-color-scheme-source')")
-    expect(preload).toContain("ipcRenderer.send('dsh:desktop:theme-source', source)")
+    expect(preload).toContain('ipcRenderer.send(DESKTOP_IPC.themeSource, source)')
     expect(preload).toContain("attributeFilter: ['data-dsh-color-scheme-source']")
   })
 
@@ -36,8 +36,8 @@ describe('desktop loading page', () => {
     const main = await readFile(new URL('../src/main.ts', import.meta.url), 'utf8')
     const preload = await readFile(new URL('../src/preload.ts', import.meta.url), 'utf8')
 
-    expect(preload).toContain("ipcRenderer.invoke(\n    'dsh:desktop:recovery:enter'")
-    expect(main).toContain("ipcMain.handle('dsh:desktop:recovery:enter'")
+    expect(preload).toContain('ipcRenderer.invoke(\n    DESKTOP_IPC.recoveryEnter')
+    expect(main).toContain('ipcMain.handle(DESKTOP_IPC.recoveryEnter')
     expect(main).toContain("if (app.isPackaged) throw new Error('desktop: recovery preview is available only in development mode')")
     expect(main).toContain("if (harnessOrigin === undefined) throw new Error('desktop: Harness must be ready before opening recovery mode')")
     expect(main).toContain("showLoading('failed'")
@@ -51,8 +51,8 @@ describe('desktop loading page', () => {
     expect(main).toContain("ipcMain.handle('dsh:desktop:recovery-plugins:remove'")
     expect(main).toContain('isRecoveryPluginPackageName(packageName)')
     expect(main).toContain('inventory.plugins.some(plugin => plugin.packageName === packageName)')
-    expect(main).toContain('profileTransactionManager?.settleForRecoveryMutation()')
-    expect(main).toContain("'plugin', '--profile', 'web', 'remove', packageName")
+    expect(main).toContain('profileMutation.stageRecovery')
+    expect(main).toContain("kind: 'remove', packageName")
     expect(main).toContain('await stopAndRevokePersistentServicesForPlugin(packageName)')
   })
 
@@ -155,7 +155,6 @@ describe('desktop loading page', () => {
     expect(main).toContain('readRecoveryFailureSummary(dshHome)')
     expect(main).toContain('diagnosticCode: failure.diagnosticCode')
     expect(main).toContain('latestRecoveryDiagnostic.evidence')
-    expect(main).toContain('if (!(error instanceof ProfileActivationRolledBackError)) desktopCandidateId = id')
     const codeUnion = diagnostics.slice(
       diagnostics.indexOf('export type ProfileDiagnosticCode'),
       diagnostics.indexOf('/** Client-safe attribution'),

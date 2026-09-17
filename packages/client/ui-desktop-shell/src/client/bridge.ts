@@ -1,4 +1,4 @@
-/** Browser-side copy of the narrow Electron preload protocol. */
+/** Renderer-visible values and capabilities from the narrow Electron preload protocol. */
 import type { DesktopIconsBridge } from './icon-protocol.ts'
 
 /** Closing hides the window in the tray or quits the desktop application. */

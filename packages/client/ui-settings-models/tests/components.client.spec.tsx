@@ -135,6 +135,15 @@ function wireNamespaces(): SettingsNamespaceView[] {
       secrets: [],
       revision: 4,
     },
+    {
+      ns: 'session-log-deepseek',
+      schema: JSON.parse(JSON.stringify(Schema.object({ enabled: Schema.boolean().default(true) }).toJSON())) as JsonValue,
+      value: { enabled: true },
+      base: { enabled: true },
+      applies: 'live',
+      secrets: [],
+      revision: 2,
+    },
   ]
 }
 
@@ -307,6 +316,20 @@ async function mountDeepSeekCard(overrides: Parameters<typeof scriptedFace>[0] =
 }
 
 describe('ModelsSection', () => {
+  it('shows the effective DeepSeek session-event upload state and persists opt-out live', async () => {
+    const mounted = await mountSection()
+    const toggle = screen.getByRole('switch', { name: en.sessionLogUploadTitle })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(toggle)
+    await waitFor(() => {
+      expect(mounted.mutate).toHaveBeenCalledWith(
+        'session-log-deepseek',
+        [{ op: 'set', path: ['enabled'], value: false }],
+        2,
+      )
+    })
+  })
+
   it('explains missing provider settings without hiding healthy providers or writing credentials', async () => {
     const scripted = scriptedFace()
     scripted.face.settings.describe.mockResolvedValue(remoteOk({
@@ -690,6 +713,51 @@ describe('ModelsSection', () => {
       }],
       0,
     ])
+  })
+
+  it('edits the shared DeepSeek card while preserving the YAML protocol selection', async () => {
+    const namespace: SettingsNamespaceView = {
+      ...wireNamespaces()[0]!,
+      ns: 'llm-deepseek',
+      value: { protocol: 'messages', apiKeyEnv: 'DEEPSEEK_API_KEY', models: DEFAULT_DEEPSEEK_MODELS },
+      user: {},
+    }
+    const { face, mutate, set } = scriptedFace({
+      mutate: vi.fn(() => Promise.resolve(remoteOk(namespace))),
+    })
+    const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
+    render(<ProviderEditor
+      provider="deepseek-official"
+      displayName="DeepSeek"
+      namespace={namespace}
+      schema={settingsSchema}
+      settingsPath={[]}
+      operations={operationsWith(face)}
+      t={t}
+      readOnly={false}
+      onClose={vi.fn()}
+    />)
+    fireEvent.click(screen.getByText(en.customized))
+    expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).placeholder)
+      .toBe('https://api.deepseek.com/anthropic')
+    expect(screen.queryByLabelText(en.customApi)).toBeNull()
+    expect(screen.getByText(en.deepSeekEndpointHint)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-messages-test' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://messages.example/anthropic' } })
+    fireEvent.change(screen.getByLabelText(`${en.modelName} 1`), { target: { value: 'Messages Flash' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(set).toHaveBeenCalledWith('DEEPSEEK_API_KEY', 'sk-messages-test') })
+    expect(mutate.mock.calls).toEqual([[
+      'llm-deepseek',
+      [
+        { op: 'set', path: ['baseURL'], value: 'https://messages.example/anthropic' },
+        { op: 'set', path: ['models'], value: [
+          { ...DEFAULT_DEEPSEEK_MODELS[0], name: 'Messages Flash' },
+          DEFAULT_DEEPSEEK_MODELS[1],
+        ] },
+      ],
+      0,
+    ]])
   })
 
   it('rejects duplicate DeepSeek model ids before writing', async () => {

@@ -12,11 +12,12 @@ import { HarnessSupervisor } from '../lib/supervisor.js'
 async function smokeRelocatedProfile(home, harnessRoot, node, environment) {
   let supervisor
   let timer
+  const logPath = join(home, 'qualification.log')
   try {
     const url = await new Promise((resolve, reject) => {
       supervisor = new HarnessSupervisor({
         launch: { command: node, args: [join(harnessRoot, 'lib/bin.js'), 'web', '--host', '127.0.0.1', '--port', '0', '--no-open'], cwd: harnessRoot },
-        environment, logPath: join(home, 'qualification.log'),
+        environment, logPath,
         onReady: resolve, onDiagnosticReady: () => reject(new Error('prebuilt smoke must use the normal Profile')),
         onState: () => {}, onFailure: failure => reject(new Error(failure.message)),
         ...(process.platform === 'win32' ? { terminateProcessTree: async (pid, force) => {
@@ -37,6 +38,13 @@ async function smokeRelocatedProfile(home, harnessRoot, node, environment) {
     if (!response.ok) throw new Error(`prebuilt relocated client returned HTTP ${response.status}`)
     await response.arrayBuffer()
     console.log('prebuilt-profile: relocated normal Harness and client HTTP passed')
+  } catch (error) {
+    let detail = ''
+    try {
+      const log = await readFile(logPath, 'utf8')
+      detail = log.slice(-8_000).replace(/([?&]token=)[^&\s]+/gu, '$1[redacted]')
+    } catch {}
+    throw new Error(`prebuilt relocated smoke failed: ${error instanceof Error ? error.message : String(error)}${detail ? `\n--- qualification.log tail ---\n${detail}` : ''}`, { cause: error })
   } finally {
     clearTimeout(timer)
     await supervisor?.stop()

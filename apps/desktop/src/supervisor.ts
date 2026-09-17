@@ -14,6 +14,7 @@ const RESTART_MAX_DELAY_MS = 15_000
 const PRE_READY_EXIT_LIMIT = 3
 const STOP_TIMEOUT_MS = 10_000
 const DIAGNOSTIC_MODE_ELIGIBLE_MARKER = 'dsh: profile diagnostic mode eligible '
+const OPTIONAL_STARTUP_FAILURES_MARKER = 'dsh: optional startup failures '
 const ONE_SHOT_ENVIRONMENT = new Set([
   'DSH_DESKTOP_MUTATION_OWNER_PID', 'DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN',
   'DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID', 'DSH_PLUGIN_SNAPSHOT_BATCH', 'DSH_PLUGIN_TRANSACTION_ORIGIN',
@@ -26,6 +27,12 @@ export type HarnessState = 'starting' | 'ready' | 'restarting' | 'failed' | 'sto
 /** Bounded diagnostic emitted when Harness cannot reach readiness. */
 export interface HarnessFailure {
   message: string
+}
+
+/** One optional Loader entry that did not activate during this Harness generation. */
+export interface OptionalStartupFailure {
+  readonly id: string
+  readonly name: string
 }
 
 interface RunningHarness {
@@ -62,6 +69,8 @@ export interface HarnessSupervisorOptions {
   stopTimeoutMs?: number
   /** Settle external Profile writers before an automatic restart; deliberate resume bypasses this check. */
   beforeRestart?(signal: AbortSignal): Promise<void>
+  /** Report the settled optional-entry failures for candidate target validation. */
+  onOptionalStartupFailures?(failures: readonly OptionalStartupFailure[]): void
 }
 
 /** Owns one restartable Harness child and its durable combined log. */
@@ -165,6 +174,22 @@ export class HarnessSupervisor {
       stderrLog.write(chunk)
       for (const line of stderrLines.push(chunk.toString('utf8'))) {
         if (line.includes(DIAGNOSTIC_MODE_ELIGIBLE_MARKER)) diagnosticModeEligible = true
+        const marker = line.indexOf(OPTIONAL_STARTUP_FAILURES_MARKER)
+        if (marker !== -1) {
+          try {
+            const parsed = JSON.parse(line.slice(marker + OPTIONAL_STARTUP_FAILURES_MARKER.length)) as unknown
+            if (Array.isArray(parsed)) {
+              const failures = parsed.filter((value): value is OptionalStartupFailure => (
+                typeof value === 'object' && value !== null
+                && typeof (value as { id?: unknown }).id === 'string'
+                && typeof (value as { name?: unknown }).name === 'string'
+              ))
+              if (failures.length === parsed.length) this.#options.onOptionalStartupFailures?.(failures)
+            }
+          } catch {
+            this.#writeLog('warn', 'Ignored malformed optional startup failure summary')
+          }
+        }
       }
     })
     void child.done.then(async ({ exitCode: code, signal, error }) => {

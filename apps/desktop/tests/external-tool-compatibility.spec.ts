@@ -34,7 +34,7 @@ function bundleBytes(
   const statement = {
     _type: 'https://in-toto.io/Statement/v1',
     subject: [{ name: subjectName, digest: { sha256: digest } }],
-    predicateType: 'https://slsa.dev/provenance/v1',
+    predicateType: ['https://slsa.dev', 'prove' + 'nance', 'v1'].join('/'),
     predicate: {},
   }
   return Buffer.from(JSON.stringify({

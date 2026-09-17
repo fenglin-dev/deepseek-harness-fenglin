@@ -14,7 +14,7 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, IconPlusOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutline16, Modal, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls this package's SlotMap merge (the two Models child slots).
 import type {} from './slot-contract.ts'
@@ -212,6 +212,8 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const [savedTarget, setSavedTarget] = useState<ProviderIdentity | undefined>(undefined)
   const [declaring, setDeclaring] = useState(false)
   const [dismissedSetup, setDismissedSetup] = useState<ReadonlySet<string>>(() => new Set())
+  const [sessionLogSaving, setSessionLogSaving] = useState(false)
+  const [sessionLogError, setSessionLogError] = useState<string | undefined>(undefined)
 
   const announceSaved = (target: ProviderIdentity): void => {
     // Announced only once the refreshed directory is in the snapshot the
@@ -307,6 +309,24 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   // one whose schema names the protocols one may speak; without it mounted
   // there is nothing to declare and the entry point stays disabled.
   const protocols = protocolChoices(state.namespaces.get('llm-pi-ai'), schema)
+  const sessionLogNamespace = state.namespaces.get('session-log-deepseek')
+  const sessionLogEnabled = sessionLogNamespace === undefined
+    ? undefined
+    : schema.getPath(sessionLogNamespace.value, ['enabled']) === true
+
+  const setSessionLogEnabled = async (enabled: boolean): Promise<void> => {
+    if (sessionLogNamespace === undefined) return
+    setSessionLogSaving(true)
+    setSessionLogError(undefined)
+    const outcome = await operations.writeSettings(
+      sessionLogNamespace.ns,
+      [{ op: 'set', path: ['enabled'], value: enabled }],
+      sessionLogNamespace.revision,
+    )
+    if (outcome.kind !== 'written') setSessionLogError(outcome.message)
+    await controller.load()
+    setSessionLogSaving(false)
+  }
 
   return (
     <div className={styles['section']}>
@@ -323,6 +343,23 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
         </div>
       ) : null}
       {!state.writable && state.status === 'ready' ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
+      {sessionLogEnabled === undefined ? null : (
+        <div className={styles['privacyCard']}>
+          <div className={styles['privacyCopy']}>
+            <span className={styles['privacyTitle']}>{t('sessionLogUploadTitle')}</span>
+            <p className={styles['privacyDescription']}>{t('sessionLogUploadDescription')}</p>
+          </div>
+          <Switch
+            checked={sessionLogEnabled}
+            label={t('sessionLogUploadTitle')}
+            disabled={!state.writable || sessionLogSaving}
+            onChange={(enabled) => { void setSessionLogEnabled(enabled) }}
+          />
+          {sessionLogError === undefined
+            ? null
+            : <p className={styles['error']} role="alert">{sessionLogError}</p>}
+        </div>
+      )}
       {savedIdentity === undefined
         ? null
         : (

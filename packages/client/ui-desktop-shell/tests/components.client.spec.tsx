@@ -18,6 +18,7 @@ import {
 } from '../src/client/DesktopLogDirectoryAction.tsx'
 import { en } from '../src/client/locales.ts'
 import { DownloadNetworkSettings } from '../src/client/DownloadNetworkSettings.tsx'
+import { DownloadNetworkProjection } from '../src/client/download-network-projection.ts'
 
 afterEach(() => {
   cleanup()
@@ -143,6 +144,8 @@ describe('desktop shell components', () => {
 
   it('shows the desktop-owned npm registry choices while market-owned GitHub policy is unavailable', async () => {
     const { bridge, update } = createDownloadNetworkBridge()
+    const projection = new DownloadNetworkProjection(bridge)
+    projection.start()
     const longT = ((key: string, params?: Record<string, string | number>) => {
       let value = (en as Record<string, string>)[key] ?? key
       for (const [name, replacement] of Object.entries(params ?? {})) {
@@ -150,7 +153,7 @@ describe('desktop shell components', () => {
       }
       return `${value} ${'übersetzter langer Text '.repeat(2)}`
     }) as never
-    render(<DownloadNetworkSettings bridge={bridge} t={longT} />)
+    render(<DownloadNetworkSettings projection={projection} t={longT} />)
     expect(await screen.findByText(/Downloads and proxies/u)).toBeTruthy()
     fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'cnb' } })
     fireEvent.click(screen.getAllByRole('button', { name: /Save/u })[0]!)
@@ -162,6 +165,7 @@ describe('desktop shell components', () => {
     expect(Array.from(registries.querySelectorAll('option')).map(option => option.value))
       .toEqual(['npmmirror', 'npmjs', 'custom'])
     expect(screen.queryByText(/GitHub plugins/u)).toBeNull()
+    projection.dispose()
   })
 
   it('returns from a browser to Desktop and permits retry after failure', async () => {
@@ -346,10 +350,12 @@ describe('desktop shell components', () => {
   it('toggles simulated current and available update states in development mode', async () => {
     const b = setup({ phase: 'unsupported' })
     const network = createDownloadNetworkBridge()
+    const projection = new DownloadNetworkProjection(network.bridge)
+    projection.start()
     const openUpdates = vi.fn()
     render(<>
       <DesktopPreferencesRow {...({
-        controller: b.controller, downloadNetwork: network.bridge, t,
+        controller: b.controller, downloadNetwork: projection, t,
       } as DesktopPreferencesRowProps)} />
       <DesktopUpdateBadge {...({ controller: b.controller, openUpdates, t } as DesktopUpdateBadgeProps)} />
       <DesktopSidebarUpdateButton {...({
@@ -372,6 +378,7 @@ describe('desktop shell components', () => {
     expect(screen.getByText('Development mode: this is the latest version')).toBeTruthy()
     expect(screen.queryAllByRole('button', { name: 'Version 0.1.1-rc.3' })).toHaveLength(0)
     expect(b.openDownload).not.toHaveBeenCalled()
+    projection.dispose()
     b.controller.dispose()
   })
 

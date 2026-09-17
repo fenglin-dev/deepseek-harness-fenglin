@@ -43,6 +43,13 @@ it('boots every bundled preload before DOM globals are available with only Elect
         const exposed = exposeInMainWorld.mock.calls[0]?.[1] as {
           shell: { openLogDirectory(): Promise<{ error: string }> }
         }
+        expect(Object.keys(exposed)).toEqual([
+          'menu', 'shell', 'icons', 'releases', 'downloadNetwork', 'desktopWeb', 'bundledPlugins', 'externalTools',
+          'importedPlugins', 'diagnosticLab', 'pluginSnapshots', 'startupDiagnostics', 'processes', 'chatBackground',
+        ])
+        expect(exposed).not.toHaveProperty('invoke')
+        expect(exposed).not.toHaveProperty('send')
+        expect(Object.isFrozen(exposed)).toBe(true)
         await expect(exposed.shell.openLogDirectory()).resolves.toEqual({ error: '' })
         expect(invoke).toHaveBeenCalledWith('dsh:desktop:log-directory:open')
       }

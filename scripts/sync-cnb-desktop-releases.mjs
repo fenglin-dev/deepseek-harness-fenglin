@@ -10,10 +10,20 @@ import { pathToFileURL } from 'node:url'
 export const GITHUB_REPOSITORY = 'flaqai/open-deepseek-harness-desktop'
 export const CNB_REPOSITORY = 'hecoococ/open-deepseek-harness-desktop'
 export const CNB_DEFAULT_BRANCH = 'master'
+export const DEFAULT_CNB_INDEX_TTL_HOURS = 6
 const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPOSITORY}`
 const CNB_API = `https://api.cnb.cool/${CNB_REPOSITORY}`
 const ASSET_PATTERN = /^DeepSeek-Harness-(?:macos-(?:arm64|x64)\.(?:dmg|zip)|windows-x64\.exe|linux-x64\.(?:deb|rpm))$/u
 const RELEASE_TAG_PATTERN = /^odsh-v[0-9A-Za-z][0-9A-Za-z._-]*$/u
+export const DESKTOP_INSTALLER_NAMES = Object.freeze([
+  'DeepSeek-Harness-linux-x64.deb',
+  'DeepSeek-Harness-linux-x64.rpm',
+  'DeepSeek-Harness-macos-arm64.dmg',
+  'DeepSeek-Harness-macos-arm64.zip',
+  'DeepSeek-Harness-macos-x64.dmg',
+  'DeepSeek-Harness-macos-x64.zip',
+  'DeepSeek-Harness-windows-x64.exe',
+])
 
 export function parseChecksums(source) {
   const checksums = new Map()
@@ -103,8 +113,12 @@ async function uploadCnbAsset(fetchImpl, token, release, name, bytes, checksum) 
   return { name, size: bytes.byteLength, hash_algo: 'sha256', hash_value: checksum }
 }
 
-export async function syncCnbDesktopReleases({ githubToken, cnbToken, outputPath, targetTag, cleanupTags = [], fetchImpl = fetch, now = new Date() }) {
+export async function syncCnbDesktopReleases({ githubToken, cnbToken, outputPath, targetTag, cleanupTags = [], fetchImpl = fetch,
+  now = new Date(), indexTtlHours = DEFAULT_CNB_INDEX_TTL_HOURS }) {
   if (!githubToken || !cnbToken) throw new Error('GITHUB_TOKEN and CNB_TOKEN are required')
+  if (!Number.isInteger(indexTtlHours) || indexTtlHours < 1 || indexTtlHours > 168) {
+    throw new Error('CNB index TTL hours must be an integer from 1 through 168')
+  }
   if (targetTag !== undefined && !RELEASE_TAG_PATTERN.test(targetTag)) throw new Error(`invalid target GitHub Release tag: ${targetTag}`)
   const githubRelease = await githubJson(fetchImpl, githubToken,
     targetTag === undefined ? '/releases/latest' : `/releases/tags/${encodeURIComponent(targetTag)}`)
@@ -118,7 +132,10 @@ export async function syncCnbDesktopReleases({ githubToken, cnbToken, outputPath
   if (checksumBytes.byteLength > 1024 * 1024) throw new Error(`SHA256SUMS is too large for ${distributableRelease.tag_name}`)
   const checksums = parseChecksums(checksumBytes.toString('utf8'))
   const installers = distributableRelease.assets.filter(asset => ASSET_PATTERN.test(asset.name) && checksums.has(asset.name))
-  if (installers.length === 0) throw new Error(`GitHub Release has no verified installers: ${distributableRelease.tag_name}`)
+  const installerNames = installers.map(asset => asset.name).sort()
+  if (JSON.stringify(installerNames) !== JSON.stringify([...DESKTOP_INSTALLER_NAMES].sort())) {
+    throw new Error(`GitHub Release does not contain the exact desktop installer set: ${distributableRelease.tag_name}`)
+  }
   const cnbRelease = await ensureCnbRelease(fetchImpl, cnbToken, cnbReleases, distributableRelease)
   const assets = []
   for (const asset of installers) {
@@ -137,7 +154,7 @@ export async function syncCnbDesktopReleases({ githubToken, cnbToken, outputPath
     releaseUrl: `https://cnb.cool/${CNB_REPOSITORY}/-/releases/tag/${distributableRelease.tag_name}`, withdrawn: false, assets }]
   const previous = await readFile(outputPath, 'utf8').then(JSON.parse).catch(() => undefined)
   const index = { schema: 'open-dsh-desktop/cnb-update-index/v1', revision: Number(previous?.revision ?? 0) + 1,
-    generatedAt: now.toISOString(), expiresAt: new Date(now.getTime() + 2 * 60 * 60_000).toISOString(), releases: indexReleases }
+    generatedAt: now.toISOString(), expiresAt: new Date(now.getTime() + indexTtlHours * 60 * 60_000).toISOString(), releases: indexReleases }
   await mkdir(dirname(outputPath), { recursive: true })
   await writeFile(outputPath, `${JSON.stringify(index, null, 2)}\n`)
   return index
@@ -147,8 +164,11 @@ async function main() {
   const output = resolve(process.argv[2] ?? '.artifacts/cnb-sync/desktop-update-v1.json')
   const targetTag = process.env.CNB_TARGET_TAG?.trim() || undefined
   const cleanupTags = (process.env.CNB_DELETE_TAGS ?? '').split(',').map(tag => tag.trim()).filter(Boolean)
+  const indexTtlHours = process.env.CNB_INDEX_TTL_HOURS === undefined
+    ? DEFAULT_CNB_INDEX_TTL_HOURS
+    : Number(process.env.CNB_INDEX_TTL_HOURS)
   await syncCnbDesktopReleases({ githubToken: process.env.GITHUB_TOKEN, cnbToken: process.env.CNB_TOKEN,
-    outputPath: output, targetTag, cleanupTags })
+    outputPath: output, targetTag, cleanupTags, indexTtlHours })
   console.log(`CNB desktop update index written to ${output}`)
 }
 

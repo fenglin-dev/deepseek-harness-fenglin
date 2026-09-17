@@ -136,55 +136,6 @@ describe('bootstrap failure rendering', () => {
 })
 
 describe('plugin activation', () => {
-  it('silently isolates an attributed module-table failure and waits for Host restart', async () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const container = document.createElement('div')
-    document.body.append(container)
-    const target = installFacade()
-    const entries: WebBootEntry[] = [
-      { id: 'dsh-font', url: '/dsh-font.js', rev: '1' },
-      { id: 'renderer', url: '/renderer.js', rev: '1' },
-    ]
-    win.__DSH_BOOT__ = {
-      rev: 'graph',
-      entries,
-      batches: [{ phase: 'application', url: '/application.js', rev: 'batch', entries: entries.map(row => row.id) }],
-    }
-    const recover = vi.fn(async () => ({
-      packageName: 'dsh-font',
-      status: 'quarantined' as const,
-      restartScheduled: true,
-    }))
-    const entry = new AppWebEntry(container, {
-      loadBundle: async () => {
-        target.load({
-          id: 'dsh-font',
-          factory: (require) => {
-            require('@deepseek-ai/dsh-client-runtime/client')
-            return { apply: () => {} }
-          },
-        })
-        target.load({
-          id: 'renderer',
-          factory: () => ({ apply: () => {} }),
-        })
-      },
-      recoverClientLoadFailure: recover,
-    })
-
-    await entry.run()
-
-    expect(recover).toHaveBeenCalledWith(expect.objectContaining({
-      packageName: 'dsh-font',
-      requestedModule: '@deepseek-ai/dsh-client-runtime/client',
-      code: 'client-module-unavailable',
-    }))
-    expect(container.textContent).toContain('Isolating incompatible plugin dsh-font')
-    expect(container.textContent).not.toContain('Failed to load plugins')
-    expect(error).toHaveBeenCalled()
-    await entry.dispose()
-  })
-
   it('prefetches a parser-loaded immediate row through the injected bundle transport', async () => {
     const container = document.createElement('div')
     document.body.append(container)

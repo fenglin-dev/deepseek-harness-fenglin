@@ -188,7 +188,7 @@ describe('imported plugin restore', () => {
       ...base,
       entries: [{ restoreId: 'managed', packageName: 'plugin', packageSpec: 'plugin@1', declaredSpec: '1', category: 'plugin', defaultSelected: true, recoverable: true, state: 'pending' }],
     })
-    const withMutation = vi.fn(async (operation: () => Promise<unknown>) => {
+    const withMutation = vi.fn(async (operation: () => Promise<unknown>, _expectedPackages: readonly string[]) => {
       await operation()
       throw new Error('candidate startup rolled back')
     })
@@ -199,6 +199,7 @@ describe('imported plugin restore', () => {
     await manager.start(['managed'])
     await vi.waitFor(() => { expect(manager.snapshot()?.active).toBe(false) })
     expect(withMutation).toHaveBeenCalledOnce()
+    expect(withMutation).toHaveBeenCalledWith(expect.any(Function), ['plugin'])
     expect(manager.snapshot()?.entries[0]).toMatchObject({ state: 'failed', diagnostic: 'candidate startup rolled back' })
   })
 

@@ -6,7 +6,8 @@ import { Button, IconChevronDownOutline14, Menu, Modal } from '@deepseek-ai/dsh-
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DEVELOPMENT_RELEASE_VERSION, type DesktopShellController } from './controller.ts'
 import type { DesktopIconsBridge } from './icon-protocol.ts'
-import type { DesktopDownloadNetworkBridge, DesktopProcessesBridge } from './bridge.ts'
+import type { DesktopProcessesBridge } from './bridge.ts'
+import type { DownloadNetworkProjection } from './download-network-projection.ts'
 import { DownloadNetworkSettings } from './DownloadNetworkSettings.tsx'
 import { ManagedProcessesRow } from './ManagedProcessesRow.tsx'
 import { DesktopIconSettings } from './DesktopIconSettings.tsx'
@@ -19,7 +20,7 @@ export type DesktopPreferencesRowProps = PropsRuntime<'settings.general.item'>
     icons?: DesktopIconsBridge | undefined
     processes?: DesktopProcessesBridge | undefined
     openLog?: (() => Promise<unknown>) | undefined
-    downloadNetwork?: DesktopDownloadNetworkBridge | undefined
+    downloadNetwork?: DownloadNetworkProjection | undefined
   }
 
 function Toggle({ enabled, disabled, label, onChange }: {
@@ -298,7 +299,7 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, d
         />
       </div>
       <section ref={updateRow} aria-labelledby="desktop-release-settings-title">
-        {downloadNetwork !== undefined && <DownloadNetworkSettings bridge={downloadNetwork} t={t} />}
+        {downloadNetwork !== undefined && <DownloadNetworkSettings projection={downloadNetwork} t={t} />}
         <div className={css.row}>
           <div className={css.text}>
             <div id="desktop-release-settings-title" className={css.title}>{t('release.title')}</div>
@@ -339,7 +340,7 @@ export function DesktopPreferencesRow({ controller, icons, processes, openLog, d
                 {t('release.check')}
               </Button>
               {selectedDownload.phase === 'error' && state.release.phase === 'available'
-              && controller.bridge.downloadNetwork !== undefined && (
+              && controller.downloadNetwork !== undefined && (
                 <Button variant="outline" disabled={state.busy} onClick={() => { void controller.switchReleaseSource() }}>
                   {t('release.download.switchSource')}
                 </Button>

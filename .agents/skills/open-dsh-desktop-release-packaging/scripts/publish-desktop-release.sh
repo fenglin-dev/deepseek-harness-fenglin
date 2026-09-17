@@ -2,16 +2,21 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 [--publish] --release-state <stable|prerelease> <owner/repo> <source-sha> <tag> <title> <notes-file> <release-directory>" >&2
+  echo "usage: $0 [--publish] [--resume-draft] --release-state <stable|prerelease> <owner/repo> <source-sha> <tag> <title> <notes-file> <release-directory>" >&2
   exit 2
 }
 
 publish=0
+resume_draft=0
 release_state=
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --publish)
       publish=1
+      shift
+      ;;
+    --resume-draft)
+      resume_draft=1
       shift
       ;;
     --release-state)
@@ -88,15 +93,28 @@ else
   ensure_repository_access
 fi
 
-if gh release view "$tag" -R "$repository" >/dev/null 2>&1; then
-  echo "refusing to update existing Release: $tag" >&2
-  exit 1
-else
-  ensure_repository_access
-fi
-
 prerelease=0
 if [[ "$release_state" == prerelease ]]; then prerelease=1; fi
+expected_prerelease=false
+if [[ $prerelease -eq 1 ]]; then expected_prerelease=true; fi
+
+existing_release=0
+existing_release_state=
+if existing_release_state=$(gh release view "$tag" -R "$repository" --json isDraft,isPrerelease,name,url \
+  --jq '[.isDraft, .isPrerelease, .name, .url] | @tsv' 2>/dev/null); then
+  existing_release=1
+  IFS=$'\t' read -r existing_is_draft existing_is_prerelease existing_title existing_url <<< "$existing_release_state"
+  [[ "$existing_is_draft" == true ]] || { echo "refusing to update existing published Release: $tag" >&2; exit 1; }
+  [[ $resume_draft -eq 1 ]] || {
+    echo "matching Draft exists; inspect it, then rerun with --resume-draft to upload only missing verified assets: $existing_url" >&2
+    exit 1
+  }
+  [[ "$existing_is_prerelease" == "$expected_prerelease" ]] || { echo "existing Draft prerelease state mismatch" >&2; exit 1; }
+  [[ "$existing_title" == "$title" ]] || { echo "existing Draft title mismatch" >&2; exit 1; }
+else
+  ensure_repository_access
+  [[ $resume_draft -eq 0 ]] || { echo "--resume-draft requires an existing matching Draft: $tag" >&2; exit 1; }
+fi
 
 echo "Release publication plan"
 printf '  repository: %s\n  source SHA: %s\n  tag: %s\n  title: %s\n  release state: %s\n  notes: %s\n  assets:\n' \
@@ -104,44 +122,112 @@ printf '  repository: %s\n  source SHA: %s\n  tag: %s\n  title: %s\n  release st
 for filename in "${assets[@]}"; do
   printf '    %s  %s\n' "$(shasum -a 256 "$release_directory/$filename" | awk '{ print $1 }')" "$release_directory/$filename"
 done
+if [[ $existing_release -eq 1 ]]; then printf '  recovery: resume verified Draft %s\n' "$existing_url"; fi
+if [[ $existing_release -eq 1 ]]; then
+  draft_assets=$(gh release view "$tag" -R "$repository" --json assets \
+    --jq '.assets[] | [.name, (.size | tostring), .digest] | @tsv')
+  matching_assets=0
+  missing_assets=0
+  while IFS=$'\t' read -r remote_name _; do
+    [[ -z "$remote_name" ]] && continue
+    expected=0
+    for filename in "${assets[@]}"; do [[ "$remote_name" == "$filename" ]] && expected=1; done
+    [[ $expected -eq 1 ]] || { echo "Draft contains an unexpected asset: $remote_name" >&2; exit 1; }
+  done <<< "$draft_assets"
+  for filename in "${assets[@]}"; do
+    expected_hash=$(shasum -a 256 "$release_directory/$filename" | awk '{ print $1 }')
+    expected_size=$(wc -c < "$release_directory/$filename" | tr -d ' ')
+    named=$(awk -F '\t' -v name="$filename" '$1 == name { count++ } END { print count + 0 }' <<< "$draft_assets")
+    matches=$(awk -F '\t' -v name="$filename" -v size="$expected_size" -v digest="sha256:$expected_hash" \
+      '$1 == name && $2 == size && $3 == digest { count++ } END { print count + 0 }' <<< "$draft_assets")
+    [[ "$named" -le 1 ]] || { echo "Draft contains duplicate assets named $filename" >&2; exit 1; }
+    [[ "$named" == 0 || "$matches" == 1 ]] || { echo "Draft asset identity mismatch for $filename; refusing to clobber it" >&2; exit 1; }
+    if [[ "$matches" == 1 ]]; then matching_assets=$((matching_assets + 1)); else missing_assets=$((missing_assets + 1)); fi
+  done
+  printf '  Draft assets: %s matching, %s missing\n' "$matching_assets" "$missing_assets"
+fi
 if [[ $publish -eq 0 ]]; then
-  echo "validation complete; no tag, asset, or Release was created"
+  echo "validation complete; no tag, asset, Draft, or Release was created or changed"
   exit 0
 fi
 
-create_args=(release create "$tag")
-for filename in "${assets[@]}"; do create_args+=("$release_directory/$filename"); done
-create_args+=(-R "$repository" --title "$title" --notes-file "$notes_file")
-if [[ $tag_exists -eq 1 ]]; then create_args+=(--verify-tag)
-else create_args+=(--target "$source_sha")
-fi
-if [[ $prerelease -eq 1 ]]; then create_args+=(--prerelease --latest=false)
-else create_args+=(--latest)
-fi
-
-if ! gh "${create_args[@]}"; then
-  if draft_url=$(gh release view "$tag" -R "$repository" --json isDraft,url --jq 'select(.isDraft) | .url' 2>/dev/null) && [[ -n "$draft_url" ]]; then
-    echo "publication failed and GitHub retained a Draft; no automatic cleanup was attempted: $draft_url" >&2
+if [[ $existing_release -eq 0 ]]; then
+  create_args=(release create "$tag" -R "$repository" --draft --title "$title" --notes-file "$notes_file")
+  if [[ $tag_exists -eq 1 ]]; then create_args+=(--verify-tag)
+  else create_args+=(--target "$source_sha")
   fi
-  exit 1
+  if [[ $prerelease -eq 1 ]]; then create_args+=(--prerelease --latest=false); fi
+  echo "creating GitHub Draft for $tag"
+  gh "${create_args[@]}"
 fi
-
-published_sha=$(read_tag_target)
-[[ "$published_sha" == "$source_sha" ]] || { echo "published tag target mismatch: $published_sha" >&2; exit 1; }
-release_state=$(gh release view "$tag" -R "$repository" --json isDraft,isPrerelease,name,url \
-  --jq '[.isDraft, .isPrerelease, .name, .url] | @tsv')
-IFS=$'\t' read -r is_draft is_prerelease published_title release_url <<< "$release_state"
-[[ "$is_draft" == false ]] || { echo "Release is still a Draft: $release_url" >&2; exit 1; }
-[[ "$published_title" == "$title" ]] || { echo "Release title mismatch" >&2; exit 1; }
-expected_prerelease=false
-if [[ $prerelease -eq 1 ]]; then expected_prerelease=true; fi
-[[ "$is_prerelease" == "$expected_prerelease" ]] || { echo "Release prerelease state mismatch" >&2; exit 1; }
 
 remote_assets=$(mktemp "${TMPDIR:-/tmp}/odsh-release-assets.XXXXXX")
 cleanup() { rm -f "$remote_assets"; }
 trap cleanup EXIT
-gh release view "$tag" -R "$repository" --json assets \
-  --jq '.assets[] | [.name, (.size | tostring), .digest] | @tsv' > "$remote_assets"
+
+refresh_remote_assets() {
+  gh release view "$tag" -R "$repository" --json assets \
+    --jq '.assets[] | [.name, (.size | tostring), .digest] | @tsv' > "$remote_assets"
+}
+
+report_retained_draft() {
+  local draft_url
+  if draft_url=$(gh release view "$tag" -R "$repository" --json isDraft,url --jq 'select(.isDraft) | .url' 2>/dev/null) && [[ -n "$draft_url" ]]; then
+    echo "GitHub retained the Draft; rerun the reviewed command with --resume-draft: $draft_url" >&2
+  fi
+}
+
+refresh_remote_assets
+while IFS=$'\t' read -r remote_name _; do
+  [[ -z "$remote_name" ]] && continue
+  expected=0
+  for filename in "${assets[@]}"; do [[ "$remote_name" == "$filename" ]] && expected=1; done
+  [[ $expected -eq 1 ]] || { echo "Draft contains an unexpected asset: $remote_name" >&2; exit 1; }
+done < "$remote_assets"
+
+for filename in "${assets[@]}"; do
+  expected_hash=$(shasum -a 256 "$release_directory/$filename" | awk '{ print $1 }')
+  expected_size=$(wc -c < "$release_directory/$filename" | tr -d ' ')
+  named=$(awk -F '\t' -v name="$filename" '$1 == name { count++ } END { print count + 0 }' "$remote_assets")
+  matches=$(awk -F '\t' -v name="$filename" -v size="$expected_size" -v digest="sha256:$expected_hash" \
+    '$1 == name && $2 == size && $3 == digest { count++ } END { print count + 0 }' "$remote_assets")
+  [[ "$named" -le 1 ]] || { echo "Draft contains duplicate assets named $filename" >&2; exit 1; }
+  if [[ "$matches" == 1 ]]; then
+    echo "$filename: already uploaded with matching SHA-256 and size"
+    continue
+  fi
+  [[ "$named" == 0 ]] || { echo "Draft asset identity mismatch for $filename; refusing to clobber it" >&2; exit 1; }
+  started_at=$(date +%s)
+  echo "$filename: upload started"
+  if ! gh release upload "$tag" "$release_directory/$filename" -R "$repository"; then
+    report_retained_draft
+    exit 1
+  fi
+  refresh_remote_assets
+  matches=$(awk -F '\t' -v name="$filename" -v size="$expected_size" -v digest="sha256:$expected_hash" \
+    '$1 == name && $2 == size && $3 == digest { count++ } END { print count + 0 }' "$remote_assets")
+  [[ "$matches" == 1 ]] || { echo "uploaded asset identity mismatch for $filename" >&2; report_retained_draft; exit 1; }
+  elapsed=$(( $(date +%s) - started_at ))
+  echo "$filename: upload verified in ${elapsed}s"
+done
+[[ $(wc -l < "$remote_assets" | tr -d ' ') == 8 ]] || { echo "Draft does not contain exactly eight verified assets" >&2; exit 1; }
+
+edit_args=(release edit "$tag" -R "$repository" --draft=false --title "$title" --notes-file "$notes_file")
+if [[ $prerelease -eq 1 ]]; then edit_args+=(--prerelease --latest=false)
+else edit_args+=(--prerelease=false --latest)
+fi
+echo "all assets verified; publishing GitHub Release"
+gh "${edit_args[@]}"
+
+published_sha=$(read_tag_target)
+[[ "$published_sha" == "$source_sha" ]] || { echo "published tag target mismatch: $published_sha" >&2; exit 1; }
+published_state=$(gh release view "$tag" -R "$repository" --json isDraft,isPrerelease,name,url \
+  --jq '[.isDraft, .isPrerelease, .name, .url] | @tsv')
+IFS=$'\t' read -r is_draft is_prerelease published_title release_url <<< "$published_state"
+[[ "$is_draft" == false ]] || { echo "Release is still a Draft: $release_url" >&2; exit 1; }
+[[ "$published_title" == "$title" ]] || { echo "Release title mismatch" >&2; exit 1; }
+[[ "$is_prerelease" == "$expected_prerelease" ]] || { echo "Release prerelease state mismatch" >&2; exit 1; }
+refresh_remote_assets
 [[ $(wc -l < "$remote_assets" | tr -d ' ') == 8 ]] || { echo "published Release does not contain exactly eight uploaded assets" >&2; exit 1; }
 for filename in "${assets[@]}"; do
   expected_hash=$(shasum -a 256 "$release_directory/$filename" | awk '{ print $1 }')
@@ -149,7 +235,7 @@ for filename in "${assets[@]}"; do
   matches=$(awk -F '\t' -v name="$filename" -v size="$expected_size" -v digest="sha256:$expected_hash" \
     '$1 == name && $2 == size && $3 == digest { count++ } END { print count + 0 }' "$remote_assets")
   [[ "$matches" == 1 ]] || { echo "remote asset identity mismatch for $filename" >&2; exit 1; }
-  echo "$filename: remote SHA-256 and size OK"
+  echo "$filename: published SHA-256 and size OK"
 done
 if [[ $prerelease -eq 0 ]]; then
   latest_tag=$(gh api "repos/$repository/releases/latest" --jq .tag_name)

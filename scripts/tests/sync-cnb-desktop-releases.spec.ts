@@ -4,10 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 // @ts-expect-error The workflow entry stays native ESM so GitHub Actions can run it without installing dependencies.
-import { CNB_DEFAULT_BRANCH, distributableGithubReleases, parseChecksums, syncCnbDesktopReleases } from '../sync-cnb-desktop-releases.mjs'
+import { CNB_DEFAULT_BRANCH, DEFAULT_CNB_INDEX_TTL_HOURS, DESKTOP_INSTALLER_NAMES, distributableGithubReleases, parseChecksums, syncCnbDesktopReleases } from '../sync-cnb-desktop-releases.mjs'
 
 const checkedParseChecksums = parseChecksums as (source: string) => Map<string, string>
 const checkedDistributableReleases = distributableGithubReleases as (releases: unknown[]) => unknown[]
+const installerNames = DESKTOP_INSTALLER_NAMES as readonly string[]
 const requestUrl = (input: string | URL | Request): string => typeof input === 'string'
   ? input
   : input instanceof URL ? input.href : input.url
@@ -19,7 +20,8 @@ const checkedSync = syncCnbDesktopReleases as (options: {
   cleanupTags?: string[]
   fetchImpl: typeof fetch
   now: Date
-}) => Promise<{ revision: number; releases: unknown[] }>
+  indexTtlHours?: number
+}) => Promise<{ revision: number; expiresAt: string; releases: unknown[] }>
 
 describe('CNB desktop Release sync', () => {
   it('accepts only exact checksum lines and excludes withdrawn GitHub releases', () => {
@@ -38,14 +40,14 @@ describe('CNB desktop Release sync', () => {
     await writeFile(outputPath, JSON.stringify({ revision: 8 }))
     const installer = Buffer.from('installer')
     const checksum = createHash('sha256').update(installer).digest('hex')
+    const checksumText = installerNames.map(name => `${checksum}  ${name}`).join('\n') + '\n'
     const tag = 'odsh-v1.0.0'
     const githubRelease = {
       draft: false, prerelease: false, tag_name: tag, published_at: '2026-09-10T00:00:00Z',
       assets: [
-        { name: 'SHA256SUMS', size: 64 + 2 + 'DeepSeek-Harness-windows-x64.exe'.length + 1,
-          url: 'https://api.github.com/assets/checksums' },
-        { name: 'DeepSeek-Harness-windows-x64.exe', size: installer.byteLength,
-          url: 'https://api.github.com/assets/installer' },
+        { name: 'SHA256SUMS', size: Buffer.byteLength(checksumText), url: 'https://api.github.com/assets/checksums' },
+        ...installerNames.map((name, index) => ({ name, size: installer.byteLength,
+          url: `https://api.github.com/assets/installer-${index}` })),
       ],
     }
     const fetchMock = vi.fn<typeof fetch>((input, init) => {
@@ -59,9 +61,9 @@ describe('CNB desktop Release sync', () => {
         return Promise.resolve(new Response(null, { status: 204 }))
       }
       if (url.endsWith('/assets/checksums')) {
-        return Promise.resolve(new Response(`${checksum}  DeepSeek-Harness-windows-x64.exe\n`))
+        return Promise.resolve(new Response(checksumText))
       }
-      if (url.endsWith('/assets/installer')) return Promise.resolve(new Response(installer))
+      if (url.includes('/assets/installer-')) return Promise.resolve(new Response(installer))
       if (url.endsWith('/-/releases') && init?.method === 'POST') {
         return Promise.resolve(Response.json({ id: 'release-1', tag_name: tag, assets: [] }, { status: 201 }))
       }
@@ -86,7 +88,10 @@ describe('CNB desktop Release sync', () => {
       now: new Date('2026-09-10T01:00:00Z'),
     })
     expect(result.revision).toBe(9)
+    expect(result.expiresAt).toBe('2026-09-10T07:00:00.000Z')
+    expect(DEFAULT_CNB_INDEX_TTL_HOURS).toBe(6)
     expect(result.releases).toHaveLength(1)
+    expect((result.releases[0] as { assets: unknown[] }).assets).toHaveLength(7)
     expect(JSON.parse(await readFile(outputPath, 'utf8'))).toMatchObject({ revision: 9 })
     expect(CNB_DEFAULT_BRANCH).toBe('master')
     const createReleaseCall = fetchMock.mock.calls.find(([input, init]) => {
@@ -102,6 +107,37 @@ describe('CNB desktop Release sync', () => {
       'https://api.cnb.cool/hecoococ/open-deepseek-harness-desktop/-/releases/old-2',
     ])
     expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).includes('releases?per_page=20'))).toBe(false)
+  })
+
+  it('refuses to publish an index for an incomplete installer set', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-cnb-sync-incomplete-'))
+    const tag = 'odsh-v1.0.0'
+    const installer = Buffer.from('installer')
+    const checksum = createHash('sha256').update(installer).digest('hex')
+    const checksumText = `${checksum}  DeepSeek-Harness-windows-x64.exe\n`
+    const fetchMock = vi.fn<typeof fetch>((input) => {
+      const url = requestUrl(input)
+      if (url.endsWith(`/releases/tags/${tag}`)) return Promise.resolve(Response.json({ draft: false, prerelease: false,
+        tag_name: tag, published_at: '2026-09-10T00:00:00Z', assets: [
+          { name: 'SHA256SUMS', size: Buffer.byteLength(checksumText), url: 'https://api.github.com/assets/checksums' },
+          { name: 'DeepSeek-Harness-windows-x64.exe', size: installer.byteLength,
+            url: 'https://api.github.com/assets/installer' },
+        ] }))
+      if (url.includes('/-/releases?page=')) return Promise.resolve(Response.json([]))
+      if (url.endsWith('/assets/checksums')) return Promise.resolve(new Response(checksumText))
+      return Promise.resolve(new Response(null, { status: 404 }))
+    })
+    await expect(checkedSync({ githubToken: 'github-token', cnbToken: 'cnb-token',
+      outputPath: join(directory, 'index.json'), targetTag: tag, fetchImpl: fetchMock,
+      now: new Date('2026-09-10T01:00:00Z') })).rejects.toThrow('does not contain the exact desktop installer set')
+  })
+
+  it('rejects an unsafe index lifetime before accessing either provider', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    await expect(checkedSync({ githubToken: 'github-token', cnbToken: 'cnb-token',
+      outputPath: '/unused/index.json', fetchImpl: fetchMock, now: new Date('2026-09-10T01:00:00Z'),
+      indexTtlHours: 0 })).rejects.toThrow('CNB index TTL hours must be an integer from 1 through 168')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('refuses to delete the selected target Release', async () => {

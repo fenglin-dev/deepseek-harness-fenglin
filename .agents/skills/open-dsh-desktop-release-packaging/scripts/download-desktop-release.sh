@@ -20,6 +20,8 @@ else
 fi
 script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repository_root=$(cd "$script_directory/../../../.." && pwd)
+speed_check_script="$script_directory/check-release-download-speed.sh"
+speed_monitor_script="$script_directory/monitor-release-download.mjs"
 
 for command_name in gh git node shasum unzip curl; do
   command -v "$command_name" >/dev/null || { echo "missing command: $command_name" >&2; exit 1; }
@@ -136,6 +138,32 @@ download_archive() {
 
   attempt=1
   max_attempts=${ODSH_DOWNLOAD_URL_ATTEMPTS:-3}
+  minimum_mibps=${ODSH_MIN_DOWNLOAD_MIBPS:-1.0}
+  monitor_minimum_bytes=${ODSH_SPEED_MONITOR_MIN_BYTES:-67108864}
+  monitor_warmup_seconds=${ODSH_LOW_SPEED_WARMUP_SECONDS:-15}
+  monitor_window_seconds=${ODSH_LOW_SPEED_WINDOW_SECONDS:-30}
+  summary_interval_seconds=${ODSH_DOWNLOAD_SUMMARY_INTERVAL_SECONDS:-10}
+  awk -v value="$minimum_mibps" 'BEGIN { exit !(value >= 0) }' || {
+    echo "ODSH_MIN_DOWNLOAD_MIBPS must be a non-negative number" >&2
+    return 2
+  }
+  [[ "$monitor_minimum_bytes" =~ ^[1-9][0-9]*$ ]] || {
+    echo "ODSH_SPEED_MONITOR_MIN_BYTES must be a positive integer" >&2
+    return 2
+  }
+  [[ "$monitor_warmup_seconds" =~ ^[0-9]+$ && "$monitor_window_seconds" =~ ^[1-9][0-9]*$ ]] || {
+    echo "download speed warmup and window settings must be non-negative and positive integers" >&2
+    return 2
+  }
+  [[ "$summary_interval_seconds" =~ ^[1-9][0-9]*$ ]] || {
+    echo "ODSH_DOWNLOAD_SUMMARY_INTERVAL_SECONDS must be a positive integer" >&2
+    return 2
+  }
+  speed_guard=0
+  if [[ "$expected_size" -ge "$monitor_minimum_bytes" ]] && \
+    awk -v value="$minimum_mibps" 'BEGIN { exit !(value > 0) }'; then
+    speed_guard=1
+  fi
   while :; do
     actual_size=0
     [[ -f "$archive" ]] && actual_size=$(wc -c < "$archive" | tr -d ' ')
@@ -147,16 +175,58 @@ download_archive() {
       return 1
     }
 
+    if [[ "$speed_guard" == 1 ]]; then
+      "$speed_check_script" "$repository" --artifact-id "$artifact_id" --artifact-name "$artifact_name"
+    fi
     signed_url=$(signed_artifact_url "$artifact_id")
+    transfer_status=0
     if command -v aria2c >/dev/null; then
       connections=${ODSH_DOWNLOAD_CONNECTIONS:-16}
-      aria2c --continue=true --auto-file-renaming=false --allow-overwrite=true \
-        --max-connection-per-server="$connections" --split="$connections" --min-split-size=1M \
-        --download-result=hide --console-log-level=warn \
-        --dir="$archives_directory" --out="$(basename "$archive")" "$signed_url" || true
+      aria_arguments=(
+        --continue=true
+        --auto-file-renaming=false
+        --allow-overwrite=true
+        --max-connection-per-server="$connections"
+        --split="$connections"
+        --min-split-size=1M
+        --download-result=hide
+        --console-log-level=warn
+        --summary-interval="$summary_interval_seconds"
+        --dir="$archives_directory"
+        --out="$(basename "$archive")"
+        "$signed_url"
+      )
+      if [[ "$speed_guard" == 1 ]]; then
+        if node "$speed_monitor_script" \
+          --minimum-mibps "$minimum_mibps" \
+          --warmup-seconds "$monitor_warmup_seconds" \
+          --window-seconds "$monitor_window_seconds" \
+          -- aria2c "${aria_arguments[@]}"; then
+          :
+        else
+          transfer_status=$?
+        fi
+      elif aria2c "${aria_arguments[@]}"; then
+        :
+      else
+        transfer_status=$?
+      fi
     else
-      curl --fail --location --retry 3 --retry-delay 2 --continue-at - \
-        --output "$archive" "$signed_url" || true
+      curl_arguments=(--fail --location --retry 3 --retry-delay 2 --continue-at - --output "$archive")
+      if [[ "$speed_guard" == 1 ]]; then
+        minimum_bytes_per_second=$(awk -v value="$minimum_mibps" 'BEGIN { printf "%.0f", value * 1048576 }')
+        curl_arguments+=(--speed-limit "$minimum_bytes_per_second" --speed-time "$monitor_window_seconds")
+      fi
+      if curl "${curl_arguments[@]}" "$signed_url"; then
+        :
+      else
+        transfer_status=$?
+      fi
+    fi
+    if [[ "$transfer_status" == 75 || ( "$speed_guard" == 1 && "$transfer_status" == 28 ) ]]; then
+      echo "download stopped because speed remained below $minimum_mibps MiB/s; resumable data is preserved" >&2
+      echo "switch network/proxy/node and retry, or ask the user to choose a different ODSH_MIN_DOWNLOAD_MIBPS value" >&2
+      return 75
     fi
     attempt=$((attempt + 1))
   done

@@ -1,5 +1,5 @@
 ---
-description: "Cordis Loader and agent-preset inventory plus guarded Profile diagnostics and recovery Remotes for web GUI host clients."
+description: "Read-only projection of the current Cordis Loader plugin state with each agent preset's composition beside it: the pluginInventory service and its pluginInventory/list Remote for web GUI host clients."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Clients inspect current Loader entries and agent-preset compositions without changing configuration. Results show enablement, provenance, and runtime health at request time. Guarded operations provide fixed Profile diagnostics, quarantine, recovery, uninstall, and export actions without accepting arbitrary commands or paths. During installation, clients read bounded progress and sanitized incremental output by Host-issued install id; private pnpm paths never cross the boundary. A client may pause or cancel that exact id: the Host terminates its managed process range and waits for quiescence before publishing the terminal state. Progress observation does not change retry, timeout, diagnostic, or recovery outcomes.
+Clients can call `pluginInventory/list` to display the host’s current plugins in load order, including each entry’s identifier, module specifier, effective enablement, and live phase. Deployments with an agent-preset roster also report each preset’s metadata, health, and flattened plugin composition; without a roster, preset data is absent. Each response is a point-in-time, read-only snapshot for display and diagnostics: it cannot mutate plugins and provides no history, introduction source, or change subscription.
 
 ## Table of Contents
 
@@ -27,8 +27,6 @@ Clients inspect current Loader entries and agent-preset compositions without cha
 
 Call `pluginInventory/list` when a client or settings page needs to show what is currently composed in the host — which plugins are loaded, enabled, and alive, and what each agent preset would give a session. The Remote is the only entry point: the service is Remote-only and deliberately declares no same-process Cordis `Context` merge.
 
-For an install started through the fixed request methods, poll `getInstall()` for its phase and optional `installProgress`. Use `getInstallOutput({ installId, offset })` to read only bytes added after the returned opaque cursor. `pauseInstall(id)` and `cancelInstall(id)` accept only a Host-issued id and settle after the managed process range exits. Pause is portable stop-and-resume: a later start of the same request creates a fresh guarded transaction and reuses pnpm's cache rather than suspending an operating-system process. Old output may be evicted under the configured cap, in which case `lossy` is true. Unknown or fabricated install ids fail instead of selecting a file or process.
-
 ### What a snapshot contains
 
 Each row is one non-group Loader entry: its entry id, the exact module specifier, the effective enablement (including disabled ancestor groups), and the current root Fiber phase. `pending` means the entry waits to load, `loading` that it is being read, `active` that it is running, `failed` that its fiber rejected, and `unloading` that it is being torn down; `null` means no live root Fiber exists at all. Structural group rows are skipped.
@@ -39,7 +37,7 @@ With a roster composed, `agentPresets` carries one group per preset in roster or
 
 ### What you can and cannot do with it
 
-The Loader inventory is a snapshot for display and diagnostics: a client can render the roster, flag failed entries, and detect changes by comparing snapshots. It cannot directly enable or disable arbitrary Loader entries, and it carries no Loader history — a fiber that already failed and was removed is absent. Before projecting quarantine actions, the Host removes an obsolete quarantine record only when the current Loader marks the package root active and the Profile dependency, ordered Bundle, and installed package manifest all prove that the plugin has been restored; it leaves the active plugin installed so later removal still uses the guarded package-manager operation. Separate guarded methods run the product CLI for fixed Profile operations. A quarantine-removal residue repair receives only the current Profile and server-owned diagnostic identity, then removes stale metadata for a plugin that is already inactive and absent; it cannot select another package or reinstall code.
+The inventory is a snapshot for display and diagnostics: a client can render the roster, flag failed entries, and detect changes by comparing snapshots. It cannot enable, disable, add, or remove plugins, and it carries no history — a fiber that already failed and was removed is absent. Because the service reads the Loader on every call, the answer always reflects the current composition rather than a cached view.
 
 -----
 
@@ -51,7 +49,7 @@ The Loader inventory is a snapshot for display and diagnostics: a client can ren
 
 ### Design concept
 
-The gateway is a direct projection with no second lifecycle truth: every `list()` call reads `ctx.loader.entries()` and maps each non-group entry to its public row. Cordis's internal plugin/status events already maintain `Entry.fiber` and `Fiber.state`, so a cache would only add another lifecycle truth to keep synchronized. The agent-preset roster is an optional peer resolved per call through `ctx.get('agentPresets')`: its `compositionInventory()` owns every preset read, and this package only maps root-fiber states onto the public phase vocabulary.
+The gateway is a direct projection with no second lifecycle truth: every `list()` call reads `ctx.loader.entries()` and maps each non-group entry to its public row. Cordis's internal `plugin/status` events already maintain `Entry.fiber` and `Fiber.state`, so a cache would only add another lifecycle truth to keep synchronized. The agent-preset roster is an optional peer resolved per call through `ctx.get('agentPresets')`: its `compositionInventory()` owns every preset read, and this package only maps root-fiber states onto the public phase vocabulary.
 
 ### The phase mapping
 
@@ -62,7 +60,6 @@ Fiber states map onto the public phase vocabulary, with `disposed` folding into 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `PluginInventoryGateway`: the `pluginInventory` Remote service and the Loader projection |
-| [`src/install-progress.ts`](src/install-progress.ts) | Incremental pnpm NDJSON parsing, progress calculation, redaction, and bounded terminal output |
 | [`src/types.ts`](src/types.ts) | Public payload types: `PluginInventoryEntry`, `PluginInventorySnapshot`, `PluginFiberPhase` |
 | — | No runtime invariant companion is published; every snapshot is projected directly from Loader-owned state. |
 
@@ -100,7 +97,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define what a point-in-time inventory cannot tell a client. They are current package constraints, not a task backlog.
 
 - **Point-in-time state only** — the result contains no durable failure history or subscription; a missing root Fiber is reported as `null`, regardless of why no live root exists.
-- **No inventory provenance or arbitrary mutation** — the roster does not identify which bundle, profile, or override introduced an entry and cannot edit enablement in either plane. Guarded Profile operations accept closed request types; they are not general Loader editing or command execution.
+- **No introduction source or mutation** — the service does not identify which bundle, profile, or override introduced an entry, and it cannot enable, disable, add, or remove plugins in either plane.
 - **Presets appear only with a roster** — a deployment without `dsh-agent-presets` serves Loader entries alone; the `agentPresets` field is absent rather than empty.
 
 <a id="dev-note"></a>

@@ -1,0 +1,15 @@
+export {
+  DesktopProfileMutation,
+  DesktopProfileMutationBusyError,
+  DesktopProfileMutationCancelledError,
+  DesktopProfileMutationRecoveryRequiredError,
+  DesktopProfileMutationRolledBackError,
+  DesktopProfileExternalWriterTimeoutError,
+  type DesktopProfileMutationContext,
+  type DesktopProfileMutationHarnessEvent,
+  type DesktopProfileMutationOptions,
+  type DesktopProfileMutationWork,
+  type DesktopProfileWriteCommand,
+  type ProfileMutationCommandAdapter,
+  type ProfileMutationHarnessAdapter,
+} from './mutation.ts'

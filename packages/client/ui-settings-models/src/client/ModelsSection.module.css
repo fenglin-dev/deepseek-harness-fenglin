@@ -41,6 +41,46 @@
   color: var(--dsw-alias-state-success-primary);
 }
 
+.privacyCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 14px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 16px;
+}
+
+.privacyCopy {
+  min-width: 0;
+}
+
+.privacyTitle {
+  display: block;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+.privacyDescription {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.privacyCard > .error {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 680px) {
+  .privacyCard {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 12px;
+  }
+}
+
 .rows {
   list-style: none;
   /* Extra air between the title/intro block and the first provider card. */

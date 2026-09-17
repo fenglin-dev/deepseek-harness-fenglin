@@ -20,6 +20,7 @@ import type {
   SurfaceOp,
 } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import type {
   DeepSeekSessionLogExtension,
   DeepSeekSessionLogWireEvent,
@@ -36,13 +37,13 @@ export const inject = ['deepseekLlmApiExtensions', 'sessions']
 
 /** Session-log request contribution configuration. */
 export interface Config {
-  /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `false`. */
+  /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `true`. */
   enabled?: boolean
 }
 
 /** Validated Session-log request contribution configuration. */
 export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(false),
+  enabled: z.boolean().default(true),
 })
 
 interface AcceptanceFold {
@@ -120,6 +121,7 @@ export function acceptedThrough(session: Session): SessionSeqCursor {
   const length = session.seq
   const start = previous?.scannedEvents ?? SessionLogOffset(0)
   for (let index = start; index < length; index++) {
+    // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
     const event = session.eventAt(SessionSeq(index))
     if (event === undefined) {
       throw new Error(`session-log-deepseek: missing event ${String(index)} below captured length ${String(length)}`)
@@ -152,21 +154,30 @@ export function acceptedThrough(session: Session): SessionSeqCursor {
 /**
  * Register the incremental `dsh_session_log` request contribution when enabled.
  * @param ctx - plugin context carrying Sessions and the DeepSeek request-extension registry.
- * @param config - validated opt-in configuration.
+ * @param config - validated configuration.
  */
 export function apply(ctx: Context, config: Config): void {
-  if (config.enabled !== true) return
+  let settings: SettingsScope<Config> | undefined
+  ctx.inject(['settings'], (settingsCtx) => {
+    settings = settingsCtx.settings.register(name, Config, {
+      base: { enabled: config.enabled ?? true },
+    })
+    settingsCtx.effect(() => () => { settings = undefined }, 'session-log-deepseek: settings scope')
+  })
   ctx.deepseekLlmApiExtensions.register('dsh_session_log', {
     prepare: (request) => {
+      if ((settings?.get().enabled ?? config.enabled) !== true) return undefined
       // TODO: Define an explicit wire result for direct or stale-session calls if they become a supported product path.
       if (request.sessionId === undefined) return undefined
       const session = ctx.sessions.get(brandString<SessionId>(request.sessionId))
       if (session === undefined) return undefined
 
       const afterSeq = acceptedThrough(session)
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const snapshot = session.snapshotEvents()
       const throughSeq = snapshot.at(-1)?.seq
       if (throughSeq === undefined) return undefined
+      // oxlint-disable-next-line typescript/no-deprecated -- Existing Session history read; migration deferred.
       const suffix = session.snapshotEvents(SessionLogOffset(afterSeq + 1))
       const value: DeepSeekSessionLogExtension = {
         version: 1,

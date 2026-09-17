@@ -12,7 +12,7 @@
 
 > [!IMPORTANT]
 >
-> **[v0.1.5-rc.2.2 を公開しました](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2)。** 上書きインストール時に、プリセットプラグインの記録バージョンと実際のインストール版が一致しなくなる問題を修正しました。また、初回起動用の事前構築済みプラグイン展開、Windows のアップグレード時のクリーンアップ、アーカイブ済みセッションの復元、外部ツールのインストール進捗、データディレクトリの識別、診断からの復旧を改善しています。
+> **[v0.1.5-rc.2.3 を公開しました](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3)。** 公式 DeepSeek Harness `0.1.5-rc.2` を基盤に、スマートフォンと小さいウィンドウのレイアウト、モデル検索と長い応答の性能、コミュニティ設定のインポート、プリセットプラグインの更新と復旧、プラグイン市場の再起動確認、永続的な診断ログを改善しました。
 >
 > バージョン名には `rc` が残っていますが、GitHub では通常の Release として公開しています。アップグレード前に重要な設定をバックアップし、問題を報告する際はログまたは診断レポートを添付してください。
 
@@ -208,7 +208,7 @@ Cordis の Context、Service、Symbol はバージョン番号だけでなく物
 
 ## ダウンロードとインストール
 
-[GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) から対象パッケージを入手してください。
+[GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) から対象パッケージを入手してください。
 
 | OS | アーキテクチャ | パッケージ |
 | --- | --- | --- |

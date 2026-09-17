@@ -43,6 +43,9 @@ function usePhoneViewport(): boolean {
   return phone
 }
 
+/** Minimum visible time for the connecting pill; shorter attempts read as flicker. */
+const CONNECTING_MIN_VISIBLE_MS = 800
+
 /** Nav glyph by section id; unknown ids fall back to the settings gear. */
 function navIcon(id: string) {
   if (id === 'models') return <IconDataOutline16 className={css.navIcon} size={16} />
@@ -51,6 +54,7 @@ function navIcon(id: string) {
   if (id === 'plugin-restore') return <IconPersonalizationOutline16 className={css.navIcon} size={16} />
   if (id === 'plugins') return <IconPersonalizationOutline16 className={css.navIcon} size={16} />
   if (id === 'diagnostics') return <IconWarningOutline16 className={css.navIcon} size={16} />
+  // 20-native glyph in the rail's 16px icon slot, as on the Session row menu.
   if (id === 'archived-sessions') return <IconArchiveOutline20 className={css.navIcon} size={16} />
   return <IconSettingsOutline16 className={css.navIcon} size={16} />
 }
@@ -552,6 +556,8 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const [onboardingSection, setOnboardingSection] = useState<SettingsOnboardingSectionRequest>()
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
   const [showRecovery, setShowRecovery] = useState(false)
+  const [holdConnecting, setHoldConnecting] = useState(false)
+  const connectingShownAt = useRef<number | undefined>(undefined)
   const triggerButton = useRef<HTMLButtonElement | null>(null)
   const wasOpen = useRef(open)
   const close = useCallback(() => {
@@ -616,8 +622,32 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     }
     if (previous !== 'disconnected' && previous !== 'connecting') return
     setShowRecovery(true)
+  }, [connectionState])
+
+  // The confirmation window starts when the recovered pill becomes visible,
+  // which the connecting minimum-visible hold can delay past the transition.
+  useLayoutEffect(() => {
+    if (!showRecovery || holdConnecting) return
     const timeout = window.setTimeout(() => { setShowRecovery(false) }, RECOVERY_CONFIRMATION_MS)
     return () => { window.clearTimeout(timeout) }
+  }, [showRecovery, holdConnecting])
+
+  useLayoutEffect(() => {
+    if (connectionState === 'connecting') {
+      connectingShownAt.current = Date.now()
+      return
+    }
+    const shownAt = connectingShownAt.current
+    if (shownAt === undefined) return
+    connectingShownAt.current = undefined
+    const remaining = CONNECTING_MIN_VISIBLE_MS - (Date.now() - shownAt)
+    if (remaining <= 0) return
+    setHoldConnecting(true)
+    const timeout = window.setTimeout(() => { setHoldConnecting(false) }, remaining)
+    return () => {
+      window.clearTimeout(timeout)
+      setHoldConnecting(false)
+    }
   }, [connectionState])
 
   const completeOnboardingStep = useCallback((id: string) => {
@@ -628,10 +658,10 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   }, [])
 
   let connectionIndicator: ConnectionIndicatorState | undefined
-  if (connectionState === 'disconnected') {
-    connectionIndicator = 'disconnected'
-  } else if (connectionState === 'connecting') {
+  if (connectionState === 'connecting' || holdConnecting) {
     connectionIndicator = 'connecting'
+  } else if (connectionState === 'disconnected') {
+    connectionIndicator = 'disconnected'
   } else if (showRecovery) {
     connectionIndicator = 'recovered'
   }
@@ -653,7 +683,6 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
         <ConnectionIndicator
           state={wide ? connectionIndicator : undefined}
           disconnectedLabel={t('connection.error')}
-          reconnectLabel={t('connection.retry')}
           connectingLabel={t('connection.connecting')}
           recoveredLabel={t('connection.connected')}
           reconnectActionLabel={t('connection.reconnect')}

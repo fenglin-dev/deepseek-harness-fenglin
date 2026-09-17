@@ -144,9 +144,9 @@ export class TestWorkspaces implements IWorkspaces {
   }
 
   /**
-   * Restore an archived session (recorded). The default mirrors the production
-   * face's observable effect by removing the id from the archive set.
-   * @param sessionId - session to restore.
+   * Unarchive a session (recorded). The default mirrors the production face's
+   * observable effect: the id leaves the list state's archive set.
+   * @param sessionId - session to unarchive.
    */
   async unarchiveSession(sessionId: SessionId): Promise<void> {
     this.calls.push({ method: 'unarchiveSession', args: [sessionId] })

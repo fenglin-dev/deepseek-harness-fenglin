@@ -12,7 +12,7 @@ Languages: [简体中文](../../README.md) · English · [日本語](README.ja.m
 
 > [!IMPORTANT]
 >
-> **[v0.1.5-rc.2.2 is now available](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2).** This maintenance update fixes bundled-plugin markers drifting from the versions actually installed during in-place upgrades. It also improves prebuilt first-start plugin deployment, Windows upgrade cleanup, archived-session recovery, external-tool installation progress, data-directory identification, and diagnostic recovery.
+> **[v0.1.5-rc.2.3 is now available](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3).** This release remains based on the official DeepSeek Harness `0.1.5-rc.2` core baseline and focuses on phone and small-window layouts, model search and long-response performance, community-profile import, bundled-plugin upgrades and recovery, Marketplace restart confirmation, and persistent diagnostic logs.
 >
 > Although the version name retains `rc`, it is published as a regular GitHub Release. Back up important configuration before upgrading, and include relevant logs or diagnostic reports when reporting problems.
 
@@ -389,7 +389,7 @@ The desktop baseline uses upstream `dsh-v0.1.5-rc.2`. Conversation, model, subag
 
 ## Installation
 
-Download builds only from this project's [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) page. [`v0.1.5-rc.2.2`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.2) provides the following artifacts:
+Download builds only from this project's [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) page. [`v0.1.5-rc.2.3`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) provides the following artifacts:
 
 | Platform | Architecture | Release package | Status |
 | --- | --- | --- | --- |
