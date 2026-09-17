@@ -411,6 +411,22 @@ export const InputBar = memo(function InputBar({
                 <IconPlusOutline16 size={14} />
               </button>
             </Tooltip>
+            {/* 0.1.6 moved file attach behind commandUi; keep a visible paperclip
+                so attachment stays available when the command plane is missing. */}
+            <Tooltip label={t('attachment.pending')} side="top" delayMs={500}>
+              <button
+                type="button"
+                className={css.add}
+                aria-label={t('attachment.pending')}
+                disabled={subagent !== null || locked || addFiles === undefined}
+                onMouseDown={keepFocus}
+                onClick={() => { fileInputRef.current?.click() }}
+              >
+                <svg viewBox="0 0 16 16" width={14} height={14} aria-hidden>
+                  <path d="M12.8 3.2a3.2 3.2 0 0 0-4.5 0L3.2 8.3a4.2 4.2 0 1 0 6 6l4.7-4.7a2.2 2.2 0 0 0-3.1-3.1L6.1 11.2a1.2 1.2 0 1 1-1.7-1.7l4.7-4.7a.7.7 0 0 1 1 1L5.4 10.5a.2.2 0 0 0 .3.3l4.6-4.6a3.2 3.2 0 0 0 2.5-3z" fill="currentColor" />
+                </svg>
+              </button>
+            </Tooltip>
             <input
               ref={fileInputRef}
               type="file"
