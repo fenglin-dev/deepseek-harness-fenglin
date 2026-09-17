@@ -17,8 +17,8 @@ interface DesktopExternalToolsBridge {
 
 /** Exact non-desktop fallback checked against the desktop source manifest by the release gate. */
 export const BROWSER_FALLBACK_EXTERNAL_TOOL_SPECS: Readonly<Record<OfficialExternalToolId, string>> = {
-  codex: '@deepseek-ai/dsh-subagent-codex@0.1.5-rc.2',
-  'claude-code': '@deepseek-ai/dsh-subagent-claude-code@0.1.5-rc.2',
+  codex: '@deepseek-ai/dsh-subagent-codex@0.1.6-alpha.1',
+  'claude-code': '@deepseek-ai/dsh-subagent-claude-code@0.1.6-alpha.1',
 }
 
 /** Reviewed community connectors. Exact versions remain network-installed, never bundled. */
