@@ -10,14 +10,11 @@ import {
   Win32Error,
 } from '../src/index.ts'
 import {
-  CREATE_NO_WINDOW,
   CREATE_SUSPENDED,
   CREATE_UNICODE_ENVIRONMENT,
   JOBOBJECT_BASIC_ACCOUNTING_ACTIVE_PROCESSES_OFFSET,
   JOBOBJECT_BASIC_ACCOUNTING_SIZE,
   JobObjectBasicAccountingInformation,
-  JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-  JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK,
   WAIT_TIMEOUT,
 } from '../src/abi.ts'
 import { PROCESS_INFORMATION, STARTUPINFOW } from '../src/ffi.ts'
@@ -78,13 +75,43 @@ function api(overrides: Partial<CurrentTokenProcessBindings> = {}): CurrentToken
 }
 
 describe('ordinary Job process operations', () => {
-  it('adds silent breakaway only when the Desktop outer owner requests it', () => {
-    const setInformationJobObject = vi.fn((_job: NativePtr, _class: number, _information: Buffer) => 1)
-    spawnCurrentTokenJobProcess(api({ setInformationJobObject }), options({ allowChildBreakaway: true }))
-    const information = setInformationJobObject.mock.calls[0]?.[2] as Buffer
-    expect(information.readUInt32LE(16)).toBe(
-      JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK,
-    )
+  it.each([3, 2])('supplies fd 7 with standard handle type %s and releases its temporary inheritance', (standardType) => {
+    let descriptorBytes: Buffer | undefined
+    const flags = vi.fn(() => 1)
+    const bindings = api({
+      getFileType: vi.fn(handle => handle === 107n ? 3 : standardType),
+      setHandleInformation: flags,
+      createProcessW: vi.fn((_app, _line, _pa, _ta, _inherit, _flags, _env, _cwd, startupPointer, processInfo) => {
+        const startup = koffi.decode(startupPointer, STARTUPINFOW) as { cbReserved2: number; lpReserved2: NativePtr }
+        descriptorBytes = Buffer.from(koffi.decode(startup.lpReserved2, 'uint8', startup.cbReserved2) as number[])
+        koffi.encode(processInfo, PROCESS_INFORMATION, { hProcess: 60n, hThread: 61n, dwProcessId: 1234, dwThreadId: 5678 })
+        return 1
+      }),
+    })
+    expect(spawnCurrentTokenJobProcess(bindings, options({
+      stdio: { stdin: 4, stdout: 5, stderr: 6, control: 7 },
+    }))).toEqual({ pid: 1234, process: 60n, job: 50n })
+    const bytes = descriptorBytes as Buffer
+    expect(bytes.readUInt32LE(0)).toBe(8)
+    const standardFlag = standardType === 3 ? 9 : 65
+    expect([...bytes.subarray(4, 12)]).toEqual([standardFlag, standardFlag, standardFlag, 0, 0, 0, 0, 9])
+    expect(bytes.readBigUInt64LE(12 + 7 * 8)).toBe(107n)
+    expect(bytes.readBigUInt64LE(12 + 3 * 8)).toBe(0xffff_ffff_ffff_ffffn)
+    expect(flags).toHaveBeenCalledWith(107n, 1, 1)
+    expect(flags).toHaveBeenCalledWith(107n, 1, 0)
+  })
+
+  it('refuses a control carrier that is not a pipe before creating the target', () => {
+    const createProcessW = vi.fn()
+    const closeHandle = vi.fn(() => 1)
+    const setHandleInformation = vi.fn(() => 1)
+    const bindings = api({ getFileType: vi.fn(() => 1), createProcessW, closeHandle, setHandleInformation })
+    expect(() => spawnCurrentTokenJobProcess(bindings, options({
+      stdio: { stdin: 4, stdout: 5, stderr: 6, control: 7 },
+    }))).toThrow('not a Windows pipe')
+    expect(createProcessW).not.toHaveBeenCalled()
+    expect(closeHandle).toHaveBeenCalledWith(50n)
+    expect(setHandleInformation).toHaveBeenCalledWith(107n, 1, 0)
   })
 
   it('creates suspended, assigns the Job, and resumes before returning', () => {
@@ -128,7 +155,7 @@ describe('ordinary Job process operations', () => {
       null,
       null,
       1,
-      CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
+      CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT,
       environment,
       'C:\\work',
       expect.anything(),

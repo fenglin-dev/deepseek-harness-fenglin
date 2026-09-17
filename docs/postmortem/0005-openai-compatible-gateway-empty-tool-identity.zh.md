@@ -38,7 +38,7 @@
 
 ## 已添加的防护措施
 
-- `packages/llm/llm-deepseek/src/translate.ts` 现在只在传入值非空时更新工具调用的 `callId` 和 `name`。首个分片没有身份仍属无效；本次变更只防止后续占位符抹除已知身份。
+- `packages/llm/llm-deepseek/src/protocols/chat-completions/translate.ts` 现在只在传入值非空时更新工具调用的 `callId` 和 `name`。首个分片没有身份仍属无效；本次变更只防止后续占位符抹除已知身份。
 - `packages/llm/llm-deepseek/tests/translate.spec.ts` 复现了先发送 `call_bash` / `bash`，再发送空字符串身份占位符的情况，并断言每个输出 delta 和最终块都保留原始身份。
 - 对 `unknown tool ""` 的排查从流式工具调用 delta 开始，以区分工具定义缺失与翻译阶段引入的空身份。
 

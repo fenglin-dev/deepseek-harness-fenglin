@@ -212,6 +212,29 @@ describe('desktop plugin activation ownership', () => {
     f.manager.failed()
     await expect(settled).resolves.toBe(false)
   })
+  it('rolls back when an optional startup failure matches the candidate target package', async () => {
+    const f = fixture('prepared', process.pid)
+    await f.manager.activatePrepared(f.id, true, ['dsh-mermaid'])
+    const settled = f.manager.waitForSettlement(f.id)
+    f.manager.optionalStartupFailures([
+      { id: 'mermaid-client', name: 'dsh-mermaid' },
+      { id: 'unrelated', name: 'dsh-pocket' },
+    ])
+    await expect(settled).resolves.toBe(false)
+    expect(f.onRollback).toHaveBeenCalledWith(new Error(
+      'desktop: candidate target did not activate: mermaid-client (dsh-mermaid)',
+    ))
+  })
+
+  it('does not roll back a successful target for an unrelated optional plugin failure', async () => {
+    const f = fixture('prepared', process.pid)
+    await f.manager.activatePrepared(f.id, true, ['dsh-mermaid'])
+    const settled = f.manager.waitForSettlement(f.id)
+    f.manager.optionalStartupFailures([{ id: 'pocket-client', name: 'dsh-pocket' }])
+    f.manager.ready()
+    await expect(settled).resolves.toBe(true)
+    expect(f.calls.some(call => call.includes('transaction rollback'))).toBe(false)
+  })
   it('rejects direct activation after rollback so first startup cannot continue with an incomplete Profile', async () => {
     const f = fixture('prepared', process.pid, true)
     await expect(f.manager.activatePrepared(f.id, false)).rejects.toBeInstanceOf(ProfileActivationRolledBackError)

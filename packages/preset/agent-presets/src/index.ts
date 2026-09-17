@@ -29,6 +29,7 @@ import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typer
 import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
 // Type-only: resolves the `agent/created` lifecycle event this service watches.
 import type {} from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-app-boot'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { AgentPresetDocument, AgentPresetRoster } from './types.ts'
 import type {} from '@deepseek-ai/dsh-session-projection'
@@ -45,7 +46,7 @@ import {
   type AgentPresetComposition,
 } from './composition-inventory.ts'
 import type { AgentPreset, Config, PresetRoot } from './preset.ts'
-import { agentPresetProjectionDefinition } from './session.ts'
+import { agentPresetProjectionDefinition, externalToolsResolvedProjectionDefinition } from './session.ts'
 import {
   acceptsExternalTools,
   externalToolEnabled,
@@ -57,7 +58,7 @@ export type {
   AgentPresetComposition, AgentPresetCompositionRow, CompositionRowEnablement,
 } from './composition-inventory.ts'
 
-/** Settings namespace carrying the user's chosen default preset. */
+/** Settings namespace carrying preset, picker, and desktop connection preferences. */
 export const SETTINGS_NAMESPACE = 'agent-presets'
 
 /** Refuse an empty preset id before invoking a domain operation. */
@@ -70,7 +71,9 @@ function validatePresetId(value: string, field: 'agentPreset' | 'from'): void {
 /** The user-writable slice of this plugin's config. */
 export interface AgentPresetSettings {
   /** Preset mounted when a session names none. */
-  default?: string
+  default: string
+  /** Whether visible mode selection and the saved user default govern unnamed new sessions. */
+  modeSelectionEnabled: boolean
   /** Host-connected products projected into complete Agent Presets at turn boundaries. */
   externalTools?: ExternalToolSettings
 }
@@ -78,6 +81,7 @@ export interface AgentPresetSettings {
 /** Runtime schema for the user-writable slice. */
 export const AgentPresetSettingsSchema: z<AgentPresetSettings> = z.object({
   default: z.string(),
+  modeSelectionEnabled: z.boolean(),
   externalTools: z.object({
     codex: z.boolean(),
     claudeCode: z.boolean(),
@@ -222,7 +226,7 @@ export class AgentPresets extends TypertRemoteService {
       this.settings = settingsCtx.settings.register(
         SETTINGS_NAMESPACE,
         AgentPresetSettingsSchema,
-        { base: { default: config.default } },
+        { base: { default: config.default, modeSelectionEnabled: true } },
       )
       this.settingsService = settingsCtx.settings
       settingsCtx.effect(() => () => {
@@ -232,6 +236,7 @@ export class AgentPresets extends TypertRemoteService {
     })
 
     ctx.sessionProjections.register(agentPresetProjectionDefinition)
+    ctx.sessionProjections.register(externalToolsResolvedProjectionDefinition)
 
     // Advisory, not fatal: a synchronous `agent/created` listener that throws
     // VETOES publication, and this service must not, because composing an agent
@@ -276,9 +281,8 @@ export class AgentPresets extends TypertRemoteService {
     // projection is retained after any connected step so disconnects are
     // reconstructable rather than inferred from mutable Host settings.
     ctx.on('agent/request', ({ agent, turn, step }, next) => {
-      const previous = agent.session.snapshotEvents()
-        .findLast(event => event.type === 'external-tools/resolved')
-      if (previous?.data.turn !== turn || previous.data.step !== step) {
+      const previous = ctx.sessionProjections.stateOf(agent.session, 'externalToolsResolved')
+      if (previous?.turn !== turn || previous.step !== step) {
         const mounted = this.externalToolMounts.get(agent)
         const tools = (['codex', 'claude-code'] as const).filter(tool => mounted?.has(tool) === true)
         if (tools.length > 0 || previous !== undefined) {
@@ -304,7 +308,17 @@ export class AgentPresets extends TypertRemoteService {
    * every running session on the preset it was composed from.
    */
   get defaultId(): string {
-    return this.settings?.get().default ?? this.config.default
+    return this.selectionPolicy().defaultId
+  }
+
+  /** Read one internally consistent snapshot of the mode-selection policy. */
+  private selectionPolicy(): { enabled: boolean; defaultId: string } {
+    const settings = this.settings?.get()
+    if (settings === undefined) return { enabled: true, defaultId: this.config.default }
+    return {
+      enabled: settings.modeSelectionEnabled,
+      defaultId: settings.modeSelectionEnabled ? settings.default : this.config.default,
+    }
   }
 
   /** Current connection settings, with absent user values resolved to off. */
@@ -376,7 +390,14 @@ export class AgentPresets extends TypertRemoteService {
    * @returns the presets, first-root-wins per id.
    */
   async list(): Promise<AgentPreset[]> {
-    const presets = await discoverPresets(this.resolvedRoots, this.harnessBase)
+    const packages = this.ctx.get('pluginPackages')
+    const presets = packages === undefined
+      ? await discoverPresets(this.resolvedRoots, this.harnessBase)
+      : await discoverPresets(
+        this.resolvedRoots,
+        this.harnessBase,
+        (specifier, base) => packages.packageOf(specifier, base) !== undefined,
+      )
     return await Promise.all(presets.map(async (preset) => {
       const problem = this.runtimeProblems.get(preset.id)
       if (problem === undefined) return preset
@@ -399,17 +420,19 @@ export class AgentPresets extends TypertRemoteService {
    */
   @Remote('list')
   async remoteExportList(): Promise<AgentPresetRoster> {
-    const defaultId = this.defaultId
+    const policy = this.selectionPolicy()
+    const presets = await this.list()
     return {
-      presets: (await this.list()).map(preset => ({
+      presets: presets.map(preset => ({
         id: preset.id,
         trust: preset.trust,
-        isDefault: preset.id === defaultId,
+        isDefault: preset.id === policy.defaultId,
         ...preset.name === undefined ? {} : { name: preset.name },
         ...preset.description === undefined ? {} : { description: preset.description },
         ...preset.broken === undefined ? {} : { broken: preset.broken },
       })),
       authorable: this.authorable,
+      modeSelectionEnabled: policy.enabled,
     }
   }
 

@@ -1,5 +1,5 @@
 ---
-description: "Scope-grouped plugin inventory plus diagnostics, recovery, external-tool settings, and live Plugin Market discovery surfaces for the dsh web client."
+description: "Scope-grouped read-only plugin inventory tab in Web Plugins settings for the dsh web client: agent-preset compositions first, the global plane behind a disclosure, search across both."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use **Plugin list** to inspect agent-preset and global plugins by stable entry id, enablement, provenance, runtime state, and disabled condition. Diagnostics and recovery surfaces explain guarded Profile actions. Explore plugins uses the market catalog and current Profile state for installation without maintaining duplicate rankings. External tools installs official subagent providers or the community WorkBuddy connector. Installs show pnpm progress, offer sanitized live output, and provide explicit pause and stop controls without replacing failure diagnostics.
+The **Plugin list** tab lets Web users inspect plugins without changing their configuration. It presents agent presets first and collapses the global inventory until needed. Cards retain the package name as the primary title, identify instances by stable entry id, and expose enablement, source details, runtime status, disabled conditions, and discovery failures; preset-provided global entries name their presets. Search covers both groups and points to matches in other presets. The tab handles loading, empty, no-match, failure, and retry states without exposing transport details, and still shows the global inventory without a preset roster.
 
 ## Table of Contents
 
@@ -26,20 +26,6 @@ Use **Plugin list** to inspect agent-preset and global plugins by stable entry i
 ## Use this package
 
 Open the Plugins section in Settings and select the **Plugin list** tab to inspect the Host's plugin inventory. The tab reads no Remote during plugin activation — selecting it for the first time mounts the component and lazily calls `ctx.remote.pluginInventory.list()` through `api-remotes`.
-
-Open **External tools** to install the supported Codex or Claude Code provider, or the community-maintained WorkBuddy connector. WorkBuddy installation downloads the reviewed `dsh-workbuddy-connect@0.5.0` package and expects a signed-in WorkBuddy or WorkBuddy AI desktop app; the package is not bundled. During a running install, the progress action splits into **Pause** and **Stop**. Pause safely ends the current package-manager transaction and offers **Resume download**, which starts the same request again and reuses pnpm's cache; Stop leaves an explicit stopped state and offers a fresh download. **View download progress** becomes available once an install has an id and remains available for that Settings-page lifetime after success, failure, pause, or stop. Closing the terminal itself does not cancel the operation. The view pauses auto-follow when the reader scrolls away from the end and declares when older bounded output was truncated.
-
-Open **Diagnostics** to inspect Profile dependency, Loader, quarantine, and removal consistency. A `profile.quarantine-removal-residue` card means the plugin is already inactive and absent, but derived lockfile or diagnostic state still names it; **Clean removal residue** invokes the guarded Profile doctor and never reinstalls or re-isolates that plugin.
-
-Diagnostics distinguishes a missing Loader module from a Loader whose published code imports an unavailable dependency, and attributes either failure to the uniquely owning external Bundle. Missing internal `@deepseek-ai/dsh-*` packages are presented as DSH generation incompatibility rather than an instruction to install Host internals. When `settings.yaml` is invalid, diagnostic mode keeps the original file untouched and offers fixed-path actions to reveal it or preserve its exact bytes before resetting it to an empty valid map and restarting Harness. The diagnostic process does not turn the failed normal Profile into a successful application startup.
-
-When a plugin's valid package-owned compatibility manifest explicitly excludes the running Harness version, startup preflight quarantines it before plugin code executes. Diagnostics displays the current Host, the plugin's exact supported versions, and its optional recommended Host, then offers **Remove old version and find update** instead of retrying the same known-incompatible package. Missing or invalid declarations are shown by omission and are never guessed from broad peer ranges.
-
-The desktop-only **Diagnostics Lab** includes **Incomplete quarantine removal** and **Legacy Session API usage** exercises for both the isolated home and the explicitly confirmed current Profile. The Session exercise installs a reviewed inert package with the reproduced `session.events` pattern, verifies the advisory root attribution, and proves that static evidence does not automatically quarantine the package. It writes the reviewed legacy repair-report, diagnostic-report, and lockfile shape, invokes the production doctor, and retains the run report until **Restore all**; the renderer cannot supply a package, path, or arbitrary payload. Current-Profile fixtures never replace global Host overrides. Restore all performs a forced offline dependency rebuild and verifies managed-file hashes, run-attributed pnpm links, and a final Doctor result before Harness resumes; failed recovery remains visible and retryable.
-
-### Exploring market plugins
-
-Open **Explore plugins** on the new-session page to browse the recommended ranking or any non-empty market category. The four cards show category, author, description, 30-day downloads, stars, and installed, uninstalled, restart-required, unavailable, or unknown state. **View in Market** opens the matching market entry. **Install now** is offered only for an npm-backed uninstalled item, requires an explicit third-party-code acknowledgement, and then uses the same guarded Host/Desktop installer, diagnostics, and polling flow as Settings. Market-only sources remain view-only. If the market is absent, an explicit install or update uses the checked bundled market archive and reports that a quick restart is required. Network and catalog failures show their actual message; expired cached rankings remain available behind a stale warning.
 
 ### Reading a card
 
@@ -61,9 +47,7 @@ A failed read renders a generic failure state inside the tab; retrying re-runs t
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The inventory tab is a read-only projection of a Host-owned snapshot; it performs no Remote read during plugin activation and takes the snapshot on first selection. Discovery lazily reads the Plugin Market's standard `dsh-market/registry` and `dsh-market/installed` resources, then ranks and composes four-card recommended and category views in this desktop-owned package. The compact ranking cache lasts 24 hours while installed state is refreshed on every open; manual refresh bypasses the catalog cache. A settings-domain navigation request carries the target market tab and package without coupling this package to the settings shell. Direct installation accepts only the market's explicit npm package identity and delegates the structured request to the existing guarded installer; it never executes the catalog's free-form command string.
-
-The external-tools terminal polls `getInstallOutput` with the previous opaque byte offset rather than retransmitting the complete log through every status snapshot. The visual percentage comes only from `installProgress.percent`: after resolution fixes the total, acquired packages drive download progress and imported packages drive installation progress, while other stages remain indeterminate. Pause and stop submit only the Host-issued install id; the renderer cannot signal a PID or select another process. Official provider requests use the desktop compatibility manifest, while the WorkBuddy card maps only its signed client action to the reviewed community package specification and keeps it on the same guarded network installer.
+The tab is a read-only projection of a Host-owned snapshot; it performs no Remote read during plugin activation and takes the snapshot on first selection.
 
 ### Registration
 
@@ -103,12 +87,10 @@ None; this package neither assembles nor sends a provider request.
 <a id="known-limitations-and-deferred-work"></a>
 
 
-These limits define the freshness and reach of the inventory and discovery views; they are current package constraints.
+These limits define the freshness and reach of the inventory view; they are current package constraints.
 
 - **One snapshot per Settings mount or retry** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings obtains a new one.
-- **Read-only inventory state** — the global and preset planes do not edit enablement or custom composition files. The only mutation exposed inside the list is the explicit guarded removal of the plugin-market package itself.
-- **Market data availability** — the preview requires an installed Plugin Market exposing its standard registry and installed-state resources, plus a working catalog connection; failures are shown honestly and can be retried.
-- **Bounded stale fallback** — when a 24-hour cache expires and catalog refresh fails, the old ranking remains visible only with an explicit stale warning; unknown installed state is never presented as uninstalled.
+- **Read-only in both planes** — the tab shows global and preset enablement but mutates neither; enable/disable controls that write a custom preset's own composition file are deliberate follow-up work.
 
 <a id="dev-note"></a>
 ### Dev Note

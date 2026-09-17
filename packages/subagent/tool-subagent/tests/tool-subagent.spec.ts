@@ -17,7 +17,7 @@ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
-import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
+import * as ToolJobs from '@deepseek-ai/dsh-tool-jobs'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { loadStoredSession } from '../../subagent/tests/persistence-helpers.ts'
 import * as mock from './scripted-provider.ts'
@@ -824,7 +824,7 @@ describe('dsh-tool-subagent', () => {
 
 describe('dsh-tool-subagent background mode', () => {
   /** A live parent with a dedicated scope fiber for structural task cleanup. */
-  function ownerAgent(ctx: Context, sessionId: string, inject: (...args: unknown[]) => void = () => {}): Agent {
+  async function ownerAgent(ctx: Context, sessionId: string, inject: (...args: unknown[]) => void = () => {}): Promise<Agent> {
     const scopeFiber = ctx.plugin(() => {})
     const id = SessionId(sessionId)
     const agent = {
@@ -834,7 +834,7 @@ describe('dsh-tool-subagent background mode', () => {
       options: {},
       session: Session.create(id),
     } as unknown as Agent
-    ctx.agents.register(agent)
+    await ctx.agents.register(agent)
     return agent
   }
 
@@ -842,13 +842,13 @@ describe('dsh-tool-subagent background mode', () => {
     const ctx = await setup(toolConfig, mockConfig)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(LocalJobRegistry)
-    await ctx.plugin(ToolTasks, {})
+    await ctx.plugin(ToolJobs, {})
     return ctx
   }
 
   it('keeps a continuable-capable provider one-shot when backgroundMode selects one-shot', async () => {
     const ctx = await backgroundSetup({ provider: 'mock' })
-    const parent = ownerAgent(ctx, 'sess-parent')
+    const parent = await ownerAgent(ctx, 'sess-parent')
     let prepareCalls = 0
     ctx.subagents.registerProvider({
       name: 'resumable',
@@ -889,7 +889,7 @@ describe('dsh-tool-subagent background mode', () => {
 
   it('returns a job id immediately and the answer is collected through job_output', async () => {
     const ctx = await backgroundSetup({ provider: 'mock' }, { reply: 'background answer' })
-    const parent = ownerAgent(ctx, 'sess-parent')
+    const parent = await ownerAgent(ctx, 'sess-parent')
 
     const start = await callSubagent(ctx, { description: 'deep research', prompt: 'dig in', run_in_background: true }, { agent: parent })
     expect(start.isError).toBe(false)
@@ -923,7 +923,7 @@ describe('dsh-tool-subagent background mode', () => {
       diagnostic: 'Claude Code cancelled an unattended dialog',
       stopReason: 'error',
     })
-    const parent = ownerAgent(ctx, 'sess-parent')
+    const parent = await ownerAgent(ctx, 'sess-parent')
 
     const started = await ctx.tools.execute({
       signal: testToolSignal,
@@ -956,7 +956,7 @@ describe('dsh-tool-subagent background mode', () => {
 
   it('skips background startup when the tool signal is already aborted', async () => {
     const ctx = await backgroundSetup({ provider: 'mock' })
-    const parent = ownerAgent(ctx, 'sess-parent')
+    const parent = await ownerAgent(ctx, 'sess-parent')
     const controller = new AbortController()
     controller.abort()
     const result = await callSubagent(ctx, { description: 'd', prompt: 'p', run_in_background: true }, { agent: parent, signal: controller.signal })
@@ -973,7 +973,7 @@ describe('dsh-tool-subagent background mode', () => {
       provider: 'mock',
       agentOptions: { provider: 'alpha', model: 'selected-model' },
     })
-    const parent = ownerAgent(ctx, 'sess-parent')
+    const parent = await ownerAgent(ctx, 'sess-parent')
     const adapter = new MockAdapter([])
     let releasePreflight!: () => void
     const preflightGate = new Promise<void>((resolve) => { releasePreflight = resolve })
@@ -1044,7 +1044,7 @@ describe('dsh-tool-subagent background mode', () => {
 
   it('settles an asynchronous provider-start failure as a failed task', async () => {
     const ctx = await backgroundSetup({ provider: 'mock' })
-    const parent = ownerAgent(ctx, 'sess-parent')
+    const parent = await ownerAgent(ctx, 'sess-parent')
     ctx.subagents.registerProvider({
       name: 'broken-start',
       capabilities: { agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
@@ -1073,7 +1073,7 @@ describe('dsh-tool-subagent background mode', () => {
 
   it('kills a subagent task while provider readiness is still pending', async () => {
     const ctx = await backgroundSetup({ provider: 'mock' })
-    const parent = ownerAgent(ctx, 'sess-parent')
+    const parent = await ownerAgent(ctx, 'sess-parent')
     ctx.subagents.registerProvider({
       name: 'pending-start',
       capabilities: { agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
@@ -1110,7 +1110,7 @@ describe('dsh-tool-subagent background mode', () => {
 
   it('reports startup rollback failure after cancellation as a failed job', async () => {
     const ctx = await backgroundSetup({ provider: 'mock' })
-    const parent = ownerAgent(ctx, 'sess-parent')
+    const parent = await ownerAgent(ctx, 'sess-parent')
     ctx.subagents.registerProvider({
       name: 'broken-start-rollback',
       capabilities: { agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
@@ -1153,7 +1153,7 @@ describe('dsh-tool-subagent background mode', () => {
   it('forwards job_kill reasons through the run signal (and defaults one when absent)', async () => {
     // Use a provider that remains live until its signal is aborted.
     const ctx = await backgroundSetup({ provider: 'mock', agentOptions: { model: 'child-model' } })
-    const parent = ownerAgent(ctx, 'sess-parent')
+    const parent = await ownerAgent(ctx, 'sess-parent')
     const cancels: (string | undefined)[] = []
     let starts = 0
     ctx.subagents.registerProvider({
@@ -1214,7 +1214,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
     await ctx.plugin(SubagentRuntime)
     await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
     await ctx.plugin(LocalJobRegistry)
-    await ctx.plugin(ToolTasks, {})
+    await ctx.plugin(ToolJobs, {})
     await ctx.plugin(tool, { provider: 'spawn', backgroundMode: 'continuable' })
     ctx.llm.registerAdapter(['mock'], new MockAdapter([
       textResponse('continuable answer'),
@@ -1377,7 +1377,7 @@ describe('background preflight failure (no orphaned child, by construction)', ()
       options: {},
       session: Session.create(id),
     } as unknown as Agent
-    ctx.agents.register(parent)
+    await ctx.agents.register(parent)
 
     let starts = 0
     ctx.subagents.registerProvider({

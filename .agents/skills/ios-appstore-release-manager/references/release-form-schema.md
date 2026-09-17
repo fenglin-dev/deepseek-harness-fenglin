@@ -22,7 +22,7 @@ Complete release copy belongs in project forms, not in the global Skill.
 - Schema 5 is retained for historical forms that added a configurable translation source but always replaced localized descriptions.
 - Schema 6 is retained for historical forms that always prepared every selector language.
 - Schema 7 is retained for historical forms that added current-session browser capability and localization-scope gates.
-- Schema 8 is required for new forms. It adds Flutter/native Xcode project identity and version provenance while retaining all schema 7 approval, scope, conflict, readback, and submission boundaries.
+- Schema 8 is required for new forms. It adds Flutter/native Xcode project identity and the exact version source while retaining all schema 7 approval, scope, conflict, readback, and submission boundaries.
 
 ## Schema 8 Frontmatter
 
@@ -36,7 +36,7 @@ Every new version file requires:
 | `previous_version` | `1.6.0` | Inheritance source. |
 | `source_commit` | Git SHA or `not_recorded` | Source snapshot. |
 | `project_type` | `flutter`, `xcode`, or `unknown` | Detected project type; `unknown` is allowed only with an explicit version/build in a repository without either project marker. |
-| `version_source` | `pubspec.yaml`, `xcodebuild`, or `explicit` | Version/build provenance. |
+| `version_source` | `pubspec.yaml`, `xcodebuild`, or `explicit` | Exact source of the version and build number. |
 | `xcode_container` | `App.xcworkspace` or `none` | Repository-relative Xcode container. |
 | `xcode_scheme` | `App` or `none` | Selected shared scheme. |
 | `xcode_configuration` | `Release` | Build-settings configuration. |

@@ -21,7 +21,7 @@ A custom PNG, JPEG, or WebP is decoded and downscaled in the browser, encoded as
 - **Store uploads in `$DSH_HOME/settings.yaml`:** rejected because large binary strings would inflate a human-editable shared settings document and move decorative private data across the Host API.
 - **Apply background styles directly from the React settings row:** rejected because it would create a second DOM writer beside ui-layout's ThemePresenter and lose restoration on reload.
 - **Create a desktop-only theme implementation:** rejected because the Electron application renders the same Web client; a shared client plugin preserves browser and desktop behavior without duplicate state.
-- **Reuse existing DeepSeek brand artwork:** rejected because the project needs redistributable MIT-compatible assets with clear provenance. The shipped whale illustrations are original project assets and contain no copied logo.
+- **Reuse existing DeepSeek brand artwork:** rejected because the project needs redistributable MIT-compatible assets with a documented author and license. The shipped whale illustrations are original project assets and contain no copied logo.
 - **Bundle artwork from named animation or game franchises:** rejected because character art, costumes, logos, and other recognizable expression cannot be redistributed under the project's MIT license. The four additional backgrounds are original genre treatments without copied characters, names, emblems, maps, or team marks; users may still upload artwork they are authorized to use.
 
 ## Consequences

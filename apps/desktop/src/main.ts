@@ -18,6 +18,7 @@ import {
 import { appendBundledPluginFailure, seedBundledPluginsBatch, verifyBundledPluginArchive } from './bundled-plugin-seed.ts'
 import { BundledPluginStartupCooldown } from './bundled-plugin-cooldown.ts'
 import { FirstStartPreparation } from './first-start-preparation.ts'
+import { applyFreshProfileDefaults } from './fresh-profile-defaults.ts'
 import { deployPrebuiltProfile, readPrebuiltProfile, readProfileBuildApprovals, type PrebuiltProfileManifest } from './prebuilt-profile.ts'
 import {
   BundledPluginInstaller,
@@ -182,7 +183,7 @@ import {
   FilePersistentServiceRuntimeRegistry,
   persistentProfileFingerprint,
   type PersistentServiceSummary,
-} from '@deepseek-ai/dsh-subprocess/persistent'
+} from '@deepseek-ai/dsh-subprocess'
 
 const APP_NAME = DESKTOP_PRODUCT_NAME
 const DESKTOP_WEB_SUPPORTED = process.platform === 'darwin' || process.platform === 'win32'
@@ -1638,6 +1639,7 @@ async function startApplication(): Promise<void> {
   applyStartupDockIcon()
   const dshHome = await prepareDesktopDshHome(DESKTOP_DATA_HOME)
   const dataHomeSetup = await readDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile)
+  await applyFreshProfileDefaults(dshHome, dataHomeSetup)
   // Releases before the portable community import copied the complete Profile and did not write a
   // restore plan. Keep those deployments intact; new copies carry a plan and use normal first-start
   // preparation so packaged presets come from local archives before optional plugin restoration.
@@ -1686,6 +1688,7 @@ async function startApplication(): Promise<void> {
     DSH_HOME: dshHome,
     DSH_DESKTOP_APPLICATION_VERSION: app.getVersion(),
     DSH_DESKTOP_PNPM_VERSION: DESKTOP_PNPM_VERSION,
+    ...(app.isPackaged ? { DSH_PROFILE_RESOLUTION_MODE: 'runtime' } : {}),
     DSH_PROFILE_DIAGNOSTIC_MODE_ON_FAILURE: '1',
     DSH_DESKTOP_PERSISTENT_SERVICES: persistentServicesPath,
     DSH_DESKTOP_PERSISTENT_PROFILE: persistentProfileFingerprint(dshHome),
@@ -3104,7 +3107,7 @@ async function startApplication(): Promise<void> {
       ['plugin', '--profile', 'web', 'snapshot', 'end-restore-lease'], launchOptions), 'plugin-candidate-release', 15_000, [0], true)
     clearCandidateEnvironment()
   }
-  const activateDesktopCandidate = async (resume: boolean): Promise<void> => {
+  const activateDesktopCandidate = async (resume: boolean, expectedPackages: readonly string[] = []): Promise<void> => {
     const id = desktopCandidateId
     if (id === undefined) return
     await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment,
@@ -3113,7 +3116,7 @@ async function startApplication(): Promise<void> {
       ['plugin', '--profile', 'web', 'transaction', 'ready', id], launchOptions), 'plugin-candidate-ready', 15_000)
     clearCandidateEnvironment()
     if (profileTransactionManager === undefined) throw new Error('desktop: plugin activation manager unavailable')
-    try { await profileTransactionManager.activatePrepared(id, resume) } catch (error) {
+    try { await profileTransactionManager.activatePrepared(id, resume, expectedPackages) } catch (error) {
       if (!(error instanceof ProfileActivationRolledBackError)) desktopCandidateId = id
       throw error
     }
@@ -3253,13 +3256,13 @@ async function startApplication(): Promise<void> {
     if (recoveryMutationBusy) throw new Error('desktop: recovery plugin removal is still running')
     try { await discardDesktopCandidate() } finally { recoveryOwnsCandidate = desktopCandidateId !== undefined }
   }
-  const runManagedPluginMutation = async <T>(operation: () => Promise<T>): Promise<T> => {
+  const runManagedPluginMutation = async <T>(operation: () => Promise<T>, expectedPackages: readonly string[] = []): Promise<T> => {
     if (managedCandidateActive || desktopCandidateId !== undefined) throw new Error('desktop: another plugin mutation is active')
     managedCandidateActive = true
     try {
       await beginDesktopCandidate()
       const result = await operation()
-      await activateDesktopCandidate(true)
+      await activateDesktopCandidate(true, expectedPackages)
       return result
     } catch (error) {
       try { await discardDesktopCandidate() } catch (rollbackError) {
@@ -3531,7 +3534,7 @@ async function startApplication(): Promise<void> {
       restartBootableSnapshotStabilityWindow(`bundled plugin ${plugin.packageName} settled`)
     },
     withStartupTransaction: (plugin, operation) => withStartupPluginTransaction(plugin.packageName, operation),
-    withManagedTransaction: (_plugin, operation) => runManagedPluginMutation(operation),
+    withManagedTransaction: (plugin, operation) => runManagedPluginMutation(operation, [plugin.packageName]),
     prepare: async (plugin) => {
       await appendDesktopStartupLog(`Preparing bundled plugin ${plugin.packageName}@${plugin.version}.`)
       for (const packageName of plugin.approvedBuilds ?? []) {
@@ -3664,7 +3667,7 @@ async function startApplication(): Promise<void> {
       'imported-plugin-allow-builds',
       () => mergeImportedAllowBuilds(join(mutationHome(), 'profiles', 'web'), rules),
     ),
-    withMutation: operation => runManagedPluginMutation(operation),
+    withMutation: (operation, expectedPackages) => runManagedPluginMutation(operation, expectedPackages),
   })
   try {
     if (startupProfileMutationAllowed && !preserveCopiedPlugins) await importedPluginRestoreManager.prepare()
@@ -3684,7 +3687,9 @@ async function startApplication(): Promise<void> {
         return
       }
     }
-    else await activateDesktopCandidate(false)
+    else await activateDesktopCandidate(false, firstStartPending
+      ? manifest.plugins.filter(entry => entry.installPolicy === 'startup').map(entry => entry.packageName)
+      : [])
   } catch (error) {
     try { await discardDesktopCandidate() } catch (rollbackError) {
       startupSafety.rollbackFailed = true
@@ -3718,6 +3723,7 @@ async function startApplication(): Promise<void> {
     logPath: harnessLogPath,
     environment: { ...harnessEnvironment },
     managedRuntime: processObserver,
+    onOptionalStartupFailures: (failures) => { profileTransactionManager?.optionalStartupFailures(failures) },
     ...(profileMutationBlocked || startupSafety.rollbackFailed
       ? {
         initialDiagnosticMode: true,

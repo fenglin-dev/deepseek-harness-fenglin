@@ -63,8 +63,8 @@ export interface IWorkspaces {
    */
   archiveSession(sessionId: SessionId): Promise<void>
   /**
-   * Restore a Session to Workspace grouping surfaces.
-   * @param sessionId - Session to reveal.
+   * Unarchive a Session from the archived Session list.
+   * @param sessionId - Session to unarchive.
    */
   unarchiveSession(sessionId: SessionId): Promise<void>
   /**
@@ -123,7 +123,7 @@ export class WorkspaceController extends Service implements IWorkspaces {
 
   async unarchiveSession(sessionId: SessionId): Promise<void> {
     const result = await this.model.unarchiveSession(sessionId)
-    if (!result.ok) throw commandError('session restore', result.error)
+    if (!result.ok) throw commandError('session unarchive', result.error)
   }
 
   async insertSessionBefore(

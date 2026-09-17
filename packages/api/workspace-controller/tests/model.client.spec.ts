@@ -14,10 +14,10 @@ import type {
   WorkspaceInsertSessionBeforeRequest,
   WorkspaceOrderValue,
   WorkspaceRenameRequest,
+  WorkspaceUnarchiveSessionRequest,
   WorkspaceValue,
   WorkspaceId,
   WorkspaceView,
-  WorkspaceUnarchiveSessionRequest,
 } from '../src/types.ts'
 import { RemoteError, type RemoteFailure, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -86,9 +86,9 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
   ) => Promise<RemoteResult<WorkspaceArchiveValue>> = request =>
     Promise.resolve(remoteOk({ archivedSessionIds: [request.sessionId] }))
   onUnarchiveSession: (
-    _request: WorkspaceUnarchiveSessionRequest,
-  ) => Promise<RemoteResult<WorkspaceArchiveValue>> = () =>
-    Promise.resolve(remoteOk({ archivedSessionIds: [] }))
+    request: WorkspaceUnarchiveSessionRequest,
+  ) => Promise<RemoteResult<WorkspaceArchiveValue>> = request =>
+    Promise.resolve(remoteOk({ archivedSessionIds: [request.sessionId] }))
 
   create(request: WorkspaceCreateRequest): Promise<RemoteResult<WorkspaceCreateValue>> {
     this.record('create', request)
@@ -325,6 +325,72 @@ describe('ClientWorkspaceModel', () => {
     remote.onUnarchiveSession = () => Promise.resolve(remoteOk({ archivedSessionIds: [] }))
     await expect(model.unarchiveSession(sid('fresh'))).resolves.toMatchObject({ ok: true })
     expect(model.getSnapshot().archivedSessionIds).toEqual([])
+    expect(remote.calls).toContainEqual({ method: 'unarchiveSession', request: { sessionId: 'fresh' } })
+  })
+
+  it('keeps the latest unarchive reply when overlapping requests settle out of order', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [], [sid('first'), sid('second')])
+    const firstGate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    const secondGate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    let request = 0
+    remote.onUnarchiveSession = () => request++ === 0 ? firstGate.promise : secondGate.promise
+
+    const first = model.unarchiveSession(sid('first'))
+    const second = model.unarchiveSession(sid('second'))
+    secondGate.resolve(remoteOk({ archivedSessionIds: [] }))
+    await expect(second).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual([])
+    firstGate.resolve(remoteOk({ archivedSessionIds: [sid('second')] }))
+    await expect(first).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual([])
+  })
+
+  it('keeps a pushed archive set when an unarchive reply lands later', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [], [sid('first')])
+    const gate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    remote.onUnarchiveSession = () => gate.promise
+
+    const pending = model.unarchiveSession(sid('first'))
+    model.replaceArchived([sid('first'), sid('second')])
+    gate.resolve(remoteOk({ archivedSessionIds: [] }))
+    await expect(pending).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['first', 'second'])
+  })
+
+  it('keeps the latest archive reply when overlapping requests settle out of order', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    const firstGate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    const secondGate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    let request = 0
+    remote.onArchiveSession = () => request++ === 0 ? firstGate.promise : secondGate.promise
+
+    const first = model.archiveSession(sid('first'))
+    const second = model.archiveSession(sid('second'))
+    secondGate.resolve(remoteOk({ archivedSessionIds: [sid('first'), sid('second')] }))
+    await expect(second).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['first', 'second'])
+    firstGate.resolve(remoteOk({ archivedSessionIds: [sid('first')] }))
+    await expect(first).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['first', 'second'])
+  })
+
+  it('keeps a baseline archive set when an unarchive reply lands later', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [], [sid('first')])
+    const gate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    remote.onUnarchiveSession = () => gate.promise
+
+    const pending = model.unarchiveSession(sid('first'))
+    baseline(model, [], [sid('second')])
+    gate.resolve(remoteOk({ archivedSessionIds: [] }))
+    await expect(pending).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['second'])
   })
 
   it('keeps the newest row and places Workspaces missing from partial orders last', async () => {

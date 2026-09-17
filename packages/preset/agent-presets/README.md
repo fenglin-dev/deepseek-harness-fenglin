@@ -33,7 +33,7 @@ The shipped Web `standard`, `ptc`, and `cordis` presets include [explicit file d
 
 A session composed from a preset runs the plugins that preset's `agent.cordis.yml` names: its tools, prompt sections, and skills. Sessions joined to the same preset share one installed composition, and each session's state stays separate. A child agent (subagent) joins its parent's composition, so it sees the same tools and prompt sections as the agent that spawned it.
 
-The presets you can choose from come from two places: the presets shipped inside this package under `presets/`, and your own presets under `<dshHome>/.agent-presets`. The picker shows each preset's display name and description; a preset whose composition cannot load is listed with the reason rather than hidden, so you can see what to fix or delete.
+The presets you can choose from come from three sources: the presets shipped inside this package under `presets/`, configured roots, and your own presets under `<dshHome>/.agent-presets`. The picker shows each preset's display name and description; a preset whose composition cannot load is listed with the reason rather than hidden, so you can see what to fix or delete.
 
 ### Minimal configuration
 
@@ -50,7 +50,7 @@ The plugin needs a `default` preset id and scans `roots` for presets:
 
 | Field | Default | Meaning |
 |---|---|---|
-| `default` | required | Preset id composed when a session names none |
+| `default` | required | Deployment fallback preset id, used while mode selection is disabled or no user default overrides it |
 | `roots` | `[]` | Scanned directories in precedence order; each supplies `path` (a leading `~` expands) and `trust` (defaults to `user`) |
 | `includeShippedRoot` | `true` | Prepend the package's bundled presets as a `system` root before every configured root |
 | `includeUserRoot` | `true` | Append `<dshHome>/.agent-presets` as a `user` root, after every configured root |
@@ -59,16 +59,17 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 The shipped root is prepended before every configured root, so the built-in set remains available and wins duplicate ids even when a patch replaces the roster configuration. `includeShippedRoot: false` drops that built-in set for deployments that supply all presets themselves. `includeUserRoot: false` drops the derived writable root; tests that pin an exact roster disable both derived roots.
 
-### Choosing the default preset
+### Showing the picker and choosing its default
 
-The `default` config sets the deployment default. When a settings provider is composed, this plugin registers the `agent-presets` namespace with `config.default` as its base, so a user document layers a per-user default over the deployment's:
+The required `default` config sets the deployment default. When a settings provider is composed, this plugin registers the `agent-presets` namespace with `{ default: config.default, modeSelectionEnabled: true }` as its base, so the existing new-session picker remains visible unless a user turns it off. The Host reads both fields on every default resolution: while `modeSelectionEnabled` is false, an omitted preset resolves to `config.default` even if the user document retains another `default`; while it is true, a user default may override the deployment value:
 
 ```yaml
 agent-presets:
+  modeSelectionEnabled: true
   default: minimal
 ```
 
-The value is read when a session is created, so a changed default affects only sessions created afterwards; running sessions stay on the preset they were composed from. Clearing the user field re-inherits the composition default.
+A client shows or hides selection by writing only `modeSelectionEnabled`; the [Web GUI settings switch](../../client/ui-agent-preset/README.md) does exactly that. The deployment default governs while selection is hidden; re-enabling it restores the saved user `default`, or keeps the deployment default when none has been saved. While mode selection stays enabled, choosing a default writes a user override for sessions created later. Because the Host owns the policy, it applies to every subsequently created session whose caller omits a preset, including Web, CLI, SDK, and headless callers; an explicitly named preset and every existing session remain unchanged.
 
 ### Authoring presets
 
@@ -82,7 +83,7 @@ A session can switch to a different preset only while it has produced nothing �
 
 ### Failures and recovery
 
-A preset whose composition is missing, unparsable, not a list of named plugin rows, or naming a module that cannot be resolved is listed as broken with a reason naming the rows at fault. The picker mounts an explicit choice before staging it, so a plugin schema failure or apply failure does not create a Session; the failure stays on the roster until the composition file changes. When the configured default fails while creating a new Session, the Host uses the shipped `standard` preset when it is available. Resuming a stored Session and explicitly requesting a preset remain strict and never substitute another composition. Fix the preset's file or delete it, then retry.
+A preset whose composition is missing, unparsable, not a list of named plugin rows, or naming a module that cannot be resolved is listed as broken with a reason naming the rows at fault; a package-lookup failure marks only the preset being checked as broken, while the rest of the roster remains available. Composing a broken preset is refused up front, so a session never starts half-composed. What survives to session creation is a row whose module loads and then refuses — a plugin that throws, or one waiting for a service the composition never supplies — which fails the creation and rolls it back, naming every failed row including those inside a group. Fix the preset's file or delete it, then retry.
 
 -----
 
@@ -126,7 +127,7 @@ This section explains the design behind the roster and the standing mount; obser
 
 ### The mount audit
 
-A directly-plugged subtree is absent from `ctx.loader.entries()`, so no boot audit covers it; `mountPreset` proves the result usable itself and rejects three shapes: an unscoped target (the preset's tools would register globally), a row still waiting for a service the composition never supplies, and a row that published a service into the root realm (process-global, so the second preset publishing the same name collides). The invariant companion re-checks the last rule on every service notification, because a row publishing from a timer or an asynchronous continuation would escape the one-shot audit.
+A directly-plugged subtree is absent from `ctx.loader.entries()`, so no boot audit covers it; `mountPreset` proves the result usable itself and rejects an import or activation failure, an unscoped target (the preset's tools would register globally), a row still waiting for a service the composition never supplies, and a row that published a service into the root realm (process-global, so the second preset publishing the same name collides). The invariant companion re-checks the last rule on every service notification, because a row publishing from a timer or an asynchronous continuation would escape the one-shot audit.
 
 ### Authoring mechanics
 
@@ -175,7 +176,7 @@ These limits define when the roster is a poor fit or needs special operational c
 - **A generation is keyed on the composition file alone** — the stamp check notices `agent.cordis.yml` changing, not an edit to a skill file or asset beside it; those reach new sessions only once the composition file itself moves or the process restarts.
 - **A superseded generation is never reclaimed** — sessions already joined keep the generation they run on, and the roster holds no join count that could tell when the last one left, so the whole subtree stays mounted until the process ends. The cost is per generation rather than per session, but it is not free: `dsh-skill-filesystem` watches its roots by default, so each edit-then-create cycle adds a live watcher set.
 - **A copy is never mounted to validate** — it is byte-identical to its source, so a source broken on disk yields a copy exactly as broken as the source; discovery's health check marks both rows on the next roster read rather than deferring the failure to a session start.
-- **Passive health asks what is installed, not what would import** — discovery proves the composition parses in the loader dialect, holds named rows, and that each row it can prove will start names a package present above the harness base or a file that exists; it never imports one. An explicit picker choice or Session creation performs the runtime mount, and a failure then remains visible on the roster for that file version. `disabled` is the one entry field the Loader interpolates, so a row carrying an expression there is left unchecked rather than judged from the file.
+- **Health asks what is installed, not what would import** — discovery proves the composition parses in the loader dialect, holds named rows, and that each row it can prove will start names a package present above the harness base or a file that exists; it never imports one, so a package whose own entry file is missing, a plugin that throws on apply, and one waiting forever for a service all still fail at the first session. `disabled` is the one entry field the Loader interpolates, so a row carrying an expression there is left unchecked rather than judged from the file.
 - **A copy is a snapshot that drifts** — upgrading the deployment does not update copies of shipped presets, and there is no patch semantics at this layer to express "standard plus one change"; the shipped set itself accepts the same cost — `cordis` and `code` each duplicate `standard`'s full assembly and then edit it — so the whole assembly stays readable in one file.
 - **Root scans are not watched** — every read hits the filesystem instead, which keeps the roster fresh but puts one `readdir` per root on each `list()`.
 

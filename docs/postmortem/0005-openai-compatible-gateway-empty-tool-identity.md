@@ -38,7 +38,7 @@ The existing translator coverage exercised fragments in which later identity fie
 
 ## Guardrails added
 
-- `packages/llm/llm-deepseek/src/translate.ts` now updates a tool call's `callId` and `name` only when the incoming value is non-empty. A first fragment that has no identity remains invalid; the change only prevents later placeholders from erasing a known identity.
+- `packages/llm/llm-deepseek/src/protocols/chat-completions/translate.ts` now updates a tool call's `callId` and `name` only when the incoming value is non-empty. A first fragment that has no identity remains invalid; the change only prevents later placeholders from erasing a known identity.
 - `packages/llm/llm-deepseek/tests/translate.spec.ts` reproduces an opening `call_bash` / `bash` delta followed by empty-string identity placeholders and asserts that every emitted delta and the final block retain the original identity.
 - The diagnostic workflow for `unknown tool ""` starts with the streamed tool-call deltas. It distinguishes a missing tool definition from an empty identity introduced during translation.
 

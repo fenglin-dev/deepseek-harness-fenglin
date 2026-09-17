@@ -45,6 +45,7 @@ export async function runCli(): Promise<void> {
         args: invocation.args,
         diagnosticMode: process.env.DSH_PROFILE_DIAGNOSTIC_MODE === '1',
         diagnosticModeOnFailure: process.env.DSH_PROFILE_DIAGNOSTIC_MODE_ON_FAILURE === '1',
+        ...(process.env.DSH_PROFILE_RESOLUTION_MODE === 'runtime' ? { resolutionMode: 'runtime' as const } : {}),
       })
       break
     }

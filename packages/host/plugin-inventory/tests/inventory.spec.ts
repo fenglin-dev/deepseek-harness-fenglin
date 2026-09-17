@@ -8,6 +8,7 @@ import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
   SubprocessHandle,
   SubprocessSpawnSpec,
+  SubprocessTerminalEnvironment,
   SubprocessTerminalHandle,
   SubprocessTerminalSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
@@ -52,6 +53,10 @@ class StubSubprocessRuntime extends SubprocessRuntime {
     return command
   }
 
+  async terminalEnvironment(): Promise<SubprocessTerminalEnvironment> {
+    return { platform: 'posix', defaultShell: '/bin/sh' }
+  }
+
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     this.spawns.push(spec)
     const output = (text: string) => ({
@@ -61,6 +66,7 @@ class StubSubprocessRuntime extends SubprocessRuntime {
       stdin: undefined,
       stdout: undefined,
       stderr: undefined,
+      control: undefined,
       collected: { stdout: output(this.stdout), stderr: output(this.stderr) },
       done: Promise.resolve({ exitCode: this.exitCode, signal: null }),
       terminate: () => {},
@@ -403,7 +409,7 @@ describe('PluginInventoryGateway', () => {
       fiberPhase: null,
     })
 
-    await ctx.loader.remove(pendingId)
+    ctx.loader.remove(pendingId)
     expect((await inventory.list()).entries.some(entry => entry.entryId === pendingId)).toBe(false)
   })
 

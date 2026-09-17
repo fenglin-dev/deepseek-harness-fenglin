@@ -210,6 +210,10 @@ if (staging === repositoryRoot || repositoryRoot.startsWith(staging + sep)) {
 await rm(staging, { recursive: true, force: true })
 await rm(archive, { force: true })
 await run('pnpm', [
+  // This deploy intentionally selects only the CLI closure. Root-only patches
+  // (for example Electron signing) cannot match that subset and must not make
+  // the portable runtime build fail as long as patches in the closure still apply.
+  '--config.allow-unused-patches=true',
   '--filter',
   '@deepseek-ai/dsh',
   'deploy',

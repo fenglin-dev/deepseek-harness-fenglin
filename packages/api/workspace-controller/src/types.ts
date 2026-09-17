@@ -104,7 +104,7 @@ export interface WorkspaceArchiveSessionRequest {
   readonly sessionId: SessionId
 }
 
-/** Session requested for restoration to Workspace grouping surfaces. */
+/** Session requested for restoration from the archived Session list. */
 export interface WorkspaceUnarchiveSessionRequest {
   readonly sessionId: SessionId
 }

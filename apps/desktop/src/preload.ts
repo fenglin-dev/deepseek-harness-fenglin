@@ -35,7 +35,7 @@ import type {
 import { installLoadingPage } from './loading-page.ts'
 import type { StartupDiagnosticIncident } from './startup-diagnostics.ts'
 import type { DesktopProcessSnapshot } from './process-observer.ts'
-import type { PersistentServiceSummary } from '@deepseek-ai/dsh-subprocess/persistent'
+import type { PersistentServiceSummary } from '@deepseek-ai/dsh-subprocess'
 import type { DesktopWebOpenResult, DesktopWebStatus } from './desktop-web-access.ts'
 import type {
   DownloadNetworkPatch, DownloadNetworkSettings, DownloadNetworkTarget, DownloadNetworkTestStatus,

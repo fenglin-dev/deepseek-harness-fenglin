@@ -376,7 +376,7 @@ export interface ImportedPluginRestoreManagerOptions {
   readonly install: (packageSpec: string) => Promise<string>
   readonly inspectSource?: (packageSpec: string) => Promise<ImportedPluginSourceCheckResult>
   readonly mergeAllowBuilds?: (profileDir: string, rules: Readonly<Record<string, boolean>>) => Promise<boolean>
-  readonly withMutation?: <T>(operation: () => Promise<T>) => Promise<T>
+  readonly withMutation?: <T>(operation: () => Promise<T>, expectedPackages: readonly string[]) => Promise<T>
 }
 
 /** Own opaque-id validation and sequential restoration outside the renderer. */
@@ -534,7 +534,7 @@ export class ImportedPluginRestoreManager {
     this.active = true
     this.plan = { ...this.plan, firstPromptDismissed: true, ignored: false }
     try {
-      await this.mutate(async () => {
+      await this.mutate(entry.packageName, async () => {
         await this.update(entry.restoreId, { state: 'installing', diagnostic: null })
         const diagnostic = await this.options.install(archivePath)
         await this.update(entry.restoreId, {
@@ -573,7 +573,7 @@ export class ImportedPluginRestoreManager {
       for (const original of this.plan?.entries ?? []) {
         if (!ids.has(original.restoreId)) continue
         try {
-          await this.mutate(async () => {
+          await this.mutate(original.packageName, async () => {
             await this.update(original.restoreId, { state: 'installing', diagnostic: null })
             const diagnostic = await this.options.install(original.packageSpec)
             await this.update(original.restoreId, {
@@ -590,8 +590,10 @@ export class ImportedPluginRestoreManager {
     }
   }
 
-  private mutate<T>(operation: () => Promise<T>): Promise<T> {
-    return this.options.withMutation === undefined ? operation() : this.options.withMutation(operation)
+  private mutate<T>(packageName: string, operation: () => Promise<T>): Promise<T> {
+    return this.options.withMutation === undefined
+      ? operation()
+      : this.options.withMutation(operation, [packageName])
   }
 
   private async update(

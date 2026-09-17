@@ -1,8 +1,10 @@
 import { defineConfig } from 'tsdown'
 
-/** Keep the file-backed desktop authority importable without loading Cordis. */
 export default defineConfig({
-  entry: ['lib/types/index.js', 'lib/types/persistent.js'],
+  entry: {
+    index: 'lib/types/index.js',
+    control: 'lib/types/control.js',
+  },
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

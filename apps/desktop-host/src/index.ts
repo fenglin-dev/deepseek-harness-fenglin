@@ -15,9 +15,12 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   boot,
   composeEntries,
+  createProfileResolutionGeneration,
   loadLayeredEnv,
   loadProfileDirectory,
   loadOverlayPatches,
+  PluginPackages,
+  type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
@@ -149,12 +152,23 @@ function isProjectPath(projectDir: string, target: string): boolean {
   return path === root || path.startsWith(root + sep)
 }
 
-function desktopPatches(projectDir: string, allowLinkedPackages: boolean): PatchOptions[] {
-  const dshRoot = dirname(packageManifestPath(projectDir, '@deepseek-ai/dsh'))
-  const profile = loadProfileDirectory('dsh desktop', projectDir, join(dshRoot, 'package.json'))
+interface DesktopComposition {
+  readonly installAnchor: string
+  readonly profile: Profile
+  readonly patches: PatchOptions[]
+}
+
+function desktopComposition(
+  runtimeDir: string,
+  projectDir: string,
+  allowLinkedPackages: boolean,
+): DesktopComposition {
+  const installAnchor = packageManifestPath(runtimeDir, '@deepseek-ai/dsh')
+  const dshRoot = dirname(installAnchor)
+  const profile = loadProfileDirectory('dsh desktop', projectDir, installAnchor)
   for (const layer of profile.layers) {
-    if (!allowLinkedPackages && !isProjectPath(projectDir, layer.packageDir)) {
-      throw new Error(`dsh desktop: profile bundle ${JSON.stringify(layer.packageName)} resolved outside the desktop profile`)
+    if (!allowLinkedPackages && !isProjectPath(projectDir, layer.packageDir) && !isProjectPath(runtimeDir, layer.packageDir)) {
+      throw new Error(`dsh desktop: profile bundle ${JSON.stringify(layer.packageName)} resolved outside the Desktop runtime and profile`)
     }
   }
   const layers = [
@@ -173,17 +187,17 @@ function desktopPatches(projectDir: string, allowLinkedPackages: boolean): Patch
       },
     }])
   }
-  return layers.flat()
+  return { installAnchor, profile, patches: layers.flat() }
 }
 
-function dshVersion(projectDir: string): string {
-  const manifest = readManifest(packageManifestPath(projectDir, '@deepseek-ai/dsh'))
+function dshVersion(runtimeDir: string): string {
+  const manifest = readManifest(packageManifestPath(runtimeDir, '@deepseek-ai/dsh'))
   if (typeof manifest.version !== 'string') throw new Error('dsh desktop: installed dsh manifest has no version')
   return manifest.version
 }
 
-function assetHandler(ctx: Context, projectDir: string): ConnectionFetchHandler {
-  const require = createRequire(join(projectDir, 'package.json'))
+function assetHandler(ctx: Context, runtimeDir: string): ConnectionFetchHandler {
+  const require = createRequire(join(runtimeDir, 'package.json'))
   const distIndex = require.resolve('@deepseek-ai/dsh-web-frontend/dist/index.html')
   const distRoot = realpathSync(dirname(distIndex))
   const renderIndex = async (): Promise<Response> => {
@@ -270,28 +284,34 @@ interface NodeRequestInit extends RequestInit {
 
 /**
  * Boot one installed desktop npm project.
+ * @param runtimeDir - immutable dsh packages supplied by the Electron application.
  * @param projectDir - active or staged Electron-owned desktop profile.
  * @param writeResponse - serialized response-pipe writer that applies byte backpressure.
  * @param options - development-only allowance for workspace-linked bundle packages.
  * @returns controller after every Host and client-manifest row is active.
  */
 export async function runDesktopHost(
+  runtimeDir: string,
   projectDir: string,
   writeResponse: (frame: Buffer) => Promise<void>,
   options: { allowLinkedPackages?: boolean } = {},
 ): Promise<DesktopHostController> {
+  const absoluteRuntime = resolve(runtimeDir)
   const absoluteProject = resolve(projectDir)
   mkdirSync(absoluteProject, { recursive: true })
   const rootConfig = join(absoluteProject, ROOT_CONFIG_FILENAME)
   writeFileSync(rootConfig, ROOT_CONFIG)
   const environment = loadLayeredEnv('dsh desktop')
+  const composition = desktopComposition(absoluteRuntime, absoluteProject, options.allowLinkedPackages === true)
+  const resolution = await createProfileResolutionGeneration({
+    installAnchor: composition.installAnchor,
+    profile: composition.profile,
+  })
   let current: Context | undefined
-  const ctx = await boot('dsh desktop', rootConfig, structuredClone(desktopPatches(
-    absoluteProject,
-    options.allowLinkedPackages === true,
-  )), (hostCtx) => {
+  const ctx = await boot('dsh desktop', rootConfig, structuredClone(composition.patches), async (hostCtx) => {
     current = hostCtx
     hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, environment)
+    await hostCtx.plugin(PluginPackages, { generation: resolution })
     provideCmdline(hostCtx, { args: [], exit: () => {} })
   })
   current = ctx
@@ -303,7 +323,7 @@ export async function runDesktopHost(
     throw new Error('dsh desktop: composition did not provide connection, typertGateway, and clientModules')
   }
   const api = connection.createSharedFetchHandler('/api')
-  const assets = assetHandler(ctx, absoluteProject)
+  const assets = assetHandler(ctx, absoluteRuntime)
   const streams = remoteStreamHandler(ctx)
   const requests = new Map<number, AbortController>()
   let disposing: Promise<void> | undefined
@@ -319,7 +339,7 @@ export async function runDesktopHost(
   }
 
   return {
-    dshVersion: dshVersion(absoluteProject),
+    dshVersion: dshVersion(absoluteRuntime),
     cancel(streamId) {
       requests.get(streamId)?.abort()
     },
@@ -374,11 +394,12 @@ export async function runDesktopHost(
 }
 
 async function main(): Promise<void> {
-  const projectDir = process.argv[2]
-  if (projectDir === undefined || process.send === undefined) {
-    throw new Error('dsh desktop: expected project directory, byte pipes, and a Node IPC channel')
+  const runtimeDir = process.argv[2]
+  const projectDir = process.argv[3]
+  if (runtimeDir === undefined || projectDir === undefined || process.send === undefined) {
+    throw new Error('dsh desktop: expected runtime and profile directories, byte pipes, and a Node IPC channel')
   }
-  const option = process.argv[3]
+  const option = process.argv[4]
   if (option !== undefined && option !== '--allow-linked-profile') {
     throw new Error(`dsh desktop: unsupported internal option ${JSON.stringify(option)}`)
   }
@@ -403,7 +424,7 @@ async function main(): Promise<void> {
       if ((error as NodeJS.ErrnoException).code !== 'ERR_IPC_CHANNEL_CLOSED') throw error
     }
   }
-  const controller = await runDesktopHost(projectDir, writeResponse, { allowLinkedPackages: option !== undefined })
+  const controller = await runDesktopHost(runtimeDir, projectDir, writeResponse, { allowLinkedPackages: option !== undefined })
   send({
     type: 'ready',
     protocolVersion: DESKTOP_HOST_PROTOCOL_VERSION,

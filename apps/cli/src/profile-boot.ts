@@ -24,6 +24,7 @@ import {
   createProfilePluginSnapshot,
   finalizeProfilePluginSnapshot,
   composeEntries,
+  createProfileResolutionGeneration,
   DEFAULT_PROFILE_BUNDLES,
   healProfilesModuleFallback,
   initProfile,
@@ -32,6 +33,7 @@ import {
   loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
+  PluginPackages,
   classifyProfileDiagnostic,
   createProfileDiagnosticReport,
   readProfileDiagnosticReport,
@@ -48,6 +50,8 @@ import {
   type Profile,
   type ProfileBundleEntryOwnership,
   type ProfileDiagnostic,
+  type ProfileResolutionGeneration,
+  type ProfileResolutionMode,
   type UnresolvableProfileBundleEntry,
   prepareDiagnosticRuntimeDirectories,
   prepareDiagnosticSettingsDocument,
@@ -322,6 +326,8 @@ function prepareDiagnosticProfile(name: string): Profile {
 /** One profile's patch layers, in application order. */
 interface ComposedProfile {
   profile: Profile
+  /** Immutable package lookup generation used by this invocation. */
+  resolution: ProfileResolutionGeneration
   /** Bundle layers concatenated — the part below the user layers on a live reload. */
   bundlePatches: PatchOptions[]
   /** The home-level user layer (`$DSH_HOME/cordis.patch.yml`), applied after the profile's own. */
@@ -357,10 +363,14 @@ async function composeProfile(
   name: string,
   patchFiles: readonly string[],
   diagnosticMode: boolean,
+  resolutionMode: ProfileResolutionMode,
   fromDefaultProfile?: string,
 ): Promise<ComposedProfile> {
   const profile = diagnosticMode ? prepareDiagnosticProfile(name) : prepareProfile(name, true, fromDefaultProfile)
-  await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile })
+  const resolutionOptions = { installAnchor: INSTALL_ANCHOR, profile }
+  const resolution = resolutionMode === 'runtime'
+    ? await createProfileResolutionGeneration(resolutionOptions)
+    : await healProfilesModuleFallback(resolutionOptions)
   const homePatches = diagnosticMode ? [] : loadOptionalPatches(NAME, homePatchPath()) ?? []
   const diagnosticSettings = diagnosticMode ? prepareDiagnosticSettingsDocument() : undefined
   const diagnosticRuntime = diagnosticMode ? prepareDiagnosticRuntimeDirectories() : undefined
@@ -401,6 +411,7 @@ async function composeProfile(
   if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
   return {
     profile,
+    resolution,
     bundlePatches,
     homePatches,
     overlays: composedOverlays,
@@ -424,6 +435,8 @@ export interface RunProfileOptions {
   diagnosticMode?: boolean
   /** Emit a stable desktop-supervisor marker when ordinary startup fails. */
   diagnosticModeOnFailure?: boolean
+  /** Module fallback backend; pkg executables always use runtime resolution. */
+  resolutionMode?: ProfileResolutionMode
 }
 
 function startupFailurePhase(error: unknown) {
@@ -494,7 +507,7 @@ function loaderEntryFailures(error: unknown): readonly {
 
 /**
  * Attribute the deepest Loader import or apply wrapper in a startup failure.
- * Patch provenance must still prove the owning bundle before recovery mutates
+ * The recorded patch owner must still prove the owning bundle before recovery mutates
  * the Profile; the plugin's own exception text is never trusted for identity.
  * @param error - startup exception and optional cause chain.
  * @returns Stable Loader identity and lifecycle stage, when present.
@@ -602,6 +615,8 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  */
 async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
   const diagnosticMode = options.diagnosticMode === true
+  const packaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
+  const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'link'
   const profileDir = resolveProfileDir(options.profile)
   if (!diagnosticMode && existsSync(join(profileDir, 'package.json'))) {
     await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR })
@@ -632,7 +647,13 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
 
   let composed: ComposedProfile
   try {
-    composed = await composeProfile(options.profile, options.patchFiles, diagnosticMode, options.fromDefaultProfile)
+    composed = await composeProfile(
+      options.profile,
+      options.patchFiles,
+      diagnosticMode,
+      resolutionMode,
+      options.fromDefaultProfile,
+    )
   } catch (error) {
     await disposeProxy()
     throw error
@@ -691,11 +712,15 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
   // application must not mutate the objects later reloads recompose from.
   let ctx: Context
   try {
-    ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
+    ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), async (hostCtx) => {
       app.current = hostCtx
       // Before any config-tree entry mounts, so plugins resolve all launch-time
-      // environment values from the same immutable provenance snapshot.
+      // environment values from the same immutable launch-environment snapshot.
       hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
+      await hostCtx.plugin(PluginPackages, resolutionMode === 'link' ? {} : {
+        generation: composed.resolution,
+        behavior: resolutionMode === 'dual' ? 'verify' : 'enforce',
+      })
       // The command line and bounded exit request are launcher facts available
       // to every app plugin that injects the argument snapshot.
       provideCmdline(hostCtx, {
@@ -757,6 +782,9 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
           await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-timer' })
         }
         await ctx.loader.create({ name: '@deepseek-ai/cordis-plugin-hmr', config: { root: [] } })
+        // create() only inserts the entry. Wait for the injected services to
+        // settle before watchUserPatches reads ctx.hmr below.
+        await ctx.loader.await()
       }
       await watchUserPatches(ctx, {
         binName: NAME,

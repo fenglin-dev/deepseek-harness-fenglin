@@ -10,7 +10,7 @@ A session fork preserves a contiguous event prefix through a completed turn and 
 
 ## Decision
 
-The inbox projection records the session's `inheritedEventCount` in its internal state and ignores inherited inbox splices whose sequence is below that offset. It retains those events in the child log, so history and sequence provenance remain intact. Inbox splices at or after the offset belong to the child and remain pending across resume.
+The inbox projection records the session's `inheritedEventCount` in its internal state and ignores inherited inbox splices whose sequence is below that offset. It retains those events in the child log, so history and original sequence identity remain intact. Inbox splices at or after the offset belong to the child and remain pending across resume.
 
 The inbox projection uses `stateVersion: 2`. A persisted version-1 projection row is discarded and rebuilt from the session log with fork isolation, so a stale cache cannot restore inherited parent work.
 
