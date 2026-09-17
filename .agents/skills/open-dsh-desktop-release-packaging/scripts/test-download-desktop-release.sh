@@ -68,6 +68,21 @@ if [[ "$1 $2" == "run view" ]]; then
   exit 0
 fi
 if [[ "$1" == api ]]; then
+  artifact_id=$(printf '%s\n' "$*" | sed -n 's#.*actions/artifacts/\([^ /?]*\).*#\1#p')
+  if [[ -n "$artifact_id" ]]; then
+    for candidate in "$ODSH_FIXTURE_ARTIFACT_STORE"/*.zip; do
+      for candidate_run_id in 101 202 303; do
+        candidate_name=$(basename "$candidate" .zip)
+        candidate_id=$(printf '%s' "$candidate_run_id-$candidate_name" | cksum | awk '{ print $1 }')
+        if [[ "$candidate_id" == "$artifact_id" ]]; then
+          size=$(wc -c < "$candidate" | tr -d ' ')
+          printf '%s\t%s\t%s\tfalse\t%s\t2026-09-17T10:00:00Z\n' "$candidate_name" "$candidate_id" "$size" "$candidate_run_id"
+          exit 0
+        fi
+      done
+    done
+    exit 1
+  fi
   run_id=$(printf '%s\n' "$*" | sed -n 's#.*actions/runs/\([^/]*\)/artifacts.*#\1#p')
   for name in desktop-windows-x64 desktop-macos-arm64 desktop-macos-x64 desktop-linux-x64 desktop-checksums bundled-plugin-snapshot; do
     case "$run_id:$name" in
@@ -92,13 +107,19 @@ cat > "$fake_bin/curl" <<'EOF'
 set -euo pipefail
 header_file=
 url=
+metrics=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dump-header) header_file=$2; shift 2 ;;
+    --write-out) metrics=1; shift 2 ;;
     http*) url=$1; shift ;;
     *) shift ;;
   esac
 done
+if [[ "$metrics" == 1 ]]; then
+  printf '8388608\t4.000000\t2097152\t206\n'
+  exit 0
+fi
 artifact_id=${url%/zip}
 artifact_id=${artifact_id##*/}
 name=
@@ -116,6 +137,7 @@ EOF
 cat > "$fake_bin/aria2c" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ -n ${ODSH_FIXTURE_ARIA_ARGUMENTS:-} ]]; then printf '%s\n' "$*" >> "$ODSH_FIXTURE_ARIA_ARGUMENTS"; fi
 directory=
 output=
 url=
@@ -127,6 +149,15 @@ for argument in "$@"; do
   esac
 done
 name=${url#fixture://}
+if [[ -n "${ODSH_FIXTURE_ACTIVE_SPEED:-}" ]]; then
+  printf 'partial\n' > "$directory/$output.aria2"
+  trap 'exit 130' INT TERM
+  for ((index = 0; index < 20; index += 1)); do
+    printf '[#fixture 1MiB/10MiB(10%%) CN:1 DL:%s]\n' "$ODSH_FIXTURE_ACTIVE_SPEED" >&2
+    sleep 0.2
+  done
+  exit 1
+fi
 if [[ -n "${ODSH_FIXTURE_FAIL_ONCE_FILE:-}" && ! -e "$ODSH_FIXTURE_FAIL_ONCE_FILE" ]]; then
   printf 'failed once\n' > "$ODSH_FIXTURE_FAIL_ONCE_FILE"
   size=$(wc -c < "$ODSH_FIXTURE_ARTIFACT_STORE/$name.zip" | tr -d ' ')
@@ -140,11 +171,40 @@ rm -f "$directory/$output.aria2"
 EOF
 
 chmod +x "$fake_bin/gh" "$fake_bin/curl" "$fake_bin/aria2c"
+aria_arguments_log="$fixture_root/aria-arguments.log"
+
+low_staging_root="$fixture_root/low-staging"
+set +e
+PATH="$fake_bin:$PATH" \
+ODSH_FIXTURE_ARTIFACT_STORE="$artifact_store" \
+ODSH_FIXTURE_ACTIVE_SPEED=256KiB \
+ODSH_FIXTURE_ARIA_ARGUMENTS="$aria_arguments_log" \
+ODSH_RELEASE_DOWNLOAD_STAGING_ROOT="$low_staging_root" \
+ODSH_RELEASE_OUTPUT_DIRECTORY="$fixture_root/low-release" \
+ODSH_ALLOW_RELEASE_OUTPUT_OVERRIDE=1 \
+ODSH_SPEED_MONITOR_MIN_BYTES=1 \
+ODSH_LOW_SPEED_WARMUP_SECONDS=0 \
+ODSH_LOW_SPEED_WINDOW_SECONDS=1 \
+ODSH_DOWNLOAD_URL_ATTEMPTS=1 \
+ODSH_VERIFY_DMG=0 \
+  "$script_directory/download-desktop-release.sh" fixture/repository 101 202 303
+low_download_status=$?
+set -e
+[[ "$low_download_status" == 75 ]] || {
+  echo "low active download exited $low_download_status, expected 75" >&2
+  exit 1
+}
+find "$low_staging_root" -name '*.aria2' -type f | grep -q . || {
+  echo "low-speed stop did not retain resumable state" >&2
+  exit 1
+}
+echo "low-speed download fixture stopped with resumable state"
 
 fail_once_file="$fixture_root/failed-once"
 if PATH="$fake_bin:$PATH" \
   ODSH_FIXTURE_ARTIFACT_STORE="$artifact_store" \
   ODSH_FIXTURE_FAIL_ONCE_FILE="$fail_once_file" \
+  ODSH_FIXTURE_ARIA_ARGUMENTS="$aria_arguments_log" \
   ODSH_RELEASE_DOWNLOAD_STAGING_ROOT="$staging_root" \
   ODSH_RELEASE_OUTPUT_DIRECTORY="$release_directory" \
   ODSH_ALLOW_RELEASE_OUTPUT_OVERRIDE=1 \
@@ -161,6 +221,7 @@ find "$staging_root" -name '*.aria2' -type f | grep -q . || {
 
 PATH="$fake_bin:$PATH" \
 ODSH_FIXTURE_ARTIFACT_STORE="$artifact_store" \
+ODSH_FIXTURE_ARIA_ARGUMENTS="$aria_arguments_log" \
 ODSH_RELEASE_DOWNLOAD_STAGING_ROOT="$staging_root" \
 ODSH_RELEASE_OUTPUT_DIRECTORY="$release_directory" \
 ODSH_ALLOW_RELEASE_OUTPUT_OVERRIDE=1 \
@@ -168,6 +229,7 @@ ODSH_VERIFY_DMG=0 \
   "$script_directory/download-desktop-release.sh" fixture/repository 101 202 303
 
 ODSH_VERIFY_DMG=0 "$script_directory/verify-release-directory.sh" "$release_directory"
+grep -q -- '--summary-interval=10' "$aria_arguments_log"
 [[ ! -d "$staging_root" || -z "$(find "$staging_root" -mindepth 1 -print -quit)" ]] || {
   echo "successful download did not clean its staging directory" >&2
   exit 1
