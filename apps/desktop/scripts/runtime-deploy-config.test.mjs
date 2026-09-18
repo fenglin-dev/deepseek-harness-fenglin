@@ -17,14 +17,16 @@ test('Windows installed smoke isolates Electron application data', async () => {
   assert.match(source, /desktop-entry\.log/u)
 })
 
-test('Windows unpacked probe checks packaged peers and both Electron entries', async () => {
+test('Windows unpacked probe checks packaged peers, Electron entries, and managed CLI launch', async () => {
   const source = await readFile(new URL('smoke-windows-unpacked.mjs', import.meta.url), 'utf8')
   for (const packageName of ['@deepseek-ai/dsh-subprocess', '@deepseek-ai/cordis', '@deepseek-ai/dsh-http-proxy']) {
     assert.match(source, new RegExp(packageName.replaceAll('/', '\\/'), 'u'))
   }
   assert.match(source, /DSH_NATIVE_SMOKE_READY/u)
   assert.match(source, /DSH_MAIN_IMPORT_SMOKE_READY/u)
+  assert.match(source, /DSH_MANAGED_CLI_SMOKE_READY/u)
   assert.match(source, /--dsh-main-import-smoke/u)
+  assert.match(source, /--dsh-managed-cli-smoke/u)
 })
 
 test('Windows diagnostics always contain uploadable metadata', async () => {

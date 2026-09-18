@@ -64,4 +64,5 @@ async function runProbe(argument, marker) {
 
 await runProbe('--dsh-native-smoke', 'DSH_NATIVE_SMOKE_READY')
 await runProbe('--dsh-main-import-smoke', 'DSH_MAIN_IMPORT_SMOKE_READY')
+await runProbe('--dsh-managed-cli-smoke', 'DSH_MANAGED_CLI_SMOKE_READY')
 console.log(`Windows app.asar contains ${requiredPackages.join(', ')}`)

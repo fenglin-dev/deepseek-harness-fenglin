@@ -20,7 +20,50 @@ async function recordPackageSmokeEntry(message: string): Promise<void> {
   await appendFile(join(packageSmokeRoot, 'desktop-entry.log'), `${new Date().toISOString()} ${message}\n`, 'utf8')
 }
 
-if (process.argv.includes('--dsh-native-smoke')) {
+async function runManagedCliSmoke(): Promise<void> {
+  if (packageSmokeRoot === undefined || process.platform !== 'win32') {
+    throw new Error('desktop: managed CLI smoke requires a Windows package smoke root')
+  }
+  const runtimeRoot = join(process.resourcesPath, 'runtime', 'win32-x64')
+  const nodeCommand = join(runtimeRoot, 'node.exe')
+  const harnessBin = join(process.resourcesPath, 'harness', 'lib', 'bin.js')
+  const [{ runHarnessInvocation }, { resolveHarnessInvocation }, { loadProcessObserver }] = await Promise.all([
+    import('./harness-invocation.js'),
+    import('./launch.js'),
+    import('./process-observer.js'),
+  ])
+  const observer = await loadProcessObserver(harnessBin, nodeCommand)
+  try {
+    const output = await runHarnessInvocation(resolveHarnessInvocation({
+      ...process.env,
+      DSH_HOME: join(packageSmokeRoot, 'managed-cli-home'),
+    }, ['--version'], {
+      harnessBin,
+      nodeCommand,
+      packageManagerBin: join(runtimeRoot, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'),
+      runtimeBinPath: runtimeRoot,
+    }), {
+      kind: 'package-managed-cli-smoke',
+      timeoutMs: 30_000,
+      signal: new AbortController().signal,
+      managedRuntime: observer,
+    })
+    console.log(`DSH_MANAGED_CLI_SMOKE_READY ${output.trim()}`)
+  } finally {
+    await observer.stopAll()
+  }
+}
+
+if (process.argv.includes('--dsh-managed-cli-smoke')) {
+  try {
+    await runManagedCliSmoke()
+    app.exit(0)
+  } catch (error) {
+    await recordPackageSmokeEntry(`managed CLI smoke failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
+    console.error(error)
+    app.exit(1)
+  }
+} else if (process.argv.includes('--dsh-native-smoke')) {
   const timeout = setTimeout(() => {
     app.exit(1)
   }, 10_000)
