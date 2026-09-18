@@ -62,6 +62,8 @@ export interface AgentPresetPluginGroup {
 
 /** Point-in-time inventory returned by the plugin inventory Remote. */
 export interface PluginInventorySnapshot {
+  /** Whether this Host exposes persistent current-profile management. */
+  readonly managementAvailable?: boolean
   readonly entries: readonly PluginInventoryEntry[]
   /** Per-preset compositions when an agent-preset roster is available. */
   readonly agentPresets?: readonly AgentPresetPluginGroup[]

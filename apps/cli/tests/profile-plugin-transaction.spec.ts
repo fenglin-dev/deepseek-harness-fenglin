@@ -54,6 +54,15 @@ describe('staged Profile activation', () => {
     const id = '11111111-1111-4111-8111-111111111111'
     expect(prepareProfilePluginTransaction(f.home, 'web', process.pid, id).id).toBe(id)
   })
+  it('accepts host compatibility overrides captured by the shared snapshot format', () => {
+    const f = fixture()
+    settleProfilePluginTransaction(f.home, 'web', f.record.id, false)
+    mkdirSync(join(f.home, 'quarantine'), { recursive: true })
+    writeFileSync(join(f.home, 'quarantine', 'host-version-overrides.json'), '{}')
+    const record = prepareProfilePluginTransaction(f.home, 'web')
+    expect(readProfilePluginTransaction(f.home, 'web')?.files).toEqual(record.files)
+    expect(record.files.some(file => file.relativePath === 'quarantine/host-version-overrides.json')).toBe(true)
+  })
   it('relocates pnpm-normalized Windows archive locators without changing other local sources', () => {
     const source = String.raw`C:\Users\Person\AppData\Roaming\open-deepseek-harness-desktop\dsh-home\plugin-transactions\web\3b6dade4-2ed0-48d7-aab4-660532802cba\candidate\bundled-plugins`
     const target = String.raw`C:\Users\Person\AppData\Roaming\open-deepseek-harness-desktop\dsh-home\bundled-plugins`

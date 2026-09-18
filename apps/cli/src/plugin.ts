@@ -110,7 +110,6 @@ function initializeProfile(dir: string, profile: string): void {
   initProfile(
     dir,
     template?.bundles ?? DEFAULT_PROFILE_BUNDLES,
-    template?.patchReload,
   )
 }
 

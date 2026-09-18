@@ -8,10 +8,11 @@
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { healProfilesModuleFallback, loadLayeredEnv } from '@deepseek-ai/dsh-app-boot'
-import { parseDshArgs } from './args.ts'
+import { healProfilesModuleFallback, loadLayeredEnv, StartupError } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { parseDshArgs } from './args.ts'
 import { claimDesktopWebLaunch } from './desktop-web-launch.ts'
+import { reportStartupFailure } from './startup-diagnostics.ts'
 
 // Both the source tree (apps/cli/src) and the bundled bin (apps/cli/lib) sit
 // one directory under apps/cli, so the checked-in manifest resolves with the
@@ -28,7 +29,8 @@ function readVersion(): string {
  * @returns a promise that settles when the selected command mode finishes.
  */
 export async function runCli(): Promise<void> {
-  const invocation = parseDshArgs(process.argv.slice(2), readVersion())
+  const version = readVersion()
+  const invocation = parseDshArgs(process.argv.slice(2), version)
 
   switch (invocation.mode) {
     case 'profile': {
@@ -37,16 +39,22 @@ export async function runCli(): Promise<void> {
         return
       }
       const { runProfile } = await import('./profile-boot.ts')
-      await runProfile({
-        environment: loadLayeredEnv('dsh'),
-        profile: invocation.profile,
-        fromDefaultProfile: invocation.fromDefaultProfile,
-        patchFiles: invocation.patches,
-        args: invocation.args,
-        diagnosticMode: process.env.DSH_PROFILE_DIAGNOSTIC_MODE === '1',
-        diagnosticModeOnFailure: process.env.DSH_PROFILE_DIAGNOSTIC_MODE_ON_FAILURE === '1',
-        ...(process.env.DSH_PROFILE_RESOLUTION_MODE === 'runtime' ? { resolutionMode: 'runtime' as const } : {}),
-      })
+      try {
+        await runProfile({
+          environment: loadLayeredEnv('dsh'),
+          profile: invocation.profile,
+          fromDefaultProfile: invocation.fromDefaultProfile,
+          patchFiles: invocation.patches,
+          args: invocation.args,
+          diagnosticMode: process.env.DSH_PROFILE_DIAGNOSTIC_MODE === '1',
+          diagnosticModeOnFailure: process.env.DSH_PROFILE_DIAGNOSTIC_MODE_ON_FAILURE === '1',
+          ...(process.env.DSH_PROFILE_RESOLUTION_MODE === 'runtime' ? { resolutionMode: 'runtime' as const } : {}),
+        })
+      } catch (error) {
+        if (!(error instanceof StartupError)) throw error
+        await reportStartupFailure(error, { home: resolveDshHome(), version, profile: invocation.profile })
+        process.exitCode = 1
+      }
       break
     }
     case 'plugin': {
@@ -54,7 +62,7 @@ export async function runCli(): Promise<void> {
       const { INSTALL_ANCHOR } = await import('./install-anchor.ts')
       await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR })
       // Let native handles and output drain before Node tears down the process.
-      process.exitCode = runPlugin(invocation.profile, invocation.args)
+      process.exitCode = await runPlugin(invocation.profile, invocation.args)
       break
     }
     case 'dump-config': {

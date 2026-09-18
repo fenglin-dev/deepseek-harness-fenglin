@@ -140,9 +140,9 @@ export function launchWindowsJob(
       ...spec.argv,
     ], {
       cwd: process.cwd(),
+      windowsHide: true,
       env: runnerEnvironment(WINDOWS_RUNNER_SELECTION, invocation),
       stdio: runnerStdio(spec, true, ignoredStdinFd ?? 'pipe'),
-      windowsHide: true,
     }) as RunnerProcess
   } finally {
     if (ignoredStdinFd !== undefined) closeSync(ignoredStdinFd)

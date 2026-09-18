@@ -15,7 +15,7 @@
 | 策略 | 适用问题 | 行为 |
 |---|---|---|
 | 自动修复 | 失效 fallback link 或 junction、停用的 lockfile importer、中断的隔离残留、孤儿 bundle 引用、已知废弃 Loader 行，以及可验证的 Host 单例重连 | 备份或保留持久 incident，执行有界变更，并在报告成功前重新检查 |
-| 必须确认 | 对 pnpm `allowBuilds` 的任何修改 | 展示根插件、精确包或 Git artifact 键、脚本原因与风险；只授权该键并重试一次 |
+| 必须确认 | 对 pnpm `allowBuilds` 的任何修改，以及用户决定让某个精确插件版本超出有效兼容声明运行 | 构建授权只记录精确键并重试一次。Host 兼容性豁免会先显示独立风险确认，再仅记录用户批准的 Profile、插件版本、Harness 版本和兼容声明，然后走普通事务化恢复。 |
 | 只重试不隔离 | 网络错误、registry 错误、401/403、等待期拒绝和临时文件占用 | 保留插件和供应链设置，不隔离无关根插件 |
 | 隔离 | 插件自有的有效兼容声明排除了当前 Harness，或能归属到单个外部根插件且安全收敛或重试后仍无法修复 | 从活动依赖和 bundle 组合移除该根，保留其说明符与 bundle 位置，并根据原因提供查找更新、恢复或卸载操作 |
 | 保留并手动修复 | 用户凭据、Profile YAML/JSON、未知 patch 和归属不明确的重复注册 | 保留文件，尽量指出字段或 entry，并提供打开配置与导出；绝不静默清空或重写 |
@@ -31,7 +31,7 @@
 | `pnpm.unexpected-store` | `ERR_PNPM_UNEXPECTED_STORE`、`ERR_PNPM_UNEXPECTED_VIRTUAL_STORE`、`ERR_PNPM_STORE_BREAKING_CHANGE` | Profile 曾由不同 pnpm store 或 virtual-store 格式安装。使用产品内置 pnpm 11.7.0，只重建受影响的 Profile 依赖目录。 |
 | `pnpm.network` | `ECONNRESET`、`ETIMEDOUT`、`ENOTFOUND`、`EAI_AGAIN`、socket 或 registry mirror 失败 | 作为环境错误处理。重试；必要时只修复 Profile 局部 registry 配置。 |
 | `pnpm.registry-auth` | `ERR_PNPM_FETCH_401`、`ERR_PNPM_FETCH_403`、registry 401/403 | 保留插件，并要求正确的 registry 凭据或 scope 配置。 |
-| `profile.host-version-incompatible` | 插件包根目录的 schema-v1 `compatibility.json` 以精确 `supportedHosts` 版本列出支持范围，但排除了当前 Harness | 在插件代码执行前隔离；展示当前、支持及可选推荐 Host 版本，再提供兼容更新查找。声明缺失、损坏、超限、使用符号链接或 schema 未知时不阻断；宽泛 peer range 不能证明兼容性。 |
+| `profile.host-version-incompatible` | 插件包根目录的 schema-v1 `compatibility.json` 以精确 `supportedHosts` 版本列出支持范围，但排除了当前 Harness | 在插件代码执行前隔离；展示当前、支持及可选推荐 Host 版本，再提供兼容更新查找。用户可以确认风险，在当前精确 Harness 版本上恢复这个精确插件版本；插件版本、Harness 版本或兼容声明任一变化都会使授权失效。声明缺失、损坏、超限、使用符号链接或 schema 未知时不阻断；宽泛 peer range 不能证明兼容性。 |
 | `profile.host-dependency-conflict` | Profile 根插件把身份敏感 Host 包解析到另一份物理副本 | 展示完整依赖链。只有版本范围和已安装身份能证明安全收敛时才重连，否则隔离责任根插件。 |
 | `profile.orphaned-bundle` | 软件包不再是可管理依赖，但仍存在于 `dsh.profile.bundles` | 移除失效 bundle 引用，不重新安装用户已经卸载的插件。 |
 | `profile.quarantine-removal-residue` | 停用插件、活动 manifest 条目和持久隔离记录都已消失，但修复报告、诊断报告、lockfile importer 或不完整软件包目录仍引用它 | 只移除陈旧派生状态，不重装或再次隔离已消失的插件，并保留其他无关 incident。 |
