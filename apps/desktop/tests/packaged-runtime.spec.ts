@@ -77,6 +77,30 @@ describe('packaged desktop runtime', () => {
     expect(await isPackagedRuntimeReady(destination)).toBe(true)
   })
 
+  it('reports verification and extraction while materializing an archive', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'dsh-packaged-progress-'))
+    roots.push(parent)
+    const source = join(parent, 'desktop-runtime-darwin-arm64')
+    const staged = await createRuntime()
+    await cp(staged, source, { recursive: true })
+    await writeFile(join(source, '.desktop-runtime-v3'), 'runtime')
+    const archive = join(parent, 'runtime.tar')
+    await create({ cwd: parent, file: archive }, ['desktop-runtime-darwin-arm64'])
+    const checksum = createHash('sha256').update(readFileSync(archive)).digest('hex')
+    await writeFile(`${archive}.sha256`, `${checksum}  runtime.tar\n`)
+    const phases: string[] = []
+
+    await ensurePackagedRuntime({
+      archivePath: archive,
+      checksumPath: `${archive}.sha256`,
+      destination: join(parent, 'cache'),
+      archiveRoot: 'desktop-runtime-darwin-arm64',
+      onProgress: (phase) => { phases.push(phase) },
+    })
+
+    expect(phases).toEqual(['verifying-archive', 'extracting-archive'])
+  })
+
   it('rejects a packaged archive when its detached checksum is wrong', async () => {
     const parent = await mkdtemp(join(tmpdir(), 'dsh-packaged-checksum-'))
     roots.push(parent)

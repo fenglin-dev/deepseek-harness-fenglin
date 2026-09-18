@@ -2561,6 +2561,13 @@ async function startApplication(): Promise<void> {
       checksumPath: join(process.resourcesPath, 'harness-runtime.tar.sha256'),
       destination: join(app.getPath('userData'), 'runtime', app.getVersion()),
       archiveRoot: packagedRuntimeRoot,
+      onProgress: (phase) => {
+        publishStartupProgress({
+          stage: 'preparing-runtime',
+          progress: phase === 'verifying-archive' ? 11 : 16,
+          detail: phase === 'verifying-archive' ? 'runtime-archive-verification' : 'runtime-archive-extraction',
+        })
+      },
     })
     : undefined
   const packageRuntimeBin = packagedRuntime === undefined
@@ -2655,13 +2662,23 @@ async function startApplication(): Promise<void> {
   let prebuiltDirectory: string | undefined
   if (app.isPackaged && firstStartPending) {
     const prebuiltRoot = packagedPrebuiltProfileArchiveRoot(process.platform, process.arch)
+    const prebuiltStartedAt = Date.now()
+    await appendDesktopStartupLog('Preparing the first-start Profile archive with single-pass verification and extraction.')
     try {
       prebuiltDirectory = await ensurePackagedPrebuiltProfile({
         archivePath: join(process.resourcesPath, 'prebuilt-profile.tar'),
         checksumPath: join(process.resourcesPath, 'prebuilt-profile.tar.sha256'),
         destination: join(app.getPath('userData'), 'prebuilt-profile', app.getVersion(), prebuiltRoot),
         archiveRoot: prebuiltRoot,
+        onProgress: (phase) => {
+          publishStartupProgress({
+            stage: 'preparing-runtime',
+            progress: phase === 'verifying-archive' ? 18 : 22,
+            detail: phase === 'verifying-archive' ? 'prebuilt-profile-verification' : 'prebuilt-profile-extraction',
+          })
+        },
       })
+      await appendDesktopStartupLog(`First-start Profile archive prepared in ${Date.now() - prebuiltStartedAt}ms.`)
     } catch (error) {
       showIncompletePreparation(error instanceof Error ? error.message : String(error))
       return
