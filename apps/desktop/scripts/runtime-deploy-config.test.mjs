@@ -17,6 +17,16 @@ test('Windows installed smoke isolates Electron application data', async () => {
   assert.match(source, /desktop-entry\.log/u)
 })
 
+test('Windows unpacked probe checks packaged peers and both Electron entries', async () => {
+  const source = await readFile(new URL('smoke-windows-unpacked.mjs', import.meta.url), 'utf8')
+  for (const packageName of ['@deepseek-ai/dsh-subprocess', '@deepseek-ai/cordis', '@deepseek-ai/dsh-http-proxy']) {
+    assert.match(source, new RegExp(packageName.replaceAll('/', '\\/'), 'u'))
+  }
+  assert.match(source, /DSH_NATIVE_SMOKE_READY/u)
+  assert.match(source, /DSH_MAIN_IMPORT_SMOKE_READY/u)
+  assert.match(source, /--dsh-main-import-smoke/u)
+})
+
 test('Desktop ships the runtime peers required by dsh-subprocess', async () => {
   const desktop = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
   const subprocess = JSON.parse(await readFile(new URL('../../../packages/subprocess/subprocess/package.json', import.meta.url), 'utf8'))

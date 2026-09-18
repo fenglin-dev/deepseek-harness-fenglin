@@ -33,10 +33,15 @@ if (process.argv.includes('--dsh-native-smoke')) {
     app.exit(1)
   })
 } else {
+  const mainImportSmoke = process.argv.includes('--dsh-main-import-smoke')
   await recordPackageSmokeEntry('importing main.js')
   try {
     await import('./main.js')
     await recordPackageSmokeEntry('main.js imported')
+    if (mainImportSmoke) {
+      console.log('DSH_MAIN_IMPORT_SMOKE_READY')
+      app.exit(0)
+    }
   } catch (error) {
     await recordPackageSmokeEntry(`main.js import failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`)
     if (packageSmokeRoot !== undefined) app.exit(1)
