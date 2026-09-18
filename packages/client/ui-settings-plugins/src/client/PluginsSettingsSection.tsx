@@ -29,16 +29,15 @@ export type PluginsSettingsSectionProps =
   & PropsRenderSlots<'settings.plugins.tab'>
   & InjectFace<PluginsSettingsSectionInjected>
 
-/** Render one Plugins page whose contents arrive from feature-owned tabs. */
-export function PluginsSettingsSection({
-  t, renderSlot, useTabs, preferredSubsectionId,
-}: PluginsSettingsSectionProps) {
+/** Render one Plugins page whose contents arrive from feature-owned tabs; one contribution shows as the page itself. */
+export function PluginsSettingsSection({ t, renderSlot, useTabs }: PluginsSettingsSectionProps) {
   const tabsId = useId()
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const rows = useTabs(value => value)
-  const [activeId, setActiveId] = useState<string | undefined>(() => preferredSubsectionId)
+  const [activeId, setActiveId] = useState<string>()
   const [visitedIds, setVisitedIds] = useState<ReadonlySet<string>>(() => new Set())
   const active = rows.find(row => row.id === activeId)?.id ?? rows[0]?.id
+  const single = rows.length === 1 ? rows[0] : undefined
 
   // A tab mounts only when first selected, then stays mounted while hidden so
   // local drafts, disclosure state, search, and the inventory snapshot survive
@@ -51,15 +50,13 @@ export function PluginsSettingsSection({
     })
   }, [active])
 
-  useEffect(() => {
-    if (preferredSubsectionId !== undefined) setActiveId(preferredSubsectionId)
-  }, [preferredSubsectionId])
-
   return (
     <div className={css.section}>
       <h2 className={css.heading}>{t('title')}</h2>
       <p className={css.intro}>{t('intro')}</p>
-      {rows.length === 0 ? <p className={css.empty}>{t('empty')}</p> : (
+      {rows.length === 0 ? <p className={css.empty}>{t('empty')}</p> : single !== undefined ? (
+        <div className={css.panel}>{renderSlot('settings.plugins.tab', {}, { only: single.id })}</div>
+      ) : (
         <>
           <div className={css.tabs} role="tablist" aria-label={t('tabs')}>
             {rows.map((row, index) => {
@@ -123,7 +120,7 @@ export function PluginsSettingsSection({
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Plugins section, configurable-tab, and card copy. */
+    /** Built-in plugins section and plugin configuration page copy. */
     'settings.plugins': PluginsSettingsLocaleKey
   }
 }

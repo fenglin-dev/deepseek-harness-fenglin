@@ -224,8 +224,8 @@ export function ModelSelect(
     close()
   }
 
-  const settleSelection = (accepted: boolean): void => {
-    if (accepted) {
+  const settleSelection = (result: Awaited<ReturnType<typeof select>>): void => {
+    if (result?.ok === true) {
       if (rootRef.current !== null) close(true)
       return
     }

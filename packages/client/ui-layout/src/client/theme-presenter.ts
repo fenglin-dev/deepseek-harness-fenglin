@@ -3,7 +3,8 @@
  * document — `html { color-scheme }` for native UA chrome (scrollbars, form
  * controls), `body[data-ds-dark-theme]` for the token palette, the active
  * theme's alias-token overrides as inline CSS variables on body, the content
- * font-size axis (`--dsh-content-font-size`), and one presenter-owned
+ * font-size axis (`--dsh-content-font-size`), `html[data-ds-theme-source]`
+ * for native-chrome mirroring, and one presenter-owned
  * `meta[name="theme-color"]` for surrounding browser UI. Pure DOM writes, no
  * React involvement; the presenter only ever retracts what it wrote itself,
  * so foreign attributes, metadata, and inline styles survive.
@@ -20,6 +21,15 @@ export const CHAT_BACKGROUND_ATTRIBUTE = 'data-dsh-chat-background'
 export const CHAT_BACKGROUND_LAYOUT_ATTRIBUTE = 'data-dsh-chat-background-layout'
 /** CSS variable carrying the escaped chat background image. */
 export const CHAT_BACKGROUND_IMAGE = '--dsh-chat-background-image'
+
+/**
+ * Root attribute publishing the theme source (`light`, `dark`, or `system`)
+ * for host shells that mirror it into native window chrome (the Electron
+ * preload forwards it to `nativeTheme.themeSource` so macOS vibrancy follows
+ * the app theme). `system` only when the preference is `system`; a fixed
+ * preference (including registered theme ids) publishes its resolved scheme.
+ */
+export const THEME_SOURCE_ATTRIBUTE = 'data-ds-theme-source'
 
 /** Body variable carrying the user's content font size in px. */
 export const CONTENT_FONT_SIZE_VARIABLE = '--dsh-content-font-size'
@@ -53,6 +63,8 @@ export class ThemePresenter {
       COLOR_SCHEME_SOURCE_ATTRIBUTE,
       snapshot.preference === 'system' ? 'system' : scheme,
     )
+    document.documentElement.setAttribute(THEME_SOURCE_ATTRIBUTE,
+      snapshot.preference === 'system' ? 'system' : scheme)
     const body = document.body
     if (scheme === 'dark') body.setAttribute(DARK_ATTRIBUTE, '')
     else body.removeAttribute(DARK_ATTRIBUTE)
@@ -79,10 +91,14 @@ export class ThemePresenter {
     if (!this.themeColorMeta.isConnected) document.head.append(this.themeColorMeta)
   }
 
-  /** Retract root color-scheme, the palette attribute, token variables, the font-size axis, and the owned metadata node. */
+  /**
+   * Retract root color-scheme, the theme-source attribute, the palette
+   * attribute, token variables, the font-size axis, and the owned metadata node.
+   */
   dispose(): void {
     document.documentElement.style.removeProperty('color-scheme')
     document.documentElement.removeAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)
+    document.documentElement.removeAttribute(THEME_SOURCE_ATTRIBUTE)
     const body = document.body
     body.removeAttribute(DARK_ATTRIBUTE)
     body.removeAttribute(CHAT_BACKGROUND_ATTRIBUTE)

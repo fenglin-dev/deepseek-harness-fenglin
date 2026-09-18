@@ -7,8 +7,7 @@ import { en } from '../src/client/locales.ts'
 afterEach(cleanup)
 
 const sessionState = {
-  current: 'session-1',
-  byId: { 'session-1': { pendingInteraction: undefined } },
+  byId: { 'session-1': { id: 'session-1', retainedBy: { mainView: 1 } } },
 }
 const workspaceState = {
   items: [{ workspaceId: 'workspace-1', sessionIds: ['session-1'] }],

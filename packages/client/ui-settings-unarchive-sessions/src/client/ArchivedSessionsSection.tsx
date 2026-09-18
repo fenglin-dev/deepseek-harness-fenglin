@@ -49,15 +49,17 @@ export function ArchivedSessionsSection({
     const rowsByWorkspace = new Map<string, ArchivedRow[]>()
     for (const id of workspaces.archivedSessionIds) {
       const summary = sessions.byId[id]
-      const title = summary?.displayTitle ?? String(id)
+      if (summary === undefined) continue
+      const title = summary.displayTitle
+      const owner = workspaces.items.find(workspace => workspace.sessionIds.includes(id))
       if (normalized !== ''
         && !title.toLocaleLowerCase().includes(normalized)
-        && !String(id).toLocaleLowerCase().includes(normalized)) continue
-      const owner = workspaces.items.find(workspace => workspace.sessionIds.includes(id))
+        && !String(id).toLocaleLowerCase().includes(normalized)
+        && !owner?.title.toLocaleLowerCase().includes(normalized)) continue
       const ownerId = owner === undefined ? UNGROUPED_WORKSPACE : String(owner.workspaceId)
       if (workspaceFilter !== ALL_WORKSPACES && workspaceFilter !== ownerId) continue
       const rows = rowsByWorkspace.get(ownerId) ?? []
-      rows.push({ id, title, ...summary === undefined ? {} : { updatedAt: summary.updatedAt } })
+      rows.push({ id, title, updatedAt: summary.updatedAt })
       rowsByWorkspace.set(ownerId, rows)
     }
     const projected: ArchivedGroup[] = []
@@ -79,7 +81,8 @@ export function ArchivedSessionsSection({
     setError(null)
     try {
       await unarchive(sessionId)
-    } catch {
+    } catch (error) {
+      console.warn('session unarchive rejected:', error)
       setError(t('restoreFailed'))
     } finally {
       setBusy(null)
@@ -96,11 +99,11 @@ export function ArchivedSessionsSection({
         </div>
       </header>
 
-      <div className={css.toolbar}>
+      {!loading && <div className={css.toolbar}>
         <label className={css.search}>
           <IconSearchOutline16 aria-hidden="true" />
           <span className={css.visuallyHidden}>{t('searchAria')}</span>
-          <input value={query} placeholder={t('search')} onChange={(event) => { setQuery(event.currentTarget.value) }} />
+          <input type="search" aria-label={t('search')} value={query} placeholder={t('search')} onChange={(event) => { setQuery(event.currentTarget.value) }} />
         </label>
         <label className={css.filter}>
           <span className={css.visuallyHidden}>{t('workspaceFilter')}</span>
@@ -112,7 +115,7 @@ export function ArchivedSessionsSection({
             <option value={UNGROUPED_WORKSPACE}>{t('ungrouped')}</option>
           </select>
         </label>
-      </div>
+      </div>}
 
       {error !== null && <p className={css.error} role="alert">{error}</p>}
       {loading
@@ -140,9 +143,15 @@ export function ArchivedSessionsSection({
                       <li key={row.id} className={css.row}>
                         <div className={css.rowText}>
                           <strong>{row.title}</strong>
-                          <span>{row.updatedAt === undefined ? t('dateUnknown') : new Date(row.updatedAt).toLocaleString()}</span>
+                          <span>{group.title} · {formatActivity(row.updatedAt, t)}</span>
                         </div>
-                        <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => { void restore(row.id) }}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label={`${t('unarchive')} ${row.title}`}
+                          disabled={busy !== null}
+                          onClick={() => { void restore(row.id) }}
+                        >
                           {busy === row.id ? t('restoring') : t('unarchive')}
                         </Button>
                       </li>
@@ -158,4 +167,11 @@ export function ArchivedSessionsSection({
 
 function compareRows(left: ArchivedRow, right: ArchivedRow): number {
   return (right.updatedAt ?? 0) - (left.updatedAt ?? 0)
+}
+
+function formatActivity(updatedAt: number | undefined, t: ArchivedSessionsSectionProps['t']): string {
+  if (updatedAt === undefined) return t('dateUnknown')
+  const days = Math.floor(Math.max(0, Date.now() - updatedAt) / 86_400_000)
+  if (days === 0) return 'now'
+  return `${days}d`
 }
