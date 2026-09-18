@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$script_directory/configure-cli-proxy.sh"
+
 usage() {
   echo "usage: $0 <owner/repo> [--run-id <id>] [--artifact-name <name>] [--artifact-id <id>]" >&2
   exit 2

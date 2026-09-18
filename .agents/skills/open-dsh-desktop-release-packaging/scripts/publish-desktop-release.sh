@@ -42,6 +42,7 @@ title=$4
 notes_file=$5
 release_directory=$6
 script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$script_directory/configure-cli-proxy.sh"
 version=$(basename "$release_directory")
 expected_tag="odsh-v$version"
 installers=(

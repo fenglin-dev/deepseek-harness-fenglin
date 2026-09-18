@@ -15,6 +15,10 @@ skill=.agents/skills/open-dsh-desktop-release-packaging
   flaqai/open-deepseek-harness-desktop
 ```
 
+On macOS, packaging entry scripts first normalize explicit upper- or lower-case proxy variables. When none are present, they import enabled fixed HTTP, HTTPS, and SOCKS proxies from `scutil --proxy`; their `gh`, `curl`, and `aria2c` children then follow a Clash Verge System Proxy without requiring TUN mode. Explicit environment variables remain authoritative. Source `scripts/configure-cli-proxy.sh` before standalone `gh`, npm, or pnpm commands in the same release shell. `ODSH_USE_SYSTEM_PROXY=0` disables the import for an intentionally direct route.
+
+Clash Verge's Global mode chooses the route for traffic that has already reached Clash. It does not make every CLI client consume the macOS System Proxy. When a browser is fast but the release-node check is slow, compare `env | grep -i proxy` with `scutil --proxy`, then rerun the same check and require its printed proxy-adoption line and measured rate. Do not lower the speed floor to hide a route mismatch.
+
 The check selects the newest non-expired desktop artifact, preferring the larger artifact when timestamps match, unless `--run-id`, `--artifact-name`, or `--artifact-id` narrows it. It downloads at most 32 MiB for up to 15 seconds and reports the Actions run, artifact, measured rate, and floor. `ODSH_MIN_DOWNLOAD_MIBPS` sets the floor and defaults to `1.0`; zero disables enforcement only after the user explicitly accepts proceeding without a minimum.
 
 Exit status 75 means the route is slower than the configured floor. Report the result and stop before consuming native-runner time. Ask the user to switch network, proxy, or node, or to select a different floor. A missing non-expired artifact means the exact Actions storage route is unverified, not that the network passed.
@@ -51,13 +55,16 @@ As soon as the version and release-bound compatibility files are prepared, deriv
 
 ## 4. Dispatch native builds
 
-Use the final packaging branch and keep publication disabled:
+Use the final packaging branch. Before dispatching, inspect the workflow and require top-level `permissions: contents: read` with no release-publication step. The workflow has no `publish` input; pass only its declared inputs:
 
 ```sh
+skill=.agents/skills/open-dsh-desktop-release-packaging
+source "$skill/scripts/configure-cli-proxy.sh"
+
 gh workflow run desktop-packages.yml \
   --ref <branch> \
   -f target=windows-x64 \
-  -f publish=false
+  -f refresh_plugins=false
 ```
 
 Find the new run and verify its `headSha` equals the intended commit:
