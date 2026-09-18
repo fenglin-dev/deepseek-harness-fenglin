@@ -396,6 +396,7 @@ await run(process.execPath, [
   '@deepseek-ai/dsh',
   'deploy',
   '--prod',
+  '--config.allow-unused-patches=true',
   '--legacy',
   '--config.node-linker=hoisted',
   '--config.auto-install-peers=false',
