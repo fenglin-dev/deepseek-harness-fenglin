@@ -1,7 +1,13 @@
 # Fenglin UI guard — applied after profile cordis.patch.yml.
-# Only re-enables rows required by the desktop UI. Never mass-disables.
+# Only re-enables rows required by desktop UI. Never mass-disables.
 - id: plugin-manager
   name: "@deepseek-ai/dsh-plugin-manager"
+  disabled: false
+- id: "@linxin666/dsh-web-all"
+  name: "@linxin666/dsh-web-all"
+  disabled: false
+- id: web-ui-compat
+  name: "@linxin666/dsh-web-all"
   disabled: false
 - id: web-ui-liangshen
   name: "@linxin666/dsh-web-all/liangshen"
@@ -34,3 +40,6 @@
 - id: web-ui-settings
   name: "@linxin666/dsh-web-all/settings"
   disabled: false
+# Market hot-mount duplicate of bundled music plugin fails fiber; keep official music row.
+- id: mkt-music
+  disabled: true

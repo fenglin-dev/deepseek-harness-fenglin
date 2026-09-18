@@ -174,6 +174,21 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
 - id: plugin-manager
   name: "@deepseek-ai/dsh-plugin-manager"
   disabled: false
+
+- id: "@linxin666/dsh-web-all"
+  name: "@linxin666/dsh-web-all"
+  disabled: false
+
+- id: web-ui-compat
+  name: "@linxin666/dsh-web-all"
+  disabled: false
+
+- id: web-ui-skin-center
+  name: "@linxin666/dsh-web-all/skin-center"
+  disabled: false
+
+- id: mkt-music
+  disabled: true
 `)
   await writeFile(join(destination, 'settings.yaml'), `ui-onboarding:
   welcomeNoticeVersion: 2026-08-19.1
