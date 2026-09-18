@@ -73,9 +73,11 @@ function managedMetadata(path: string): boolean {
 }
 function allowedResource(path: string): boolean {
   return ['profiles/web/package.json', 'profiles/web/pnpm-lock.yaml', 'profiles/web/pnpm-workspace.yaml',
-    'profiles/web/cordis.patch.yml', 'settings.yaml', 'fenglin-ui-guard.yml'].includes(path)
+    'profiles/web/cordis.patch.yml', 'settings.yaml', 'fenglin-ui-guard.yml', 'profile-health/web.json'].includes(path)
     || path.startsWith('profiles/web/node_modules/')
+    || path.startsWith('profiles/web/.dsh-market/')
     || path.startsWith('.agent-presets/')
+    || path.startsWith('profile-health/')
     || /^bundled-plugins\/[a-zA-Z0-9._-]+\.(?:tgz|seeded\.json)$/u.test(path)
 }
 
