@@ -3,49 +3,28 @@ import { describe, expect, it } from 'vitest'
 import { DESKTOP_LANGUAGE_DEFINITIONS, registerDesktopLanguages } from '../src/client/community-locales.ts'
 
 describe('community desktop locales', () => {
-  it('keeps Russian third overall and orders the remaining community locales by audience size', () => {
-    expect(DESKTOP_LANGUAGE_DEFINITIONS.map(({ id }) => id)).toEqual([
-      'ru', 'es', 'fr', 'pt-BR', 'de', 'ja', 'ko',
-    ])
+  it('has no additional community locales (only zh and en are supported)', () => {
+    expect(DESKTOP_LANGUAGE_DEFINITIONS).toHaveLength(0)
   })
 
-  it('registers each locale namespace exactly once after merging desktop additions', () => {
-    const registrations = new Set<string>()
-    const dictionaries = new Map<string, Record<string, string>>()
-    const ctx = {
-      locale: {
-        getSnapshot: () => ({ active: 'en', revision: 0, locales: [] }),
-        addLanguage: () => () => undefined,
-        register: (namespace: string, locale: string, dictionary: Record<string, string>) => {
-          const key = `${namespace}/${locale}`
-          if (registrations.has(key)) throw new Error(`duplicate locale registration: ${key}`)
-          registrations.add(key)
-          dictionaries.set(key, dictionary)
-          return () => { registrations.delete(key) }
-        },
-      },
-    } as unknown as Context
-
+  it('registerDesktopLanguages returns a no-op cleanup function', () => {
+    const ctx = {} as unknown as Context
     const dispose = registerDesktopLanguages(ctx)
-    for (const definition of DESKTOP_LANGUAGE_DEFINITIONS) {
-      expect(registrations).toContain(`desktop-shell/${definition.id}`)
-      expect(dictionaries.get(`desktop-shell/${definition.id}`)?.['nas.title']).toBeTruthy()
-    }
-    dispose()
-    expect(registrations).toHaveLength(0)
+    expect(typeof dispose).toBe('function')
+    expect(() => dispose()).not.toThrow()
   })
 
-  it('leaves a locale owned by an installed language pack untouched', () => {
+  it('does not register any community locale namespaces', () => {
     const added: string[] = []
     const registered: string[] = []
     const ctx = {
       locale: {
         getSnapshot: () => ({
-          active: 'es', revision: 1,
+          active: 'zh',
+          revision: 0,
           locales: [
-            { id: 'zh', label: '中文', fallback: 'en' },
+            { id: 'zh', label: '中文' },
             { id: 'en', label: 'English' },
-            { id: 'es', label: 'Español', fallback: 'en' },
           ],
         }),
         addLanguage: ({ id }: { id: string }) => {
@@ -61,9 +40,7 @@ describe('community desktop locales', () => {
 
     registerDesktopLanguages(ctx)
 
-    expect(added).not.toContain('es')
-    expect(registered.some(key => key.endsWith('/es'))).toBe(false)
-    expect(added).toContain('ru')
-    expect(registered).toContain('desktop-shell/ru')
+    expect(added).toHaveLength(0)
+    expect(registered).toHaveLength(0)
   })
 })

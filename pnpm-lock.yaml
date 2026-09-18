@@ -11,7 +11,6 @@ overrides:
   '@deepseek-ai/schemastery': link:vendor/schemastery
 
 patchedDependencies:
-  '@electron/osx-sign@1.3.3': 280e7b2816caf01423097d24e79107a66afeb563a348630ce9928ae8499a5861
   '@yao-pkg/pkg@6.21.0': 07f08c630d0d3886d81fd4600116d07e4871ddcd57f92cb22746b6d246cdc337
   node-pty@1.2.0-beta.15: b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0
 
@@ -539,6 +538,12 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../vendor/cordis
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../packages/util/http-proxy
       '@deepseek-ai/dsh-nas-protocol':
         specifier: workspace:^
         version: link:../../packages/nas/nas-protocol
@@ -13658,8 +13663,6 @@ packages:
   '@electron/notarize@2.5.0':
     resolution: {integrity: sha512-jNT8nwH1f9X5GEITXaQ8IF/KdskvIkOFfB2CvwumsveVidzpSc+mvhhTMdAGSYF3O+Nq49lJ7y+ssODRXu06+A==}
     engines: {node: '>= 10.0.0'}
-
-  '@electron/osx-sign@1.3.3':
     resolution: {integrity: sha512-KZ8mhXvWv2rIEgMbWZ4y33bDHyUKMXnx4M0sTyPNK/vcB81ImdeY9Ggdqy0SWbMDgmbqyQ+phgejh6V3R2QuSg==}
     engines: {node: '>=12.0.0'}
     hasBin: true
@@ -20932,8 +20935,6 @@ snapshots:
       promise-retry: 2.0.1
     transitivePeerDependencies:
       - supports-color
-
-  '@electron/osx-sign@1.3.3(patch_hash=280e7b2816caf01423097d24e79107a66afeb563a348630ce9928ae8499a5861)':
     dependencies:
       compare-version: 0.1.2
       debug: 4.4.3(supports-color@9.4.0)
@@ -23320,7 +23321,7 @@ snapshots:
       '@electron/fuses': 1.8.0
       '@electron/get': 3.1.0
       '@electron/notarize': 2.5.0
-      '@electron/osx-sign': 1.3.3(patch_hash=280e7b2816caf01423097d24e79107a66afeb563a348630ce9928ae8499a5861)
+      '@electron/osx-sign': 1.3.3
       '@electron/rebuild': 4.2.0
       '@electron/universal': 2.0.3
       '@malept/flatpak-bundler': 0.4.0

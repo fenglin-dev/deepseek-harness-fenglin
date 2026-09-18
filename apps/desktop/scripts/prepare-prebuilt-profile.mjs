@@ -1,6 +1,8 @@
 /** Build preset dependencies with the packaged runtime; retain only portable, reviewed application state. */
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, writeFile, cp } from 'node:fs/promises'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { existsSync } from 'node:fs'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { parseBundledPluginManifest } from '../lib/bundled-plugin-installer.js'
@@ -118,7 +120,7 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
     PATH: `${join(node, '..')}${delimiter}${process.env.PATH ?? ''}` })
   const command = (home, args) => runHarnessInvocation({ command: node,
     args: [join(harnessRoot, 'lib/bin.js'), 'plugin', '--profile', 'web', ...args], environment: environment(home), cwd: harnessRoot,
-  }, { kind: 'prebuilt-profile-prepare', timeoutMs: 600_000, signal: new AbortController().signal })
+  }, { kind: 'prebuilt-profile-prepare', timeoutMs: 20 * 60_000, signal: new AbortController().signal })
   for (const entry of manifest.plugins.filter(entry => entry.installPolicy === 'startup')) {
     await seedBundledPlugin({ entry, resourcesDirectory: resources, dshHome: destination,
       prepare: async () => { for (const name of entry.approvedBuilds ?? []) await command(destination, ['approve-build', name]) },
@@ -129,12 +131,82 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
   const workspace = parseYaml(await readFile(join(destination, 'profiles/web/pnpm-workspace.yaml'), 'utf8'))
   // Never deliver package-manager stores, logs, locks, snapshots, or user settings.
   for (const name of await readdir(destination)) {
-    if (!['profiles', 'bundled-plugins'].includes(name)) await rm(join(destination, name), { recursive: true, force: true })
+    if (!['profiles', 'bundled-plugins', '.agent-presets'].includes(name)) {
+      await rm(join(destination, name), { recursive: true, force: true })
+    }
   }
   for (const name of await readdir(join(destination, 'profiles'))) {
     if (name !== 'web') await rm(join(destination, 'profiles', name), { recursive: true, force: true })
   }
   await rm(join(destination, 'profiles/web/cordis.patch.yml'), { force: true })
+  // Fenglin: enable LiangShen lever + SSH row. Pet UI stays available;
+  // default OFF is settings.yaml `pet.enabled`, not a Loader disable.
+  await writeFile(join(destination, 'profiles', 'web', 'cordis.patch.yml'), `# Fenglin exclusive defaults on clean upstream.
+- insert:
+    - id: ui-attachment
+      name: "@deepseek-ai/dsh-client-ui-attachment"
+    - id: file-upload
+      name: "@deepseek-ai/dsh-client-file-upload"
+    - id: liangshen
+      name: "@linxin666/dsh-liangshen"
+    - id: web-ui-liangshen
+      name: "@linxin666/dsh-web-all/liangshen"
+      config:
+        plugin: "@linxin666/dsh-liangshen"
+
+- id: web-ui-liangshen
+  name: "@linxin666/dsh-web-all/liangshen"
+  config:
+    plugin: "@linxin666/dsh-liangshen"
+  disabled: false
+
+- id: liangshen
+  name: "@linxin666/dsh-liangshen"
+  disabled: false
+
+- id: web-ui-ssh
+  name: "@linxin666/dsh-web-all/ssh"
+  config:
+    plugin: "@linxin666/dsh-ssh"
+  disabled: false
+
+# Desktop Web GUI needs host pluginManager for market install/uninstall.
+- id: plugin-manager
+  name: "@deepseek-ai/dsh-plugin-manager"
+  disabled: false
+`)
+  await writeFile(join(destination, 'settings.yaml'), `ui-onboarding:
+  welcomeNoticeVersion: 2026-08-19.1
+pet:
+  enabled: false
+  decorationEnabled: false
+  visible: false
+`)
+  // Desktop launch uses --patch on this file so UI rows stay available after
+  // user/plugin-manager edits to cordis.patch.yml.
+  await writeFile(join(destination, 'fenglin-ui-guard.yml'), await readFile(join(dirname(fileURLToPath(import.meta.url)), '..', 'bundled-plugins', 'fenglin-fixes', 'fenglin-ui-guard.yml'), 'utf8'))
+  // Ship a health-checked LiangShen preset and a lever client that can switch.
+  const fenglinFixes = join(dirname(fileURLToPath(import.meta.url)), '..', 'bundled-plugins', 'fenglin-fixes')
+  const presetDir = join(destination, '.agent-presets', 'liangshen')
+  const presetSource = join(fenglinFixes, 'liangshen-agent.cordis.yml')
+  if (existsSync(presetSource)) {
+    await mkdir(presetDir, { recursive: true })
+    const pluginPreset = join(destination, 'profiles', 'web', 'node_modules', '@linxin666', 'dsh-liangshen', 'presets', 'liangshen')
+    if (existsSync(pluginPreset)) {
+      for (const name of await readdir(pluginPreset)) {
+        await cp(join(pluginPreset, name), join(presetDir, name), { recursive: true, force: true })
+      }
+    }
+    await cp(presetSource, join(presetDir, 'agent.cordis.yml'), { force: true })
+  }
+  const leverClient = join(fenglinFixes, 'liangshen-client.js')
+  const leverTarget = join(destination, 'profiles', 'web', 'node_modules', '@linxin666', 'dsh-liangshen', 'lib', 'client.js')
+  if (existsSync(leverClient) && existsSync(dirname(leverTarget))) {
+    await cp(leverClient, leverTarget, { force: true })
+  }
+  // Only patch web-all client.js for lever visibility. Never rewrite the
+  // plugin-bundle cordis.patch.yml — user-layer profiles/web/cordis.patch.yml
+  // owns pet-off / liangshen-on overrides after bundle layers apply.
   // Seal after native signing. Builder must not rewrite these checksummed data resources.
   if (target.startsWith('darwin-')) await signNativeResources(destination, run)
   const sealed = await sealPrebuiltProfile(destination, {

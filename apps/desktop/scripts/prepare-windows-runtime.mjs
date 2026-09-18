@@ -149,6 +149,16 @@ async function injectWorkspaceClosure() {
   await indexWorkspacePackages(repositoryRoot, packages)
   const rootManifest = JSON.parse(await readFile(join(repositoryRoot, 'apps', 'cli', 'package.json'), 'utf8'))
   const queue = [...workspaceDependencies(rootManifest, packages)]
+  // Desktop process recovery resolves process-control from the packaged harness.
+  // apps/cli currently lists this package under devDependencies only.
+  if (packages.has('@deepseek-ai/dsh-subprocess-local')) {
+    queue.push('@deepseek-ai/dsh-subprocess-local')
+  }
+  // Desktop main imports dsh-subprocess, whose ESM entry loads these peers.
+  // pnpm records them as peerDependencies, so electron-builder omits them.
+  for (const peer of ['@deepseek-ai/cordis', '@deepseek-ai/cosmokit', '@deepseek-ai/dsh-http-proxy', '@deepseek-ai/dsh-nas-protocol']) {
+    if (packages.has(peer)) queue.push(peer)
+  }
   const injected = new Set()
   while (queue.length > 0) {
     const name = queue.shift()
@@ -166,6 +176,36 @@ async function injectWorkspaceClosure() {
     })
   }
   console.log(`prepare-windows-runtime: injected ${injected.size} workspace packages`)
+  await ensureSubprocessLocalProcessControl()
+  await overlayFenglinProcessControl()
+}
+
+/** Desktop recovery resolves @deepseek-ai/dsh-subprocess-local/process-control → lib/process-control.js. */
+async function ensureSubprocessLocalProcessControl() {
+  const packageRoot = join(harnessRoot, 'node_modules', '@deepseek-ai', 'dsh-subprocess-local')
+  const libRoot = join(packageRoot, 'lib')
+  const typesRoot = join(libRoot, 'types')
+  if (!existsSync(typesRoot)) return
+  const target = join(libRoot, 'process-control.js')
+  if (existsSync(target)) return
+  for (const entry of await readdir(typesRoot, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.js')) continue
+    await cp(join(typesRoot, entry.name), join(libRoot, entry.name), { force: true })
+  }
+  console.log('prepare-windows-runtime: staged subprocess-local lib/*.js from lib/types for process-control resolve')
+}
+
+/** Overlay Fenglin Windows-safe process-control after official tsdown output. */
+async function overlayFenglinProcessControl() {
+  const stub = join(repositoryRoot, 'apps', 'desktop', 'bundled-plugins', 'fenglin-fixes', 'process-control.js')
+  const target = join(harnessRoot, 'node_modules', '@deepseek-ai', 'dsh-subprocess-local', 'lib', 'process-control.js')
+  if (!existsSync(stub)) {
+    console.warn('prepare-windows-runtime: fenglin process-control stub missing; keeping official build')
+    return
+  }
+  await mkdir(dirname(target), { recursive: true })
+  await cp(stub, target, { force: true })
+  console.log('prepare-windows-runtime: overlaid fenglin process-control.js (process-tree fallback)')
 }
 
 async function injectVendoredDependencies() {
@@ -300,6 +340,37 @@ async function stagePackageManager() {
   await writeFile(pnpmCommand, '@echo off\r\n"%~dp0node.exe" "%~dp0node_modules\\pnpm\\bin\\pnpm.mjs" %*\r\n')
 }
 
+/**
+ * Patch pnpm's bundled undici fetch to use Node.js globalThis.fetch.
+ *
+ * pnpm 11.7.0 bundles undici 7.27.2, which has a connection timeout bug
+ * on Windows that causes UND_ERR_CONNECT_TIMEOUT when installing plugins.
+ * Node.js 24's built-in undici (via globalThis.fetch) works correctly.
+ * This patch replaces pnpm's undici fetch with globalThis.fetch
+ * and removes the unsupported dispatcher parameter.
+ */
+async function patchPnpmUndiciFetch() {
+  const pnpmDist = join(runtimeRoot, 'node_modules', 'pnpm', 'dist', 'pnpm.mjs')
+  if (!existsSync(pnpmDist)) {
+    console.warn('prepare-windows-runtime: pnpm.mjs not found, skipping undici fetch patch')
+    return
+  }
+  const content = await readFile(pnpmDist, 'utf8')
+  const oldLine = 'const res = await (0, import_undici2.fetch)(urlString, { ...fetchOpts, signal, dispatcher });'
+  const newLine = 'const res = await globalThis.fetch(urlString, { ...fetchOpts, signal });'
+  if (content.includes(newLine)) {
+    console.log('prepare-windows-runtime: pnpm undici fetch patch already applied')
+    return
+  }
+  if (!content.includes(oldLine)) {
+    console.warn('prepare-windows-runtime: could not find pnpm undici fetch line, patch may need updating')
+    return
+  }
+  const patched = content.replace(oldLine, newLine)
+  await writeFile(pnpmDist, patched, 'utf8')
+  console.log('prepare-windows-runtime: patched pnpm undici fetch to use globalThis.fetch')
+}
+
 async function smokeHarness() {
   const entry = join(harnessRoot, 'lib', 'bin.js')
   const smokeHome = join(outputRoot, 'smoke-home')
@@ -409,4 +480,5 @@ await pruneForeignNativePackages()
 await pruneRuntimeBloat()
 await stageNodeRuntime()
 await stagePackageManager()
+await patchPnpmUndiciFetch()
 await verifyRuntime()

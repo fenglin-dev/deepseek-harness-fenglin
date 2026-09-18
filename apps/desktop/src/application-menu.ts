@@ -8,7 +8,7 @@ import { DESKTOP_PRODUCT_NAME } from './product-name.ts'
 export const DESKTOP_COMMANDS = [
   'about', 'settings', 'updates', 'new-session', 'open-config', 'open-web', 'close', 'quit',
   'undo', 'redo', 'cut', 'copy', 'paste', 'select-all', 'zoom-in', 'zoom-out', 'zoom-reset',
-  'fullscreen', 'market', 'plugin-restore', 'diagnostics', 'snapshots', 'external-tools',
+  'fullscreen', 'reload', 'market', 'plugin-restore', 'diagnostics', 'snapshots', 'external-tools',
   'phone', 'im', 'data-home', 'restart', 'show', 'minimize', 'maximize',
   'docs', 'repository', 'feedback', 'logs', 'devtools', 'emoji',
 ] as const
@@ -26,8 +26,8 @@ const en = {
   'new-session': 'New Conversation', 'open-config': 'Open Configuration File', 'open-web': 'Open in Browser', close: 'Close Window', quit: 'Quit Completely',
   undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', 'select-all': 'Select All',
   'zoom-in': 'Zoom In', 'zoom-out': 'Zoom Out', 'zoom-reset': 'Actual Size', fullscreen: 'Enter Full Screen',
-  'leave-fullscreen': 'Exit Full Screen', market: 'Plugin Market', 'plugin-restore': 'Plugin Recovery',
-  diagnostics: 'Diagnostics', snapshots: 'Plugin Snapshots', 'external-tools': 'Tools & Capabilities',
+  'leave-fullscreen': 'Exit Full Screen', reload: 'Reload', market: 'Plugin Market', 'plugin-restore': 'Plugin Recovery',
+  diagnostics: 'Diagnostics', snapshots: 'Plugin Snapshots', 'external-tools': 'External Tools',
   phone: 'Phone Access', im: 'IM Bots', 'data-home': 'Switch Data Directory…', restart: 'Quick Restart',
   show: 'Show Main Window', minimize: 'Minimize', maximize: 'Maximize', restore: 'Restore',
   docs: 'Documentation', repository: 'Project Repository', feedback: 'Report an Issue', logs: 'Open Log Directory',
@@ -37,7 +37,7 @@ const en = {
   busy: 'A plugin operation or recovery is in progress. Wait for it to finish before restarting or quitting.',
   tray: 'The system tray is unavailable. Cancel to keep the window open, or quit completely.',
   shutdownFailed: 'Background process cleanup did not complete. Exit and restart were blocked. Inspect the logs, then retry quitting.',
-  cancel: 'Cancel', community: 'Maintained by FLAQ AI. An independent community distribution, not an official DeepSeek product.',
+  cancel: 'Cancel', community: 'Maintained by 枫林. An independent community distribution, not an official DeepSeek product.',
 }
 /** Exact copy surface shared by every desktop-owned application menu locale. */
 export type ApplicationMenuCopy = typeof en
@@ -46,8 +46,8 @@ const zh: typeof en = {
   about: `关于 ${DESKTOP_PRODUCT_NAME}`, settings: '设置…', updates: '检查更新…', 'new-session': '新对话',
   'open-config': '打开配置文件', 'open-web': '在浏览器中打开', close: '关闭窗口', quit: '完整退出', undo: '撤销', redo: '重做', cut: '剪切',
   copy: '复制', paste: '粘贴', 'select-all': '全选', 'zoom-in': '放大', 'zoom-out': '缩小', 'zoom-reset': '实际大小',
-  fullscreen: '进入全屏', 'leave-fullscreen': '退出全屏', market: '插件市场', 'plugin-restore': '插件恢复',
-  diagnostics: '诊断中心', snapshots: '插件快照', 'external-tools': '工具与能力', phone: '手机访问', im: 'IM 机器人',
+  fullscreen: '进入全屏', 'leave-fullscreen': '退出全屏', reload: '重新加载', market: '插件市场', 'plugin-restore': '插件恢复',
+  diagnostics: '诊断中心', snapshots: '插件快照', 'external-tools': '外部工具', phone: '手机访问', im: 'IM 机器人',
   'data-home': '切换配置目录…', restart: '快速重启', show: '显示主窗口', minimize: '最小化', maximize: '最大化',
   restore: '还原', docs: '使用文档', repository: '项目仓库', feedback: '反馈问题', logs: '打开日志目录',
   devtools: '开发者工具', services: '服务', hide: `隐藏 ${DESKTOP_PRODUCT_NAME}`, 'hide-others': '隐藏其他应用',
@@ -56,15 +56,15 @@ const zh: typeof en = {
   busy: '插件操作或恢复正在进行，请等待完成后再重启或退出。',
   tray: '系统托盘不可用。可以取消并保留窗口，或完整退出客户端。', cancel: '取消',
   shutdownFailed: '后台进程回收未完成，已阻止退出和重启。请查看日志后重试退出。',
-  community: '由 FLAQ AI 维护的社区独立发行版，并非 DeepSeek 官方产品。',
+  community: '由枫林维护的独立版，并非 DeepSeek 官方产品。',
 }
 const ru: typeof en = {
   app: DESKTOP_PRODUCT_NAME, file: 'Файл', edit: 'Правка', view: 'Вид', tools: 'Инструменты', window: 'Окно', help: 'Справка', more: 'Ещё',
   about: `Об ${DESKTOP_PRODUCT_NAME}`, settings: 'Настройки…', updates: 'Проверить обновления…', 'new-session': 'Новый диалог',
   'open-config': 'Открыть файл конфигурации', 'open-web': 'Открыть в браузере', close: 'Закрыть окно', quit: 'Полностью выйти', undo: 'Отменить', redo: 'Повторить', cut: 'Вырезать',
   copy: 'Копировать', paste: 'Вставить', 'select-all': 'Выбрать всё', 'zoom-in': 'Увеличить', 'zoom-out': 'Уменьшить', 'zoom-reset': 'Реальный размер',
-  fullscreen: 'Во весь экран', 'leave-fullscreen': 'Выйти из полноэкранного режима', market: 'Плагины', 'plugin-restore': 'Восстановление плагинов',
-  diagnostics: 'Диагностика', snapshots: 'Снимки плагинов', 'external-tools': 'Инструменты и возможности', phone: 'Доступ с телефона', im: 'IM-боты',
+  fullscreen: 'Во весь экран', 'leave-fullscreen': 'Выйти из полноэкранного режима', reload: 'Перезагрузить', market: 'Плагины', 'plugin-restore': 'Восстановление плагинов',
+  diagnostics: 'Диагностика', snapshots: 'Снимки плагинов', 'external-tools': 'Внешние инструменты', phone: 'Доступ с телефона', im: 'IM-боты',
   'data-home': 'Сменить каталог данных…', restart: 'Быстрый перезапуск', show: 'Показать главное окно', minimize: 'Свернуть', maximize: 'Развернуть',
   restore: 'Восстановить', docs: 'Документация', repository: 'Репозиторий проекта', feedback: 'Сообщить о проблеме', logs: 'Открыть каталог журналов',
   devtools: 'Инструменты разработчика', services: 'Службы', hide: `Скрыть ${DESKTOP_PRODUCT_NAME}`, 'hide-others': 'Скрыть остальные',
@@ -103,6 +103,7 @@ export function commandEnabled(command: DesktopCommand, state: DesktopMenuState)
   if ((CLIENT_COMMANDS as readonly string[]).includes(command)) return state.ready && !state.busy
   // Loading and titlebar pages share file://; never write that origin's zoom preference.
   if (command === 'zoom-in' || command === 'zoom-out' || command === 'zoom-reset') return state.ready
+  if (command === 'reload') return state.ready
   if (command === 'open-web') return state.ready && (state.platform === 'darwin' || state.platform === 'win32')
   if (command === 'quit' || command === 'restart') return !state.busy
   if (command === 'devtools') return state.development
@@ -124,6 +125,7 @@ export function applicationMenuTemplate(
     undo: 'CmdOrCtrl+Z', redo: mac ? 'Command+Shift+Z' : 'Ctrl+Y', cut: 'CmdOrCtrl+X', copy: 'CmdOrCtrl+C',
     paste: 'CmdOrCtrl+V', 'select-all': 'CmdOrCtrl+A', 'zoom-in': 'CmdOrCtrl+Plus',
     'zoom-out': 'CmdOrCtrl+-', 'zoom-reset': 'CmdOrCtrl+0', fullscreen: mac ? 'Control+Command+F' : 'F11',
+    reload: 'CmdOrCtrl+R',
   }
   const item = (command: DesktopCommand): MenuItemConstructorOptions => ({
     id: command,
@@ -145,8 +147,9 @@ export function applicationMenuTemplate(
       ...(['darwin', 'win32'].includes(state.platform) ? [item('open-web')] : []), separator,
       ...(!mac ? [item('settings'), separator] : []), item('close'), ...(!mac ? [item('quit')] : [])]),
     group('edit', [item('undo'), item('redo'), separator, item('cut'), item('copy'), item('paste'), item('select-all'),
+      separator, item('reload'),
       ...(mac ? [separator, item('emoji')] : [])]),
-    group('view', [item('zoom-in'), item('zoom-out'), item('zoom-reset'), separator, item('fullscreen'),
+    group('view', [item('zoom-in'), item('zoom-out'), item('zoom-reset'), separator, item('fullscreen'), item('reload'),
       ...(state.development ? [separator, item('devtools')] : [])]),
     group('tools', ['market', 'plugin-restore', 'diagnostics', 'snapshots', 'external-tools', 'phone', 'im', 'data-home', 'restart'].map(command => item(command as DesktopCommand))),
     group('window', [item('show'), item('minimize'), item('maximize')]),

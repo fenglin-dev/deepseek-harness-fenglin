@@ -66,13 +66,16 @@ function contained(root: string, path: string): boolean {
 }
 function managedMetadata(path: string): boolean {
   return ['profiles/web/package.json', 'profiles/web/pnpm-lock.yaml', 'profiles/web/pnpm-workspace.yaml',
+    'profiles/web/cordis.patch.yml',
     'profiles/web/node_modules/.modules.yaml', 'profiles/web/node_modules/.pnpm/lock.yaml',
     'profiles/web/node_modules/.pnpm-workspace-state-v1.json'].includes(path)
     || path.startsWith('profiles/web/node_modules/.bin/')
 }
 function allowedResource(path: string): boolean {
-  return ['profiles/web/package.json', 'profiles/web/pnpm-lock.yaml', 'profiles/web/pnpm-workspace.yaml'].includes(path)
+  return ['profiles/web/package.json', 'profiles/web/pnpm-lock.yaml', 'profiles/web/pnpm-workspace.yaml',
+    'profiles/web/cordis.patch.yml', 'settings.yaml', 'fenglin-ui-guard.yml'].includes(path)
     || path.startsWith('profiles/web/node_modules/')
+    || path.startsWith('.agent-presets/')
     || /^bundled-plugins\/[a-zA-Z0-9._-]+\.(?:tgz|seeded\.json)$/u.test(path)
 }
 
@@ -127,7 +130,7 @@ export async function sealPrebuiltProfile(
   }
   // Only controlled application state may become a release resource.
   for (const name of await readdir(root)) {
-    if (!['profiles', 'bundled-plugins', MANIFEST].includes(name)) throw new Error(`desktop: unexpected prebuilt home entry ${name}`)
+    if (!['profiles', 'bundled-plugins', '.agent-presets', 'settings.yaml', 'fenglin-ui-guard.yml', MANIFEST].includes(name)) throw new Error(`desktop: unexpected prebuilt home entry ${name}`)
   }
   await chmod(root, 0o755)
   await walk(root)

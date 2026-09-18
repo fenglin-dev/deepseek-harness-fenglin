@@ -433,9 +433,10 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
         detail: `${app.getVersion()}\nHarness ${manifest.version}\n\n${menuCopy(menuLocale).community}` })
       return
     }
-    case 'docs': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop#readme'); return
-    case 'repository': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop'); return
-    case 'feedback': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop/issues'); return
+    case 'docs': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin#readme'); return
+    case 'repository': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin'); return
+    case 'feedback': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin/issues/new'); return
+    case 'reload': mainSurface?.renderer.reload(); return
     default: throw new Error(`desktop: unhandled menu command ${command}`)
   }
 }

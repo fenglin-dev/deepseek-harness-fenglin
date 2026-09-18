@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { DesktopReleaseStatus } from './release-checker.ts'
 import { fetchCnbReleaseIndex } from './cnb-release-source.ts'
 
-const REPOSITORY = 'flaqai/open-deepseek-harness-desktop'
+const REPOSITORY = 'fenglin-dev/deepseek-harness-fenglin'
 const API_RELEASE_PREFIX = `https://api.github.com/repos/${REPOSITORY}/releases/tags/`
 const RELEASE_DOWNLOAD_PREFIX = `/${REPOSITORY}/releases/download/`
 const CHECKSUM_ASSET = 'SHA256SUMS'
@@ -16,6 +16,20 @@ const DEFAULT_HEADER_TIMEOUT_MS = 15_000
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000
 const CNB_WITHDRAWAL_RECHECK_MS = 60_000
 const REQUEST_HEADERS = { 'User-Agent': 'DeepSeek-Harness-Desktop' } as const
+/** Public GitHub download accelerators tried after both official channels fail (no-proxy CN path). */
+const GITHUB_DOWNLOAD_MIRRORS = [
+  'https://ghfast.top',
+  'https://gh-proxy.com',
+  'https://mirror.ghproxy.com',
+] as const
+
+function isRetryableNetworkError(error: unknown): boolean {
+  if (error instanceof ReleaseTransportError) return error.retryable
+  if (error instanceof TypeError) return true
+  if (isAbortError(error)) return true
+  const message = error instanceof Error ? error.message : String(error)
+  return /net::ERR_|ERR_CONNECTION|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|fetch failed/iu.test(message)
+}
 
 /** A fetch-compatible transport owned by the Electron main process. */
 export type ReleaseFetch = (input: string | Request, init?: RequestInit) => Promise<Response>
@@ -88,7 +102,7 @@ interface DesktopReleaseDownloaderOptions {
   idleTimeoutMs?: number
 }
 
-type TransportName = 'system-network' | 'github-api'
+type TransportName = 'system-network' | 'github-api' | 'cnb' | 'github-mirror'
 type TransportStage = 'headers' | 'body' | 'http'
 
 class ReleaseTransportError extends Error {
@@ -273,8 +287,9 @@ async function beginRequest(
     throwIfUserCancelled(userSignal)
     if (error instanceof ReleaseTransportError) throw error
     if (controller.signal.reason === timeoutError) throw timeoutError
-    if (error instanceof TypeError || isAbortError(error)) {
-      throw new ReleaseTransportError('Release request could not connect.', transport, 'headers', true)
+    if (isRetryableNetworkError(error)) {
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new ReleaseTransportError(`Release request could not connect (${detail}).`, transport, 'headers', true)
     }
     throw error
   } finally {
@@ -625,7 +640,13 @@ export class DesktopReleaseDownloader {
       } catch (error) {
         throwIfUserCancelled(signal)
         if (!fallback) throw error
-        if (!(error instanceof ReleaseTransportError) || !error.retryable) throw error
+        if (!isRetryableNetworkError(error)) throw error
+        if (!(error instanceof ReleaseTransportError)) {
+          throw new ReleaseTransportError(
+            `Release request could not connect (${error instanceof Error ? error.message : String(error)}).`,
+            'system-network', 'headers', true,
+          )
+        }
         logTransportFailure(error)
         const resumeFromBytes = accumulator.transferredBytes
         this.#publish({ phase: 'switching', version, fileName: asset.name, transferredBytes: resumeFromBytes, totalBytes: asset.size, resumeFromBytes })
@@ -633,8 +654,26 @@ export class DesktopReleaseDownloader {
           await this.#downloadInstallerAttempt('github-api', this.#apiFetch, asset.apiUrl, asset, version, file, accumulator, signal, accumulator.resumeValidator)
         } catch (fallbackError) {
           throwIfUserCancelled(signal)
+          if (!isRetryableNetworkError(fallbackError)) throw fallbackError
           logFallbackFailure(fallbackError)
-          throw new Error('Both download channels failed. Check your network or proxy settings and retry.')
+          let mirrorDownloaded = false
+          for (const mirror of GITHUB_DOWNLOAD_MIRRORS) {
+            const mirroredUrl = `${mirror}/${asset.browserUrl}`
+            const resumeFrom = accumulator.transferredBytes
+            this.#publish({ phase: 'switching', version, fileName: asset.name, transferredBytes: resumeFrom, totalBytes: asset.size, resumeFromBytes: resumeFrom })
+            try {
+              await this.#downloadInstallerAttempt('github-mirror', this.#systemFetch, mirroredUrl, asset, version, file, accumulator, signal, accumulator.resumeValidator)
+              mirrorDownloaded = true
+              break
+            } catch (mirrorError) {
+              throwIfUserCancelled(signal)
+              if (!isRetryableNetworkError(mirrorError)) throw mirrorError
+              logFallbackFailure(mirrorError)
+            }
+          }
+          if (!mirrorDownloaded) {
+            throw new Error('All download channels failed. Enable a system proxy or retry when GitHub mirrors are reachable.')
+          }
         }
       }
       if (accumulator.transferredBytes !== asset.size) throw new Error('Release installer size did not match its metadata.')

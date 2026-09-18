@@ -41,7 +41,8 @@ interface DiagnosticReport {
 async function readJson(path: string): Promise<unknown> {
   const stat = await lstat(path)
   if (!stat.isFile() || stat.size > MAX_MANIFEST_BYTES) throw new Error('desktop: recovery metadata is unavailable')
-  return JSON.parse(await readFile(path, 'utf8')) as unknown
+  // PowerShell-written profile manifests may carry a UTF-8 BOM that JSON.parse rejects.
+  return JSON.parse((await readFile(path, 'utf8')).replace(/^\uFEFF/u, '')) as unknown
 }
 
 function classifySource(spec: string, dshHome: string): RecoveryPluginSource {

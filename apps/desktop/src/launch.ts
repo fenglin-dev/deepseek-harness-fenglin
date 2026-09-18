@@ -167,9 +167,13 @@ export function resolveHarnessLaunch(
   environment: DesktopLaunchEnvironment,
   options: DesktopLaunchOptions = {},
 ): HarnessLaunch {
+  const dshHome = (environment.DSH_HOME ?? '').trim() !== '' ? environment.DSH_HOME : undefined
   return resolveHarnessInvocation(
     environment,
-    ['web', '--host', '127.0.0.1', '--port', '0', '--no-open'],
+    // Fenglin: overlay AFTER user cordis.patch.yml so desktop UI rows stay
+    // available even if plugin-manager later writes mass disables.
+    ['web', '--host', '127.0.0.1', '--port', '0', '--no-open',
+      '--patch', join(dshHome ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '.', '.dsh'), 'fenglin-ui-guard.yml')],
     options,
   )
 }
