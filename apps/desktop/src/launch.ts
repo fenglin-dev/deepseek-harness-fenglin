@@ -168,12 +168,11 @@ export function resolveHarnessLaunch(
   options: DesktopLaunchOptions = {},
 ): HarnessLaunch {
   const dshHome = (environment.DSH_HOME ?? '').trim() !== '' ? environment.DSH_HOME : undefined
+  const guard = join(dshHome ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '.', '.dsh'), 'fenglin-ui-guard.yml')
   return resolveHarnessInvocation(
     environment,
-    // Fenglin: overlay AFTER user cordis.patch.yml so desktop UI rows stay
-    // available even if plugin-manager later writes mass disables.
-    ['web', '--host', '127.0.0.1', '--port', '0', '--no-open',
-      '--patch', join(dshHome ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '.', '.dsh'), 'fenglin-ui-guard.yml')],
+    // Fenglin: launcher flags must precede web-app args; --patch outranks user cordis.patch.yml.
+    ['web', '--patch', guard, '--host', '127.0.0.1', '--port', '0', '--no-open'],
     options,
   )
 }
