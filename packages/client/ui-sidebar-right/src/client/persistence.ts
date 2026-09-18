@@ -70,7 +70,12 @@ export function readSidebarLayout(sessionId: string): SurfaceState | undefined {
     if (saved === undefined) return undefined
     const parsed = surface.parse(saved)
     validateReferences(parsed)
-    return { layout: parsed.layout as unknown as LayoutState, minted: parsed.minted, history: EMPTY_HISTORY }
+    // Fenglin: refresh must not auto-expand side tools; keep tabs, start collapsed.
+    return {
+      layout: { ...(parsed.layout as unknown as LayoutState), expanded: false },
+      minted: parsed.minted,
+      history: EMPTY_HISTORY,
+    }
   } catch (_invalidLayout) {
     clearSidebarLayout(sessionId)
     return undefined

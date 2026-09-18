@@ -428,7 +428,17 @@ export function createSidebarRightStore(
     const instance = handle.create(scopeKey)
     if (scopeKey === undefined) return instance
     const saved = readSidebarLayout(scopeKey)
-    if (saved !== undefined) instance.store.set({ bySession: { [scopeKey]: saved } })
+    if (saved !== undefined) {
+      // Fenglin: never restore an expanded right column after refresh.
+      instance.store.set({
+        bySession: {
+          [scopeKey]: {
+            ...saved,
+            layout: { ...saved.layout, expanded: false },
+          },
+        },
+      })
+    }
     instance.subscribe(() => {
       const surface = instance.getSnapshot().bySession[scopeKey]
       if (surface !== undefined) writeSidebarLayout(scopeKey, surface)

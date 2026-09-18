@@ -168,7 +168,7 @@ window.__ModuleLoader__.load({
 							})
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: LiangShenLever_module_css_default.readout,
-							children: busy ? face.t("lever.busy") : on ? face.t("lever.state.on") : (state === "locked" ? "会话已开始" : state === "missing" ? "预设缺失" : face.t("lever.state.off"))
+							children: busy ? face.t("lever.busy") : on ? face.t("lever.state.on") : (state === "locked" ? "回复中不可切换" : state === "missing" ? "预设缺失" : face.t("lever.state.off"))
 						})]
 					}),
 					errorText !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -190,21 +190,22 @@ window.__ModuleLoader__.load({
 		}
 		/** The jackpot overlay: flash, shockwave rings, sparks, and the banner. */
 		function Burst({ face }) {
-			const hostRef = react.useRef(null);
-			react.useEffect(function() {
-				// Fenglin: rehost jackpot overlay on <body> so composer transforms cannot pull it downward.
-				const el = hostRef.current;
-				if (el == null || typeof document === "undefined") return;
-				if (el.parentNode !== document.body) document.body.appendChild(el);
-				return function() {
-					try { el.remove(); } catch (e) {}
-				};
-			}, []);
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-				ref: hostRef,
+			// Fenglin: portal to <body> so composer transforms cannot pull the overlay
+			// downward. Never move React-owned DOM with appendChild — that crashes the
+			// lever after 1–2 successful switches.
+			const node = /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 				className: LiangShenLever_module_css_default.burst,
 				"data-dsh-part": "lever-burst",
 				"aria-hidden": "true",
+				style: {
+					position: "fixed",
+					top: 0,
+					left: 0,
+					width: "100vw",
+					height: "100vh",
+					pointerEvents: "none",
+					zIndex: 2147482000
+				},
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: LiangShenLever_module_css_default.flash }),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: LiangShenLever_module_css_default.ring }),
@@ -245,6 +246,13 @@ window.__ModuleLoader__.load({
 					})
 				]
 			});
+			try {
+				const rd = require("react-dom");
+				if (rd && typeof rd.createPortal === "function" && typeof document !== "undefined" && document.body) {
+					return rd.createPortal(node, document.body);
+				}
+			} catch {}
+			return node;
 		}
 		//#endregion
 		//#region \0dsh-store-engine
@@ -280,8 +288,10 @@ window.__ModuleLoader__.load({
 		/** Resolve what the lever shows for one set of facts. */
 		function leverState(facts) {
 			if (!facts.available.includes("liangshen")) return "missing";
-			// Fenglin: only lock when the session is explicitly non-blank.
-			if (facts.blank === false) return "locked";
+			// Fenglin exclusive: lock only while AI is actively working on this
+			// session. After the reply finishes the lever may switch again —
+			// do NOT freeze every later turn just because the session is non-blank.
+			if (facts.busy === true) return "locked";
 			return facts.agentPreset === "liangshen" ? "on" : "off";
 		}
 		/**
@@ -368,15 +378,19 @@ window.__ModuleLoader__.load({
 			dispose() {
 				for (const dispose of this.disposers.splice(0)) dispose();
 			}
+			/** Session id the latest composer slot inject was scoped to. */
+			slotSessionId;
 			/** The inject face handed to the slot entry. */
-			face() {
+			face(sessionId) {
+				if (sessionId !== void 0 && sessionId !== null) this.slotSessionId = String(sessionId);
+				const bound = this.slotSessionId;
 				return {
 					store: this.store,
 					pull: () => {
-						this.toggle("down");
+						this.toggle("down", bound);
 					},
 					push: () => {
-						this.toggle("up");
+						this.toggle("up", bound);
 					},
 					t: (key, vars) => {
 						const translate = readService(() => this.ctx.locale.bind("liangshen"));
@@ -417,17 +431,26 @@ window.__ModuleLoader__.load({
 				});
 			}
 			/** The verb behind one gesture direction. */
-			async toggle(direction) {
+			async toggle(direction, preferSessionId) {
 				const snapshot = this.store.getSnapshot();
 				if (snapshot.busy) return;
 				const remote = this.remote ?? readService(() => this.ctx.remote?.agentPresets);
 				if (remote === void 0) return;
+				if (preferSessionId !== void 0 && preferSessionId !== null) this.slotSessionId = String(preferSessionId);
 				const facts = this.facts();
-				if (!isActionable(leverState(facts))) return;
+				const leverNow = leverState(facts);
+				if (!isActionable(leverNow)) {
+					// Keep the lever mounted; surface why a click did nothing.
+					if (leverNow === "locked" || leverNow === "missing") {
+						this.store.set({
+							...this.store.getSnapshot(),
+							busy: false,
+							error: leverNow === "locked" ? { kind: "locked" } : { kind: "missing" }
+						});
+					}
+					return;
+				}
 				const target = direction === "down" ? LIANGSHEN_PRESET_ID : restoreTarget(facts);
-				// Fenglin: current session first; on the hero composer `list.current` can
-				// be empty — fall back to the same blank mainView session the preset seat
-				// uses. Never pick an arbitrary non-blank byId row.
 				const sessionId = this.resolveSessionId();
 				if (target === void 0 || remote === void 0) return;
 				if (sessionId === void 0) {
@@ -502,11 +525,33 @@ window.__ModuleLoader__.load({
 				}
 				return {
 					blank: summary === void 0 || summary.blank === true,
+					busy: this.sessionBusy(sessionId, summary),
 					agentPreset: this.applied ?? projected,
 					available,
 					fallback,
 					previous: this.previous
 				};
+			}
+			/** True while this session still has an open model turn. */
+			sessionBusy(sessionId, summary) {
+				try {
+					if (sessionId === void 0) return false;
+					const statusSnap = this.sessions?.status?.getSnapshot?.();
+					const status = typeof statusSnap?.get === "function" ? statusSnap.get(sessionId) : void 0;
+					if (status !== void 0 && status !== null) {
+						if (status.busy === true || status.running === true || status.pending === true) return true;
+						if (status.phase === "active" || status.phase === "running" || status.phase === "busy") return true;
+						if (status.openTurnStartSeq !== void 0 && status.openTurnStartSeq !== null) return true;
+						if (status.pendingInteraction !== void 0 && status.pendingInteraction !== null) return true;
+					}
+					const pv = summary?.projectionValues;
+					if (pv !== void 0 && pv !== null) {
+						if (pv.openTurnStartSeq !== void 0 && pv.openTurnStartSeq !== null) return true;
+						if (pv.agentBusy === true || pv.busy === true) return true;
+					}
+					if (summary?.busy === true || summary?.running === true) return true;
+				} catch {}
+				return false;
 			}
 			currentSessionId() {
 				try {
@@ -532,9 +577,32 @@ window.__ModuleLoader__.load({
 					return void 0;
 				}
 			}
-			/** Prefer current session; blank sessions only — never lock a new chat from an old transcript. */
+			/**
+			* Per-session facts: prefer the slot-provided session, then list.current
+			* when that row exists, then the official mainView seat, then blank.
+			* Locking one transcript must not freeze every other session's lever.
+			*/
 			resolveSessionId() {
-				return this.currentSessionId() ?? this.mainBlankSessionId();
+				try {
+					const state = this.sessions?.list.getSnapshot();
+					if (state === void 0) return void 0;
+					const byId = state.byId ?? {};
+					const rows = Object.values(byId).filter(function(row) { return row != null; });
+					if (this.slotSessionId !== void 0 && byId[this.slotSessionId] !== void 0) {
+						return this.slotSessionId;
+					}
+					if (state.current !== void 0 && state.current !== null) {
+						const id = String(state.current);
+						if (byId[id] !== void 0) return id;
+					}
+					const mainView = rows.find(function(row) {
+						return ((row.retainedBy && row.retainedBy.mainView || 0) > 0) && row.id !== void 0;
+					});
+					if (mainView !== void 0) return String(mainView.id);
+					return this.mainBlankSessionId();
+				} catch {
+					return this.currentSessionId() ?? this.mainBlankSessionId();
+				}
 			}
 			currentSession() {
 				try {
@@ -662,6 +730,31 @@ window.__ModuleLoader__.load({
 		* @param ctx - the browser plugin context.
 		*/
 		function apply(ctx) {
+			// Fenglin: keep header utilities visible so Better Sidebar's bottom
+			// workbench toggle (conversation.session.header.utilities) is not
+			// swallowed by skin CSS. Never hide other chrome.
+			try {
+				if (typeof document !== "undefined" && document.getElementById("fenglin-bottom-panel-ensure") === null) {
+					const ensure = document.createElement("style");
+					ensure.id = "fenglin-bottom-panel-ensure";
+					ensure.textContent = [
+						"[data-slot=\"conversation.session.header.utilities\"]{display:flex!important;visibility:visible!important;opacity:1!important}",
+						"[data-dsh-bottom-toggle],[data-sidebar-right-expand]{display:inline-flex!important;visibility:visible!important;opacity:1!important}",
+						/* Unify skill center row with task-board / SSH sidebar entries. */
+						"[data-dsh-skill-explorer-entry]{box-sizing:border-box!important;width:100%!important;max-width:none!important;height:36px!important;min-height:36px!important;margin:0!important;padding:0 10px!important;display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:8px!important;border:none!important;border-radius:8px!important;background:0 0!important;color:var(--dsw-alias-label-secondary)!important;font-size:13px!important;font-weight:400!important;text-align:left!important;cursor:pointer!important;float:none!important;position:static!important;transform:none!important;white-space:nowrap!important}",
+						"[data-dsh-skill-explorer-entry]:hover{background:var(--dsw-alias-interactive-bg-hover)!important;color:var(--dsw-alias-label-primary)!important}",
+						"[data-dsh-skill-explorer-entry] .cBrkua_entryIcon,[data-dsh-skill-explorer-entry] [class*=\"entryIcon\"]{flex:none!important;width:24px!important;height:24px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;margin:0!important;padding:0!important}",
+						"[data-dsh-skill-explorer-entry] svg{width:18px!important;height:18px!important;display:block!important}",
+						"[data-dsh-skill-explorer-entry] [class*=\"entryLabel\"]{text-align:left!important;overflow:hidden!important;text-overflow:ellipsis!important}",
+						"[data-dsh-skill-explorer-entry],[data-dsh-taskboard-entry],[data-dsh-ssh-entry]{display:flex!important;visibility:visible!important}",
+						"[data-dsh-panel-host]{pointer-events:none!important}",
+						"[data-dsh-panel-host] [data-dsh-bottom-panel]{pointer-events:auto!important}",
+						"[data-dsh-bottom-panel]:not([class*=\"Hidden\"]){visibility:visible!important;transform:none!important}",
+						"[data-dsh-plugin=\"skill-explorer\"]{display:block!important}"
+					].join("");
+					document.head.appendChild(ensure);
+				}
+			} catch {}
 			ctx.effect(() => {
 				try {
 					return ctx.locale.register(NS, {
@@ -683,7 +776,7 @@ window.__ModuleLoader__.load({
 						name: "conversation.input.right",
 						id: "liangshen-lever",
 						order: 20,
-						inject: () => controller.face()
+						inject: (sessionId) => controller.face(sessionId)
 					}, LiangShenLever);
 					return () => {
 						unregister();

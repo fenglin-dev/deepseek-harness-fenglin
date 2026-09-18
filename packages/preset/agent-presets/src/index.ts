@@ -965,12 +965,14 @@ export class AgentPresets extends TypertRemoteService {
     // conversation may have started, since this call was queued. A turn is one
     // model-loop execution; standalone plugin events never open one, so a
     // session that has only run commands is still blank.
+    // Fenglin exclusive: lock only while a turn is OPEN (AI still working).
+    // After the reply finishes the user may switch LiangShen / presets again —
+    // `lastTurn > 0` alone must not freeze the session forever.
     const boundary = this.selfCtx.sessionProjections.stateOf(agent.session, 'turnBoundary')
-    if (boundary !== undefined
-      && (boundary.openTurnStartSeq !== null || boundary.lastTurn > 0)) {
+    if (boundary !== undefined && boundary.openTurnStartSeq !== null) {
       throw new RemoteError(
         'agent-preset/locked',
-        `session "${agent.id}" has already started; its agent preset is fixed`,
+        `session "${agent.id}" has a turn in progress; its agent preset is fixed until the reply finishes`,
         { sessionId: agent.id, agentPreset },
       )
     }

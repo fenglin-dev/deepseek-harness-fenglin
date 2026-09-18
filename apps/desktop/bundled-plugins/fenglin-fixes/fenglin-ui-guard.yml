@@ -24,6 +24,14 @@
   disabled: false
 - id: web-ui-task-board
   name: "@linxin666/dsh-web-all/task-board"
+  config:
+    plugin: "@linxin666/dsh-client-ui-task-board"
+  disabled: false
+# Skill center (技能中心) ships disabled in web-all; exclusive pack expects it on.
+- id: web-ui-skill-explorer
+  name: "@linxin666/dsh-web-all/skill-explorer"
+  config:
+    plugin: "@linxin666/dsh-client-ui-skill-explorer"
   disabled: false
 - id: web-ui-skin-center
   name: "@linxin666/dsh-web-all/skin-center"
@@ -40,6 +48,19 @@
 - id: web-ui-settings
   name: "@linxin666/dsh-web-all/settings"
   disabled: false
-# Market hot-mount duplicate of bundled music plugin fails fiber; keep official music row.
+# Better Sidebar bottom workbench: loader treats dsh-better-sidebar as a
+# singleton. Official `better-sidebar` must own it; the web-all aggregate row
+# is the duplicate the loader disables. Never force-enable both.
+- id: better-sidebar
+  name: "dsh-better-sidebar"
+  disabled: false
+- id: web-ui-better-sidebar
+  name: "dsh-better-sidebar"
+  disabled: true
+# Official music row default ON; market duplicate mkt-music stays off.
+- id: music
+  name: "dsh-music-huazai"
+  disabled: false
 - id: mkt-music
+  name: "dsh-music-huazai"
   disabled: true

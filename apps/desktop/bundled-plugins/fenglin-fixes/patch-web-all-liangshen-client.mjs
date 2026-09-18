@@ -1,4 +1,4 @@
-/** Fenglin: keep web-all's stock LiangShen lever visible and switchable. */
+/** Fenglin: keep web-all's stock LiangShen lever from fighting the standalone client. */
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -27,7 +27,31 @@ export async function patchWebAllLiangShenClient(webAllClientPath) {
     'blank: summary?.blank === true,',
     'blank: summary === void 0 || summary.blank === true,',
   )
-  if (!next.includes('resolveSessionId()')) {
+  // Per-session facts: slot/current first so one locked transcript does not
+  // freeze every other session's lever.
+  const seatLookup = `resolveSessionId() {
+				try {
+					const state = this.sessions?.list.getSnapshot();
+					if (state === void 0) return void 0;
+					const byId = state.byId ?? {};
+					const rows = Object.values(byId).filter(function(row) { return row != null; });
+					if (this.slotSessionId !== void 0 && byId[this.slotSessionId] !== void 0) {
+						return this.slotSessionId;
+					}
+					if (state.current !== void 0 && state.current !== null) {
+						const id = String(state.current);
+						if (byId[id] !== void 0) return id;
+					}
+					const mainView = rows.find(function(row) {
+						return ((row.retainedBy && row.retainedBy.mainView || 0) > 0) && row.id !== void 0;
+					});
+					if (mainView !== void 0) return String(mainView.id);
+					return this.mainBlankSessionId();
+				} catch {
+					return this.currentSessionId() ?? this.mainBlankSessionId();
+				}
+			}`
+  if (!next.includes('mainView') || !next.includes('resolveSessionId() {')) {
     next = next.replace(
       'currentSessionId() {\n\t\t\t\tconst current = this.sessions?.list.getSnapshot().current;\n\t\t\t\treturn current === void 0 ? void 0 : String(current);\n\t\t\t}',
       `currentSessionId() {
@@ -49,15 +73,31 @@ export async function patchWebAllLiangShenClient(webAllClientPath) {
 					return void 0;
 				}
 			}
-			resolveSessionId() {
-				return this.currentSessionId() ?? this.mainBlankSessionId();
-			}`,
+			${seatLookup}`,
+    )
+  } else if (!next.includes('const mainView = rows.find')) {
+    next = next.replace(
+      /resolveSessionId\(\) \{\s*return this\.currentSessionId\(\) \?\? this\.mainBlankSessionId\(\);\s*\}/,
+      seatLookup,
+    )
+    next = next.replace(
+      'resolveSessionId() {\n\t\t\t\treturn this.currentSessionId() ?? this.mainBlankSessionId();\n\t\t\t}',
+      seatLookup,
     )
   }
   next = next.replace(
     'const sessionId = this.currentSessionId();\n\t\t\t\tif (target === void 0 || sessionId === void 0) return;',
     'const sessionId = this.resolveSessionId();\n\t\t\t\tif (target === void 0 || sessionId === void 0) return;',
   )
+  // Standalone @linxin666/dsh-liangshen owns conversation.input.right. Dual
+  // registration of slot id "liangshen-lever" makes the control vanish after
+  // a couple of switches when one fiber unregisters the other.
+  if (!next.includes('Fenglin: standalone dsh-liangshen owns the composer slot')) {
+    next = next.replace(
+      'ctx.slots.inject("conversation.input.right", () => {\n\t\t\t\ttry {\n\t\t\t\t\tconst unregister = ctx.slots.register({\n\t\t\t\t\t\tname: "conversation.input.right",\n\t\t\t\t\t\tid: "liangshen-lever",',
+      '/* Fenglin: standalone dsh-liangshen owns the composer slot; skip duplicate. */\n\t\t\tif (false) ctx.slots.inject("conversation.input.right", () => {\n\t\t\t\ttry {\n\t\t\t\t\tconst unregister = ctx.slots.register({\n\t\t\t\t\t\tname: "conversation.input.right",\n\t\t\t\t\t\tid: "liangshen-lever",',
+    )
+  }
   if (next === source) {
     console.log('fenglin-web-all-liangshen: already patched')
     return true

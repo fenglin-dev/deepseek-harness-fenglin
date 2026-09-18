@@ -862,7 +862,8 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
     && (pkg.installed || pkg.optional || pkg.error !== undefined))
   const mine = listed.filter(pkg => pkg.installed || !pkg.optional)
   const official = listed.filter(pkg => pkg.optional && !pkg.installed)
-  const loaded = state.status === 'ready' || state.status === 'error'
+  // Fenglin: keep 添加插件 clickable unless the inventory call is still in flight.
+  const loaded = state.status === 'ready' || state.status === 'error' || state.status === 'unavailable'
   const openPkg = view.kind === 'package' || view.kind === 'row' ? listed.find(pkg => pkg.name === view.name) : undefined
   const openItem = view.kind === 'item' ? ledger.items.find(item => item.id === view.id) : undefined
   const openRow = view.kind === 'row' && openPkg !== undefined ? openPkg.rows.find(row => row.rowId === view.rowId) : undefined
@@ -919,7 +920,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
               <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
                 <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutline16 /></span>
               </button>
-              <Button variant="primary" size="sm" icon={<IconPlusOutline16 size={13} />} disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
+              <Button variant="primary" size="sm" icon={<IconPlusOutline16 size={13} />} disabled={state.status === 'loading'} onClick={props.openInstall}>{t('addPlugin')}</Button>
             </div>
           </header>
         )

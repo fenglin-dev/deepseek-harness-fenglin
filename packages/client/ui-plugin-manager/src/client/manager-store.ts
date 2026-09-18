@@ -364,6 +364,8 @@ export class PluginManagerController {
       refresh: () => { void this.load() },
       openInstall: () => {
         if (!isInstallPending(this.getSnapshot().install.phase)) this.patch({ install: { ...IDLE_INSTALL, open: true } })
+        // Fenglin: retry inventory once when managementAvailable was missing.
+        if (this.getSnapshot().status === 'unavailable') void this.load()
       },
       closeInstall: () => {
         if (isInstallPending(this.getSnapshot().install.phase)) return
@@ -464,7 +466,10 @@ export class PluginManagerController {
           this.patch({ status: 'error' })
           continue
         }
-        if (inventory.value.managementAvailable !== true) {
+        // Fenglin: only hard-block when the host explicitly reports
+        // managementAvailable === false. A missing optional flag must not
+        // disable 添加插件.
+        if (inventory.value.managementAvailable === false) {
           this.patch({ status: 'unavailable', packages: [] })
           continue
         }
