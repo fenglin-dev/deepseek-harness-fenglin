@@ -103,11 +103,40 @@ $env:DSH_HOME = $dshHome
 Remove-Item -LiteralPath $desktopAppDataRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $desktopAppDataRoot -Force | Out-Null
 Remove-Item -LiteralPath $harnessLog -Force -ErrorAction SilentlyContinue
+$nativeSmokeRoot = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness Native Smoke AppData'
+Remove-Item -LiteralPath $nativeSmokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Path $nativeSmokeRoot -Force | Out-Null
+$nativeSmokeStart = [System.Diagnostics.ProcessStartInfo]::new()
+$nativeSmokeStart.FileName = Join-Path $installRoot 'Open DeepSeek Harness Desktop.exe'
+$nativeSmokeStart.UseShellExecute = $false
+$nativeSmokeStart.RedirectStandardOutput = $true
+$nativeSmokeStart.RedirectStandardError = $true
+$nativeSmokeStart.ArgumentList.Add('--dsh-native-smoke')
+$nativeSmokeStart.ArgumentList.Add("--dsh-package-smoke-root=$nativeSmokeRoot")
+$nativeSmoke = [System.Diagnostics.Process]::Start($nativeSmokeStart)
+$nativeSmokeStdout = $nativeSmoke.StandardOutput.ReadToEndAsync()
+$nativeSmokeStderr = $nativeSmoke.StandardError.ReadToEndAsync()
+if (-not $nativeSmoke.WaitForExit(30000)) {
+  $nativeSmoke.Kill($true)
+  $nativeSmoke.WaitForExit()
+  throw "Installed Electron entry smoke did not exit within 30 seconds.`nstdout:`n$($nativeSmokeStdout.GetAwaiter().GetResult())`nstderr:`n$($nativeSmokeStderr.GetAwaiter().GetResult())"
+}
+$nativeSmokeOutput = $nativeSmokeStdout.GetAwaiter().GetResult()
+$nativeSmokeError = $nativeSmokeStderr.GetAwaiter().GetResult()
+if ($nativeSmoke.ExitCode -ne 0 -or $nativeSmokeOutput -notmatch 'DSH_NATIVE_SMOKE_READY') {
+  throw "Installed Electron entry smoke failed with $($nativeSmoke.ExitCode).`nstdout:`n$nativeSmokeOutput`nstderr:`n$nativeSmokeError"
+}
+Write-Host "Installed Electron entry smoke passed.`n$nativeSmokeOutput"
 $appStart = [System.Diagnostics.ProcessStartInfo]::new()
 $appStart.FileName = Join-Path $installRoot 'Open DeepSeek Harness Desktop.exe'
 $appStart.UseShellExecute = $false
+$appStart.RedirectStandardOutput = $true
+$appStart.RedirectStandardError = $true
+$appStart.Environment['ELECTRON_ENABLE_LOGGING'] = '1'
 $appStart.ArgumentList.Add("--dsh-package-smoke-root=$desktopAppDataRoot")
 $app = [System.Diagnostics.Process]::Start($appStart)
+$appStdout = $app.StandardOutput.ReadToEndAsync()
+$appStderr = $app.StandardError.ReadToEndAsync()
 $orphanStart = [System.Diagnostics.ProcessStartInfo]::new()
 $orphanStart.FileName = Join-Path $installRoot 'resources/runtime/win32-x64/node.exe'
 $orphanStart.UseShellExecute = $false
@@ -134,8 +163,12 @@ try {
     }
   }
   if (-not $ready) {
+    if (-not $app.HasExited) {
+      $app.Kill($true)
+      $app.WaitForExit()
+    }
     $tail = if (-not (Test-Path -LiteralPath $harnessLog)) { 'No harness.log was created.' } else { (Get-Content -LiteralPath $harnessLog -Tail 80) -join "`n" }
-    throw "Installed application did not reach Harness readiness within 480 seconds.`n$tail"
+    throw "Installed application did not reach Harness readiness within 480 seconds.`n$tail`nstdout:`n$($appStdout.GetAwaiter().GetResult())`nstderr:`n$($appStderr.GetAwaiter().GetResult())"
   }
   # This fresh CI-only home contains no user credentials. Preserve first-boot
   # evidence before the restart clears the log.
