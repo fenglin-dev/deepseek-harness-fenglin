@@ -1,6 +1,7 @@
 # Agent Note: 使用隔离的本地服务器验证 Desktop 更新下载
 
 Status: implemented
+Archived: 2026-09-18
 
 [English](2026-09-10-desktop-local-updater-qualification.md) | 中文
 

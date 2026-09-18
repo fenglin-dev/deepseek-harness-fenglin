@@ -1,6 +1,7 @@
 # Agent Note: Preserve installed Desktop update evidence across restarts
 
 Status: implemented
+Archived: 2026-09-18
 
 English | [中文](2026-09-14-desktop-installed-update-journal.zh.md)
 

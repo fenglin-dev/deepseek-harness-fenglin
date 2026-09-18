@@ -58,6 +58,9 @@ export function bootThemeInjection(
 /**
  * Theme bootstrap rows in paint order: an immediate canvas palette followed
  * by the community Desktop-compatible source attributes and font-size script.
+ * @param preference - Current Host-backed built-in preference.
+ * @param fontSize - Current Host-backed content font size in px.
+ * @returns the ordered style and script rows.
  */
 export function bootThemeInjections(
   preference: ThemePreference = DEFAULT_PREFERENCE,

@@ -1,6 +1,7 @@
 # Agent Note: 跨重启保留已安装 Desktop 的更新证据
 
 Status: implemented
+Archived: 2026-09-18
 
 [English](2026-09-14-desktop-installed-update-journal.md) | 中文
 

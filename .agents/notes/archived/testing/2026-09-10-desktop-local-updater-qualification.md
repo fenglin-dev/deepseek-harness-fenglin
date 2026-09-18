@@ -1,6 +1,7 @@
 # Agent Note: Qualify Desktop update downloads with an isolated local server
 
 Status: implemented
+Archived: 2026-09-18
 
 English | [中文](2026-09-10-desktop-local-updater-qualification.zh.md)
 

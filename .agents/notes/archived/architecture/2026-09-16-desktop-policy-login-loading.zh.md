@@ -1,6 +1,7 @@
 # Agent Note: 策略登录页加载期间显示本地文档
 
 Status: implemented
+Archived: 2026-09-18
 
 [English](2026-09-16-desktop-policy-login-loading.md) | 中文
 

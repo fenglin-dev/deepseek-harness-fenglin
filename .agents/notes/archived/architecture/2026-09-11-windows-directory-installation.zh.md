@@ -1,6 +1,7 @@
 # Agent Note: 暂存完成后替换 Windows 应用目录
 
 Status: implemented
+Archived: 2026-09-18
 
 [English](2026-09-11-windows-directory-installation.md) | 中文
 

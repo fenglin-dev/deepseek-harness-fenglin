@@ -1,6 +1,7 @@
 # Agent Note: Desktop 强更客户端与阻塞窗口
 
 Status: implemented
+Archived: 2026-09-18
 
 [English](2026-09-11-desktop-mandatory-update-client.md) | 中文
 

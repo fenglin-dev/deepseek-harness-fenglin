@@ -1,6 +1,7 @@
 # Agent Note: Replace Windows application directories after staging
 
 Status: implemented
+Archived: 2026-09-18
 
 English | [中文](2026-09-11-windows-directory-installation.zh.md)
 

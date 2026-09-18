@@ -1,6 +1,7 @@
 # Agent Note: 通过腾讯 COS SDK 上传 Desktop 发布产物
 
 Status: implemented
+Archived: 2026-09-18
 
 [English](2026-09-16-desktop-cos-upload-transport.md) | 中文
 

@@ -1,6 +1,7 @@
 # Agent Note: 从完整 dsh 版本派生 Desktop 测试版本
 
 Status: implemented
+Archived: 2026-09-18
 
 [English](2026-09-16-desktop-release-version-derivation.md) | 中文
 

@@ -1,6 +1,7 @@
 # Agent Note: 可移动的强更窗口
 
 Status: implemented
+Archived: 2026-09-18
 
 [English](2026-09-16-movable-mandatory-update-window.md) | 中文
 

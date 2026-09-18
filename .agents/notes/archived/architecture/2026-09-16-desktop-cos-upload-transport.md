@@ -1,6 +1,7 @@
 # Agent Note: Upload Desktop releases through the Tencent COS SDK
 
 Status: implemented
+Archived: 2026-09-18
 
 English | [中文](2026-09-16-desktop-cos-upload-transport.zh.md)
 

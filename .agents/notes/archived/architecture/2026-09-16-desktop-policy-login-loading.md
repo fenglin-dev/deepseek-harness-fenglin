@@ -1,6 +1,7 @@
 # Agent Note: Show a local document while the policy login page loads
 
 Status: implemented
+Archived: 2026-09-18
 
 English | [中文](2026-09-16-desktop-policy-login-loading.zh.md)
 

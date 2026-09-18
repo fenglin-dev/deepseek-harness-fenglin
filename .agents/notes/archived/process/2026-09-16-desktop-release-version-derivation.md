@@ -1,6 +1,7 @@
 # Agent Note: Derive Desktop test versions from the complete dsh version
 
 Status: implemented
+Archived: 2026-09-18
 
 English | [中文](2026-09-16-desktop-release-version-derivation.zh.md)
 
