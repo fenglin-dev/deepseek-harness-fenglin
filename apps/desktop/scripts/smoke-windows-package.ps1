@@ -6,6 +6,7 @@ $dshHome = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness Home'
 $desktopAppDataRoot = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness AppData'
 $desktopDataRoot = Join-Path $desktopAppDataRoot 'open-deepseek-harness-desktop'
 $harnessLog = Join-Path $desktopDataRoot 'logs/harness.log'
+$desktopEntryLog = Join-Path $desktopAppDataRoot 'desktop-entry.log'
 $unpackedResources = Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/win-unpacked/resources'
 $cliDirectory = Join-Path $installRoot 'resources/cli-bin'
 $originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -150,7 +151,10 @@ try {
   while ((Get-Date) -lt $deadline) {
     Start-Sleep -Milliseconds 500
     $app.Refresh()
-    if ($app.HasExited) { throw "Installed application exited before Harness readiness with $($app.ExitCode)" }
+    if ($app.HasExited) {
+      $entryLog = if (Test-Path -LiteralPath $desktopEntryLog) { Get-Content -LiteralPath $desktopEntryLog -Raw } else { 'No desktop-entry.log was created.' }
+      throw "Installed application exited before Harness readiness with $($app.ExitCode).`n$entryLog`nstdout:`n$($appStdout.GetAwaiter().GetResult())`nstderr:`n$($appStderr.GetAwaiter().GetResult())"
+    }
     $logExists = Test-Path -LiteralPath $harnessLog
     if ($logExists -and (Get-Content -LiteralPath $harnessLog -Raw) -match '(?m)^\[[^\r\n]+\] \[harness-stdout\] \[info\] dsh web: http://127\.0\.0\.1:\d+(?:/[^\r\n]*)?\r?$') {
       $ready = $true
@@ -168,7 +172,8 @@ try {
       $app.WaitForExit()
     }
     $tail = if (-not (Test-Path -LiteralPath $harnessLog)) { 'No harness.log was created.' } else { (Get-Content -LiteralPath $harnessLog -Tail 80) -join "`n" }
-    throw "Installed application did not reach Harness readiness within 480 seconds.`n$tail`nstdout:`n$($appStdout.GetAwaiter().GetResult())`nstderr:`n$($appStderr.GetAwaiter().GetResult())"
+    $entryLog = if (Test-Path -LiteralPath $desktopEntryLog) { Get-Content -LiteralPath $desktopEntryLog -Raw } else { 'No desktop-entry.log was created.' }
+    throw "Installed application did not reach Harness readiness within 480 seconds.`n$tail`n$entryLog`nstdout:`n$($appStdout.GetAwaiter().GetResult())`nstderr:`n$($appStderr.GetAwaiter().GetResult())"
   }
   # This fresh CI-only home contains no user credentials. Preserve first-boot
   # evidence before the restart clears the log.

@@ -14,4 +14,5 @@ test('Windows installed smoke isolates Electron application data', async () => {
   assert.match(source, /--dsh-package-smoke-root=\$desktopAppDataRoot/u)
   assert.match(source, /--dsh-native-smoke/u)
   assert.match(source, /RedirectStandardError = \$true/u)
+  assert.match(source, /desktop-entry\.log/u)
 })
