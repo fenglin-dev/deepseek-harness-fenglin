@@ -271,11 +271,11 @@ dsh-better-sidebar:
     if (existsSync(src) && existsSync(dirname(dest))) await cp(src, dest, { force: true })
   }
   // web-all ships its own lever; keep it from dual-mounting the same slot id.
-  const { patchWebAllLiangShenClient } = await import(join(fenglinFixes, 'patch-web-all-liangshen-client.mjs'))
+  const { patchWebAllLiangShenClient } = await import(pathToFileURL(join(fenglinFixes, 'patch-web-all-liangshen-client.mjs')).href)
   const webAllClient = join(destination, 'profiles', 'web', 'node_modules', '@linxin666', 'dsh-web-all', 'lib', 'client.js')
   await patchWebAllLiangShenClient(webAllClient)
   // Better Sidebar: real session ids for terminal WS + skill entry UI ensure.
-  const { patchBetterSidebarClient } = await import(join(fenglinFixes, 'patch-better-sidebar-client.mjs'))
+  const { patchBetterSidebarClient } = await import(pathToFileURL(join(fenglinFixes, 'patch-better-sidebar-client.mjs')).href)
   const betterSidebarRoot = join(destination, 'profiles', 'web', 'node_modules', 'dsh-better-sidebar')
   await patchBetterSidebarClient(betterSidebarRoot)
   // Only patch web-all client.js for lever visibility. Never rewrite the
