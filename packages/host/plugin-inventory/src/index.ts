@@ -13,6 +13,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import {
+  approveQuarantinedProfilePluginHostVersion,
   clearLastProfileRepairReport,
   clearQuarantinedProfilePlugin,
   classifyProfileDiagnostic,
@@ -67,7 +68,7 @@ import { InstallProgressTracker } from './install-progress.ts'
 export type * from './types.ts'
 
 /** Brand an existing Loader-tree entry id at the owning boundary. */
-function pluginEntryId(value: string): PluginEntryId {
+export function pluginEntryId(value: string): PluginEntryId {
   return value as PluginEntryId
 }
 
@@ -90,6 +91,37 @@ const FIBER_PHASE = {
   [FIBER_STATE.DISPOSED]: null,
   [FIBER_STATE.UNLOADING]: 'unloading',
 } as const satisfies Record<FiberState, PluginFiberPhase>
+
+/**
+ * Read the loader-facing portion of the inventory for the shared profile
+ * manager. The diagnostic gateway below remains the owner of retained repair,
+ * quarantine, and dependency-health projections.
+ */
+export async function readPluginInventory(ctx: Context) {
+  const entries: PluginInventoryEntry[] = []
+  for (const entry of ctx.loader.entries()) {
+    if (entry.options.group) continue
+    entries.push({
+      entryId: pluginEntryId(entry.id),
+      moduleName: entry.options.name,
+      enabled: !entry.disabled,
+      fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
+    })
+  }
+  const presets = ctx.get('agentPresets')
+  const management = ctx.get('pluginManager') === undefined ? {} : { managementAvailable: true as const }
+  if (presets === undefined) return { entries, ...management }
+  const agentPresets: AgentPresetPluginGroup[] = (await presets.compositionInventory()).map(
+    composition => ({
+      ...composition,
+      rows: composition.rows.map(({ fiberState, ...row }) => ({
+        ...row,
+        fiberPhase: fiberState === undefined ? null : FIBER_PHASE[fiberState],
+      })),
+    }),
+  )
+  return { entries, agentPresets, ...management }
+}
 
 /** Default cap for each collected package-manager stream. */
 export const DEFAULT_INSTALL_OUTPUT_MAX_BYTES = 64 * 1024
@@ -677,6 +709,26 @@ export class PluginInventoryGateway extends TypertRemoteService {
     this.activeTargets.set(target, installId)
     this.launchInstall(job)
     return snapshot
+  }
+
+  /**
+   * Record an exact Host/plugin-version risk approval, then retry that quarantined plugin.
+   * Only compatibility-manifest exclusions can use this path; dependency and Loader failures remain blocked.
+   * @param request - opaque incompatible-version quarantine selected after explicit user confirmation.
+   * @returns initial running state for the ordinary transactional retry.
+   */
+  @Remote('startHostVersionOverride')
+  startHostVersionOverride(request: PluginQuarantineRequest): PluginInstallSnapshot {
+    validateQuarantineId(request.quarantineId)
+    const record = this.expectQuarantine(request.quarantineId)
+    if (record.profile !== this.profile) throw new TypeError('pluginInventory: quarantine belongs to another profile')
+    if (record.reason !== 'incompatible-host-version') {
+      throw new TypeError('pluginInventory: only a Host version declaration can be overridden')
+    }
+    if (!approveQuarantinedProfilePluginHostVersion(request.quarantineId)) {
+      throw new Error('pluginInventory: quarantine no longer exists')
+    }
+    return this.startQuarantineRetry(request)
   }
 
   /**

@@ -149,6 +149,7 @@ const FIXED_FILES = [
 ] as const
 const HOME_FILES = [
   'quarantine/profile-plugins.json',
+  'quarantine/host-version-overrides.json',
   'imported-plugin-restore.v1.json',
   'bundled-plugins/snapshot-version-hold.json',
 ] as const

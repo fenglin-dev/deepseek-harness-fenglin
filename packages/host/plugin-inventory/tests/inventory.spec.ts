@@ -129,6 +129,7 @@ describe('PluginInventoryGateway', () => {
       { method: 'recoverClientLoadFailure', invocation: { kind: 'direct' } },
       { method: 'uninstallQuarantine', invocation: { kind: 'direct' } },
       { method: 'startQuarantineRetry', invocation: { kind: 'direct' } },
+      { method: 'startHostVersionOverride', invocation: { kind: 'direct' } },
       { method: 'approveQuarantineBuild', invocation: { kind: 'direct' } },
       { method: 'approveDiagnosticBuild', invocation: { kind: 'direct' } },
       { method: 'exportDiagnostics', invocation: { kind: 'direct' } },
@@ -289,7 +290,7 @@ describe('PluginInventoryGateway', () => {
     const { ctx, inventory } = await harness()
     ctx.loader.builtins['fixture-plugin'] = activePlugin
     const activeId = await ctx.loader.create({ name: 'cordis:fixture-plugin' })
-    const activeEntry = ctx.loader.entries().find(entry => entry.id === activeId)
+    const activeEntry = [...ctx.loader.entries()].find(entry => entry.id === activeId)
     if (activeEntry === undefined) throw new Error('fixture Loader entry was not created')
     Object.defineProperty(activeEntry.options, 'name', { value: 'fixture-plugin' })
 
@@ -735,6 +736,77 @@ describe('PluginInventoryGateway', () => {
     ])
     await expect.poll(() => inventory.getInstall(started.installId).phase).toBe('succeeded')
     expect((JSON.parse(readFileSync(quarantinePath, 'utf8')) as { plugins: unknown[] }).plugins).toEqual([])
+  })
+
+  it('records an exact Host-version override before retrying only that quarantine reason', async () => {
+    const home = temporaryDirectory()
+    vi.stubEnv('DSH_HOME', home)
+    const quarantineId = '00000000-0000-4000-8000-000000000021'
+    const quarantinePath = join(home, 'quarantine', 'profile-plugins.json')
+    writeJson(quarantinePath, {
+      schema: 1,
+      plugins: [{
+        quarantineId,
+        profile: 'web',
+        packageName: 'fixture-plugin',
+        packageSpec: '^1.2.0',
+        installedVersion: '1.2.3',
+        bundleIndex: 1,
+        quarantinedAt: '2026-09-17T01:02:03.000Z',
+        reason: 'incompatible-host-version',
+        hostCompatibility: {
+          profile: 'web',
+          packageName: 'fixture-plugin',
+          installedVersion: '1.2.3',
+          hostVersion: '0.1.6-rc.1',
+          supportedHostVersions: ['0.1.5-rc.2'],
+          recommendedHostVersion: '0.1.5-rc.2',
+        },
+        conflicts: [],
+      }],
+    })
+    const { inventory, subprocess } = await harness()
+
+    const started = inventory.startHostVersionOverride({ quarantineId })
+
+    expect(started.phase).toBe('running')
+    expect(subprocess.spawns[0]?.argv.slice(-6)).toEqual([
+      'plugin', '--profile', 'web', 'doctor', '--retry', quarantineId,
+    ])
+    const approvalFile = JSON.parse(
+      readFileSync(join(home, 'quarantine', 'host-version-overrides.json'), 'utf8'),
+    ) as { schema: unknown; approvals: Array<{ acknowledgedAt?: unknown }> }
+    const acknowledgedAt = approvalFile.approvals[0]?.acknowledgedAt
+    expect(typeof acknowledgedAt).toBe('string')
+    expect(approvalFile).toEqual({
+      schema: 1,
+      approvals: [{
+        profile: 'web',
+        packageName: 'fixture-plugin',
+        pluginVersion: '1.2.3',
+        hostVersion: '0.1.6-rc.1',
+        supportedHostVersions: ['0.1.5-rc.2'],
+        recommendedHostVersion: '0.1.5-rc.2',
+        acknowledgedAt,
+      }],
+    })
+
+    writeJson(quarantinePath, {
+      schema: 1,
+      plugins: [{
+        quarantineId: '00000000-0000-4000-8000-000000000022',
+        profile: 'web',
+        packageName: 'broken-plugin',
+        packageSpec: '1.0.0',
+        bundleIndex: 0,
+        quarantinedAt: '2026-09-17T01:02:03.000Z',
+        reason: 'loader-lifecycle-failed',
+        conflicts: [],
+      }],
+    })
+    expect(() => inventory.startHostVersionOverride({
+      quarantineId: '00000000-0000-4000-8000-000000000022',
+    })).toThrow(/only a Host version declaration can be overridden/)
   })
 
   it('uninstalls an inactive quarantined plugin and removes its record', async () => {

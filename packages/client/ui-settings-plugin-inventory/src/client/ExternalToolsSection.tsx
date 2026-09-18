@@ -475,6 +475,7 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
             labels={{
               signal: signal => t('external.terminal.signal').replace('{signal}', signal),
               exitCode: code => t('external.terminal.exitCode').replace('{code}', String(code)),
+              noExitCode: t('external.terminal.noExitCode'),
               running: t('external.terminal.running'),
               failed: t('external.terminal.failed'),
               done: t('external.terminal.done'),

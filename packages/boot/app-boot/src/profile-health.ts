@@ -69,6 +69,8 @@ const PROFILE_WORKSPACE_FILENAME = 'pnpm-workspace.yaml'
 const PROFILE_LOCKFILE_FILENAME = 'pnpm-lock.yaml'
 const QUARANTINE_DIRECTORY = 'quarantine'
 const QUARANTINE_FILENAME = 'profile-plugins.json'
+const HOST_COMPATIBILITY_OVERRIDES_FILENAME = 'host-version-overrides.json'
+const HOST_COMPATIBILITY_OVERRIDES_SCHEMA = 1 as const
 const PROFILE_HEALTH_DIRECTORY = 'profile-health'
 const PLUGIN_COMPATIBILITY_FILENAME = 'compatibility.json'
 const MAX_PLUGIN_COMPATIBILITY_BYTES = 64 * 1024
@@ -188,6 +190,22 @@ export interface QuarantineRemovalResidue {
 interface ProfileQuarantineFile {
   schema: typeof PROFILE_QUARANTINE_SCHEMA
   plugins: QuarantinedProfilePlugin[]
+}
+
+interface ProfileHostCompatibilityOverride {
+  readonly profile: string
+  readonly packageName: string
+  readonly pluginVersion: string
+  readonly hostVersion: string
+  readonly supportedHostVersions: readonly string[]
+  readonly recommendedHostVersion?: string
+  readonly previewTag?: string
+  readonly acknowledgedAt: string
+}
+
+interface ProfileHostCompatibilityOverrideFile {
+  readonly schema: typeof HOST_COMPATIBILITY_OVERRIDES_SCHEMA
+  readonly approvals: readonly ProfileHostCompatibilityOverride[]
 }
 
 /** Observable result of one dependency-health repair attempt. */
@@ -351,6 +369,50 @@ function readPluginCompatibilityDeclaration(packageDir: string): PluginCompatibi
   }
 }
 
+function hostCompatibilityOverridesPath(home: string): string {
+  return join(home, QUARANTINE_DIRECTORY, HOST_COMPATIBILITY_OVERRIDES_FILENAME)
+}
+
+function isProfileHostCompatibilityOverride(value: unknown): value is ProfileHostCompatibilityOverride {
+  if (typeof value !== 'object' || value === null) return false
+  const item = value as Record<string, unknown>
+  return typeof item.profile === 'string'
+    && typeof item.packageName === 'string'
+    && typeof item.pluginVersion === 'string'
+    && typeof item.hostVersion === 'string'
+    && Array.isArray(item.supportedHostVersions)
+    && item.supportedHostVersions.every((version: unknown) => typeof version === 'string')
+    && (item.recommendedHostVersion === undefined || typeof item.recommendedHostVersion === 'string')
+    && (item.previewTag === undefined || typeof item.previewTag === 'string')
+    && typeof item.acknowledgedAt === 'string'
+}
+
+function readHostCompatibilityOverrides(home: string): readonly ProfileHostCompatibilityOverride[] {
+  const path = hostCompatibilityOverridesPath(home)
+  if (!existsSync(path)) return []
+  try {
+    const value = JSON.parse(readFileSync(path, 'utf8')) as Partial<ProfileHostCompatibilityOverrideFile>
+    if (value.schema !== HOST_COMPATIBILITY_OVERRIDES_SCHEMA || !Array.isArray(value.approvals)) return []
+    return value.approvals.filter(isProfileHostCompatibilityOverride)
+  } catch {
+    return []
+  }
+}
+
+function hostCompatibilityOverrideMatches(
+  approval: ProfileHostCompatibilityOverride,
+  issue: ProfileHostCompatibilityIssue,
+): boolean {
+  return approval.profile === issue.profile
+    && approval.packageName === issue.packageName
+    && approval.pluginVersion === issue.installedVersion
+    && approval.hostVersion === issue.hostVersion
+    && approval.recommendedHostVersion === issue.recommendedHostVersion
+    && approval.previewTag === issue.previewTag
+    && approval.supportedHostVersions.length === issue.supportedHostVersions.length
+    && approval.supportedHostVersions.every((version, index) => version === issue.supportedHostVersions[index])
+}
+
 /**
  * Inspect valid package-owned Harness compatibility declarations without executing plugin code.
  * Missing, malformed, oversized, symlinked, or unknown declarations remain compatible-by-default;
@@ -369,6 +431,7 @@ export function inspectProfileHostCompatibility(
   const profileDir = resolveProfileDir(options.profile, home)
   const manifest = readProfileManifest(options.binName, profileDir)
   const installationOwned = new Set(PROFILE_TEMPLATES[options.profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
+  const approvals = readHostCompatibilityOverrides(home)
   const issues: ProfileHostCompatibilityIssue[] = []
   for (const packageName of manifest.dsh?.profile?.bundles ?? []) {
     if (installationOwned.has(packageName) || manifest.dependencies?.[packageName] === undefined
@@ -378,7 +441,7 @@ export function inspectProfileHostCompatibility(
     const declaration = readPluginCompatibilityDeclaration(packageDir)
     if (declaration === undefined || declaration.supportedHostVersions.includes(hostVersion)) continue
     const installedVersionValue = readPackageManifest(join(packageDir, 'package.json')).version
-    issues.push({
+    const issue: ProfileHostCompatibilityIssue = {
       profile: options.profile,
       packageName,
       ...(typeof installedVersionValue === 'string' ? { installedVersion: installedVersionValue } : {}),
@@ -388,7 +451,8 @@ export function inspectProfileHostCompatibility(
         ? {}
         : { recommendedHostVersion: declaration.recommendedHostVersion }),
       ...(declaration.previewTag === undefined ? {} : { previewTag: declaration.previewTag }),
-    })
+    }
+    if (!approvals.some(approval => hostCompatibilityOverrideMatches(approval, issue))) issues.push(issue)
   }
   return issues
 }
@@ -1101,6 +1165,45 @@ function readQuarantineFile(home: string): ProfileQuarantineFile {
  */
 export function listQuarantinedProfilePlugins(home: string = resolveDshHome()): readonly QuarantinedProfilePlugin[] {
   return readQuarantineFile(home).plugins
+}
+
+/**
+ * Persist a user's exact-version approval to run one plugin outside its declared Host range.
+ * The approval stops matching when the plugin version, Host version, or compatibility declaration changes.
+ * @param quarantineId - opaque id for an incompatible-host-version quarantine.
+ * @param home - Harness home; defaults to {@link resolveDshHome}.
+ * @returns true when the exact approval was recorded.
+ */
+export function approveQuarantinedProfilePluginHostVersion(
+  quarantineId: string,
+  home: string = resolveDshHome(),
+): boolean {
+  const record = findQuarantinedProfilePlugin(quarantineId, home)
+  if (record === undefined) return false
+  if (record.reason !== 'incompatible-host-version'
+    || record.hostCompatibility === undefined
+    || record.installedVersion === undefined) {
+    throw new Error('dsh: Host compatibility override requires an exact incompatible-version quarantine')
+  }
+  const issue = record.hostCompatibility
+  const approval: ProfileHostCompatibilityOverride = {
+    profile: record.profile,
+    packageName: record.packageName,
+    pluginVersion: record.installedVersion,
+    hostVersion: issue.hostVersion,
+    supportedHostVersions: issue.supportedHostVersions,
+    ...(issue.recommendedHostVersion === undefined ? {} : { recommendedHostVersion: issue.recommendedHostVersion }),
+    ...(issue.previewTag === undefined ? {} : { previewTag: issue.previewTag }),
+    acknowledgedAt: new Date().toISOString(),
+  }
+  const retained = readHostCompatibilityOverrides(home).filter(candidate => (
+    candidate.profile !== approval.profile || candidate.packageName !== approval.packageName
+  ))
+  atomicWrite(hostCompatibilityOverridesPath(home), `${JSON.stringify({
+    schema: HOST_COMPATIBILITY_OVERRIDES_SCHEMA,
+    approvals: [...retained, approval],
+  }, undefined, 2)}\n`)
+  return true
 }
 
 /**

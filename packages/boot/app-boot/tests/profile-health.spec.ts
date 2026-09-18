@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  approveQuarantinedProfilePluginHostVersion,
   initProfile,
   inspectProfileDependencies,
   inspectProfileHostCompatibility,
@@ -272,6 +273,70 @@ describe('profile plugin Host compatibility inspection', () => {
     expect(inspectProfileHostCompatibility(options)).toEqual([])
     writeFileSync(join(pluginDir, 'compatibility.json'), ' '.repeat(64 * 1024 + 1))
     expect(inspectProfileHostCompatibility(options)).toEqual([])
+  })
+
+  it('honors only an exact user-approved plugin, Host, and compatibility declaration', () => {
+    const { anchor } = stageHarness('0.1.2-rc.1')
+    const home = temporaryDirectory('dsh-health-home-')
+    const { pluginDir } = stageProfile(home, {})
+    const compatibility = {
+      schemaVersion: 1,
+      recommendedHost: '0.1.2-alpha.5',
+      supportedHosts: [{ version: '0.1.2-alpha.5', track: 'recommended' }],
+    }
+    writeManifest(join(pluginDir, 'compatibility.json'), compatibility)
+    const issue = inspectProfileHostCompatibility({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })[0]!
+    const quarantineId = '00000000-0000-4000-8000-000000000091'
+    writeManifest(join(home, 'quarantine', 'profile-plugins.json'), {
+      schema: 1,
+      plugins: [{
+        quarantineId,
+        profile: 'web',
+        packageName: 'fixture-plugin',
+        packageSpec: '^2.3.0',
+        installedVersion: '2.3.4',
+        bundleIndex: 1,
+        quarantinedAt: '2026-09-17T00:00:00.000Z',
+        reason: 'incompatible-host-version',
+        hostCompatibility: issue,
+        conflicts: [],
+      }],
+    })
+
+    expect(approveQuarantinedProfilePluginHostVersion(quarantineId, home)).toBe(true)
+    expect(inspectProfileHostCompatibility({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toEqual([])
+
+    writeManifest(join(pluginDir, 'package.json'), {
+      name: 'fixture-plugin',
+      version: '2.3.5',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+    expect(inspectProfileHostCompatibility({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toHaveLength(1)
+    writeManifest(join(pluginDir, 'package.json'), {
+      name: 'fixture-plugin',
+      version: '2.3.4',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+
+    const { anchor: nextHostAnchor } = stageHarness('0.1.3-rc.1')
+    expect(inspectProfileHostCompatibility({
+      binName: 'test', profile: 'web', installAnchor: nextHostAnchor, home,
+    })).toHaveLength(1)
+
+    writeManifest(join(pluginDir, 'compatibility.json'), {
+      ...compatibility,
+      supportedHosts: [{ version: '0.1.2-alpha.2', track: 'legacy' }],
+      recommendedHost: '0.1.2-alpha.2',
+    })
+    expect(inspectProfileHostCompatibility({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toHaveLength(1)
   })
 
   it('quarantines an explicitly incompatible plugin before its code can load', () => {

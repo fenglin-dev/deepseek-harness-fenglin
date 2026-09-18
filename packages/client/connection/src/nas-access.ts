@@ -4,6 +4,12 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { credentialKey, type CredentialProvider, type CredentialRecord } from '@deepseek-ai/dsh-credentials'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import {
+  NAS_PROTOCOL_V1,
+  NasProtocolViolation,
+  type NasDeviceSummary,
+  type NasHealthFields,
+} from '@deepseek-ai/dsh-nas-protocol'
 import { isTrustedApiRequest } from './api-request-trust.ts'
 
 const DEVICE_RECORD_KEY = credentialKey('client-connection', 'nas-devices')
@@ -27,22 +33,25 @@ interface DeviceDocument {
   readonly devices: readonly DeviceRecord[]
 }
 
+/** Resolved values required by one NAS Runtime access owner. */
 export interface NasDeploymentConfig {
+  /** Enable NAS Runtime routes for the current deployment. */
   readonly enabled: boolean
+  /** Display name returned in health and pairing documents. */
   readonly name: string
+  /** Harness release version returned in health and pairing documents. */
   readonly version: string
+  /** NAS Wire Protocol version reported to Desktop. */
   readonly protocolVersion: number
+  /** Browser authorities permitted to reach the NAS routes. */
   readonly trustedHosts: readonly string[]
+  /** Lifetime in days for each generated Paired Device credential. */
   readonly deviceLifetimeDays: number
+  /** Optional fixed eight-digit code; omission generates a random code. */
   readonly pairingCode?: string
 }
 
-export interface NasDeviceSummary {
-  readonly id: string
-  readonly name: string
-  readonly createdAt: string
-  readonly expiresAt: string
-}
+export type { NasDeviceSummary } from '@deepseek-ai/dsh-nas-protocol'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -118,6 +127,7 @@ function deviceSummary(device: DeviceRecord): NasDeviceSummary {
 
 /** One deployment-wide NAS access owner. */
 export class NasAccess {
+  /** Fixed NAS Wire Protocol v1 routes mounted by the Web host adapter. */
   readonly routes: readonly WebRoute[]
   private pairingCode: string
   private pairingExpiresAt: number
@@ -132,12 +142,18 @@ export class NasAccess {
     this.pairingCode = normalizeCode(config.pairingCode ?? generatedCode())
     this.pairingExpiresAt = Date.now() + PAIRING_LIFETIME_MS
     this.routes = [
-      { kind: 'exact', path: '/nas/health', handler: (req: IncomingMessage, res: ServerResponse) => { this.health(req, res) } },
-      { kind: 'exact', path: '/nas/pair', handler: (req: IncomingMessage, res: ServerResponse) => this.pair(req, res) },
-      { kind: 'exact', path: '/nas/devices', handler: (req: IncomingMessage, res: ServerResponse) => this.manageDevices(req, res) },
+      { kind: 'exact', path: NAS_PROTOCOL_V1.health.path, handler: (req: IncomingMessage, res: ServerResponse) => { this.health(req, res) } },
+      { kind: 'exact', path: NAS_PROTOCOL_V1.pair.path, handler: (req: IncomingMessage, res: ServerResponse) => this.pair(req, res) },
+      { kind: 'exact', path: NAS_PROTOCOL_V1.devices.path, handler: (req: IncomingMessage, res: ServerResponse) => this.manageDevices(req, res) },
     ]
   }
 
+  /**
+   * Restore the NAS identity and current Paired Devices from credentials.
+   * @param credentials - persistent credential provider for identity and token hashes.
+   * @param config - resolved NAS deployment values.
+   * @returns initialized deployment-wide access owner.
+   */
   static async create(credentials: CredentialProvider, config: NasDeploymentConfig): Promise<NasAccess> {
     const access = new NasAccess(credentials, config)
     const stored = parseDocument(await credentials.readRecord(DEVICE_RECORD_KEY))
@@ -154,7 +170,11 @@ export class NasAccess {
     return access
   }
 
-  /** True when a current per-device bearer token authorizes this request. */
+  /**
+   * Check whether a current Paired Device bearer token authorizes a request.
+   * @param req - request or fetch-style headers carrying optional authorization.
+   * @returns true only for an unexpired stored token hash.
+   */
   isAuthenticated(
     req: IncomingMessage | { readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>> },
   ): boolean {
@@ -168,17 +188,20 @@ export class NasAccess {
     return this.devices.some(device => Date.parse(device.expiresAt) > now && matchesHash(token, device.tokenHash))
   }
 
+  /**
+   * Return current Paired Devices without credential hashes.
+   * @returns renderer-safe summaries of current Paired Devices.
+   */
   listDevices(): readonly NasDeviceSummary[] {
     return this.devices.map(deviceSummary)
   }
 
   private health(req: IncomingMessage, res: ServerResponse): void {
-    if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return }
+    if (req.method !== NAS_PROTOCOL_V1.health.method && req.method !== 'HEAD') { res.writeHead(405); res.end(); return }
     if (!isTrustedApiRequest(req, this.config.trustedHosts)) { res.writeHead(403); res.end('forbidden'); return }
     if (Date.now() >= this.pairingExpiresAt) this.rotatePairingCode()
     const available = this.pairingAttempts < MAX_PAIRING_ATTEMPTS
-    const value = {
-      schema: 'open-deepseek-harness/nas-health/v1',
+    const fields: NasHealthFields = {
       instanceId: this.instanceId,
       name: this.config.name,
       version: this.config.version,
@@ -189,19 +212,21 @@ export class NasAccess {
       ...(available ? { pairingExpiresAt: new Date(this.pairingExpiresAt).toISOString() } : {}),
     }
     if (req.method === 'HEAD') { res.writeHead(200, { 'cache-control': 'no-store' }); res.end(); return }
-    json(res, 200, value)
+    json(res, 200, NAS_PROTOCOL_V1.health.response.create(fields))
   }
 
   private async pair(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    if (req.method !== 'POST') { res.writeHead(405); res.end(); return }
+    if (req.method !== NAS_PROTOCOL_V1.pair.method) { res.writeHead(405); res.end(); return }
     if (!isTrustedApiRequest(req, this.config.trustedHosts)) { res.writeHead(403); res.end('forbidden'); return }
     let body: unknown
     try { body = await readJson(req) } catch { json(res, 400, { error: 'invalid JSON request' }); return }
-    if (!isRecord(body) || typeof body.code !== 'string' || typeof body.deviceName !== 'string') {
+    let request
+    try { request = NAS_PROTOCOL_V1.pair.request.parse(body) } catch (error) {
+      if (!(error instanceof NasProtocolViolation)) throw error
       json(res, 400, { error: 'code and deviceName are required' }); return
     }
-    const code = body.code.replaceAll(/\s/gu, '')
-    const deviceName = body.deviceName.trim()
+    const code = request.code.replaceAll(/\s/gu, '')
+    const deviceName = request.deviceName.trim()
     if (this.pairingAttempts >= MAX_PAIRING_ATTEMPTS) {
       json(res, 429, { error: 'pairing attempt limit reached; request a fresh code' }); return
     }
@@ -228,13 +253,11 @@ export class NasAccess {
     this.devices = parseDocument(record).devices
     console.info(`dsh nas: paired device ${device.id} (${device.name}); grant expires ${device.expiresAt}`)
     this.rotatePairingCode()
-    json(res, 200, {
-      schema: 'open-deepseek-harness/nas-pairing/v1',
+    json(res, 200, NAS_PROTOCOL_V1.pair.response.create({
       deviceId: device.id,
       token,
       expiresAt: device.expiresAt,
-      health: {
-        schema: 'open-deepseek-harness/nas-health/v1',
+      health: NAS_PROTOCOL_V1.health.response.create({
         instanceId: this.instanceId,
         name: this.config.name,
         version: this.config.version,
@@ -243,21 +266,26 @@ export class NasAccess {
         architecture: process.arch === 'arm64' ? 'arm64' : 'x64',
         pairingAvailable: true,
         pairingExpiresAt: new Date(this.pairingExpiresAt).toISOString(),
-      },
-    })
+      }),
+    }))
   }
 
   private async manageDevices(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!isTrustedApiRequest(req, this.config.trustedHosts)) { res.writeHead(403); res.end('forbidden'); return }
     if (!this.isAuthenticated(req)) { res.writeHead(401); res.end('unauthorized'); return }
-    if (req.method === 'GET') { json(res, 200, { devices: this.listDevices() }); return }
-    if (req.method !== 'POST') { res.writeHead(405); res.end(); return }
+    if (req.method === NAS_PROTOCOL_V1.devices.method) {
+      json(res, 200, NAS_PROTOCOL_V1.devices.response.create(this.listDevices()))
+      return
+    }
+    if (req.method !== NAS_PROTOCOL_V1.revokeDevice.method) { res.writeHead(405); res.end(); return }
     let body: unknown
     try { body = await readJson(req) } catch { json(res, 400, { error: 'invalid JSON request' }); return }
-    if (!isRecord(body) || typeof body.revokeDeviceId !== 'string') {
+    let request
+    try { request = NAS_PROTOCOL_V1.revokeDevice.request.parse(body) } catch (error) {
+      if (!(error instanceof NasProtocolViolation)) throw error
       json(res, 400, { error: 'revokeDeviceId is required' }); return
     }
-    const id = body.revokeDeviceId
+    const id = request.revokeDeviceId
     const record = await this.credentials.modifyRecord(DEVICE_RECORD_KEY, (current: CredentialRecord | undefined) => {
       const document = parseDocument(current)
       return Promise.resolve({
@@ -267,7 +295,7 @@ export class NasAccess {
     })
     this.devices = parseDocument(record).devices
     console.info(`dsh nas: revoked device ${id}`)
-    json(res, 200, { devices: this.listDevices() })
+    json(res, 200, NAS_PROTOCOL_V1.devices.response.create(this.listDevices()))
   }
 
   private rotatePairingCode(): void {

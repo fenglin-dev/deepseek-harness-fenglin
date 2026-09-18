@@ -8,7 +8,7 @@ import type { AddressInfo } from 'node:net'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { IndexInjection, WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
-import { API_PATH, RpcId, apply, inject, type ClientRequest, type ConnectionConfig, type HostConnectionHandle } from '../src/index.ts'
+import { API_PATH, Config, RpcId, apply, inject, type ClientRequest, type ConnectionConfig, type HostConnectionHandle } from '../src/index.ts'
 import { DEFAULT_MAX_REQUEST_BODY_BYTES } from '../src/http-bridge.ts'
 import { provideBrowserCredentials } from './browser-credentials.ts'
 
@@ -118,6 +118,10 @@ function browserCookie(connection: HostConnectionHandle, authority: string): str
 }
 
 describe('connection node half', () => {
+  it('accepts an ordinary local configuration without NAS settings', () => {
+    expect(new Config({})).not.toHaveProperty('nas')
+  })
+
   it('retains a channel without a Web server and mounts it when that service arrives', async () => {
     const ctx = new Context()
     provideBrowserCredentials(ctx)
@@ -151,6 +155,64 @@ describe('connection node half', () => {
     await plugin.dispose()
     expect(routes.some(route => route.path === '/pocket-fixture')).toBe(false)
     await dispose()
+  })
+
+  it('runs request admission after authentication and removes it with its owning fiber', async () => {
+    const { ctx, routes, connection, dispose } = await mounted()
+    let admitted = 0
+    const guard = ctx.plugin({ apply(owner: Context) {
+      owner.on('connection/request', async (_request, response) => {
+        admitted++
+        response.writeHead(503)
+        response.end()
+      })
+    } })
+    try {
+      await guard.await()
+      const unauthorized = fakeResponse()
+      await routes[0]!.handler(fakeRequest({ host: 'localhost' }), unauthorized.response)
+      expect(unauthorized.state.status).toBe(401)
+      expect(admitted).toBe(0)
+      const headers = { host: 'localhost', cookie: browserCookie(connection, 'localhost') }
+      const refused = fakeResponse()
+      await routes[0]!.handler(fakeRequest(headers), refused.response)
+      expect(refused.state.status).toBe(503)
+      expect(admitted).toBe(1)
+      await guard.dispose()
+      const allowed = fakeResponse()
+      await routes[0]!.handler(fakeRequest(headers), allowed.response)
+      expect(allowed.state.status).toBe(404)
+      expect(admitted).toBe(1)
+    } finally { await guard.dispose(); await dispose() }
+  })
+
+  it('awaits delegated response transfer before releasing the admission listener', async () => {
+    const { ctx, routes, connection, dispose } = await mounted()
+    const entered = Promise.withResolvers<undefined>()
+    const finish = Promise.withResolvers<undefined>()
+    let completed = false
+    connection.fetch.register({ path: '/api/held', methods: ['GET'], requestBody: 'buffered',
+      async fetch() {
+        return new Response(new ReadableStream({ async start(controller) {
+          entered.resolve(undefined)
+          await finish.promise
+          controller.close()
+        } }))
+      },
+    })
+    const remove = ctx.on('connection/request', async (_request, _response, next) => {
+      await next()
+      completed = true
+    })
+    const response = fakeResponse()
+    const pending = routes[0]!.handler(fakeRequest({ host: 'localhost', cookie: browserCookie(connection, 'localhost') }, '/api/held'), response.response)
+    try {
+      await entered.promise
+      expect(completed).toBe(false)
+      finish.resolve(undefined)
+      await pending
+      expect(completed).toBe(true)
+    } finally { finish.resolve(undefined); await pending; remove(); await dispose() }
   })
 
   it('provides the carrier-neutral service without a Web server', async () => {

@@ -57,11 +57,17 @@ export interface Config {
   trustedHosts: string[]
   /** NAS deployment values, absent for an ordinary local Web app. */
   nas?: {
+    /** Enable NAS Runtime access for this Web application. */
     enabled: true
+    /** Display name reported to pairing Desktop installations. */
     name: string
+    /** Harness release version reported by NAS health checks. */
     version: string
+    /** NAS Wire Protocol version served by this deployment. */
     protocolVersion: number
+    /** Lifetime in days for each Paired Device credential. */
     deviceLifetimeDays: number
+    /** Optional fixed eight-digit code; omission generates and logs one. */
     pairingCode?: string
   }
 }
@@ -71,6 +77,8 @@ export const Config: z<Config> = z.object({
   printUrl: z.boolean().default(true),
   surfaceContext: z.boolean().default(true),
   trustedHosts: z.array(String).default([]),
+  // Preserve omission explicitly. A bare Schemastery object defaults to `{}`
+  // and would make every ordinary non-NAS launch fail its required fields.
   nas: z.object({
     enabled: z.const(true),
     name: String,
@@ -78,7 +86,7 @@ export const Config: z<Config> = z.object({
     protocolVersion: z.natural().min(1),
     deviceLifetimeDays: z.natural().min(1),
     pairingCode: z.string(),
-  }),
+  }).default(undefined as unknown as Required<NonNullable<Config['nas']>>),
 })
 
 /** Bind-dependent Web values shared by the trust fence and URL display. */
@@ -139,6 +147,7 @@ try {
  * an OS-assigned port is unknowable before bind.
  * @param bindHost - the active webserver bind host.
  * @param extra - explicit `--trusted-host` values, in argument order.
+ * @param nas - optional NAS deployment values retained in the Runtime snapshot.
  * @returns the LAN display addresses and invocation-derived fence authorities.
  */
 export function resolveLanTrust(bindHost: string, extra: readonly string[], nas?: Config['nas']): WebRuntimeValues {

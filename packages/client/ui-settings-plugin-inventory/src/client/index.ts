@@ -140,6 +140,11 @@ export function apply(ctx: ClientContext): void {
       if (!result.ok) throw new Error(`pluginInventory.startQuarantineRetry failed: ${result.error.code}: ${result.error.message}`)
       return result.value
     },
+    startHostVersionOverride: async (request) => {
+      const result = await ctx.remote.pluginInventory.startHostVersionOverride(request)
+      if (!result.ok) throw new Error(`pluginInventory.startHostVersionOverride failed: ${result.error.code}: ${result.error.message}`)
+      return result.value
+    },
     approveQuarantineBuild: async (request) => {
       const result = await ctx.remote.pluginInventory.approveQuarantineBuild(request)
       if (!result.ok) throw new Error(`pluginInventory.approveQuarantineBuild failed: ${result.error.code}: ${result.error.message}`)

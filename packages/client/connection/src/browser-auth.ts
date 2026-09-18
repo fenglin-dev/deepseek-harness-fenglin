@@ -207,6 +207,7 @@ export class BrowserAuth {
    * @param processOwner - root application context retaining one token across Connection reloads.
    * @param credentials - persistent credential provider for the Web profile.
    * @param maxAgeDays - positive absolute browser-cookie lifetime in days.
+   * @param nasAccess - optional per-device bearer authentication owner.
    * @returns initialized authentication owner with the process owner's launch token.
    */
   static async create(

@@ -60,7 +60,7 @@ export const apply = ctx => globalThis.__webStartupApply(ctx)
     `  name: ${pathToFileURL(join(dir, 'reader.mjs')).href}`,
     `  inject: [${WEB_STARTUP_SERVICE}]`,
     '  config:',
-    "    host: !!js ctx.webStartup.host ?? '127.0.0.1'",
+    '    host: !!js "ctx.webStartup.host ?? (ctx.webStartup.nas ? \'0.0.0.0\' : \'127.0.0.1\')"',
     '    openBrowser: !!js ctx.webStartup.openBrowser',
     '    port: !!js ctx.webStartup.port ?? 3080',
     '    trustedHosts: !!js ctx.webStartup.trustedHosts',
@@ -166,6 +166,21 @@ describe('web command-line provider', () => {
       host: '0.0.0.0', openBrowser: true, trustedHosts: ['harness.example.com'],
       nas: true, nasName: 'Studio NAS', pairingCode: '12345678', deviceLifetimeDays: 30,
     })
+    expect(observed.exits).toEqual([])
+  })
+
+  it('defaults an explicitly enabled NAS deployment to all interfaces', async () => {
+    const { values, observed } = await bootProvider([
+      '--trusted-host', 'harness.example.com',
+      '--nas',
+      '--nas-name', 'Studio NAS',
+      '--pairing-code', '12345678',
+    ])
+    expect(values).toEqual({
+      openBrowser: true, trustedHosts: ['harness.example.com'],
+      nas: true, nasName: 'Studio NAS', pairingCode: '12345678', deviceLifetimeDays: 90,
+    })
+    expect(observed.readerConfig).toMatchObject({ host: '0.0.0.0', nas: true })
     expect(observed.exits).toEqual([])
   })
 })

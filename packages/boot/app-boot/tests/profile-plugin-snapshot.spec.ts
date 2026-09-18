@@ -166,6 +166,9 @@ describe('Profile plugin snapshots', () => {
   it('captures, compares, and restores only managed plugin-stack files', () => {
     const { home, profileDir } = fixture()
     try {
+      const compatibilityOverrides = join(home, 'quarantine', 'host-version-overrides.json')
+      mkdirSync(join(home, 'quarantine'), { recursive: true })
+      writeFileSync(compatibilityOverrides, '{"schema":1,"approvals":[{"packageName":"alpha"}]}\n')
       const record = createProfilePluginSnapshot({
         home,
         profile: 'web',
@@ -178,6 +181,7 @@ describe('Profile plugin snapshots', () => {
         dependencies: { alpha: '2.0.0', beta: '1.0.0' },
         dsh: { profile: { bundles: ['dsh-base', 'alpha', 'beta'] } },
       }))
+      writeFileSync(compatibilityOverrides, '{"schema":1,"approvals":[]}\n')
       expect(listProfilePluginSnapshots({ home, profile: 'web' })[0]?.difference).toEqual({
         added: ['beta'],
         removed: [],
@@ -195,6 +199,8 @@ describe('Profile plugin snapshots', () => {
         dsh: { profile: { bundles: ['dsh-base', 'alpha'] } },
       })
       expect(readFileSync(join(profileDir, 'pnpm-workspace.yaml'), 'utf8')).toContain('alpha: false')
+      expect(readFileSync(compatibilityOverrides, 'utf8'))
+        .toBe('{"schema":1,"approvals":[{"packageName":"alpha"}]}\n')
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

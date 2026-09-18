@@ -39,6 +39,9 @@
     },
     {
       "path": "../../util/brand"
+    },
+    {
+      "path": "../../nas/nas-protocol"
     }
   ]
 }
