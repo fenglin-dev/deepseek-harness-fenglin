@@ -27,6 +27,12 @@ test('Windows unpacked probe checks packaged peers and both Electron entries', a
   assert.match(source, /--dsh-main-import-smoke/u)
 })
 
+test('Windows diagnostics always contain uploadable metadata', async () => {
+  const source = await readFile(new URL('collect-windows-smoke-diagnostics.ps1', import.meta.url), 'utf8')
+  assert.match(source, /summary\.json/u)
+  assert.match(source, /ConvertTo-Json -InputObject \$processes/u)
+})
+
 test('Desktop ships the runtime peers required by dsh-subprocess', async () => {
   const desktop = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
   const subprocess = JSON.parse(await readFile(new URL('../../../packages/subprocess/subprocess/package.json', import.meta.url), 'utf8'))

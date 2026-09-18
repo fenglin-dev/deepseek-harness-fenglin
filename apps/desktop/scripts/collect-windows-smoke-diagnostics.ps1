@@ -19,10 +19,17 @@ if (Test-Path -LiteralPath $processGuard) {
   Copy-Item -LiteralPath $processGuard -Destination (Join-Path $destination 'process-guard.log') -Force
 }
 
-Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+$processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
   Where-Object { $_.Name -match 'DeepSeek|electron|node|Un_' } |
-  Select-Object ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine |
-  ConvertTo-Json -Depth 3 |
+  Select-Object ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine)
+ConvertTo-Json -InputObject $processes -Depth 3 |
   Set-Content -LiteralPath (Join-Path $destination 'processes.json') -Encoding utf8
+
+@{
+  CollectedAt = (Get-Date).ToUniversalTime().ToString('o')
+  RunId = $env:GITHUB_RUN_ID
+  RunAttempt = $env:GITHUB_RUN_ATTEMPT
+  ProcessCount = $processes.Count
+} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $destination 'summary.json') -Encoding utf8
 
 Write-Host "Collected Windows smoke diagnostics at $destination"

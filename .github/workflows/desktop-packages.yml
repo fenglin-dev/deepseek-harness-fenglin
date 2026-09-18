@@ -217,7 +217,18 @@ jobs:
         run: |
           $run = gh api "repos/${{ github.repository }}/actions/runs/${{ inputs.windows_candidate_run_id }}" | ConvertFrom-Json
           if ($run.head_sha -ne '${{ github.sha }}') {
-            throw "Candidate run commit $($run.head_sha) does not match this workflow commit ${{ github.sha }}"
+            $allowed = @(
+              '.github/workflows/desktop-packages.yml',
+              'apps/desktop/scripts/collect-windows-smoke-diagnostics.ps1',
+              'apps/desktop/scripts/smoke-windows-package.ps1',
+              'apps/desktop/tests/desktop-packages-workflow.spec.ts'
+            )
+            $changed = @(git diff --name-only $run.head_sha '${{ github.sha }}')
+            $unsafe = @($changed | Where-Object { $_ -notin $allowed })
+            if ($unsafe.Count -gt 0) {
+              throw "Candidate run commit $($run.head_sha) differs in packaged inputs: $($unsafe -join ', ')"
+            }
+            Write-Host "Reusing candidate from $($run.head_sha); intervening changes are smoke-only: $($changed -join ', ')"
           }
 
       - uses: actions/download-artifact@v4
