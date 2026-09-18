@@ -130,7 +130,7 @@ export async function sealPrebuiltProfile(
   }
   // Only controlled application state may become a release resource.
   for (const name of await readdir(root)) {
-    if (!['profiles', 'bundled-plugins', '.agent-presets', 'settings.yaml', 'fenglin-ui-guard.yml', MANIFEST].includes(name)) throw new Error(`desktop: unexpected prebuilt home entry ${name}`)
+    if (!['profiles', 'bundled-plugins', '.agent-presets', 'profile-health', 'settings.yaml', 'fenglin-ui-guard.yml', MANIFEST].includes(name)) throw new Error(`desktop: unexpected prebuilt home entry ${name}`)
   }
   await chmod(root, 0o755)
   await walk(root)
