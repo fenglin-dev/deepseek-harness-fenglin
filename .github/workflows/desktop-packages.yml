@@ -19,9 +19,15 @@ on:
         required: true
         type: boolean
         default: true
+      windows_candidate_run_id:
+        description: Reuse a Windows candidate artifact from this run ID (must have the same commit)
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -34,6 +40,7 @@ env:
 jobs:
   bundled-plugins:
     name: Resolve bundled plugins
+    if: ${{ inputs.windows_candidate_run_id == '' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -68,7 +75,7 @@ jobs:
 
   macos:
     name: macOS ${{ matrix.arch }}
-    if: ${{ inputs.target == 'all' || inputs.target == 'macos' }}
+    if: ${{ inputs.windows_candidate_run_id == '' && (inputs.target == 'all' || inputs.target == 'macos') }}
     needs: bundled-plugins
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
@@ -129,8 +136,8 @@ jobs:
           retention-days: 14
 
   windows:
-    name: Windows x64
-    if: ${{ inputs.target == 'all' || inputs.target == 'windows-x64' }}
+    name: Build Windows x64 candidate
+    if: ${{ inputs.windows_candidate_run_id == '' && (inputs.target == 'all' || inputs.target == 'windows-x64') }}
     needs: bundled-plugins
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
@@ -158,14 +165,88 @@ jobs:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
 
+      - name: Verify Windows packaging contracts
+        run: node --test apps/desktop/scripts/runtime-deploy-config.test.mjs
+
+      - name: Prepare bundled plugins
+        run: pnpm run prepare:desktop:bundled-plugins
+
+      - name: Build clean-checkout Host and Desktop
+        run: pnpm run build:community-desktop
+
+      - name: Deploy Windows runtime
+        run: node apps/desktop/scripts/prepare-windows-runtime.mjs
+
       - name: Build Windows installer
-        run: pnpm run package:desktop:win:x64
+        working-directory: apps/desktop
+        run: node node_modules/electron-builder/out/cli/cli.js --win nsis --x64 --publish never
+
+      - name: Probe unpacked app.asar and Electron entries
+        run: node apps/desktop/scripts/smoke-windows-unpacked.mjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qualification-windows-x64-candidate
+          path: .artifacts/desktop-windows
+          if-no-files-found: error
+          retention-days: 3
+
+  windows-smoke:
+    name: Smoke Windows x64 candidate
+    needs: [bundled-plugins, windows]
+    if: >-
+      ${{ always() && (inputs.target == 'all' || inputs.target == 'windows-x64') && (
+        (inputs.windows_candidate_run_id == '' && needs.windows.result == 'success') ||
+        inputs.windows_candidate_run_id != ''
+      ) }}
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Verify reused candidate commit
+        if: ${{ inputs.windows_candidate_run_id != '' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $run = gh api "repos/${{ github.repository }}/actions/runs/${{ inputs.windows_candidate_run_id }}" | ConvertFrom-Json
+          if ($run.head_sha -ne '${{ github.sha }}') {
+            throw "Candidate run commit $($run.head_sha) does not match this workflow commit ${{ github.sha }}"
+          }
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: qualification-windows-x64-candidate
+          path: .artifacts/desktop-windows
+          run-id: ${{ inputs.windows_candidate_run_id || github.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Smoke test installed Windows package
         shell: pwsh
         run: apps/desktop/scripts/smoke-windows-package.ps1
 
-      - uses: actions/upload-artifact@v4
+      - name: Collect Windows smoke diagnostics
+        if: ${{ always() }}
+        shell: pwsh
+        run: apps/desktop/scripts/collect-windows-smoke-diagnostics.ps1
+
+      - name: Preserve Windows smoke diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualification-windows-x64-diagnostics
+          path: .artifacts/windows-smoke-diagnostics
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Publish qualified Windows artifact
+        uses: actions/upload-artifact@v4
         with:
           name: desktop-windows-x64
           path: .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
@@ -174,7 +255,7 @@ jobs:
 
   linux:
     name: Linux x64
-    if: ${{ inputs.target == 'all' || inputs.target == 'linux-x64' }}
+    if: ${{ inputs.windows_candidate_run_id == '' && (inputs.target == 'all' || inputs.target == 'linux-x64') }}
     needs: bundled-plugins
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
@@ -224,12 +305,12 @@ jobs:
 
   checksums:
     name: SHA-256 checksums
-    needs: [macos, windows, linux]
+    needs: [macos, windows-smoke, linux]
     if: >-
       ${{ always() && (
-        (inputs.target == 'all' && needs.macos.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success') ||
+        (inputs.target == 'all' && needs.macos.result == 'success' && needs.windows-smoke.result == 'success' && needs.linux.result == 'success') ||
         (inputs.target == 'macos' && needs.macos.result == 'success') ||
-        (inputs.target == 'windows-x64' && needs.windows.result == 'success') ||
+        (inputs.target == 'windows-x64' && needs.windows-smoke.result == 'success') ||
         (inputs.target == 'linux-x64' && needs.linux.result == 'success')
       ) }}
     runs-on: ubuntu-24.04
