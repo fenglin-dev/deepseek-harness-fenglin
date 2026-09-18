@@ -1449,6 +1449,8 @@ async function startApplication(): Promise<void> {
   let harnessEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: dshHome,
+    // Fenglin: pin profile-local pnpm store so plugin installs stay on one store.
+    PNPM_HOME: join(dshHome, 'pnpm-home'),
     DSH_DESKTOP_APPLICATION_VERSION: app.getVersion(),
     DSH_DESKTOP_PNPM_VERSION: DESKTOP_PNPM_VERSION,
     ...(app.isPackaged ? { DSH_PROFILE_RESOLUTION_MODE: 'runtime' } : {}),
