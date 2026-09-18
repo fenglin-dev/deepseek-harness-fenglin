@@ -7,7 +7,7 @@ interface WorkflowJob {
   readonly if?: string
   readonly needs?: string
   readonly env?: Record<string, string>
-  readonly steps?: Array<{ name?: string; uses?: string; with?: Record<string, string>; run?: string }>
+  readonly steps?: Array<{ name?: string; if?: string; uses?: string; with?: Record<string, string>; run?: string }>
 }
 
 describe('desktop package workflow bundled plugins', () => {
@@ -88,7 +88,12 @@ describe('desktop package workflow bundled plugins', () => {
     expect(build?.steps?.some(step => step.run === 'pnpm run build:community-desktop')).toBe(true)
     expect(build?.steps?.some(step => step.run === 'node apps/desktop/scripts/prepare-windows-runtime.mjs')).toBe(true)
     expect(build?.steps?.some(step => step.run === 'node apps/desktop/scripts/smoke-windows-unpacked.mjs')).toBe(true)
-    expect(build?.steps?.some(step => step.with?.name === 'qualification-windows-x64-candidate')).toBe(true)
+    expect(build?.steps?.some(step => (
+      step.name === 'Preserve Windows candidate'
+      && step.if === '${{ always() }}'
+      && step.with?.name === 'qualification-windows-x64-candidate'
+      && step.with?.['if-no-files-found'] === 'warn'
+    ))).toBe(true)
 
     expect(smoke?.if).toContain('inputs.windows_candidate_run_id')
     const reuseCheck = smoke?.steps?.find(step => step.name === 'Verify reused candidate commit')?.run
