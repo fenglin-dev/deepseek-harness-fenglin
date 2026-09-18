@@ -154,7 +154,7 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     const external = sections.find(section => section.options.id === 'external-tools')!
     expect(external.component).toBe(ExternalToolsSection)
     expect(external.options).toMatchObject({ id: 'external-tools', order: 18 })
-    expect(resolveSlotLabel(external.options.label)).toBe('外部工具')
+    expect(resolveSlotLabel(external.options.label)).toBe('工具与能力')
     const restore = sections.find(section => section.options.id === 'plugin-restore')!
     expect(restore.component).toBe(ImportedPluginRestoreSection)
     expect(restore.options).toMatchObject({ id: 'plugin-restore', order: 22 })
@@ -230,7 +230,7 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(resolveSlotLabel(b.slots.entries('settings.plugins.tab')[0]!.options.label)).toBe('Plugin list')
     const englishSections = b.slots.entries('settings.section')
     expect(resolveSlotLabel(englishSections.find(section => section.options.id === 'external-tools')!.options.label))
-      .toBe('External tools')
+      .toBe('Tools & capabilities')
     expect(resolveSlotLabel(englishSections.find(section => section.options.id === 'plugin-restore')!.options.label))
       .toBe('Plugin recovery')
     expect(resolveSlotLabel(englishSections.find(section => section.options.id === 'diagnostics')!.options.label))

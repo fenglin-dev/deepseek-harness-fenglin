@@ -541,6 +541,27 @@ describe('PluginInventoryGateway', () => {
     expect(inventory.getInstall(started.installId).exitCode).toBe(0)
   })
 
+  it('installs and composes a reviewed Browser Use provider as one guarded recipe', async () => {
+    const { inventory, subprocess } = await harness()
+    const packageSpec = '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.1.6-alpha.2'
+    const started = inventory.startInstall({
+      profile: 'web',
+      packageSpec,
+      experimentalCapability: 'browser-use-playwright-visible',
+    })
+    await expect.poll(() => inventory.getInstall(started.installId).phase).toBe('succeeded')
+    expect(subprocess.spawns.map(spawn => spawn.argv.slice(-2))).toEqual([
+      ['add', '@deepseek-ai/dsh-browser-use@0.1.6-alpha.2'],
+      ['add', packageSpec],
+      ['configure-experimental-capability', 'browser-use-playwright-visible'],
+    ])
+    expect(() => inventory.startInstall({
+      profile: 'web',
+      packageSpec,
+      experimentalCapability: 'computer-use-native',
+    })).toThrow(/invalid experimental capability/)
+  })
+
   it('publishes sanitized incremental pnpm progress and removes its private sidecar', async () => {
     const home = temporaryDirectory()
     vi.stubEnv('DSH_HOME', home)

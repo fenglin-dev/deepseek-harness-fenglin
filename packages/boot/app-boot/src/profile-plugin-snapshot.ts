@@ -146,6 +146,7 @@ const FIXED_FILES = [
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
+  'cordis.patch.yml',
 ] as const
 const HOME_FILES = [
   'quarantine/profile-plugins.json',

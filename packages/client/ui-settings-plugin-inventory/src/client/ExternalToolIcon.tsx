@@ -2,10 +2,44 @@
 
 import type { ReactNode } from 'react'
 
-export type ExternalToolIconId = 'codex' | 'claude-code' | 'workbuddy' | 'hermes' | 'trae'
+export type ExternalToolIconId =
+  | 'browser-use'
+  | 'computer-use'
+  | 'auto-review'
+  | 'codex'
+  | 'claude-code'
+  | 'workbuddy'
+  | 'hermes'
+  | 'trae'
 
 /** Render a decorative, theme-aware mark without loading remote artwork. */
 export function ExternalToolIcon({ tool }: { readonly tool: ExternalToolIconId }): ReactNode {
+  if (tool === 'browser-use') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="2.5" y="4" width="19" height="16" rx="3" stroke="currentColor" strokeWidth="1.7" />
+        <path d="M3 8h18M7 6h.01M10 6h.01" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="m14.2 11.1 4.1 2-2.1.8-.8 2.2Z" fill="currentColor" />
+      </svg>
+    )
+  }
+  if (tool === 'computer-use') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="2.5" y="3.5" width="19" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.7" />
+        <path d="M8 20.5h8M12 16.5v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="m13.5 7 4 2-2 .8-.8 2Z" fill="currentColor" />
+      </svg>
+    )
+  }
+  if (tool === 'auto-review') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 2.8 20 6v5.4c0 4.7-3.2 8.4-8 9.8-4.8-1.4-8-5.1-8-9.8V6Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+        <path d="m8.4 12 2.2 2.2 4.9-5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
   if (tool === 'codex') {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">

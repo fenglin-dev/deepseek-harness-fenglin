@@ -41,4 +41,35 @@ describe('external tool compatibility bridge', () => {
     })
     expect(resolve).not.toHaveBeenCalled()
   })
+
+  it('resolves Auto review to the reviewed alpha.2 bundle', async () => {
+    await expect(resolveExternalToolInstallRequest('auto-review')).resolves.toEqual({
+      profile: 'web',
+      packageSpec: '@deepseek-ai/dsh-experimental-auto-review@0.1.6-alpha.2',
+    })
+  })
+
+  it.each([
+    ['browser-use-playwright', '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.1.6-alpha.2'],
+    ['browser-use-devtools', '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp@0.1.6-alpha.2'],
+    ['browser-use-stagehand', '@deepseek-ai/dsh-experimental-browser-use-stagehand-native@0.1.6-alpha.2'],
+    ['computer-use-native', '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native@0.1.6-alpha.2'],
+    ['computer-use-mcp', '@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp@0.1.6-alpha.2'],
+  ] as const)('resolves %s to its reviewed alpha.2 provider', async (toolId, packageSpec) => {
+    await expect(resolveExternalToolInstallRequest(toolId)).resolves.toEqual({
+      profile: 'web',
+      packageSpec,
+    })
+  })
+
+  it('adds only the fixed composition recipe selected by the capability UI', async () => {
+    await expect(resolveExternalToolInstallRequest(
+      'browser-use-playwright',
+      'browser-use-playwright-visible',
+    )).resolves.toEqual({
+      profile: 'web',
+      packageSpec: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.1.6-alpha.2',
+      experimentalCapability: 'browser-use-playwright-visible',
+    })
+  })
 })

@@ -218,7 +218,9 @@ export function apply(ctx: ClientContext): void {
       }
       return result.value
     },
-    installExternalTool: async toolId => startControlledInstall(await resolveExternalToolInstallRequest(toolId)),
+    installExternalTool: async (toolId, experimentalCapability) => startControlledInstall(
+      await resolveExternalToolInstallRequest(toolId, experimentalCapability),
+    ),
     externalTools: async () => {
       const result = await ctx.remote.pluginInventory.externalTools()
       if (!result.ok) throw new Error(`pluginInventory.externalTools failed: ${result.error.code}: ${result.error.message}`)
@@ -228,6 +230,21 @@ export function apply(ctx: ClientContext): void {
       const result = await ctx.remote.pluginInventory.setExternalTool({ tool, enabled })
       if (!result.ok) throw new Error(`pluginInventory.setExternalTool failed: ${result.error.code}: ${result.error.message}`)
       return result.value
+    },
+    activateAutoReview: async () => {
+      const sessions = ctx.get('sessions')
+      if (sessions === undefined) return 'no-session'
+      const session = Object.values(sessions.list.getSnapshot().byId)
+        .find(candidate => (candidate.retainedBy.mainView ?? 0) > 0)
+      if (session === undefined) return 'no-session'
+      const live = sessions.binding(session.id)?.session
+      if (live === undefined) return 'no-session'
+      const result = await live.command('/permission auto')
+      if (!result.ok) {
+        throw new Error(`permission switch failed: ${result.error.code}: ${result.error.message}`)
+      }
+      if (!result.value.matched) throw new Error('the host offers no /permission command')
+      return 'switched'
     },
   })
   ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({

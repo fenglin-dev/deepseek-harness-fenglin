@@ -27,6 +27,8 @@ kind: "package-reference"
 
 打开设置中的「插件」分区并选择**插件列表**标签页，即可查看宿主的插件清单。插件激活期间不会读取 Remote——首次选择该标签页时才挂载组件，并通过 `api-remotes` 懒调用 `ctx.remote.pluginInventory.list()`。
 
+独立的「**工具与能力**」分区会先在「**0.1.6 新增功能**」标记下展示 Browser Use、Computer Use 与 Auto review，再展示外部产品连接。上下两组共用同一套双栏网格，窄设置面板中统一收成单栏。Browser Use 提供 Playwright MCP、Chrome DevTools MCP、Stagehand，以及隔离启动或连接现有浏览器的说明；Computer Use 提供 Cua Driver Native、MCP 选择，并明确操作系统权限边界。配置弹窗会把当前选择解析为经过审核的固定版本 Provider，通过受控安装器一键下载，并在卡片中提供终端输出、进度、暂停与停止。可见的隔离 Playwright/DevTools 会识别并复用本机已安装的 Chrome 或 Chromium 可执行程序，通过隔离配置运行，不会另外下载 Chrome for Testing；该配方和两种 Computer Use 都会连同共享能力层一起安装，并写进由事务保护、重启后生效的 Profile 组合。连接现有浏览器和 Stagehand 在补齐端点或模型凭据前只下载，不会错误提示“仅重启即可启用”。Auto review 沿用同一受控安装流程，激活后仍只作用于当前会话。
+
 安装失败且存在待审批的 pnpm 构建权限时，页面提供“允许这些脚本并重试”。该操作展示准确包名和持久授权范围，再使用原来的包规格及启用选项重试。一次点击批准整个列表，其中可能包括此前安装留下的待审批包。关闭页面不会授予权限。
 
 ### 阅读卡片

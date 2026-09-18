@@ -100,7 +100,7 @@ function validFile(profile: string, value: unknown): boolean {
 }
 
 function allowedFile(profile: string, path: string): boolean {
-  return ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'].some(name => path === `profiles/${profile}/${name}`)
+  return ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'cordis.patch.yml'].some(name => path === `profiles/${profile}/${name}`)
     || [
       'quarantine/profile-plugins.json',
       'quarantine/host-version-overrides.json',
