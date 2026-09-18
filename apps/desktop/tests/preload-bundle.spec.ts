@@ -63,8 +63,18 @@ it('boots every bundled preload before DOM globals are available with only Elect
           window: { addEventListener: vi.fn() },
           process: { platform: 'darwin', argv: ['--dsh-nas-runtime'] },
         }, { timeout: 1000 })
-        const remoteExposed = remoteExposeInMainWorld.mock.calls[0]?.[1] as Record<string, unknown>
+        const remoteExposed = remoteExposeInMainWorld.mock.calls[0]?.[1] as {
+          shell: Record<string, unknown>
+        } & Record<string, unknown>
         expect(Object.keys(remoteExposed)).toEqual(['menu', 'shell', 'releases', 'nas', 'desktopWeb'])
+        expect(Object.keys(remoteExposed.shell)).toEqual([
+          'getCapabilities', 'getPreferences', 'updatePreferences', 'onPreferences', 'restart', 'reportReadiness',
+        ])
+        expect(remoteExposed.shell).not.toHaveProperty('openLog')
+        expect(remoteExposed.shell).not.toHaveProperty('openLogDirectory')
+        expect(remoteExposed.shell).not.toHaveProperty('openSettingsDocument')
+        expect(remoteExposed.shell).not.toHaveProperty('getCommandLine')
+        expect(remoteExposed.shell).not.toHaveProperty('enterRecoveryMode')
         expect(remoteExposed).not.toHaveProperty('icons')
         expect(remoteExposed).not.toHaveProperty('downloadNetwork')
       }

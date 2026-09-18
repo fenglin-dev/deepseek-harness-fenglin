@@ -124,4 +124,5 @@ const ko = {
   'nas.discovery.untrusted': '검색 결과는 주소만 제안하며 신뢰를 설정하지 않습니다. 인증서 확인과 페어링이 계속 필요합니다.',
 } satisfies NasDictionary
 
+/** Non-core locale dictionaries for the NAS Runtime settings page. */
 export const NAS_TRANSLATIONS = { es, fr, 'pt-BR': ptBR, de, ja, ko } as const

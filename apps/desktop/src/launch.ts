@@ -189,7 +189,7 @@ export function resolveHarnessInvocation(
   const command = environment.DSH_DESKTOP_NODE_BIN ?? options.nodeCommand ?? 'node'
   const launch: HarnessLaunch = {
     command,
-    args: [harnessBin, ...invocationArgs],
+    args: ['--expose-internals', harnessBin, ...invocationArgs],
   }
   const launchEnvironment: NodeJS.ProcessEnv = {}
   if (environment.DSH_HOME !== undefined && environment.DSH_HOME.trim() !== '') {

@@ -200,6 +200,7 @@ const MANAGED_PROFILE_FILES = [
   'profiles/web/cordis.patch.yml',
   'settings.yaml',
   'quarantine/profile-plugins.json',
+  'quarantine/host-version-overrides.json',
   'profile-health/web.json',
   'profile-health/web.diagnostics.json',
   'profile-health/diagnostic-mode-settings.yaml',

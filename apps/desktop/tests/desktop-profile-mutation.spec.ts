@@ -46,13 +46,13 @@ function createFixture(overrides: Partial<DesktopProfileMutationOptions> = {}): 
           if (id === undefined) throw new Error('missing transaction id')
           writeFileSync(pendingPath, JSON.stringify({ id, phase: 'prepared', producerPid: process.pid }))
           writeFileSync(lockPath, JSON.stringify({ pid: process.pid, token: id }))
-          return JSON.stringify({ id })
+          return `dsh:plugin-snapshot-json ${JSON.stringify({ id })}\n`
         }
         if (args[0] === 'transaction' && (args[1] === 'commit' || args[1] === 'rollback')) {
           rmSync(pendingPath, { force: true })
         }
         if (args[0] === 'snapshot' && args[1] === 'end-restore-lease') rmSync(lockPath, { force: true })
-        return '{}'
+        return 'dsh:plugin-snapshot-json {}\n'
       },
     },
     harness: {

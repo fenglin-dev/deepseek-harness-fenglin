@@ -114,6 +114,15 @@ describe('DesktopShellController', () => {
       runtimeKind: 'nas', platform: 'darwin', packaged: true, launchAtLoginAvailable: true,
       sourceUpdateAvailable: false, commandLineAvailable: false, developmentRecoveryAvailable: false,
     })
+    delete b.bridge.shell.getDataHome
+    delete b.bridge.shell.openDataHomeChooser
+    delete b.bridge.shell.openLog
+    delete b.bridge.shell.openLogDirectory
+    delete b.bridge.shell.openSettingsDocument
+    delete b.bridge.shell.getCommandLine
+    delete b.bridge.shell.installCommandLine
+    delete b.bridge.shell.removeCommandLine
+    delete b.bridge.shell.enterRecoveryMode
     b.controller.start()
     await vi.waitFor(() => { expect(b.controller.getSnapshot().capabilities?.runtimeKind).toBe('nas') })
     expect(b.getDataHome).not.toHaveBeenCalled()

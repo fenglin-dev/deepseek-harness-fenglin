@@ -5,8 +5,15 @@ import { createSocket } from 'node:dgram'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { connect as connectTls } from 'node:tls'
+import {
+  NAS_PROTOCOL_V1,
+  NasProtocolViolation,
+  type NasDeviceSummary,
+  type NasHealthDocument,
+  type NasPairingDocument,
+} from '@deepseek-ai/dsh-nas-protocol'
 
-export const NAS_PROTOCOL_VERSION = 1
+export const NAS_PROTOCOL_VERSION = NAS_PROTOCOL_V1.version
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
 
 export type DesktopRuntimeSelection =
@@ -29,17 +36,7 @@ export interface NasRuntimeDirectory {
   readonly servers: readonly NasRuntimeRecord[]
 }
 
-export interface NasHealth {
-  readonly schema: 'open-deepseek-harness/nas-health/v1'
-  readonly instanceId: string
-  readonly name: string
-  readonly version: string
-  readonly protocolVersion: number
-  readonly platform: 'linux'
-  readonly architecture: 'x64' | 'arm64'
-  readonly pairingAvailable: boolean
-  readonly pairingExpiresAt?: string
-}
+export type NasHealth = NasHealthDocument
 
 export interface NasPairingRequest {
   readonly baseUrl: string
@@ -48,13 +45,7 @@ export interface NasPairingRequest {
   readonly certificateFingerprint?: string
 }
 
-export interface NasPairingResponse {
-  readonly schema: 'open-deepseek-harness/nas-pairing/v1'
-  readonly deviceId: string
-  readonly token: string
-  readonly expiresAt: string
-  readonly health: NasHealth
-}
+export type NasPairingResponse = NasPairingDocument
 
 export interface NasRuntimeStatus {
   readonly selection: DesktopRuntimeSelection
@@ -63,12 +54,7 @@ export interface NasRuntimeStatus {
   readonly active?: NasRuntimeRecord
 }
 
-export interface NasDeviceSummary {
-  readonly id: string
-  readonly name: string
-  readonly createdAt: string
-  readonly expiresAt: string
-}
+export type { NasDeviceSummary } from '@deepseek-ai/dsh-nas-protocol'
 
 export interface NasDiscoveryCandidate {
   readonly baseUrl: string
@@ -134,7 +120,7 @@ export function parseNasDiscoveryPacket(packet: Uint8Array): NasDiscoveryCandida
     const value = bytes.subarray(offset + 1, offset + 1 + length).toString('utf8')
     if (/^(?:dsh-protocol|url|name)=/u.test(value)) values.push(value)
   }
-  if (!values.includes('dsh-protocol=1')) return undefined
+  if (!values.includes(`dsh-protocol=${String(NAS_PROTOCOL_V1.version)}`)) return undefined
   const rawUrl = values.find(value => value.startsWith('url='))?.slice(4)
   if (rawUrl === undefined) return undefined
   try {
@@ -205,39 +191,30 @@ export function normalizeNasBaseUrl(value: string): string {
 }
 
 function parseHealth(raw: unknown): NasHealth {
-  if (!isRecord(raw) || raw.schema !== 'open-deepseek-harness/nas-health/v1'
-    || typeof raw.instanceId !== 'string' || raw.instanceId === ''
-    || typeof raw.name !== 'string' || raw.name === ''
-    || typeof raw.version !== 'string' || raw.version === ''
-    || typeof raw.protocolVersion !== 'number'
-    || raw.platform !== 'linux' || !['x64', 'arm64'].includes(String(raw.architecture))
-    || typeof raw.pairingAvailable !== 'boolean'
-    || (raw.pairingExpiresAt !== undefined && (typeof raw.pairingExpiresAt !== 'string'
-      || !Number.isFinite(Date.parse(raw.pairingExpiresAt))))) {
+  try {
+    return NAS_PROTOCOL_V1.health.response.parse(raw)
+  } catch (error) {
+    if (!(error instanceof NasProtocolViolation)) throw error
     throw new Error('desktop: NAS returned an invalid health document')
   }
-  return raw as unknown as NasHealth
 }
 
 function parsePairing(raw: unknown): NasPairingResponse {
-  if (!isRecord(raw) || raw.schema !== 'open-deepseek-harness/nas-pairing/v1'
-    || typeof raw.deviceId !== 'string' || raw.deviceId === ''
-    || typeof raw.token !== 'string' || raw.token.length < 32
-    || typeof raw.expiresAt !== 'string' || !Number.isFinite(Date.parse(raw.expiresAt))) {
+  try {
+    return NAS_PROTOCOL_V1.pair.response.parse(raw)
+  } catch (error) {
+    if (!(error instanceof NasProtocolViolation)) throw error
     throw new Error('desktop: NAS returned an invalid pairing response')
   }
-  return { ...raw, health: parseHealth(raw.health) } as unknown as NasPairingResponse
 }
 
 function parseDevices(raw: unknown): readonly NasDeviceSummary[] {
-  if (!isRecord(raw) || !Array.isArray(raw.devices)) throw new Error('desktop: NAS returned an invalid device list')
-  return raw.devices.map((device) => {
-    if (!isRecord(device) || typeof device.id !== 'string' || typeof device.name !== 'string'
-      || typeof device.createdAt !== 'string' || typeof device.expiresAt !== 'string') {
-      throw new Error('desktop: NAS returned an invalid device record')
-    }
-    return device as unknown as NasDeviceSummary
-  })
+  try {
+    return NAS_PROTOCOL_V1.devices.response.parse(raw).devices
+  } catch (error) {
+    if (!(error instanceof NasProtocolViolation)) throw error
+    throw new Error('desktop: NAS returned an invalid device list')
+  }
 }
 
 function normalizeDirectory(raw: unknown): NasRuntimeDirectory {
@@ -393,8 +370,8 @@ export class NasRuntimeClient {
     const origin = normalizeNasBaseUrl(baseUrl)
     const timeout = timeoutSignal(this.timeoutMs)
     try {
-      const response = await this.fetch(`${origin}/nas/health`, {
-        method: 'GET', signal: timeout.signal,
+      const response = await this.fetch(`${origin}${NAS_PROTOCOL_V1.health.path}`, {
+        method: NAS_PROTOCOL_V1.health.method, signal: timeout.signal,
         ...(token === undefined ? {} : { headers: { authorization: `Bearer ${token}` } }),
       })
       if (!response.ok) throw new Error(`desktop: NAS health check failed with HTTP ${String(response.status)}`)
@@ -414,10 +391,10 @@ export class NasRuntimeClient {
     if (deviceName.length < 1 || deviceName.length > 80) throw new TypeError('desktop: device name must contain 1 to 80 characters')
     const timeout = timeoutSignal(this.timeoutMs)
     try {
-      const response = await this.fetch(`${origin}/nas/pair`, {
-        method: 'POST', signal: timeout.signal,
+      const response = await this.fetch(`${origin}${NAS_PROTOCOL_V1.pair.path}`, {
+        method: NAS_PROTOCOL_V1.pair.method, signal: timeout.signal,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code, deviceName }),
+        body: JSON.stringify(NAS_PROTOCOL_V1.pair.request.create({ code, deviceName })),
       })
       if (!response.ok) throw new Error(`desktop: NAS pairing failed with HTTP ${String(response.status)}`)
       const pairing = parsePairing(await response.json())
@@ -429,12 +406,17 @@ export class NasRuntimeClient {
   }
 
   async devices(baseUrl: string, token: string): Promise<readonly NasDeviceSummary[]> {
-    return this.deviceRequest(baseUrl, token, 'GET')
+    return this.deviceRequest(baseUrl, token, NAS_PROTOCOL_V1.devices.method)
   }
 
   async revokeDevice(baseUrl: string, token: string, deviceId: string): Promise<readonly NasDeviceSummary[]> {
     if (!/^[a-f0-9]{32}$/u.test(deviceId)) throw new TypeError('desktop: invalid NAS device id')
-    return this.deviceRequest(baseUrl, token, 'POST', JSON.stringify({ revokeDeviceId: deviceId }))
+    return this.deviceRequest(
+      baseUrl,
+      token,
+      NAS_PROTOCOL_V1.revokeDevice.method,
+      JSON.stringify(NAS_PROTOCOL_V1.revokeDevice.request.create({ revokeDeviceId: deviceId })),
+    )
   }
 
   private async deviceRequest(
@@ -446,7 +428,7 @@ export class NasRuntimeClient {
     const origin = normalizeNasBaseUrl(baseUrl)
     const timeout = timeoutSignal(this.timeoutMs)
     try {
-      const response = await this.fetch(`${origin}/nas/devices`, {
+      const response = await this.fetch(`${origin}${NAS_PROTOCOL_V1.devices.path}`, {
         method, signal: timeout.signal,
         headers: { authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
         ...(body === undefined ? {} : { body }),

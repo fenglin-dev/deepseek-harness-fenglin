@@ -47,7 +47,7 @@ describe('desktop CLI launcher', () => {
     })
 
     expect(invocation.command).toBe(process.execPath)
-    expect(invocation.args).toEqual([harness, 'plugin', 'add', 'C:\\插件 目录\\one.tgz'])
+    expect(invocation.args).toEqual(['--expose-internals', harness, 'plugin', 'add', 'C:\\插件 目录\\one.tgz'])
     expect(invocation.environment.DSH_HOME).toBe(dshHome)
     expect(invocation.environment.DSH_PNPM_BIN).toBe(pnpm)
   })

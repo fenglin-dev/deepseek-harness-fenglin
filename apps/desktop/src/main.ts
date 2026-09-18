@@ -176,12 +176,10 @@ import {
   NasRuntimeStore,
   discoverNasRuntimes,
   inspectNasCertificate,
-  normalizeNasBaseUrl,
-  type DesktopRuntimeSelection,
-  type NasPairingRequest,
   type NasRuntimeRecord,
-  type NasRuntimeStatus,
 } from './nas-runtime.ts'
+import { DesktopNasRuntimeAuthority } from './nas-runtime-authority.ts'
+import { registerNasRuntimeIpc } from './nas-runtime-ipc.ts'
 
 const APP_NAME = DESKTOP_PRODUCT_NAME
 const DESKTOP_WEB_SUPPORTED = process.platform === 'darwin' || process.platform === 'win32'
@@ -239,7 +237,7 @@ let mainSurface: DesktopWindowSurface | undefined
 let supervisor: HarnessSupervisor | undefined
 let harnessOrigin: string | undefined
 let harnessAuthenticationUrl: string | undefined
-let activeNasRuntime: NasRuntimeRecord | undefined
+let nasRuntimeAuthority: DesktopNasRuntimeAuthority | undefined
 let desktopWebAccess: DesktopWebAccess | undefined
 let desktopReturnControl: DesktopReturnControl | undefined
 let lifecycle: DesktopLifecycle | undefined
@@ -455,9 +453,6 @@ async function openSettingsDocument(): Promise<{ error: string }> {
 }
 let preferencesStore: DesktopPreferencesStore | undefined
 let preferences: DesktopPreferences = { ...DEFAULT_DESKTOP_PREFERENCES }
-let nasRuntimeStore: NasRuntimeStore | undefined
-let nasRuntimeClient: NasRuntimeClient | undefined
-const pendingNasCertificatePins = new Map<string, string>()
 let tray: Tray | undefined
 let quitReleased = false
 let hiddenLaunch = false
@@ -503,6 +498,11 @@ interface DesktopCapabilities {
   developmentRecoveryAvailable: boolean
 }
 
+function bootNasRuntime(): NasRuntimeRecord | undefined {
+  const bootRuntime = nasRuntimeAuthority?.bootRuntime
+  return bootRuntime?.kind === 'nas' ? bootRuntime.runtime : undefined
+}
+
 function applyDesktopThemeSource(source: DesktopThemeSource): void {
   desktopThemeSource = source
   nativeTheme.themeSource = source
@@ -517,7 +517,7 @@ function applyDesktopThemeSource(source: DesktopThemeSource): void {
 
 function desktopCapabilities(): DesktopCapabilities {
   return {
-    runtimeKind: activeNasRuntime === undefined ? 'local' : 'nas',
+    runtimeKind: bootNasRuntime() === undefined ? 'local' : 'nas',
     platform: process.platform,
     packaged: app.isPackaged,
     launchAtLoginAvailable: app.isPackaged && process.platform === 'darwin',
@@ -1153,7 +1153,7 @@ function configureNavigation(renderer: WebContents): void {
     return { action: 'deny' }
   })
   renderer.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
-    if (activeNasRuntime !== undefined && permission !== 'notifications') return false
+    if (bootNasRuntime() !== undefined && permission !== 'notifications') return false
     const origin = harnessOrigin
     const trustedContents = contents === renderer
       || (contents === null && details.embeddingOrigin === undefined)
@@ -1166,7 +1166,7 @@ function configureNavigation(renderer: WebContents): void {
     return keys.length > 0 && keys.every(key => permissionGrants.has(originGrantKey(origin, key)))
   })
   renderer.session.setPermissionRequestHandler((contents, permission, callback, details) => {
-    if (activeNasRuntime !== undefined && permission !== 'notifications') {
+    if (bootNasRuntime() !== undefined && permission !== 'notifications') {
       callback(false)
       return
     }
@@ -1208,7 +1208,7 @@ function createWindow(): BrowserWindow {
     preload: PRELOAD,
     additionalArguments: [
       app.isPackaged ? '--dsh-packaged' : '--dsh-source',
-      ...(activeNasRuntime === undefined ? [] : ['--dsh-nas-runtime']),
+      ...(bootNasRuntime() === undefined ? [] : ['--dsh-nas-runtime']),
     ],
   }
   const surface = createDesktopWindowSurface({
@@ -1308,45 +1308,6 @@ function createWindow(): BrowserWindow {
   return window
 }
 
-async function connectSelectedNasRuntime(): Promise<void> {
-  const runtime = activeNasRuntime
-  const surface = mainSurface
-  const store = nasRuntimeStore
-  const client = nasRuntimeClient
-  if (runtime === undefined || surface === undefined || store === undefined || client === undefined) {
-    throw new Error('desktop: selected NAS runtime is unavailable')
-  }
-  const credential = store.credential(runtime.id)
-  if (credential === undefined) throw new Error('desktop: the selected NAS has no usable device credential; pair it again')
-  if (runtime.credentialExpiresAt !== undefined && Date.parse(runtime.credentialExpiresAt) <= Date.now()) {
-    throw new Error('desktop: the selected NAS device credential has expired; pair it again')
-  }
-  harnessOrigin = runtime.baseUrl
-  harnessAuthenticationUrl = undefined
-  reportedDesktopReadiness.clear()
-  publishStartupProgress({ stage: 'starting-harness', progress: 72, detail: 'connecting-nas' })
-  showLoading('starting')
-  try {
-    const health = await client.health(runtime.baseUrl, credential.token)
-    if (health.instanceId !== runtime.id) {
-      throw new Error('desktop: the NAS identity changed since pairing; remove it and pair again')
-    }
-    if (surface.window.isDestroyed() || mainSurface !== surface || activeNasRuntime !== runtime) return
-    publishStartupProgress({ stage: 'ready', progress: 100, detail: 'nas-ready' })
-    await surface.loadURL(withDesktopWindowMetadata(runtime.baseUrl, process.platform))
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    await appendDesktopStartupLog(`NAS connection failed: ${message}`)
-    showLoading('failed', {
-      message,
-      diagnosticCode: 'desktop.nas-connection-failed',
-      evidence: runtime.baseUrl,
-      logPath: harnessLogPath,
-    })
-    throw error
-  }
-}
-
 async function startApplication(): Promise<void> {
   if (process.platform === 'win32') app.setAppUserModelId('ai.flaq.deepseek-harness')
   await app.whenReady()
@@ -1373,7 +1334,7 @@ async function startApplication(): Promise<void> {
     })
   }
   applyStartupDockIcon()
-  nasRuntimeStore = new NasRuntimeStore(
+  const nasRuntimeStore = new NasRuntimeStore(
     join(app.getPath('userData'), 'nas-runtimes-v1.json'),
     join(app.getPath('userData'), 'nas-device-credentials-v1.json'),
     {
@@ -1383,8 +1344,53 @@ async function startApplication(): Promise<void> {
     },
     (error) => { console.error('desktop: could not read NAS runtime settings', error) },
   )
-  nasRuntimeClient = new NasRuntimeClient(async (url, init) => net.fetch(url, init))
-  activeNasRuntime = nasRuntimeStore.status().active
+  const nasRuntimeClient = new NasRuntimeClient(async (url, init) => net.fetch(url, init))
+  const authority = new DesktopNasRuntimeAuthority({
+    store: nasRuntimeStore,
+    network: {
+      discover: discoverNasRuntimes,
+      inspectCertificate: inspectNasCertificate,
+      health: (baseUrl, token) => nasRuntimeClient.health(baseUrl, token),
+      pair: request => nasRuntimeClient.pair(request),
+      devices: (baseUrl, token) => nasRuntimeClient.devices(baseUrl, token),
+      revokeDevice: (baseUrl, token, deviceId) => nasRuntimeClient.revokeDevice(baseUrl, token, deviceId),
+    },
+    connection: {
+      capture: () => {
+        const surface = mainSurface
+        if (surface === undefined) return undefined
+        return {
+          isCurrent: runtime => !surface.window.isDestroyed() && mainSurface === surface
+            && bootNasRuntime()?.id === runtime.id,
+          load: baseUrl => surface.loadURL(withDesktopWindowMetadata(baseUrl, process.platform)),
+        }
+      },
+      begin: (runtime) => {
+        harnessOrigin = runtime.baseUrl
+        harnessAuthenticationUrl = undefined
+        reportedDesktopReadiness.clear()
+        publishStartupProgress({ stage: 'starting-harness', progress: 72, detail: 'connecting-nas' })
+        showLoading('starting')
+      },
+      ready: () => { publishStartupProgress({ stage: 'ready', progress: 100, detail: 'nas-ready' }) },
+      fail: async (runtime, error) => {
+        await appendDesktopStartupLog(`NAS connection failed: ${error.message}`)
+        showLoading('failed', {
+          message: error.message,
+          diagnosticCode: 'desktop.nas-connection-failed',
+          evidence: runtime.baseUrl,
+          logPath: harnessLogPath,
+        })
+      },
+    },
+    lifecycle: {
+      stopActiveProfileServices: stopPersistentServicesForActiveProfile,
+      restartAfter: (delayMs) => { setTimeout(requestDesktopRestart, delayMs) },
+    },
+    publishStatus: status => mainSurface?.send(DESKTOP_IPC.nasStatus, status),
+  })
+  nasRuntimeAuthority = authority
+  const activeNasRuntime = bootNasRuntime()
   // A saved NAS selection is a complete runtime choice. Do not force a new device
   // through local Profile import or mutate its local Harness home before connecting.
   const dshHome = activeNasRuntime === undefined
@@ -1468,12 +1474,7 @@ async function startApplication(): Promise<void> {
   )
   preferences = preferencesStore.read()
   app.on('certificate-error', (event, _webContents, url, _error, certificate, callback) => {
-    let origin: string
-    try { origin = new URL(url).origin } catch { callback(false); return }
-    const saved = nasRuntimeStore?.read().servers.find(server => server.baseUrl === origin)?.certificateFingerprint
-    const pending = pendingNasCertificatePins.get(origin)
-    const observed = certificate.fingerprint.toUpperCase()
-    if (observed === saved || observed === pending) {
+    if (authority.acceptsCertificate(url, certificate.fingerprint)) {
       event.preventDefault()
       callback(true)
       return
@@ -1481,18 +1482,8 @@ async function startApplication(): Promise<void> {
     callback(false)
   })
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://*/*', 'wss://*/*'] }, (details, callback) => {
-    let origin: string
-    try { origin = new URL(details.url).origin } catch { callback({ requestHeaders: details.requestHeaders }); return }
-    const directory = nasRuntimeStore?.read()
-    const selectedServerId = directory?.selection.kind === 'nas' ? directory.selection.serverId : undefined
-    const active = selectedServerId === undefined
-      ? undefined
-      : directory?.servers.find(server => server.id === selectedServerId)
-    const credential = active?.baseUrl === origin ? nasRuntimeStore?.credential(active.id) : undefined
     callback({
-      requestHeaders: credential === undefined
-        ? details.requestHeaders
-        : { ...details.requestHeaders, Authorization: `Bearer ${credential.token}` },
+      requestHeaders: authority.authorizeRequestHeaders(details.url, details.requestHeaders),
     })
   })
   chatBackgroundStore = createDesktopChatBackgroundStore(
@@ -1794,118 +1785,7 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return updatePreferences(patch)
   })
-  const requireNasRuntime = (): { readonly store: NasRuntimeStore; readonly client: NasRuntimeClient } => {
-    if (nasRuntimeStore === undefined || nasRuntimeClient === undefined) {
-      throw new Error('desktop: NAS runtime settings are unavailable')
-    }
-    return { store: nasRuntimeStore, client: nasRuntimeClient }
-  }
-  const publishNasRuntimeStatus = (status: NasRuntimeStatus): NasRuntimeStatus => {
-    mainSurface?.send(DESKTOP_IPC.nasStatus, status)
-    return status
-  }
-  ipcMain.handle(DESKTOP_IPC.nasGet, (event): NasRuntimeStatus => {
-    assertMainRenderer(event.sender)
-    return requireNasRuntime().store.status()
-  })
-  ipcMain.handle(DESKTOP_IPC.nasDiscover, async (event) => {
-    assertMainRenderer(event.sender)
-    return discoverNasRuntimes()
-  })
-  ipcMain.handle(DESKTOP_IPC.nasInspect, async (event, rawBaseUrl: unknown) => {
-    assertMainRenderer(event.sender)
-    if (typeof rawBaseUrl !== 'string') throw new TypeError('desktop: NAS address must be a string')
-    const baseUrl = normalizeNasBaseUrl(rawBaseUrl)
-    const fingerprint = await inspectNasCertificate(baseUrl)
-    pendingNasCertificatePins.set(baseUrl, fingerprint)
-    return { fingerprint }
-  })
-  ipcMain.handle(DESKTOP_IPC.nasPair, async (event, raw: unknown): Promise<NasRuntimeStatus> => {
-    assertMainRenderer(event.sender)
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-      throw new TypeError('desktop: invalid NAS pairing request')
-    }
-    const source = raw as Record<string, unknown>
-    const allowed = new Set(['baseUrl', 'code', 'deviceName', 'certificateFingerprint'])
-    if (Object.keys(source).some(key => !allowed.has(key))
-      || typeof source.baseUrl !== 'string' || typeof source.code !== 'string'
-      || typeof source.deviceName !== 'string' || typeof source.certificateFingerprint !== 'string') {
-      throw new TypeError('desktop: invalid NAS pairing request')
-    }
-    const request: NasPairingRequest = {
-      baseUrl: normalizeNasBaseUrl(source.baseUrl),
-      code: source.code,
-      deviceName: source.deviceName,
-      certificateFingerprint: source.certificateFingerprint,
-    }
-    const expected = pendingNasCertificatePins.get(request.baseUrl)
-    if (expected === undefined || expected !== request.certificateFingerprint) {
-      throw new Error('desktop: inspect and confirm the current NAS certificate before pairing')
-    }
-    const { store, client } = requireNasRuntime()
-    const pairing = await client.pair(request)
-    pendingNasCertificatePins.delete(request.baseUrl)
-    return publishNasRuntimeStatus(store.savePairing(
-      request.baseUrl,
-      pairing,
-      request.certificateFingerprint,
-    ))
-  })
-  ipcMain.handle(DESKTOP_IPC.nasSelect, async (event, raw: unknown): Promise<{ restarting: true }> => {
-    assertMainRenderer(event.sender)
-    let selection: DesktopRuntimeSelection
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-      throw new TypeError('desktop: invalid runtime selection')
-    }
-    const source = raw as Record<string, unknown>
-    if (source.kind === 'local') selection = { kind: 'local' }
-    else if (source.kind === 'nas' && typeof source.serverId === 'string') selection = { kind: 'nas', serverId: source.serverId }
-    else throw new TypeError('desktop: invalid runtime selection')
-    publishNasRuntimeStatus(requireNasRuntime().store.select(selection))
-    await stopPersistentServicesForActiveProfile()
-    setTimeout(requestDesktopRestart, 250)
-    return { restarting: true }
-  })
-  ipcMain.handle(DESKTOP_IPC.nasRemove, (event, serverId: unknown): NasRuntimeStatus => {
-    assertMainRenderer(event.sender)
-    if (typeof serverId !== 'string' || serverId === '') throw new TypeError('desktop: invalid NAS id')
-    return publishNasRuntimeStatus(requireNasRuntime().store.remove(serverId))
-  })
-  ipcMain.handle(DESKTOP_IPC.nasTest, async (event, serverId: unknown) => {
-    assertMainRenderer(event.sender)
-    if (typeof serverId !== 'string' || serverId === '') throw new TypeError('desktop: invalid NAS id')
-    const { store, client } = requireNasRuntime()
-    const server = store.read().servers.find(candidate => candidate.id === serverId)
-    const credential = store.credential(serverId)
-    if (server === undefined || credential === undefined) throw new Error('desktop: NAS device credential is unavailable')
-    const health = await client.health(server.baseUrl, credential.token)
-    return { healthy: true as const, version: health.version }
-  })
-  ipcMain.handle(DESKTOP_IPC.nasDevices, async (event, serverId: unknown) => {
-    assertMainRenderer(event.sender)
-    if (typeof serverId !== 'string' || serverId === '') throw new TypeError('desktop: invalid NAS id')
-    const { store, client } = requireNasRuntime()
-    const server = store.read().servers.find(candidate => candidate.id === serverId)
-    const credential = store.credential(serverId)
-    if (server === undefined || credential === undefined) throw new Error('desktop: NAS credential is unavailable')
-    return client.devices(server.baseUrl, credential.token)
-  })
-  ipcMain.handle(DESKTOP_IPC.nasRevokeDevice, async (event, serverId: unknown, deviceId: unknown) => {
-    assertMainRenderer(event.sender)
-    if (typeof serverId !== 'string' || serverId === '' || typeof deviceId !== 'string') {
-      throw new TypeError('desktop: invalid NAS device revocation request')
-    }
-    const { store, client } = requireNasRuntime()
-    const server = store.read().servers.find(candidate => candidate.id === serverId)
-    const credential = store.credential(serverId)
-    if (server === undefined || credential === undefined) throw new Error('desktop: NAS credential is unavailable')
-    const devices = await client.revokeDevice(server.baseUrl, credential.token, deviceId)
-    if (credential.deviceId === deviceId) {
-      publishNasRuntimeStatus(store.remove(serverId))
-      setTimeout(requestDesktopRestart, 250)
-    }
-    return devices
-  })
+  registerNasRuntimeIpc(ipcMain, { authority, assertRenderer: assertMainRenderer })
   ipcMain.handle(DESKTOP_IPC.downloadNetworkGet, (event): DownloadNetworkSettings => {
     assertMainRenderer(event.sender)
     if (downloadNetworkStore === undefined) throw new Error('desktop: download network settings are unavailable')
@@ -2230,9 +2110,9 @@ async function startApplication(): Promise<void> {
   })
   ipcMain.handle('dsh:harness:retry', async (event) => {
     assertMainRenderer(event.sender)
-    if (activeNasRuntime !== undefined) {
+    if (bootNasRuntime() !== undefined) {
       try {
-        await connectSelectedNasRuntime()
+        await authority.connectSelected()
         return { started: true }
       } catch {
         return { started: false }
@@ -2663,7 +2543,7 @@ async function startApplication(): Promise<void> {
 
   if (activeNasRuntime !== undefined) {
     await appendDesktopStartupLog(`Connecting to selected NAS runtime ${activeNasRuntime.name} at ${activeNasRuntime.baseUrl}.`)
-    try { await connectSelectedNasRuntime() } catch { /* recovery controls remain visible */ }
+    try { await authority.connectSelected() } catch { /* recovery controls remain visible */ }
     app.on('activate', () => { lifecycle?.showWindow() })
     return
   }
@@ -2799,7 +2679,7 @@ async function startApplication(): Promise<void> {
       if (launchOptions.harnessBin === undefined) throw new Error('desktop: packaged Harness entry is unavailable')
       const core = JSON.parse(await readFile(join(dirname(dirname(launchOptions.harnessBin)), 'package.json'), 'utf8')) as { version: string }
       if (candidate?.identity.target === `${process.platform}-${process.arch}`
-        && candidate.identity.nodeVersion === '24.17.0' && candidate.identity.pnpmVersion === DESKTOP_PNPM_VERSION
+        && candidate.identity.nodeVersion === '24.21.0' && candidate.identity.pnpmVersion === DESKTOP_PNPM_VERSION
         && candidate.identity.runtimeVersion === core.version
         && candidate.identity.pluginManifestSha256 === createHash('sha256').update(bundledManifestSource).digest('hex')
         && !Object.values(startupBuildRules).includes(false)
@@ -2911,7 +2791,8 @@ async function startApplication(): Promise<void> {
   })
   let initialProfileRepairDiagnostic = ''
   const observerLaunch = resolveHarnessInvocation(harnessEnvironment, [], launchOptions)
-  const observerBin = observerLaunch.args[0]
+  // Node flags precede the CLI entry; process ownership must resolve modules from the entry itself.
+  const observerBin = observerLaunch.args[1]
   if (observerBin === undefined) throw new Error('desktop: Harness entry is unavailable for process ownership')
   const processRecoveryPath = join(app.getPath('userData'), 'managed-processes', 'recovery-v1.json')
   try {

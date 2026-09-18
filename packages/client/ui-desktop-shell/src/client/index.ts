@@ -12,7 +12,7 @@ import { DesktopLogDirectoryAction } from './DesktopLogDirectoryAction.tsx'
 import { DesktopSidebarUpdateButton } from './DesktopSidebarUpdateButton.tsx'
 import { DesktopUpdateBadge } from './DesktopUpdateBadge.tsx'
 import { NasRuntimeSection } from './NasRuntimeSection.tsx'
-import { readDesktopBridge } from './bridge.ts'
+import { readDesktopBridge, readDesktopLocalShell } from './bridge.ts'
 import { captureDesktopReturnTarget, requestDesktopReturn } from './browser-return.ts'
 import { DesktopShellController } from './controller.ts'
 import { registerDesktopLanguages } from './community-locales.ts'
@@ -44,6 +44,7 @@ export function apply(ctx: Context): void {
     }, DesktopBrowserReturnButton))
     return
   }
+  const localShell = readDesktopLocalShell(bridge.shell)
   const connection = ctx.get('connection') as ConnectionHandle
   bridge.shell.reportReadiness('client')
   ctx.effect(() => {
@@ -89,7 +90,7 @@ export function apply(ctx: Context): void {
     name: 'settings.general.item', id: 'desktop-shell', order: 75, locale: NS,
     inject: () => ({
       controller, icons: bridge.icons, processes: bridge.processes, downloadNetwork: controller.downloadNetwork,
-      openLog: () => bridge.shell.openLog(),
+      ...(localShell === undefined ? {} : { openLog: () => localShell.openLog() }),
     }),
   }, DesktopPreferencesRow))
   const nasBridge = bridge.nas
@@ -97,9 +98,9 @@ export function apply(ctx: Context): void {
     name: 'settings.section', id: 'nas-runtime', order: 45, label: () => ctx.locale.bind(NS)('nas.nav'), locale: NS,
     inject: () => ({ bridge: nasBridge }),
   }, NasRuntimeSection))
-  ctx.slots.inject('settings.action', () => ctx.slots.register({
+  if (localShell !== undefined) ctx.slots.inject('settings.action', () => ctx.slots.register({
     name: 'settings.action', id: 'desktop-log-directory', order: -10, locale: NS,
-    inject: () => ({ openLog: () => bridge.shell.openLog() }),
+    inject: () => ({ openLog: () => localShell.openLog() }),
   }, DesktopLogDirectoryAction))
   ctx.inject(['settingsNavigation'], (inner) => {
     const openUpdates = (): void => {

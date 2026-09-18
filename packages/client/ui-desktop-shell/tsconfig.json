@@ -4,6 +4,7 @@
   "include": ["src"],
   "references": [
     { "path": "../../../vendor/cordis" },
+    { "path": "../../nas/nas-protocol" },
     { "path": "../ui-renderer" },
     { "path": "../locale" },
     { "path": "../ui-slots" },

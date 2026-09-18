@@ -5,6 +5,7 @@ import type {
   DesktopReleaseDownloadStatus, DesktopReleaseStatus,
   DesktopWebStatus,
 } from './bridge.ts'
+import { readDesktopLocalShell } from './bridge.ts'
 import { DownloadNetworkProjection } from './download-network-projection.ts'
 
 /** Immutable renderer state shared by the desktop settings and footer action. */
@@ -43,6 +44,7 @@ export class DesktopShellController {
   }
   readonly #listeners = new Set<() => void>()
   #disposers: (() => void)[] = []
+  /** Renderer-owned projection for desktop download-routing settings. */
   readonly downloadNetwork: DownloadNetworkProjection | undefined
 
   constructor(private readonly bridge: DesktopBridge) {
@@ -90,13 +92,22 @@ export class DesktopShellController {
     ]).then(async ([capabilities, preferences, release, releaseDownload]) => {
       const [commandLine, dataHome, desktopWeb] = capabilities.runtimeKind === 'nas'
         ? [null, null, { phase: 'error' as const, message: 'Open the paired NAS HTTPS address in a browser.' }]
-        : await Promise.all([
-          this.bridge.shell.getCommandLine(), this.bridge.shell.getDataHome(), this.bridge.desktopWeb.getStatus(),
-        ])
+        : await this.#readLocalStartupState()
       this.#publish({ capabilities, preferences, release, releaseDownload, commandLine, dataHome, desktopWeb })
     }).catch((error: unknown) => {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })
     })
+  }
+
+  async #readLocalStartupState(): Promise<[DesktopCliStatus, DesktopDataHomeStatus, DesktopWebStatus]> {
+    const shell = this.#requireLocalShell()
+    return Promise.all([shell.getCommandLine(), shell.getDataHome(), this.bridge.desktopWeb.getStatus()])
+  }
+
+  #requireLocalShell() {
+    const shell = readDesktopLocalShell(this.bridge.shell)
+    if (shell === undefined) throw new Error('desktop: local shell capabilities are unavailable')
+    return shell
   }
 
   /** Remove bridge subscriptions and local observers. */
@@ -151,7 +162,7 @@ export class DesktopShellController {
   async installCommandLine(force = false): Promise<void> {
     this.#publish({ busy: true, error: null })
     try {
-      this.#publish({ commandLine: await this.bridge.shell.installCommandLine(force) })
+      this.#publish({ commandLine: await this.#requireLocalShell().installCommandLine(force) })
     } catch (error) {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })
     } finally {
@@ -163,7 +174,7 @@ export class DesktopShellController {
   async removeCommandLine(): Promise<void> {
     this.#publish({ busy: true, error: null })
     try {
-      this.#publish({ commandLine: await this.bridge.shell.removeCommandLine() })
+      this.#publish({ commandLine: await this.#requireLocalShell().removeCommandLine() })
     } catch (error) {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })
     } finally {
@@ -175,7 +186,7 @@ export class DesktopShellController {
   async enterRecoveryMode(): Promise<void> {
     this.#publish({ busy: true, error: null })
     try {
-      await this.bridge.shell.enterRecoveryMode()
+      await this.#requireLocalShell().enterRecoveryMode()
     } catch (error) {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })
     } finally {
@@ -187,7 +198,7 @@ export class DesktopShellController {
   async openDataHomeChooser(): Promise<void> {
     this.#publish({ busy: true, error: null })
     try {
-      const result = await this.bridge.shell.openDataHomeChooser()
+      const result = await this.#requireLocalShell().openDataHomeChooser()
       this.#publish({ restartPending: result.restarting })
     } catch (error) {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })

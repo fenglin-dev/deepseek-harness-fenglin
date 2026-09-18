@@ -6,7 +6,7 @@ English | [中文](README.zh.md)
 
 ## Runtime and session compatibility
 
-This integration uses Harness 0.1.6-alpha.1 and external Node 24.17.0, while Electron remains pinned to 43.2.0 and pnpm to 11.7.0. Packaged macOS builds require macOS 13.5 or later; this records the embedded Node binary's minimum rather than promising compatibility from Electron alone.
+This integration uses Harness 0.1.6-alpha.2 and external Node 24.21.0, while Electron remains pinned to 44.0.0 and pnpm to 11.7.0. Packaged macOS builds require macOS 13.5 or later; this records the embedded Node binary's minimum rather than promising compatibility from Electron alone.
 
 Session history follows the complete V0 → V1 → V2 → V3 migration chain. Migration preserves older generation files and writes validated successors, but old clients cannot be assumed to understand newly written V3 data. Plugin snapshots do not include sessions and cannot undo a session-format upgrade. Validate upgrades using an isolated copy of the data directory before reusing important history.
 
@@ -120,7 +120,7 @@ npm run package:desktop:macos:arm64
 npm run package:desktop:macos:x64
 ```
 
-Artifacts are written to `.artifacts/desktop-macos/`. Native packages carry expanded Harness production dependencies, Node 24.17.0, pnpm 11.7.0, and a separate prebuilt Profile template. Copying the `.app` installs these resources; first launch no longer extracts a nested runtime archive. Linux deb/rpm uses the same expanded layout, while Windows retains NSIS resource deployment. The installer never executes user plugin scripts or selects a configuration directory. Legacy runtime archives remain readable for old-layout test packages. Preparation verifies the pinned Node checksum, relocates the template to a path containing spaces, and checks ordinary startup plus offline plugin removal. Final resource verification runs after packaging and macOS signing. Record installation, deployment, Doctor, server readiness, client readiness, and second-launch times separately; faster deployment is not proof of faster total startup.
+Artifacts are written to `.artifacts/desktop-macos/`. Native packages carry expanded Harness production dependencies, Node 24.21.0, pnpm 11.7.0, and a separate prebuilt Profile template. Copying the `.app` installs these resources; first launch no longer extracts a nested runtime archive. Linux deb/rpm uses the same expanded layout, while Windows retains NSIS resource deployment. The installer never executes user plugin scripts or selects a configuration directory. Legacy runtime archives remain readable for old-layout test packages. Preparation verifies the pinned Node checksum, relocates the template to a path containing spaces, and checks ordinary startup plus offline plugin removal. Final resource verification runs after packaging and macOS signing. Record installation, deployment, Doctor, server readiness, client readiness, and second-launch times separately; faster deployment is not proof of faster total startup.
 
 Build the unsigned Windows x64 NSIS installer on Windows with:
 
@@ -128,7 +128,7 @@ Build the unsigned Windows x64 NSIS installer on Windows with:
 npm run package:desktop:win:x64
 ```
 
-The installer is written to `.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe`. It carries the official Windows x64 Node 24.17.0 executable, pnpm 11.7.0, and a symlink-free production Harness closure with its real `node_modules` hierarchy, so a user does not need Node or pnpm on `PATH`. The Harness environment puts the embedded runtime first, guarantees `%SystemRoot%`, `System32`, Wbem, and Windows PowerShell, then preserves the user PATH inherited when Electron started. Plugins can therefore spawn Windows system executables and inherited third-party commands by bare name. A third-party tool remains unavailable when it is absent from that inherited PATH; changing the registry PATH or installing a command while the desktop is running requires an application restart, and the desktop does not evaluate PowerShell profiles to discover extra commands. Preparation verifies the official Node archive SHA-256, required Windows native modules, the embedded pnpm version, and a real Harness readiness launch before Electron Builder runs.
+The installer is written to `.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe`. It carries the official Windows x64 Node 24.21.0 executable, pnpm 11.7.0, and a symlink-free production Harness closure with its real `node_modules` hierarchy, so a user does not need Node or pnpm on `PATH`. The Harness environment puts the embedded runtime first, guarantees `%SystemRoot%`, `System32`, Wbem, and Windows PowerShell, then preserves the user PATH inherited when Electron started. Plugins can therefore spawn Windows system executables and inherited third-party commands by bare name. A third-party tool remains unavailable when it is absent from that inherited PATH; changing the registry PATH or installing a command while the desktop is running requires an application restart, and the desktop does not evaluate PowerShell profiles to discover extra commands. Preparation verifies the official Node archive SHA-256, required Windows native modules, the embedded pnpm version, and a real Harness readiness launch before Electron Builder runs.
 
 Build the Linux x64 packages on Linux with:
 
@@ -142,7 +142,11 @@ The DEB and RPM files are written to `.artifacts/desktop-linux/`. Like macOS, th
 
 Desktop can save multiple Linux NAS runtimes and switch between a local Harness and one selected remote runtime. The NAS owns plugins, model settings, sessions, and workspaces; window and other presentation preferences remain device-local. A selected NAS skips local Profile onboarding and local Harness startup. Connection failure stays visible and never falls back to local without an explicit switch.
 
-Pairing uses a ten-minute eight-digit code and a random per-device bearer grant stored through Electron `safeStorage`. Self-signed origins require a reviewed SHA-256 certificate pin. Requests attach the grant only to the selected exact HTTPS/WSS origin, while the remote preload omits plugin, process, diagnostic, command-line, filesystem, environment, and Shell bridges. mDNS results are untrusted address suggestions and still require certificate review and pairing. See [`../../deploy/nas/README.md`](../../deploy/nas/README.md) for Compose deployment and backup requirements.
+Pairing uses a ten-minute eight-digit code and a random per-device bearer grant stored through Electron `safeStorage`. Self-signed origins require a reviewed SHA-256 certificate pin. Requests attach the grant only to the selected exact HTTPS/WSS origin. The remote preload is assembled from a positive allowlist: device preferences, lifecycle restart/readiness, Release checks, and NAS management remain available, while local logs, plugin and process control, diagnostics, command-line registration, filesystem, and environment capabilities are absent. Adding a local preload method does not expose it remotely until the remote projection and its exact-key test are intentionally updated. mDNS results are untrusted address suggestions and still require certificate review and pairing. See [`../../deploy/nas/README.md`](../../deploy/nas/README.md) for Compose deployment and backup requirements.
+
+`DesktopNasRuntimeAuthority` owns runtime selection, pairing confirmation, certificate pins, exact-origin credential injection, identity checks, device revocation, connection presentation, and restart ordering. Electron lifecycle, window, TLS, request, and IPC code are adapters at that seam; they do not reimplement NAS policy.
+
+`@deepseek-ai/dsh-nas-protocol` owns NAS Wire Protocol v1 methods, routes, JSON documents, construction, and runtime validation. Desktop's network code is one adapter at that seam; the NAS Runtime host is the other.
 
 ## Process lifecycle
 

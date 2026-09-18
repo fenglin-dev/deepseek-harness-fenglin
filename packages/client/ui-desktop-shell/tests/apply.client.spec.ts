@@ -201,6 +201,33 @@ describe('ui-desktop-shell apply', () => {
     expect(b.slots.entries('sidebar.settings.action')).toEqual([])
   })
 
+  it('does not register device-local log actions for a reduced NAS shell bridge', async () => {
+    installBridge()
+    const bridge = (globalThis as unknown as {
+      deepSeekHarnessDesktop: { shell: Record<string, unknown> }
+    }).deepSeekHarnessDesktop
+    bridge.shell.getCapabilities = vi.fn(() => Promise.resolve({
+      runtimeKind: 'nas', platform: 'darwin', packaged: true, launchAtLoginAvailable: true,
+      sourceUpdateAvailable: false, commandLineAvailable: false, developmentRecoveryAvailable: false,
+    }))
+    delete bridge.shell.getDataHome
+    delete bridge.shell.openDataHomeChooser
+    delete bridge.shell.openLog
+    delete bridge.shell.openLogDirectory
+    delete bridge.shell.openSettingsDocument
+    delete bridge.shell.getCommandLine
+    delete bridge.shell.installCommandLine
+    delete bridge.shell.removeCommandLine
+    delete bridge.shell.enterRecoveryMode
+    const b = await bench()
+    new SettingsNavigation(b.ctx)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(b.slots.entries('settings.general.item')[0]?.inject?.()).not.toHaveProperty('openLog')
+    expect(b.slots.entries('settings.action').map(entry => entry.component)).toEqual([DesktopUpdateBadge])
+    await fiber.dispose()
+  })
+
   it('registers the NAS settings page only when the desktop host exposes its narrow bridge', async () => {
     installBridge()
     const bridge = (globalThis as unknown as { deepSeekHarnessDesktop: Record<string, unknown> }).deepSeekHarnessDesktop

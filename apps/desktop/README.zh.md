@@ -6,7 +6,7 @@
 
 ## 运行时与会话兼容性
 
-本次集成使用 Harness 0.1.6-alpha.1 和外部 Node 24.17.0，Electron 仍固定为 43.2.0，pnpm 固定为 11.7.0。macOS 安装版要求 macOS 13.5 或更高版本；这是内置 Node 二进制的最低要求，不能只根据 Electron 推断系统兼容性。
+本次集成使用 Harness 0.1.6-alpha.2 和外部 Node 24.21.0，Electron 固定为 44.0.0，pnpm 固定为 11.7.0。macOS 安装版要求 macOS 13.5 或更高版本；这是内置 Node 二进制的最低要求，不能只根据 Electron 推断系统兼容性。
 
 会话历史遵循完整的 V0 → V1 → V2 → V3 迁移链。迁移保留旧代文件并写入经过校验的后继文件，但不能假设旧客户端能理解新写入的 V3 数据。插件快照不包含会话，也不能撤销会话格式升级。复用重要历史数据前，应使用数据目录的隔离副本验证升级。
 
@@ -120,7 +120,7 @@ npm run package:desktop:macos:arm64
 npm run package:desktop:macos:x64
 ```
 
-产物写入 `.artifacts/desktop-macos/`。原生安装包携带展开后的 Harness 生产依赖、Node 24.17.0、pnpm 11.7.0，以及独立的预构建 Profile 模板。复制 `.app` 时一并安装这些资源，首次启动不再解压嵌套运行时归档。Linux deb/rpm 使用相同的展开布局，Windows 保留 NSIS 资源部署。安装程序不执行用户插件脚本，也不选择配置目录。旧布局测试包仍可读取原有运行时归档。准备阶段验证固定 Node 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
+产物写入 `.artifacts/desktop-macos/`。原生安装包携带展开后的 Harness 生产依赖、Node 24.21.0、pnpm 11.7.0，以及独立的预构建 Profile 模板。复制 `.app` 时一并安装这些资源，首次启动不再解压嵌套运行时归档。Linux deb/rpm 使用相同的展开布局，Windows 保留 NSIS 资源部署。安装程序不执行用户插件脚本，也不选择配置目录。旧布局测试包仍可读取原有运行时归档。准备阶段验证固定 Node 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
 
 在 Windows 上使用下列命令构建未签名的 Windows x64 NSIS 安装程序：
 
@@ -128,7 +128,7 @@ npm run package:desktop:macos:x64
 npm run package:desktop:win:x64
 ```
 
-安装程序写入 `.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe`。它包含官方 Windows x64 Node 24.17.0 可执行文件、pnpm 11.7.0，以及保留真实 `node_modules` 层级且无符号链接的 Harness 生产依赖闭包，用户无需在 `PATH` 中安装 Node 或 pnpm。Harness 环境会把内置运行时放在最前面，保证包含 `%SystemRoot%`、`System32`、Wbem 与 Windows PowerShell，再保留 Electron 启动时继承的用户 PATH。因此插件可以按裸命令名启动 Windows 系统程序和已继承的第三方命令。未出现在这份继承 PATH 中的第三方工具仍不可用；客户端运行期间修改注册表 PATH 或安装新命令后需要重启应用，客户端不会执行 PowerShell profile 来发现其他命令。Electron Builder 运行前，准备脚本会校验官方 Node 归档的 SHA-256、必需的 Windows 原生模块、内置 pnpm 版本，并实际启动 Harness 等待就绪。
+安装程序写入 `.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe`。它包含官方 Windows x64 Node 24.21.0 可执行文件、pnpm 11.7.0，以及保留真实 `node_modules` 层级且无符号链接的 Harness 生产依赖闭包，用户无需在 `PATH` 中安装 Node 或 pnpm。Harness 环境会把内置运行时放在最前面，保证包含 `%SystemRoot%`、`System32`、Wbem 与 Windows PowerShell，再保留 Electron 启动时继承的用户 PATH。因此插件可以按裸命令名启动 Windows 系统程序和已继承的第三方命令。未出现在这份继承 PATH 中的第三方工具仍不可用；客户端运行期间修改注册表 PATH 或安装新命令后需要重启应用，客户端不会执行 PowerShell profile 来发现其他命令。Electron Builder 运行前，准备脚本会校验官方 Node 归档的 SHA-256、必需的 Windows 原生模块、内置 pnpm 版本，并实际启动 Harness 等待就绪。
 
 在 Linux 上使用下列命令构建 Linux x64 软件包：
 
@@ -138,11 +138,16 @@ npm run package:desktop:linux:x64
 
 DEB 与 RPM 文件写入 `.artifacts/desktop-linux/`。与 macOS 相同，它们包含目标平台原生的 Node、pnpm 与 Harness 生产运行时归档。`Desktop packages` 工作流会运行四个原生任务，上传五种安装包并生成 `SHA256SUMS`。手动运行默认只保留 Actions artifact；仅从 `dsh-v*` 标签明确要求发布，或推送该标签时，才会使用固定平台文件名创建或更新对应 GitHub Release。
 
+<a id="nas-runtime-mode"></a>
 ## NAS 运行端模式
 
 Desktop 可以保存多个 Linux NAS 运行端，并在本地 Harness 与一个已选远程运行端之间切换。NAS 拥有插件、模型设置、会话与工作区；窗口等展示偏好仍保存在当前设备。选择 NAS 后会跳过本地 Profile 引导和本地 Harness 启动。连接失败会明确展示，未由用户显式切换时绝不会回退到本机。
 
-配对使用十分钟有效的八位码和随机逐设备 Bearer grant，grant 通过 Electron `safeStorage` 保存。自签名来源需要核对并固定 SHA-256 证书指纹。请求只向精确匹配的已选 HTTPS/WSS 来源附加 grant；远程 preload 不提供插件、进程、诊断、命令行、文件系统、环境变量或 Shell bridge。mDNS 结果只是不受信任的地址建议，仍必须核对证书并完成配对。Compose 部署与备份要求见 [`../../deploy/nas/README.zh.md`](../../deploy/nas/README.zh.md)。
+配对使用十分钟有效的八位码和随机逐设备 Bearer grant，grant 通过 Electron `safeStorage` 保存。自签名来源需要核对并固定 SHA-256 证书指纹。请求只向精确匹配的已选 HTTPS/WSS 来源附加 grant。远程 preload 由正向白名单组装：保留设备偏好、生命周期重启与就绪报告、Release 检查和 NAS 管理，同时不提供本机日志、插件与进程控制、诊断、命令行注册、文件系统或环境变量能力。新增本机 preload 方法不会自动暴露给远程页面，只有显式更新远程投影及其精确键测试后才会开放。mDNS 结果只是不受信任的地址建议，仍必须核对证书并完成配对。Compose 部署与备份要求见 [`../../deploy/nas/README.zh.md`](../../deploy/nas/README.zh.md)。
+
+`DesktopNasRuntimeAuthority` 统一拥有运行端选择、配对确认、证书 pin、精确 origin 凭据注入、身份检查、设备撤销、连接展示和重启顺序。Electron 生命周期、窗口、TLS、请求与 IPC 代码只是该 seam 上的 adapters，不再重复实现 NAS 策略。
+
+`@deepseek-ai/dsh-nas-protocol` 统一拥有 NAS 线路协议 v1 的方法、路由、JSON 文档、构造和运行时校验。Desktop 网络代码是该 seam 上的一个 adapter，NAS 运行端主机是另一个。
 
 ## 进程生命周期
 

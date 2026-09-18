@@ -69,14 +69,10 @@ export interface DesktopCapabilities {
   developmentRecoveryAvailable: boolean
 }
 
-/** Narrow desktop-shell preference and diagnostics bridge. */
-export interface DesktopShellBridge {
-  getCapabilities(): Promise<DesktopCapabilities>
+/** Device-local shell operations that must never cross the NAS renderer boundary implicitly. */
+export interface DesktopLocalShellBridge {
   getDataHome(): Promise<DesktopDataHomeStatus>
   openDataHomeChooser(): Promise<{ restarting: boolean }>
-  getPreferences(): Promise<DesktopPreferences>
-  updatePreferences(patch: DesktopPreferencesPatch): Promise<DesktopPreferences>
-  onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
   openLog(): Promise<OpenLogResult>
   openLogDirectory(): Promise<{ error: string }>
   openSettingsDocument(): Promise<{ error: string }>
@@ -86,6 +82,15 @@ export interface DesktopShellBridge {
   installCommandLine(force: boolean): Promise<DesktopCliStatus>
   removeCommandLine(): Promise<DesktopCliStatus>
   enterRecoveryMode(): Promise<{ entered: true }>
+}
+
+/** Narrow desktop-shell bridge shared by local and NAS renderer projections. */
+export interface DesktopShellBridge extends Partial<DesktopLocalShellBridge> {
+  getCapabilities(): Promise<DesktopCapabilities>
+  getPreferences(): Promise<DesktopPreferences>
+  updatePreferences(patch: DesktopPreferencesPatch): Promise<DesktopPreferences>
+  onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
+  restart(): Promise<{ restarting: true }>
   reportReadiness(phase: 'client' | 'event-dispatch'): void
 }
 
@@ -436,15 +441,12 @@ const unavailableInNasMode = (): Promise<never> => Promise.reject(new Error(
   'desktop: this device-local operation is unavailable while connected to a NAS runtime',
 ))
 const remoteShellBridge: DesktopShellBridge = {
-  ...shellBridge,
-  getDataHome: unavailableInNasMode,
-  openDataHomeChooser: unavailableInNasMode,
-  openSettingsDocument: unavailableInNasMode,
-  backupAndResetSettings: unavailableInNasMode,
-  getCommandLine: unavailableInNasMode,
-  installCommandLine: unavailableInNasMode,
-  removeCommandLine: unavailableInNasMode,
-  enterRecoveryMode: unavailableInNasMode,
+  getCapabilities: () => shellBridge.getCapabilities(),
+  getPreferences: () => shellBridge.getPreferences(),
+  updatePreferences: patch => shellBridge.updatePreferences(patch),
+  onPreferences: callback => shellBridge.onPreferences(callback),
+  restart: () => shellBridge.restart(),
+  reportReadiness: (phase) => { shellBridge.reportReadiness(phase) },
 }
 const remoteDesktopWebBridge: DesktopWebBridge = {
   getStatus: () => Promise.resolve({ phase: 'error', message: 'Open the paired NAS HTTPS address in a browser.' }),

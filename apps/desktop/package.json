@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-desktop",
   "description": "Cross-platform Electron host for the DeepSeek Harness Web GUI",
-  "version": "0.1.5-rc.2.1",
+  "version": "0.1.6-alpha.2.1",
   "private": true,
   "homepage": "https://github.com/flaqai/open-deepseek-harness-desktop",
   "author": {
@@ -11,6 +11,7 @@
   "type": "module",
   "main": "lib/entry.js",
   "dependencies": {
+    "@deepseek-ai/dsh-nas-protocol": "workspace:^",
     "@deepseek-ai/dsh-subprocess": "workspace:^",
     "semver": "^7.8.5",
     "sigstore": "4.1.1",

@@ -1,10 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
-import { candidatePreparationUsesLease, prepareDesktopCandidate, CandidatePreparationError } from '../src/candidate-preparation.ts'
+import {
+  candidatePreparationUsesLease,
+  parsePluginCommandJson,
+  prepareDesktopCandidate,
+  CandidatePreparationError,
+} from '../src/candidate-preparation.ts'
 import { HarnessInvocationError } from '../src/harness-invocation.ts'
 
 describe('candidate preparation ownership', () => {
   const record = { id: 'owned', producerPid: 100, phase: 'preparing' }
   const missing = { active: false, state: 'missing' as const, lockPath: '/unused' }
+
+  it('reads only the CLI line-framed result beside diagnostics', () => {
+    expect(parsePluginCommandJson('warning\ndsh:plugin-snapshot-json {"id":"owned"}\n')).toEqual({ id: 'owned' })
+    expect(() => parsePluginCommandJson('{"id":"unframed"}')).toThrow('no structured result')
+  })
 
   it('permits rollback after worker exit without a surviving lease', () => {
     expect(candidatePreparationUsesLease('owned', 100, record, missing)).toBe(false)

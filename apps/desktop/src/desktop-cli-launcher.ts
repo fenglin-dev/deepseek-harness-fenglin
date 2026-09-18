@@ -88,7 +88,7 @@ export async function resolveDesktopCliInvocation(
   const dshHome = parseDesktopCliSetup(setupSource)
   return {
     command: process.execPath,
-    args: [harnessBin, ...args],
+    args: ['--expose-internals', harnessBin, ...args],
     environment: {
       ...environment,
       DSH_HOME: dshHome,
