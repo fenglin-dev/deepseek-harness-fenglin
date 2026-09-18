@@ -14,6 +14,7 @@ describe('community desktop locales', () => {
     const dictionaries = new Map<string, Record<string, string>>()
     const ctx = {
       locale: {
+        getSnapshot: () => ({ active: 'en', revision: 0, locales: [] }),
         addLanguage: () => () => undefined,
         register: (namespace: string, locale: string, dictionary: Record<string, string>) => {
           const key = `${namespace}/${locale}`
@@ -32,5 +33,37 @@ describe('community desktop locales', () => {
     }
     dispose()
     expect(registrations).toHaveLength(0)
+  })
+
+  it('leaves a locale owned by an installed language pack untouched', () => {
+    const added: string[] = []
+    const registered: string[] = []
+    const ctx = {
+      locale: {
+        getSnapshot: () => ({
+          active: 'es', revision: 1,
+          locales: [
+            { id: 'zh', label: '中文', fallback: 'en' },
+            { id: 'en', label: 'English' },
+            { id: 'es', label: 'Español', fallback: 'en' },
+          ],
+        }),
+        addLanguage: ({ id }: { id: string }) => {
+          added.push(id)
+          return () => undefined
+        },
+        register: (namespace: string, locale: string) => {
+          registered.push(`${namespace}/${locale}`)
+          return () => undefined
+        },
+      },
+    } as unknown as Context
+
+    registerDesktopLanguages(ctx)
+
+    expect(added).not.toContain('es')
+    expect(registered.some(key => key.endsWith('/es'))).toBe(false)
+    expect(added).toContain('ru')
+    expect(registered).toContain('desktop-shell/ru')
   })
 })

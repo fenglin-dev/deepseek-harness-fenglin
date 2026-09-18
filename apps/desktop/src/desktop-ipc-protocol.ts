@@ -8,6 +8,7 @@ export const DESKTOP_IPC = {
   capabilities: 'dsh:desktop:capabilities',
   chatBackgroundRead: 'dsh:desktop:chat-background:read',
   chatBackgroundWrite: 'dsh:desktop:chat-background:write',
+  clientBootFailure: 'dsh:desktop:client-boot-failure',
   cliGet: 'dsh:desktop:cli:get',
   cliInstall: 'dsh:desktop:cli:install',
   cliRemove: 'dsh:desktop:cli:remove',

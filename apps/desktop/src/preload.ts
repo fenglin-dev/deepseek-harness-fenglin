@@ -422,6 +422,26 @@ const chatBackgroundBridge: DesktopChatBackgroundBridge = {
 
 const sourceMode = process.argv.includes('--dsh-source')
 const nasMode = process.argv.includes('--dsh-nas-runtime')
+
+function installClientBootFailureBridge(): void {
+  if (nasMode) return
+  let reported = false
+  const publish = (): void => {
+    if (reported) return
+    const failure = document.querySelector<HTMLElement>('[data-dsh-boot-failure]')
+    const message = failure?.dataset.dshBootFailure
+    if (message === undefined || message.length === 0) return
+    reported = true
+    ipcRenderer.send(DESKTOP_IPC.clientBootFailure, { message: message.slice(0, 2_000) })
+  }
+  const observer = new MutationObserver(publish)
+  observer.observe(document.documentElement, {
+    attributes: true, attributeFilter: ['data-dsh-boot-failure'], subtree: true,
+  })
+  publish()
+  window.addEventListener('unload', () => { observer.disconnect() }, { once: true })
+}
+
 const iconsBridge: DesktopIconsBridge = {
   getStatus: () => ipcRenderer.invoke(DESKTOP_IPC.iconsGet) as Promise<DesktopIconStatus>,
   choose: () => ipcRenderer.invoke(DESKTOP_IPC.iconsChoose) as Promise<IconSelection | null>,
@@ -521,5 +541,6 @@ function installDesktopThemeSync(): void {
 
 window.addEventListener('DOMContentLoaded', () => {
   installDesktopThemeSync()
+  installClientBootFailureBridge()
   installLoadingPage(ipcRenderer)
 }, { once: true })

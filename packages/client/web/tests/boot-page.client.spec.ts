@@ -53,6 +53,15 @@ describe('BootPage', () => {
     expect(el.textContent).not.toContain('Loading plugins…')
   })
 
+  it('marks and clears a framework-free fatal boot report for desktop recovery', () => {
+    const { el, page } = mount()
+    page.fail('locale "es" is already registered')
+    expect(el.querySelector('[data-dsh-boot-failure]')).not.toBeNull()
+
+    page.recover('dsh-locale-es')
+    expect(el.querySelector('[data-dsh-boot-failure]')).toBeNull()
+  })
+
   it('detaches on disposal', () => {
     const { el, page } = mount()
     page.dispose()

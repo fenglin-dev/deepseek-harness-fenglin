@@ -28,8 +28,14 @@ export const DESKTOP_LANGUAGE_DEFINITIONS = [
 export function registerDesktopLanguages(ctx: Context): () => void {
   const disposers: (() => void)[] = []
   try {
+    const occupied = new Set(ctx.locale.getSnapshot().locales.map(locale => locale.id.toLowerCase()))
     for (const definition of DESKTOP_LANGUAGE_DEFINITIONS) {
+      // A separately installed language pack owns both its catalog row and
+      // namespace dictionaries. Leave that locale untouched instead of
+      // aborting the complete client plugin tree with duplicate registration.
+      if (occupied.has(definition.id.toLowerCase())) continue
       disposers.push(ctx.locale.addLanguage(definition))
+      occupied.add(definition.id.toLowerCase())
       disposers.push(ctx.locale.register('settings.locale', definition.id, {
         'language.title': desktopLanguageTitles[definition.id],
       }))

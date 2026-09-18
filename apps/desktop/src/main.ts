@@ -50,6 +50,7 @@ import {
 import { ensurePackagedPrebuiltProfile, ensurePackagedRuntime, packagedPrebuiltProfileArchiveRoot, packagedRuntimeArchiveRoot } from './packaged-runtime.ts'
 import { HarnessSupervisor, type HarnessFailure, type HarnessState } from './supervisor.ts'
 import { readRecoveryFailureSummary, type RecoveryFailureSummary } from './recovery-failure.ts'
+import { parseClientBootFailure } from './client-boot-failure.ts'
 import { clearDeadModuleFallbackLock, inspectModuleFallbackLock } from './module-fallback-lock.ts'
 import { DesktopProfileMutation } from './desktop-profile-mutation/index.ts'
 import { DESKTOP_IPC } from './desktop-ipc-protocol.ts'
@@ -248,6 +249,7 @@ let menuLocale = 'en'
 let desktopLocaleStore: DesktopLocaleStore | undefined
 let persistedProfileLocale: string | undefined
 let menuClientReady = false
+let reportedClientBootFailureOrigin: string | undefined
 let snapshotMutationActive = false
 let recoveryHarnessSuspended = false
 let recoveryRestartRequired = false
@@ -1930,6 +1932,29 @@ async function startApplication(): Promise<void> {
       console.warn('desktop: could not retain the latest bootable plugin snapshot', error)
     })
   })
+  ipcMain.on(DESKTOP_IPC.clientBootFailure, (event, payload: unknown) => {
+    assertMainRenderer(event.sender)
+    const failure = parseClientBootFailure(payload)
+    if (failure === undefined || harnessOrigin === undefined || lifecycle?.isQuitting === true
+      || supervisor?.isDiagnosticMode === true || event.senderFrame === null) return
+    let rendererOrigin: string
+    try { rendererOrigin = new URL(event.senderFrame.url).origin } catch { return }
+    if (rendererOrigin !== harnessOrigin || reportedClientBootFailureOrigin === harnessOrigin) return
+    reportedClientBootFailureOrigin = harnessOrigin
+    cancelBootableSnapshot()
+    void appendDesktopStartupLog(
+      `Client plugin tree failed before readiness (${failure.diagnosticCode}; ${failure.nativeCode ?? 'unknown'}).`,
+    )
+    profileMutation?.observeHarness({
+      type: 'failed', error: new Error(failure.evidence ?? 'desktop: client plugin tree failed before readiness'),
+    })
+    showLoading('failed', {
+      message: shellMessages(app.getLocale()).clientPluginBootFailed,
+      ...failure,
+      logPath: harnessLogPath,
+    })
+    showNotification('failed', notificationCopy.failed)
+  })
   ipcMain.handle(DESKTOP_IPC.releasesGet, (event): DesktopReleaseStatus => {
     assertMainRenderer(event.sender)
     return releaseChecker?.status ?? { phase: 'unsupported' }
@@ -3271,6 +3296,7 @@ async function startApplication(): Promise<void> {
       desktopReturnControl?.setHarnessOrigin(`${harnessOrigin}/`)
       desktopWebAccess?.setReady(url)
       reportedDesktopReadiness.clear()
+      reportedClientBootFailureOrigin = undefined
       publishStartupProgress({ stage: 'ready', progress: 100 })
       const readyOrigin = harnessOrigin
       setTimeout(() => {
@@ -3295,6 +3321,7 @@ async function startApplication(): Promise<void> {
       harnessOrigin = new URL(url).origin
       harnessAuthenticationUrl = undefined
       reportedDesktopReadiness.clear()
+      reportedClientBootFailureOrigin = undefined
       desktopReturnControl?.clear()
       desktopWebAccess?.clear()
       publishStartupProgress({
