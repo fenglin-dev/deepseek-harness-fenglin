@@ -8,3 +8,8 @@ for (const script of ['prepare-unix-runtime.mjs', 'prepare-windows-runtime.mjs']
     assert.match(source, /'--config\.allow-unused-patches=true'/u)
   })
 }
+
+test('Windows installed smoke isolates Electron application data', async () => {
+  const source = await readFile(new URL('smoke-windows-package.ps1', import.meta.url), 'utf8')
+  assert.match(source, /--dsh-package-smoke-root=\$desktopAppDataRoot/u)
+})

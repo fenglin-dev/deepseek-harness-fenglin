@@ -3,7 +3,8 @@ $ErrorActionPreference = 'Stop'
 $installer = (Resolve-Path (Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe')).Path
 $installRoot = Join-Path $env:RUNNER_TEMP 'Open DeepSeek Harness Desktop 安装测试'
 $dshHome = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness Home'
-$desktopDataRoot = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'open-deepseek-harness-desktop'
+$desktopAppDataRoot = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness AppData'
+$desktopDataRoot = Join-Path $desktopAppDataRoot 'open-deepseek-harness-desktop'
 $harnessLog = Join-Path $desktopDataRoot 'logs/harness.log'
 $unpackedResources = Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/win-unpacked/resources'
 $cliDirectory = Join-Path $installRoot 'resources/cli-bin'
@@ -99,10 +100,13 @@ if ($cliRegistration.CliPathRegistered -ne 1 -or
 }
 
 $env:DSH_HOME = $dshHome
+Remove-Item -LiteralPath $desktopAppDataRoot -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Path $desktopAppDataRoot -Force | Out-Null
 Remove-Item -LiteralPath $harnessLog -Force -ErrorAction SilentlyContinue
 $appStart = [System.Diagnostics.ProcessStartInfo]::new()
 $appStart.FileName = Join-Path $installRoot 'Open DeepSeek Harness Desktop.exe'
 $appStart.UseShellExecute = $false
+$appStart.ArgumentList.Add("--dsh-package-smoke-root=$desktopAppDataRoot")
 $app = [System.Diagnostics.Process]::Start($appStart)
 $orphanStart = [System.Diagnostics.ProcessStartInfo]::new()
 $orphanStart.FileName = Join-Path $installRoot 'resources/runtime/win32-x64/node.exe'
