@@ -220,10 +220,14 @@ jobs:
             $allowed = @(
               '.github/workflows/desktop-packages.yml',
               'apps/desktop/scripts/collect-windows-smoke-diagnostics.ps1',
+              'apps/desktop/scripts/runtime-deploy-config.test.mjs',
               'apps/desktop/scripts/smoke-windows-package.ps1',
               'apps/desktop/tests/desktop-packages-workflow.spec.ts'
             )
+            git fetch --no-tags --depth=1 origin $run.head_sha
+            if ($LASTEXITCODE -ne 0) { throw "Could not fetch candidate commit $($run.head_sha)" }
             $changed = @(git diff --name-only $run.head_sha '${{ github.sha }}')
+            if ($LASTEXITCODE -ne 0) { throw "Could not compare candidate commit $($run.head_sha)" }
             $unsafe = @($changed | Where-Object { $_ -notin $allowed })
             if ($unsafe.Count -gt 0) {
               throw "Candidate run commit $($run.head_sha) differs in packaged inputs: $($unsafe -join ', ')"
