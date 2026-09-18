@@ -1604,6 +1604,16 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return desktopCapabilities()
   })
+  ipcMain.handle(DESKTOP_IPC.directoryPick, async (event): Promise<string | null> => {
+    assertMainRenderer(event.sender)
+    if (bootNasRuntime() !== undefined) throw new Error('desktop: local directory picker is unavailable in NAS mode')
+    const surface = mainSurface
+    if (surface === undefined || surface.window.isDestroyed()) {
+      throw new Error('desktop: main window is unavailable')
+    }
+    const result = await dialog.showOpenDialog(surface.window, { properties: ['openDirectory'] })
+    return result.canceled ? null : result.filePaths[0] ?? null
+  })
   ipcMain.handle(DESKTOP_IPC.processesList, (event) => {
     assertMainRenderer(event.sender)
     return processObserver?.list() ?? []

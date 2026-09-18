@@ -238,7 +238,7 @@ class Hmr extends Service {
       // profile may change after the launcher parsed startup patches but
       // before these watchers finish registering; stat polling cannot observe
       // a change that predates its first stamp.
-      void this.runReload(() => refresh(false)).catch((error) => { handleError(this.ctx, error) })
+      void this.runReload(() => refresh(false)).catch((error: unknown) => { handleError(this.ctx, error) })
     }
 
     const { loader } = this.ctx

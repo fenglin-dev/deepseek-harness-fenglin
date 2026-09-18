@@ -423,6 +423,12 @@ const chatBackgroundBridge: DesktopChatBackgroundBridge = {
 const sourceMode = process.argv.includes('--dsh-source')
 const nasMode = process.argv.includes('--dsh-nas-runtime')
 
+if (!nasMode && location.protocol === 'dsh-app:' && location.hostname === 'app') {
+  contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', Object.freeze({
+    pick: () => ipcRenderer.invoke(DESKTOP_IPC.directoryPick) as Promise<string | null>,
+  }))
+}
+
 function installClientBootFailureBridge(): void {
   if (nasMode) return
   let reported = false

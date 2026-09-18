@@ -765,6 +765,7 @@ export function WorkspaceBrowser({
   wide,
   usePanelInfo,
   expandSidebar,
+  dismissSidebar,
   useSessions,
   useSessionStatus,
   useWorkspaces,
@@ -918,11 +919,20 @@ export function WorkspaceBrowser({
   const wsPlusRef = useRef<HTMLButtonElement>(null)
   const composingRef = useRef(false)
 
+  const startAndDismiss = (workspaceId?: WorkspaceId): void => {
+    startSession(workspaceId)
+    dismissSidebar()
+  }
+  const openAndDismiss = (sessionId: SessionId): void => {
+    open(sessionId)
+    dismissSidebar()
+  }
+
   const openSearchResult = (sessionId: SessionId): void => {
     setRevealSessionId(sessionId)
     setQuery('')
     setSearchExpanded(false)
-    open(sessionId)
+    openAndDismiss(sessionId)
   }
   const acknowledgeSessionReveal = (sessionId: SessionId): void => {
     setRevealSessionId(current => current === sessionId ? undefined : current)
@@ -1216,7 +1226,7 @@ export function WorkspaceBrowser({
           side="right"
           onPick={(workspaceId) => {
             setWsPickerOpen(false)
-            startSession(workspaceId)
+            startAndDismiss(workspaceId)
           }}
           onClose={() => { setWsPickerOpen(false) }}
         />
@@ -1265,7 +1275,7 @@ export function WorkspaceBrowser({
                 list={list}
                 sessionIds={orderedFlatSessionIds}
                 useSessionStatus={useSessionStatus}
-                open={open} forkSession={forkSession}
+                open={openAndDismiss} forkSession={forkSession}
                 onSessionRename={onSessionRename} onSessionArchive={onSessionArchive}
                 setSessionOrder={saveSessionOrder}
                 revealSessionId={revealSessionId}
@@ -1289,8 +1299,8 @@ export function WorkspaceBrowser({
                 setGroupExpanded={actions.setGroupExpanded}
                 setSessionOrder={saveSessionOrder}
                 archivedSessionIds={archivedSessionIds}
-                startSession={startSession}
-                open={open}
+                startSession={startAndDismiss}
+                open={openAndDismiss}
                 insertWorkspaceBefore={insertWorkspaceBefore}
                 revealSessionId={revealSessionId}
                 onSessionRevealed={acknowledgeSessionReveal}

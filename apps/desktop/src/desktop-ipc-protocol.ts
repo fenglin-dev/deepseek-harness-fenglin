@@ -22,6 +22,7 @@ export const DESKTOP_IPC = {
   diagnosticLabRestoreAll: 'dsh:desktop:diagnostic-lab:restore-all',
   diagnosticLabStart: 'dsh:desktop:diagnostic-lab:start',
   diagnosticLabStatus: 'dsh:desktop:diagnostic-lab:status',
+  directoryPick: 'dsh-desktop:directory-pick',
   downloadNetworkChanged: 'dsh:desktop:download-network',
   downloadNetworkGet: 'dsh:desktop:download-network:get',
   downloadNetworkReset: 'dsh:desktop:download-network:reset',

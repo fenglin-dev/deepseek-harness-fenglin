@@ -2,12 +2,12 @@
 .page h2, .page h3, .page p { margin: 0; }
 .page header { display: grid; gap: 6px; }
 .titleRow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.experimentalBadge { padding: 3px 8px; border-radius: 999px; background: rgba(245, 158, 11, .14); color: var(--dsh-text, inherit); font-size: 12px; font-weight: 600; }
+.experimentalBadge { padding: 3px 8px; border-radius: 999px; corner-shape: round; background: rgba(245, 158, 11, .14); color: var(--dsh-text, inherit); font-size: 12px; font-weight: 600; }
 .page header p, .card p { color: var(--dsh-text-secondary, #6b7280); line-height: 1.5; }
 .card { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--dsh-border, #e5e7eb); border-radius: 14px; background: var(--dsh-surface, transparent); }
 .cardHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .cardHeader > div { min-width: 0; display: grid; gap: 5px; }
-.badge { flex: none; padding: 3px 8px; border-radius: 999px; background: var(--dsh-surface-muted, #f3f4f6); font-size: 12px; }
+.badge { flex: none; padding: 3px 8px; border-radius: 999px; corner-shape: round; background: var(--dsh-surface-muted, #f3f4f6); font-size: 12px; }
 .field { display: grid; gap: 6px; font-size: 13px; }
 .field input { min-height: 42px; box-sizing: border-box; padding: 9px 11px; border: 1px solid var(--dsh-border, #d1d5db); border-radius: 9px; background: transparent; color: inherit; font: inherit; font-size: 16px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }

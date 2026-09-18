@@ -72,7 +72,7 @@ describe('ModelSelect reasoning effort', () => {
       },
     ]
     const directory = createSnapshotStore<ModelDirectoryState>(state({ groups }))
-    const select = vi.fn().mockResolvedValue(true)
+    const select = vi.fn().mockResolvedValue({ ok: true, value: undefined })
     render(<ModelSelect
       locked={false}
       available

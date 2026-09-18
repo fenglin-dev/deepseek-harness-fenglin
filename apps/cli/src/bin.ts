@@ -62,7 +62,7 @@ export async function runCli(): Promise<void> {
       const { INSTALL_ANCHOR } = await import('./install-anchor.ts')
       await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR })
       // Let native handles and output drain before Node tears down the process.
-      process.exitCode = await runPlugin(invocation.profile, invocation.args)
+      process.exitCode = runPlugin(invocation.profile, invocation.args)
       break
     }
     case 'dump-config': {

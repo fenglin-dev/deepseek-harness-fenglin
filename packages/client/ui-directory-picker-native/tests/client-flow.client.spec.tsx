@@ -167,8 +167,7 @@ describe('directory-picker-native client half', () => {
   it('consumes the actual Desktop preload bridge and sends its directory-pick IPC', async () => {
     vi.stubGlobal('location', new URL('dsh-app://app/'))
     // Desktop's preload is typechecked by its own compiler program.
-    const preload = '../../../../apps/desktop/src/preload-app.ts'
-    await import(/* @vite-ignore */ preload)
+    await vi.importActual('../../../../apps/desktop/src/preload.ts')
     desktopIpc.invoke.mockResolvedValue('/desktop/workspace')
     const b = await bench()
     const dispose = b.declare()

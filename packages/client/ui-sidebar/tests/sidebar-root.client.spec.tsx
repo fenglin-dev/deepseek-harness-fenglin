@@ -70,7 +70,7 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
           return <div data-testid="footer-action-seat" data-wide={owner.wide} />
         }
         if (key === 'sidebar.settings.action') {
-          settingsActionOwner = owner as SidebarSettingsActionOwnerProps
+          settingsActionOwner = owner
           return <div data-testid="settings-action-seat" data-wide={owner.wide} />
         }
         regionOwner = owner as SidebarSectionOwnerProps
