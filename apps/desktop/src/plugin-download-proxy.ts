@@ -112,6 +112,13 @@ export interface PluginDownloadProxy {
   readonly pluginProxyCredentials: { username: string; password: string }
   readonly applicationProxyRules: string
   readonly applicationProxyCredentials: { username: string; password: string }
+  /**
+   * Resolve credentials for an authentication challenge from an owned loopback endpoint.
+   * @param host Challenging proxy host.
+   * @param port Challenging proxy port.
+   * @returns Credentials for the matching endpoint, or `undefined` for an unowned endpoint.
+   */
+  credentialsForProxyAuth(host: string, port: number): { username: string; password: string } | undefined
   close(): Promise<void>
 }
 
@@ -123,75 +130,103 @@ export async function startPluginDownloadProxy(
   const token = randomBytes(24).toString('base64url')
   const revisionSnapshots = new Map<number, DownloadNetworkOperationSnapshot>()
   const sockets = new Set<Socket>()
-  const server = createServer((_request, response) => {
-    response.writeHead(405, { Connection: 'close' }); response.end()
-  })
-  server.on('connect', (request: IncomingMessage, client: Socket, head: Buffer) => {
-    sockets.add(client); client.once('close', () => { sockets.delete(client) })
-    const authorization = request.headers['proxy-authorization']
-    let identity: string | undefined
-    if (typeof authorization === 'string' && authorization.startsWith('Basic ')) {
-      try {
-        const decoded = Buffer.from(authorization.slice(6), 'base64').toString('utf8')
-        const separator = decoded.indexOf(':')
-        if (separator > 0 && decoded.slice(separator + 1) === token) identity = decoded.slice(0, separator)
-      } catch { /* Invalid credentials are rejected below. */ }
-    }
-    if ((identity !== 'plugins' && identity !== 'application' && identity !== 'npm' && identity !== 'github'
-      && !/^plugins-\d+$/u.test(identity ?? '')) || request.url === undefined) {
-      client.end('HTTP/1.1 407 Proxy Authentication Required\r\nConnection: close\r\n\r\n'); return
-    }
-    const target = parseAuthority(request.url)
-    if (target === undefined) { client.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); return }
-    const requestedRevision = identity?.startsWith('plugins-') ? Number(identity.slice('plugins-'.length)) : undefined
-    let snapshot = requestedRevision === undefined ? undefined : revisionSnapshots.get(requestedRevision)
-    if (requestedRevision !== undefined && snapshot === undefined) {
-      snapshot = settingsStore.operationSnapshot(requestedRevision)
-      if (snapshot === undefined) { client.end('HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n'); return }
-      revisionSnapshots.set(requestedRevision, snapshot)
-      while (revisionSnapshots.size > 16) {
-        const oldestRevision = revisionSnapshots.keys().next().value
-        if (oldestRevision === undefined) break
-        revisionSnapshots.delete(oldestRevision)
+  const startEndpoint = async (role: 'plugin' | 'application'): Promise<{
+    server: ReturnType<typeof createServer>
+    port: number
+  }> => {
+    const server = createServer((_request, response) => {
+      response.writeHead(405, { Connection: 'close' }); response.end()
+    })
+    server.on('connect', (request: IncomingMessage, client: Socket, head: Buffer) => {
+      sockets.add(client); client.once('close', () => { sockets.delete(client) })
+      const authorization = request.headers['proxy-authorization']
+      let identity: string | undefined
+      if (typeof authorization === 'string' && authorization.startsWith('Basic ')) {
+        try {
+          const decoded = Buffer.from(authorization.slice(6), 'base64').toString('utf8')
+          const separator = decoded.indexOf(':')
+          if (separator > 0 && decoded.slice(separator + 1) === token) identity = decoded.slice(0, separator)
+        } catch { /* Invalid credentials are rejected below. */ }
       }
+      const pluginIdentity = identity === 'plugins' || identity === 'npm' || identity === 'github'
+        || /^plugins-\d+$/u.test(identity ?? '')
+      if ((role === 'application' ? identity !== 'application' : !pluginIdentity) || request.url === undefined) {
+        const realm = role === 'application' ? 'dsh-application-downloads' : 'dsh-plugin-downloads'
+        client.end(`HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="${realm}"\r\nConnection: close\r\n\r\n`)
+        return
+      }
+      const target = parseAuthority(request.url)
+      if (target === undefined) { client.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); return }
+      const requestedRevision = identity?.startsWith('plugins-') ? Number(identity.slice('plugins-'.length)) : undefined
+      let snapshot = requestedRevision === undefined ? undefined : revisionSnapshots.get(requestedRevision)
+      if (requestedRevision !== undefined && snapshot === undefined) {
+        snapshot = settingsStore.operationSnapshot(requestedRevision)
+        if (snapshot === undefined) { client.end('HTTP/1.1 409 Conflict\r\nConnection: close\r\n\r\n'); return }
+        revisionSnapshots.set(requestedRevision, snapshot)
+        while (revisionSnapshots.size > 16) {
+          const oldestRevision = revisionSnapshots.keys().next().value
+          if (oldestRevision === undefined) break
+          revisionSnapshots.delete(oldestRevision)
+        }
+      }
+      const settings: DownloadNetworkSettings = snapshot?.settings ?? settingsStore.read()
+      const acceleratorHost = settings.github.acceleratorUrl === undefined
+        ? undefined : new URL(settings.github.acceleratorUrl).hostname.toLowerCase()
+      const selected: 'application' | 'npm' | 'github' = identity === 'application'
+        ? 'application' : identity === 'npm' || identity === 'github' ? identity
+          : GITHUB_HOSTS.has(target.host.toLowerCase()) || target.host.toLowerCase() === acceleratorHost ? 'github' : 'npm'
+      const policy = settings[selected].proxy
+      const upstream = policy.mode === 'direct' || policy.mode === 'system' ? undefined
+        : endpoint(policy, selected === 'application'
+          ? settingsStore.password(selected) : snapshot?.passwords[selected] ?? settingsStore.password(selected), environment, target)
+      const fail = (): void => { if (!client.destroyed) client.end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n') }
+      const ready = (remote: Socket): void => {
+        sockets.add(remote); remote.once('close', () => { sockets.delete(remote) })
+        remote.on('error', () => { client.destroy() })
+        client.on('error', () => { remote.destroy() })
+        client.write('HTTP/1.1 200 Connection Established\r\n\r\n')
+        if (head.length > 0) remote.write(head)
+        client.pipe(remote); remote.pipe(client)
+      }
+      if (upstream === undefined) connectDirect(target.host, target.port, ready, fail)
+      else connectThroughProxy(upstream, request.url, ready, fail)
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve() })
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') {
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      throw new Error(`Desktop ${role} download proxy did not bind a TCP port`)
     }
-    const settings: DownloadNetworkSettings = snapshot?.settings ?? settingsStore.read()
-    const acceleratorHost = settings.github.acceleratorUrl === undefined
-      ? undefined : new URL(settings.github.acceleratorUrl).hostname.toLowerCase()
-    const selected: 'application' | 'npm' | 'github' = identity === 'application'
-      ? 'application' : identity === 'npm' || identity === 'github' ? identity
-        : GITHUB_HOSTS.has(target.host.toLowerCase()) || target.host.toLowerCase() === acceleratorHost ? 'github' : 'npm'
-    const policy = settings[selected].proxy
-    const upstream = policy.mode === 'direct' || policy.mode === 'system' ? undefined
-      : endpoint(policy, selected === 'application'
-        ? settingsStore.password(selected) : snapshot?.passwords[selected] ?? settingsStore.password(selected), environment, target)
-    const fail = (): void => { if (!client.destroyed) client.end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n') }
-    const ready = (remote: Socket): void => {
-      sockets.add(remote); remote.once('close', () => { sockets.delete(remote) })
-      remote.on('error', () => { client.destroy() })
-      client.on('error', () => { remote.destroy() })
-      client.write('HTTP/1.1 200 Connection Established\r\n\r\n')
-      if (head.length > 0) remote.write(head)
-      client.pipe(remote); remote.pipe(client)
-    }
-    if (upstream === undefined) connectDirect(target.host, target.port, ready, fail)
-    else connectThroughProxy(upstream, request.url, ready, fail)
-  })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve() })
-  })
-  const address = server.address()
-  if (address === null || typeof address === 'string') throw new Error('Desktop plugin proxy did not bind a TCP port')
+    return { server, port: address.port }
+  }
+  const pluginEndpoint = await startEndpoint('plugin')
+  let applicationEndpoint: Awaited<ReturnType<typeof startEndpoint>>
+  try {
+    applicationEndpoint = await startEndpoint('application')
+  } catch (error) {
+    for (const socket of sockets) socket.destroy()
+    await new Promise<void>((resolve) => { pluginEndpoint.server.close(() => { resolve() }) })
+    throw error
+  }
+  const pluginProxyCredentials = { username: 'plugins', password: token }
+  const applicationProxyCredentials = { username: 'application', password: token }
   return {
-    pluginUrl: `http://plugins:${token}@127.0.0.1:${address.port}`,
-    pluginProxyRules: `http://127.0.0.1:${address.port}`,
-    pluginProxyCredentials: { username: 'plugins', password: token },
-    applicationProxyRules: `http://127.0.0.1:${address.port}`,
-    applicationProxyCredentials: { username: 'application', password: token },
+    pluginUrl: `http://plugins:${token}@127.0.0.1:${pluginEndpoint.port}`,
+    pluginProxyRules: `http://127.0.0.1:${pluginEndpoint.port}`,
+    pluginProxyCredentials,
+    applicationProxyRules: `http://127.0.0.1:${applicationEndpoint.port}`,
+    applicationProxyCredentials,
+    credentialsForProxyAuth: (host, port) => host !== '127.0.0.1' ? undefined
+      : port === pluginEndpoint.port ? pluginProxyCredentials
+        : port === applicationEndpoint.port ? applicationProxyCredentials : undefined,
     close: async () => {
       for (const socket of sockets) socket.destroy()
-      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      await Promise.all([pluginEndpoint.server, applicationEndpoint.server].map(async (server) => {
+        await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+      }))
     },
   }
 }
