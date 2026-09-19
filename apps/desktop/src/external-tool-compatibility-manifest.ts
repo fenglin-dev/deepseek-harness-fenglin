@@ -44,7 +44,7 @@ export interface ExternalToolInstallResolution {
 export const EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY: ExternalToolCompatibilityManifest = {
   schema: 'dsh/desktop-external-tool-compatibility/v2',
   revision: 8,
-  desktopVersion: '0.1.6-alpha.2.1',
+  desktopVersion: '0.1.6-alpha.2',
   reviewedSourceVersion: '0.1.6-alpha.2',
   issuedAt: '2026-09-18T00:00:00.000Z',
   expiresAt: '2027-03-17T00:00:00.000Z',

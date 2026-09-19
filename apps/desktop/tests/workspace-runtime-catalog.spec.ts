@@ -8,7 +8,7 @@ import { WorkspaceRuntimeCatalog } from '../src/workspace-runtime-catalog.ts'
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 
-const version = '0.1.6-alpha.2.1'
+const version = '0.1.6-alpha.2'
 const documentName = `workspace-runtimes-${version}.v1.json`
 function artifact(target: 'win32-x64' | 'darwin-arm64' | 'darwin-x64' | 'linux-x64') {
   return {

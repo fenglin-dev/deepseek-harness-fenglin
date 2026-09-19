@@ -9,6 +9,8 @@ Package one source revision into Windows x64, macOS arm64/x64, and Linux x64 ins
 
 ## Before changing Git state
 
+Read [references/current-release-state.md](references/current-release-state.md) first. It is the release ledger and version lock for the active packaging cycle. Preserve its target version unless the user explicitly asks to change that version in the current conversation; requests to retry, rebuild, synchronize, package, upload, or publish do not authorize a version change. Update the ledger after every material state transition with observed commits, run IDs, verification results, local handoff state, and GitHub/CNB publication state.
+
 Read [references/release-runbook.md](references/release-runbook.md). Inspect the main checkout and every worktree before choosing the release base. Preserve unrelated dirty changes and identify unmerged work rather than assuming that every worktree belongs in the release.
 
 Choose the requested endpoint before starting:

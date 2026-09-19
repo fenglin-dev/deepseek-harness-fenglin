@@ -22,7 +22,7 @@ interface MutableManifest {
 
 function manifest(): MutableManifest {
   return {
-    schema: 'dsh/desktop-workspace-runtimes/v1', desktopVersion: '0.1.6-alpha.2.1',
+    schema: 'dsh/desktop-workspace-runtimes/v1', desktopVersion: '0.1.6-alpha.2',
     issuedAt: '2026-09-19T00:00:00.000Z', expiresAt: '2027-03-18T00:00:00.000Z',
     artifacts: Object.fromEntries(WORKSPACE_RUNTIME_TARGETS.map(target => [target, {
       target,

@@ -27,7 +27,7 @@ async function fixture(options: {
   await mkdir(join(source, 'python', 'lib', 'python3.12', 'site-packages'), { recursive: true })
   await writeFile(join(source, 'python', 'bin', 'python3'), '#!/bin/sh\n')
   await writeFile(join(source, 'runtime.json'), JSON.stringify({
-    schema: 'dsh/workspace-runtime-payload/v1', desktopVersion: '0.1.6-alpha.2.1',
+    schema: 'dsh/workspace-runtime-payload/v1', desktopVersion: '0.1.6-alpha.2',
     platform: 'darwin', arch: 'arm64', payloadDigest: digest, pythonVersion: '3.12.14', pythonPackages: {},
   }))
   const archive = join(root, 'archive.tar.gz')
@@ -42,7 +42,7 @@ async function fixture(options: {
     githubUrl: 'https://github.com/example/archive.tar.gz', cnbUrl: 'https://cnb.cool/example/archive.tar.gz',
   }
   const manifest = {
-    schema: 'dsh/desktop-workspace-runtimes/v1', desktopVersion: '0.1.6-alpha.2.1',
+    schema: 'dsh/desktop-workspace-runtimes/v1', desktopVersion: '0.1.6-alpha.2',
     issuedAt: new Date(Date.now() - 1_000).toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
     artifacts: { 'darwin-arm64': artifact },
   } as unknown as WorkspaceRuntimeManifest
@@ -51,7 +51,7 @@ async function fixture(options: {
   let fetchCount = 0
   const manager = new OptionalRuntimeManager({
     cacheRoot: join(root, 'user-data', 'optional-runtimes'), stateFile,
-    desktopVersion: '0.1.6-alpha.2.1', platform: options.platform ?? 'darwin', arch: options.arch ?? 'arm64',
+    desktopVersion: '0.1.6-alpha.2', platform: options.platform ?? 'darwin', arch: options.arch ?? 'arm64',
     target: 'darwin-arm64', getHome: () => home, isNas: () => options.nas === true,
     source: () => 'github', loadManifest: () => Promise.resolve(manifest),
     fetch: (_url, init) => {
@@ -182,7 +182,7 @@ describe('OptionalRuntimeManager', () => {
     await writeFile(stateFile, JSON.stringify({
       schema: 'open-dsh-desktop/workspace-runtimes/v1',
       homes: { [join(root, 'home-one')]: { office: {
-        payloadDigest: '../escape', desktopVersion: '0.1.6-alpha.2.1', state: 'enabled',
+        payloadDigest: '../escape', desktopVersion: '0.1.6-alpha.2', state: 'enabled',
       } } },
       pendingCleanup: [],
     }))
