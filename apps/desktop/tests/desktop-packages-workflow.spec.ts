@@ -101,6 +101,13 @@ describe('desktop package workflow bundled plugins', () => {
     ))).toBe(true)
 
     expect(smoke?.if).toContain('inputs.windows_candidate_run_id')
+    const smokePnpm = smoke?.steps?.findIndex(step => step.uses === 'pnpm/action-setup@v4') ?? -1
+    const smokeInstall = smoke?.steps?.findIndex(step => step.run === 'pnpm install --frozen-lockfile') ?? -1
+    const runtimeBuild = smoke?.steps?.findIndex(step => step.name === 'Build optional workspace runtime') ?? -1
+    expect(smokePnpm).toBeGreaterThanOrEqual(0)
+    expect(smokeInstall).toBeGreaterThan(smokePnpm)
+    expect(runtimeBuild).toBeGreaterThan(smokeInstall)
+    expect(smoke?.steps?.some(step => step.uses === 'actions/setup-node@v6' && step.with?.cache === 'pnpm')).toBe(true)
     const reuseCheck = smoke?.steps?.find(step => step.name === 'Verify reused candidate commit')?.run
     const evidenceCheck = smoke?.steps?.find(step => step.name === 'Verify Windows smoke evidence interface')
     expect(evidenceCheck?.run).toContain('windows-smoke-journal.test.ps1')
