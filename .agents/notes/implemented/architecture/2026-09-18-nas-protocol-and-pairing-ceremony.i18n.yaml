@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-18-nas-protocol-and-pairing-ceremony.md
+2026-09-18-nas-protocol-and-pairing-ceremony.md: 8c4345247249a5baddfbe107b0c775cd377a71c5
+2026-09-18-nas-protocol-and-pairing-ceremony.zh.md: 83bacb3b595098db9ef288263b92e901f35d39d3

@@ -62,6 +62,8 @@ export interface AgentPresetPluginGroup {
 
 /** Point-in-time inventory returned by the plugin inventory Remote. */
 export interface PluginInventorySnapshot {
+  /** Whether this Host exposes persistent current-profile management. */
+  readonly managementAvailable?: boolean
   readonly entries: readonly PluginInventoryEntry[]
   /** Per-preset compositions when an agent-preset roster is available. */
   readonly agentPresets?: readonly AgentPresetPluginGroup[]
@@ -227,12 +229,21 @@ export interface PluginRepairNoticeRequest {
 /** Stable identity of one background profile-plugin installation. */
 export type PluginInstallId = Branded<'PluginInstallId'>
 
+/** Closed desktop recipes that install and compose an official experimental provider. */
+export type ExperimentalCapabilityRecipe =
+  | 'browser-use-playwright-visible'
+  | 'browser-use-devtools-visible'
+  | 'computer-use-native'
+  | 'computer-use-mcp'
+
 /** Registry package request accepted by the profile plugin installer. */
 export interface PluginInstallRequest {
   /** Profile that will receive the dependency and bundle layer. */
   readonly profile: string
   /** npm registry package specifier, optionally with a version or dist-tag. */
   readonly packageSpec: string
+  /** Optional fixed composition recipe; arbitrary module names and config never cross the wire. */
+  readonly experimentalCapability?: ExperimentalCapabilityRecipe
 }
 
 /** Exact registry package removal accepted by the profile plugin manager. */

@@ -73,8 +73,11 @@ function managedMetadata(path: string): boolean {
 }
 function allowedResource(path: string): boolean {
   return ['profiles/web/package.json', 'profiles/web/pnpm-lock.yaml', 'profiles/web/pnpm-workspace.yaml',
-    'profiles/web/cordis.patch.yml'].includes(path)
+    'profiles/web/cordis.patch.yml', 'settings.yaml', 'fenglin-ui-guard.yml', 'profile-health/web.json'].includes(path)
     || path.startsWith('profiles/web/node_modules/')
+    || path.startsWith('profiles/web/.dsh-market/')
+    || path.startsWith('.agent-presets/')
+    || path.startsWith('profile-health/')
     || /^bundled-plugins\/[a-zA-Z0-9._-]+\.(?:tgz|seeded\.json)$/u.test(path)
 }
 
@@ -129,7 +132,7 @@ export async function sealPrebuiltProfile(
   }
   // Only controlled application state may become a release resource.
   for (const name of await readdir(root)) {
-    if (!['profiles', 'bundled-plugins', MANIFEST].includes(name)) throw new Error(`desktop: unexpected prebuilt home entry ${name}`)
+    if (!['profiles', 'bundled-plugins', '.agent-presets', 'profile-health', 'settings.yaml', 'fenglin-ui-guard.yml', MANIFEST].includes(name)) throw new Error(`desktop: unexpected prebuilt home entry ${name}`)
   }
   await chmod(root, 0o755)
   await walk(root)

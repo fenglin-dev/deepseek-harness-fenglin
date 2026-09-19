@@ -24,6 +24,7 @@ const en = {
   confirmPlugin: (name: string) => `Install ${name} anyway?`,
   initializeFailed: (message: string) => `Web Profile initialization failed: ${message}`,
   harnessHttpFailed: (status: number) => `The local Harness page returned HTTP ${status}. Stale login state will be cleared when you retry.`,
+  clientPluginBootFailed: 'The client plugin tree could not start. Recovery tools are available without loading the affected plugins.',
   bundledPreparationFailed: (detail: string) => `First-start plugin preparation is incomplete. The client has not started. Choose Continue to restart and retry, or open the logs. Uncommitted preparation will be rolled back before retrying. Details: ${detail}`,
 }
 
@@ -49,6 +50,7 @@ const zh: typeof en = {
   confirmPlugin: (name: string) => `仍要安装 ${name} 吗？`,
   initializeFailed: (message: string) => `Web Profile 初始化失败：${message}`,
   harnessHttpFailed: (status: number) => `本机 Harness 页面返回 HTTP ${status}。点击重试时会清理失效的登录状态并重新认证。`,
+  clientPluginBootFailed: '客户端插件树未能启动。现已打开不依赖故障插件的恢复工具。',
   bundledPreparationFailed: (detail: string) => `首次插件准备尚未完成，暂未进入客户端。点击“继续”将重启并重试，也可以打开日志。重试前会回滚尚未提交的准备事务。详情：${detail}`,
 }
 

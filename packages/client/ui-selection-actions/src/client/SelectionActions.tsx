@@ -60,7 +60,8 @@ export function SelectionActions({
   restartDesktop,
   t,
 }: SelectionActionsProps) {
-  const currentSessionId = useSessions(state => state.current)
+  const currentSessionId = useSessions(state => Object.values(state.byId)
+    .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id)
   const currentWorkspaceId = useWorkspaces((state) => {
     if (currentSessionId === undefined) return undefined
     return state.items.find(workspace => workspace.sessionIds.includes(currentSessionId))?.workspaceId

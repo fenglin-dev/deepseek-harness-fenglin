@@ -79,6 +79,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
   const bridge: DesktopBridge = {
     shell: {
       getCapabilities: () => Promise.resolve({
+        runtimeKind: 'local' as const,
         platform, packaged, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
         commandLineAvailable: true, developmentRecoveryAvailable: !packaged,
       }),

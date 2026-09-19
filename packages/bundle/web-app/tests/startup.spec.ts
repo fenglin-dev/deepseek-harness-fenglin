@@ -60,10 +60,12 @@ export const apply = ctx => globalThis.__webStartupApply(ctx)
     `  name: ${pathToFileURL(join(dir, 'reader.mjs')).href}`,
     `  inject: [${WEB_STARTUP_SERVICE}]`,
     '  config:',
-    "    host: !!js ctx.webStartup.host ?? '127.0.0.1'",
+    '    host: !!js "ctx.webStartup.host ?? (ctx.webStartup.nas ? \'0.0.0.0\' : \'127.0.0.1\')"',
     '    openBrowser: !!js ctx.webStartup.openBrowser',
     '    port: !!js ctx.webStartup.port ?? 3080',
     '    trustedHosts: !!js ctx.webStartup.trustedHosts',
+    '    nas: !!js ctx.webStartup.nas',
+    '    deviceLifetimeDays: !!js ctx.webStartup.deviceLifetimeDays',
     '- id: provider',
     `  name: ${pathToFileURL(join(dir, 'provider.mjs')).href}`,
     '',
@@ -105,6 +107,8 @@ describe('web command-line provider', () => {
       openBrowser: false,
       port: 8080,
       trustedHosts: ['lab.internal', 'lab-2.internal', '10.0.0.9'],
+      nas: false,
+      deviceLifetimeDays: 90,
     })
     expect(observed.readerConfig).toEqual(values)
     expect(observed.exits).toEqual([])
@@ -112,12 +116,14 @@ describe('web command-line provider', () => {
 
   it('leaves deployment values to each consumer when flags omit them', async () => {
     const { values, observed } = await bootProvider([])
-    expect(values).toEqual({ openBrowser: true, trustedHosts: [] })
+    expect(values).toEqual({ openBrowser: true, trustedHosts: [], nas: false, deviceLifetimeDays: 90 })
     expect(observed.readerConfig).toEqual({
       host: '127.0.0.1',
       openBrowser: true,
       port: 3080,
       trustedHosts: [],
+      nas: false,
+      deviceLifetimeDays: 90,
     })
   })
 
@@ -141,9 +147,40 @@ describe('web command-line provider', () => {
 
   it('rejects the intentionally unsupported all-interfaces host before the consumer activates', async () => {
     const { values, observed } = await bootProvider(['--host', '0.0.0.0'])
-    expect(observed.out).toContain('--host 0.0.0.0 is intentionally not supported yet for safety: it would expose remote code execution to the network; use 127.0.0.1 instead')
+    expect(observed.out).toContain('--host 0.0.0.0 requires --nas')
     expect(values).toBeUndefined()
     expect(observed.readerConfig).toBeUndefined()
     expect(observed.exits).toEqual([1])
+  })
+
+  it('allows all-interfaces binding only for an explicitly trusted NAS deployment', async () => {
+    const { values, observed } = await bootProvider([
+      '--host', '0.0.0.0',
+      '--trusted-host', 'harness.example.com',
+      '--nas',
+      '--nas-name', 'Studio NAS',
+      '--pairing-code', '12345678',
+      '--device-lifetime-days', '30',
+    ])
+    expect(values).toEqual({
+      host: '0.0.0.0', openBrowser: true, trustedHosts: ['harness.example.com'],
+      nas: true, nasName: 'Studio NAS', pairingCode: '12345678', deviceLifetimeDays: 30,
+    })
+    expect(observed.exits).toEqual([])
+  })
+
+  it('defaults an explicitly enabled NAS deployment to all interfaces', async () => {
+    const { values, observed } = await bootProvider([
+      '--trusted-host', 'harness.example.com',
+      '--nas',
+      '--nas-name', 'Studio NAS',
+      '--pairing-code', '12345678',
+    ])
+    expect(values).toEqual({
+      openBrowser: true, trustedHosts: ['harness.example.com'],
+      nas: true, nasName: 'Studio NAS', pairingCode: '12345678', deviceLifetimeDays: 90,
+    })
+    expect(observed.readerConfig).toMatchObject({ host: '0.0.0.0', nas: true })
+    expect(observed.exits).toEqual([])
   })
 })

@@ -50,6 +50,7 @@ import {
 import { ensurePackagedPrebuiltProfile, ensurePackagedRuntime, packagedPrebuiltProfileArchiveRoot, packagedRuntimeArchiveRoot } from './packaged-runtime.ts'
 import { HarnessSupervisor, type HarnessFailure, type HarnessState } from './supervisor.ts'
 import { readRecoveryFailureSummary, type RecoveryFailureSummary } from './recovery-failure.ts'
+import { parseClientBootFailure } from './client-boot-failure.ts'
 import { clearDeadModuleFallbackLock, inspectModuleFallbackLock } from './module-fallback-lock.ts'
 import { DesktopProfileMutation } from './desktop-profile-mutation/index.ts'
 import { DESKTOP_IPC } from './desktop-ipc-protocol.ts'
@@ -61,7 +62,7 @@ import {
   createDesktopPreferencesStore, DEFAULT_DESKTOP_PREFERENCES, parseDesktopPreferencesPatch,
   type DesktopPreferences, type DesktopPreferencesStore,
 } from './preferences.ts'
-import { DesktopReleaseChecker, fetchGitHubReleases, isAllowedReleaseUrl, selectRelease, type DesktopReleaseStatus } from './release-checker.ts'
+import { DesktopReleaseChecker, fetchGitHubReleases, isAllowedReleaseUrl, type DesktopReleaseStatus } from './release-checker.ts'
 import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus, type ReleaseFetch } from './release-downloader.ts'
 import { fetchCnbReleaseIndex, isAllowedCnbUrl, selectCnbRelease } from './cnb-release-source.ts'
 import {
@@ -171,6 +172,15 @@ import {
   persistentProfileFingerprint,
   type PersistentServiceSummary,
 } from '@deepseek-ai/dsh-subprocess'
+import {
+  NasRuntimeClient,
+  NasRuntimeStore,
+  discoverNasRuntimes,
+  inspectNasCertificate,
+  type NasRuntimeRecord,
+} from './nas-runtime.ts'
+import { DesktopNasRuntimeAuthority } from './nas-runtime-authority.ts'
+import { registerNasRuntimeIpc } from './nas-runtime-ipc.ts'
 
 const APP_NAME = DESKTOP_PRODUCT_NAME
 const DESKTOP_WEB_SUPPORTED = process.platform === 'darwin' || process.platform === 'win32'
@@ -228,6 +238,7 @@ let mainSurface: DesktopWindowSurface | undefined
 let supervisor: HarnessSupervisor | undefined
 let harnessOrigin: string | undefined
 let harnessAuthenticationUrl: string | undefined
+let nasRuntimeAuthority: DesktopNasRuntimeAuthority | undefined
 let desktopWebAccess: DesktopWebAccess | undefined
 let desktopReturnControl: DesktopReturnControl | undefined
 let lifecycle: DesktopLifecycle | undefined
@@ -238,6 +249,7 @@ let menuLocale = 'en'
 let desktopLocaleStore: DesktopLocaleStore | undefined
 let persistedProfileLocale: string | undefined
 let menuClientReady = false
+let reportedClientBootFailureOrigin: string | undefined
 let snapshotMutationActive = false
 let recoveryHarnessSuspended = false
 let recoveryRestartRequired = false
@@ -400,7 +412,6 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
       await desktopWebAccess.open()
       return
     case 'restart': requestDesktopRestart(); return
-    case 'reload': mainSurface?.renderer.reload(); return
     case 'quit':
       if (lifecycle === undefined) { quitReleased = true; app.quit() }
       else await lifecycle.requestQuit()
@@ -425,6 +436,7 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
     case 'docs': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin#readme'); return
     case 'repository': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin'); return
     case 'feedback': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin/issues/new'); return
+    case 'reload': mainSurface?.renderer.reload(); return
     default: throw new Error(`desktop: unhandled menu command ${command}`)
   }
 }
@@ -480,12 +492,18 @@ function appendDesktopStartupLog(message: string): Promise<void> {
 }
 
 interface DesktopCapabilities {
+  runtimeKind: 'local' | 'nas'
   platform: NodeJS.Platform
   packaged: boolean
   launchAtLoginAvailable: boolean
   sourceUpdateAvailable: boolean
   commandLineAvailable: boolean
   developmentRecoveryAvailable: boolean
+}
+
+function bootNasRuntime(): NasRuntimeRecord | undefined {
+  const bootRuntime = nasRuntimeAuthority?.bootRuntime
+  return bootRuntime?.kind === 'nas' ? bootRuntime.runtime : undefined
 }
 
 function applyDesktopThemeSource(source: DesktopThemeSource): void {
@@ -502,6 +520,7 @@ function applyDesktopThemeSource(source: DesktopThemeSource): void {
 
 function desktopCapabilities(): DesktopCapabilities {
   return {
+    runtimeKind: bootNasRuntime() === undefined ? 'local' : 'nas',
     platform: process.platform,
     packaged: app.isPackaged,
     launchAtLoginAvailable: app.isPackaged && process.platform === 'darwin',
@@ -1137,6 +1156,7 @@ function configureNavigation(renderer: WebContents): void {
     return { action: 'deny' }
   })
   renderer.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
+    if (bootNasRuntime() !== undefined && permission !== 'notifications') return false
     const origin = harnessOrigin
     const trustedContents = contents === renderer
       || (contents === null && details.embeddingOrigin === undefined)
@@ -1149,6 +1169,10 @@ function configureNavigation(renderer: WebContents): void {
     return keys.length > 0 && keys.every(key => permissionGrants.has(originGrantKey(origin, key)))
   })
   renderer.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+    if (bootNasRuntime() !== undefined && permission !== 'notifications') {
+      callback(false)
+      return
+    }
     const requestingUrl = details.requestingUrl
     const isMainFrame = 'isMainFrame' in details && details.isMainFrame
     const origin = harnessOrigin
@@ -1185,7 +1209,10 @@ function createWindow(): BrowserWindow {
     nodeIntegration: false,
     sandbox: true,
     preload: PRELOAD,
-    additionalArguments: [app.isPackaged ? '--dsh-packaged' : '--dsh-source'],
+    additionalArguments: [
+      app.isPackaged ? '--dsh-packaged' : '--dsh-source',
+      ...(bootNasRuntime() === undefined ? [] : ['--dsh-nas-runtime']),
+    ],
   }
   const surface = createDesktopWindowSurface({
     platform: process.platform,
@@ -1214,7 +1241,7 @@ function createWindow(): BrowserWindow {
   })
   const { window } = surface
   configureNavigation(surface.renderer)
-  surface.renderer.session.webRequest.onCompleted({ urls: ['http://127.0.0.1/*'] }, (details) => {
+  surface.renderer.session.webRequest.onCompleted({ urls: ['http://127.0.0.1/*', 'https://*/*'] }, (details) => {
     if (details.webContentsId !== surface.renderer.id || details.resourceType !== 'mainFrame'
       || details.statusCode < 400 || lifecycle?.isQuitting === true || harnessOrigin === undefined) return
     let responseOrigin: string
@@ -1310,14 +1337,77 @@ async function startApplication(): Promise<void> {
     })
   }
   applyStartupDockIcon()
-  const dshHome = await prepareDesktopDshHome()
-  const dataHomeSetup = await readDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile)
-  await applyFreshProfileDefaults(dshHome, dataHomeSetup)
+  const nasRuntimeStore = new NasRuntimeStore(
+    join(app.getPath('userData'), 'nas-runtimes-v1.json'),
+    join(app.getPath('userData'), 'nas-device-credentials-v1.json'),
+    {
+      available: safeStorage.isEncryptionAvailable(),
+      seal: value => safeStorage.encryptString(value).toString('base64'),
+      open: value => safeStorage.decryptString(Buffer.from(value, 'base64')),
+    },
+    (error) => { console.error('desktop: could not read NAS runtime settings', error) },
+  )
+  const nasRuntimeClient = new NasRuntimeClient(async (url, init) => net.fetch(url, init))
+  const authority = new DesktopNasRuntimeAuthority({
+    store: nasRuntimeStore,
+    network: {
+      discover: discoverNasRuntimes,
+      inspectCertificate: inspectNasCertificate,
+      health: (baseUrl, token) => nasRuntimeClient.health(baseUrl, token),
+      pair: request => nasRuntimeClient.pair(request),
+      devices: (baseUrl, token) => nasRuntimeClient.devices(baseUrl, token),
+      revokeDevice: (baseUrl, token, deviceId) => nasRuntimeClient.revokeDevice(baseUrl, token, deviceId),
+    },
+    connection: {
+      capture: () => {
+        const surface = mainSurface
+        if (surface === undefined) return undefined
+        return {
+          isCurrent: runtime => !surface.window.isDestroyed() && mainSurface === surface
+            && bootNasRuntime()?.id === runtime.id,
+          load: baseUrl => surface.loadURL(withDesktopWindowMetadata(baseUrl, process.platform)),
+        }
+      },
+      begin: (runtime) => {
+        harnessOrigin = runtime.baseUrl
+        harnessAuthenticationUrl = undefined
+        reportedDesktopReadiness.clear()
+        publishStartupProgress({ stage: 'starting-harness', progress: 72, detail: 'connecting-nas' })
+        showLoading('starting')
+      },
+      ready: () => { publishStartupProgress({ stage: 'ready', progress: 100, detail: 'nas-ready' }) },
+      fail: async (runtime, error) => {
+        await appendDesktopStartupLog(`NAS connection failed: ${error.message}`)
+        showLoading('failed', {
+          message: error.message,
+          diagnosticCode: 'desktop.nas-connection-failed',
+          evidence: runtime.baseUrl,
+          logPath: harnessLogPath,
+        })
+      },
+    },
+    lifecycle: {
+      stopActiveProfileServices: stopPersistentServicesForActiveProfile,
+      restartAfter: (delayMs) => { setTimeout(requestDesktopRestart, delayMs) },
+    },
+    publishStatus: status => mainSurface?.send(DESKTOP_IPC.nasStatus, status),
+  })
+  nasRuntimeAuthority = authority
+  const activeNasRuntime = bootNasRuntime()
+  // A saved NAS selection is a complete runtime choice. Do not force a new device
+  // through local Profile import or mutate its local Harness home before connecting.
+  const dshHome = activeNasRuntime === undefined
+    ? await prepareDesktopDshHome()
+    : DESKTOP_DATA_HOME.dshHome
+  const dataHomeSetup = activeNasRuntime === undefined
+    ? await readDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile)
+    : undefined
+  if (activeNasRuntime === undefined) await applyFreshProfileDefaults(dshHome, dataHomeSetup)
   // Releases before the portable community import copied the complete Profile and did not write a
   // restore plan. Keep those deployments intact; new copies carry a plan and use normal first-start
   // preparation so packaged presets come from local archives before optional plugin restoration.
   const preserveCopiedPlugins = shouldPreserveLegacyCopiedProfile(dataHomeSetup)
-  activeMenuHome = dshHome
+  activeMenuHome = activeNasRuntime === undefined ? dshHome : undefined
   const persistentServicesPath = join(app.getPath('userData'), 'managed-processes', 'persistent-services-v1.json')
   persistentServiceAuthority = new FilePersistentServiceAuthorizer(
     persistentServicesPath,
@@ -1359,6 +1449,7 @@ async function startApplication(): Promise<void> {
   let harnessEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: dshHome,
+    // Fenglin: pin profile-local pnpm store so plugin installs stay on one store.
     PNPM_HOME: join(dshHome, 'pnpm-home'),
     DSH_DESKTOP_APPLICATION_VERSION: app.getVersion(),
     DSH_DESKTOP_PNPM_VERSION: DESKTOP_PNPM_VERSION,
@@ -1387,6 +1478,19 @@ async function startApplication(): Promise<void> {
     (error) => { console.error('desktop: could not read preferences; using defaults', error) },
   )
   preferences = preferencesStore.read()
+  app.on('certificate-error', (event, _webContents, url, _error, certificate, callback) => {
+    if (authority.acceptsCertificate(url, certificate.fingerprint)) {
+      event.preventDefault()
+      callback(true)
+      return
+    }
+    callback(false)
+  })
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://*/*', 'wss://*/*'] }, (details, callback) => {
+    callback({
+      requestHeaders: authority.authorizeRequestHeaders(details.url, details.requestHeaders),
+    })
+  })
   chatBackgroundStore = createDesktopChatBackgroundStore(
     join(app.getPath('userData'), 'chat-background.json'),
     (error) => { console.error('desktop: could not read chat background; using browser fallback', error) },
@@ -1479,18 +1583,7 @@ async function startApplication(): Promise<void> {
       ? new DesktopReleaseChecker(app.getVersion(), undefined, async () => {
         return selectCnbRelease(app.getVersion(), await fetchCnbReleaseIndex(fetcher))
       })
-      : new DesktopReleaseChecker(app.getVersion(), undefined, async () => {
-        try {
-          return selectRelease(app.getVersion(), await fetchGitHubReleases(fetcher))
-        } catch (githubError) {
-          // api.github.com is usually reachable; when it is not, fall back to CNB discovery.
-          try {
-            return selectCnbRelease(app.getVersion(), await fetchCnbReleaseIndex(fetcher))
-          } catch {
-            throw githubError
-          }
-        }
-      })
+      : new DesktopReleaseChecker(app.getVersion(), () => fetchGitHubReleases(fetcher))
     releaseDownloader = new DesktopReleaseDownloader({
       platform: process.platform, arch: process.arch,
       downloadDirectory: join(app.getPath('userData'), 'updates'),
@@ -1504,10 +1597,6 @@ async function startApplication(): Promise<void> {
     })
     releaseDownloader.subscribe((status) => { mainSurface?.send(DESKTOP_IPC.releaseDownloadStatus, status) })
     stopReleaseChecks = releaseChecker.startPolling()
-    // Re-check immediately after proxy/source switches so the UI does not keep a stale failure.
-    void releaseChecker.check().then(status => {
-      mainSurface?.send('dsh:desktop:release-status', status)
-    }).catch(() => {})
   }
   await configureReleaseServices()
   externalToolCompatibility = new ExternalToolCompatibilityManager({
@@ -1517,6 +1606,16 @@ async function startApplication(): Promise<void> {
   ipcMain.handle(DESKTOP_IPC.capabilities, (event) => {
     assertMainRenderer(event.sender)
     return desktopCapabilities()
+  })
+  ipcMain.handle(DESKTOP_IPC.directoryPick, async (event): Promise<string | null> => {
+    assertMainRenderer(event.sender)
+    if (bootNasRuntime() !== undefined) throw new Error('desktop: local directory picker is unavailable in NAS mode')
+    const surface = mainSurface
+    if (surface === undefined || surface.window.isDestroyed()) {
+      throw new Error('desktop: main window is unavailable')
+    }
+    const result = await dialog.showOpenDialog(surface.window, { properties: ['openDirectory'] })
+    return result.canceled ? null : result.filePaths[0] ?? null
   })
   ipcMain.handle(DESKTOP_IPC.processesList, (event) => {
     assertMainRenderer(event.sender)
@@ -1701,6 +1800,7 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return updatePreferences(patch)
   })
+  registerNasRuntimeIpc(ipcMain, { authority, assertRenderer: assertMainRenderer })
   ipcMain.handle(DESKTOP_IPC.downloadNetworkGet, (event): DownloadNetworkSettings => {
     assertMainRenderer(event.sender)
     if (downloadNetworkStore === undefined) throw new Error('desktop: download network settings are unavailable')
@@ -1844,6 +1944,29 @@ async function startApplication(): Promise<void> {
       )
       console.warn('desktop: could not retain the latest bootable plugin snapshot', error)
     })
+  })
+  ipcMain.on(DESKTOP_IPC.clientBootFailure, (event, payload: unknown) => {
+    assertMainRenderer(event.sender)
+    const failure = parseClientBootFailure(payload)
+    if (failure === undefined || harnessOrigin === undefined || lifecycle?.isQuitting === true
+      || supervisor?.isDiagnosticMode === true || event.senderFrame === null) return
+    let rendererOrigin: string
+    try { rendererOrigin = new URL(event.senderFrame.url).origin } catch { return }
+    if (rendererOrigin !== harnessOrigin || reportedClientBootFailureOrigin === harnessOrigin) return
+    reportedClientBootFailureOrigin = harnessOrigin
+    cancelBootableSnapshot()
+    void appendDesktopStartupLog(
+      `Client plugin tree failed before readiness (${failure.diagnosticCode}; ${failure.nativeCode ?? 'unknown'}).`,
+    )
+    profileMutation?.observeHarness({
+      type: 'failed', error: new Error(failure.evidence ?? 'desktop: client plugin tree failed before readiness'),
+    })
+    showLoading('failed', {
+      message: shellMessages(app.getLocale()).clientPluginBootFailed,
+      ...failure,
+      logPath: harnessLogPath,
+    })
+    showNotification('failed', notificationCopy.failed)
   })
   ipcMain.handle(DESKTOP_IPC.releasesGet, (event): DesktopReleaseStatus => {
     assertMainRenderer(event.sender)
@@ -2025,6 +2148,14 @@ async function startApplication(): Promise<void> {
   })
   ipcMain.handle('dsh:harness:retry', async (event) => {
     assertMainRenderer(event.sender)
+    if (bootNasRuntime() !== undefined) {
+      try {
+        await authority.connectSelected()
+        return { started: true }
+      } catch {
+        return { started: false }
+      }
+    }
     await profileMutation?.settleRecovery('activate')
     if (recoveryRestartRequired) {
       setTimeout(() => { requestDesktopRestart() }, 150)
@@ -2448,6 +2579,13 @@ async function startApplication(): Promise<void> {
   }
   createWindow()
 
+  if (activeNasRuntime !== undefined) {
+    await appendDesktopStartupLog(`Connecting to selected NAS runtime ${activeNasRuntime.name} at ${activeNasRuntime.baseUrl}.`)
+    try { await authority.connectSelected() } catch { /* recovery controls remain visible */ }
+    app.on('activate', () => { lifecycle?.showWindow() })
+    return
+  }
+
   publishStartupProgress(app.isPackaged
     ? { stage: 'preparing-runtime', progress: 10 }
     : { stage: 'preparing-desktop', progress: 24 })
@@ -2461,6 +2599,13 @@ async function startApplication(): Promise<void> {
       checksumPath: join(process.resourcesPath, 'harness-runtime.tar.sha256'),
       destination: join(app.getPath('userData'), 'runtime', app.getVersion()),
       archiveRoot: packagedRuntimeRoot,
+      onProgress: (phase) => {
+        publishStartupProgress({
+          stage: 'preparing-runtime',
+          progress: phase === 'verifying-archive' ? 11 : 16,
+          detail: phase === 'verifying-archive' ? 'runtime-archive-verification' : 'runtime-archive-extraction',
+        })
+      },
     })
     : undefined
   const packageRuntimeBin = packagedRuntime === undefined
@@ -2555,13 +2700,23 @@ async function startApplication(): Promise<void> {
   let prebuiltDirectory: string | undefined
   if (app.isPackaged && firstStartPending) {
     const prebuiltRoot = packagedPrebuiltProfileArchiveRoot(process.platform, process.arch)
+    const prebuiltStartedAt = Date.now()
+    await appendDesktopStartupLog('Preparing the first-start Profile archive with single-pass verification and extraction.')
     try {
       prebuiltDirectory = await ensurePackagedPrebuiltProfile({
         archivePath: join(process.resourcesPath, 'prebuilt-profile.tar'),
         checksumPath: join(process.resourcesPath, 'prebuilt-profile.tar.sha256'),
         destination: join(app.getPath('userData'), 'prebuilt-profile', app.getVersion(), prebuiltRoot),
         archiveRoot: prebuiltRoot,
+        onProgress: (phase) => {
+          publishStartupProgress({
+            stage: 'preparing-runtime',
+            progress: phase === 'verifying-archive' ? 18 : 22,
+            detail: phase === 'verifying-archive' ? 'prebuilt-profile-verification' : 'prebuilt-profile-extraction',
+          })
+        },
       })
+      await appendDesktopStartupLog(`First-start Profile archive prepared in ${Date.now() - prebuiltStartedAt}ms.`)
     } catch (error) {
       showIncompletePreparation(error instanceof Error ? error.message : String(error))
       return
@@ -2579,7 +2734,7 @@ async function startApplication(): Promise<void> {
       if (launchOptions.harnessBin === undefined) throw new Error('desktop: packaged Harness entry is unavailable')
       const core = JSON.parse(await readFile(join(dirname(dirname(launchOptions.harnessBin)), 'package.json'), 'utf8')) as { version: string }
       if (candidate?.identity.target === `${process.platform}-${process.arch}`
-        && candidate.identity.nodeVersion === '24.17.0' && candidate.identity.pnpmVersion === DESKTOP_PNPM_VERSION
+        && candidate.identity.nodeVersion === '24.21.0' && candidate.identity.pnpmVersion === DESKTOP_PNPM_VERSION
         && candidate.identity.runtimeVersion === core.version
         && candidate.identity.pluginManifestSha256 === createHash('sha256').update(bundledManifestSource).digest('hex')
         && !Object.values(startupBuildRules).includes(false)
@@ -2691,7 +2846,8 @@ async function startApplication(): Promise<void> {
   })
   let initialProfileRepairDiagnostic = ''
   const observerLaunch = resolveHarnessInvocation(harnessEnvironment, [], launchOptions)
-  const observerBin = observerLaunch.args[0]
+  // Node flags precede the CLI entry; process ownership must resolve modules from the entry itself.
+  const observerBin = observerLaunch.args[1]
   if (observerBin === undefined) throw new Error('desktop: Harness entry is unavailable for process ownership')
   const processRecoveryPath = join(app.getPath('userData'), 'managed-processes', 'recovery-v1.json')
   try {
@@ -3153,6 +3309,7 @@ async function startApplication(): Promise<void> {
       desktopReturnControl?.setHarnessOrigin(`${harnessOrigin}/`)
       desktopWebAccess?.setReady(url)
       reportedDesktopReadiness.clear()
+      reportedClientBootFailureOrigin = undefined
       publishStartupProgress({ stage: 'ready', progress: 100 })
       const readyOrigin = harnessOrigin
       setTimeout(() => {
@@ -3177,6 +3334,7 @@ async function startApplication(): Promise<void> {
       harnessOrigin = new URL(url).origin
       harnessAuthenticationUrl = undefined
       reportedDesktopReadiness.clear()
+      reportedClientBootFailureOrigin = undefined
       desktopReturnControl?.clear()
       desktopWebAccess?.clear()
       publishStartupProgress({

@@ -29,6 +29,14 @@ export interface WebStartupValues {
   port?: number
   /** Explicit `--trusted-host` authorities, in argument order. */
   trustedHosts: string[]
+  /** Whether this invocation is the NAS deployment carrier. */
+  nas: boolean
+  /** Operator-visible NAS name. */
+  nasName?: string
+  /** Optional fixed first pairing code; normally generated at boot. */
+  pairingCode?: string
+  /** Per-device credential lifetime. */
+  deviceLifetimeDays: number
 }
 
 /** The web flag family, as commander parsed it. */
@@ -37,6 +45,10 @@ interface WebOptions {
   open: boolean
   port?: string
   trustedHost?: string[]
+  nas?: boolean
+  nasName?: string
+  pairingCode?: string
+  deviceLifetimeDays?: string
 }
 
 /**
@@ -52,6 +64,10 @@ function webCommand(): Command {
     .option('--no-open', 'do not open the Web UI in the default browser')
     .option('--port <port>', 'listen port; pass 0 to let the OS pick a free one')
     .option('--trusted-host <authority...>', 'extra authority the /api browser-trust fence accepts (host or host:port; repeatable)')
+    .option('--nas', 'serve as a remote NAS runtime behind a trusted HTTPS reverse proxy')
+    .option('--nas-name <name>', 'operator-visible NAS name')
+    .option('--pairing-code <code>', 'fixed initial 8-digit pairing code (otherwise generated)')
+    .option('--device-lifetime-days <days>', 'paired device credential lifetime', '90')
     .addHelpText('after', `
 Examples:
   dsh --profile web                          serve on the composed host and port
@@ -71,17 +87,31 @@ export function apply(ctx: Context): void {
   const program = webCommand()
   program.action(() => {
     const options = program.opts<WebOptions>()
-    if (options.host === '0.0.0.0') {
-      program.error('error: --host 0.0.0.0 is intentionally not supported yet for safety: it would expose remote code execution to the network; use 127.0.0.1 instead')
+    if (options.host === '0.0.0.0' && options.nas !== true) {
+      program.error('error: --host 0.0.0.0 requires --nas; ordinary dsh web remains loopback-only')
     }
     if (options.port !== undefined && !/^\d+$/.test(options.port)) {
       program.error(`error: --port must be a number, got ${JSON.stringify(options.port)}`)
+    }
+    if (options.nas === true && (options.trustedHost?.length ?? 0) === 0) {
+      program.error('error: --nas requires at least one --trusted-host authority')
+    }
+    if (options.pairingCode !== undefined && !/^\d{8}$/.test(options.pairingCode)) {
+      program.error('error: --pairing-code must contain exactly 8 digits')
+    }
+    if (options.deviceLifetimeDays === undefined || !/^\d+$/.test(options.deviceLifetimeDays)
+      || Number(options.deviceLifetimeDays) < 1) {
+      program.error('error: --device-lifetime-days must be a positive integer')
     }
     ctx.provide(WEB_STARTUP_SERVICE, {
       openBrowser: options.open,
       ...options.host !== undefined && { host: options.host },
       ...options.port !== undefined && { port: Number(options.port) },
       trustedHosts: options.trustedHost ?? [],
+      nas: options.nas === true,
+      ...options.nasName !== undefined && { nasName: options.nasName },
+      ...options.pairingCode !== undefined && { pairingCode: options.pairingCode },
+      deviceLifetimeDays: Number(options.deviceLifetimeDays),
     } satisfies WebStartupValues)
   })
   parseCmdline(ctx, program)

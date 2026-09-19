@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PluginInventorySnapshot } from '@deepseek-ai/dsh-api-remotes/client'
+import type { PluginInstallId, PluginInstallSnapshot } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 import {
   PluginDiagnosticsSection,
   type PluginDiagnosticsSectionProps,
@@ -22,6 +23,7 @@ function props(snapshot: PluginInventorySnapshot): PluginDiagnosticsSectionProps
     getInstall: unexpected,
     startUninstall: unexpected,
     startQuarantineRetry: unexpected,
+    startHostVersionOverride: unexpected,
     approveQuarantineBuild: unexpected,
     approveDiagnosticBuild: unexpected,
     exportDiagnostics: async () => '{}',
@@ -102,6 +104,13 @@ describe('PluginDiagnosticsSection', () => {
   })
 
   it('shows declared Harness compatibility before offering a market update', async () => {
+    const startHostVersionOverride = vi.fn(async (): Promise<PluginInstallSnapshot> => ({
+      installId: 'override-install' as PluginInstallId,
+      profile: 'web',
+      packageSpec: '1.0.0',
+      command: 'dsh plugin --profile web doctor --retry fixture',
+      phase: 'failed',
+    }))
     render(<PluginDiagnosticsSection {...props({
       entries: [],
       dependencyHealth: {
@@ -125,12 +134,22 @@ describe('PluginDiagnosticsSection', () => {
         }],
         issues: [],
       },
-    } as unknown as PluginInventorySnapshot)} />)
+    } as unknown as PluginInventorySnapshot)} startHostVersionOverride={startHostVersionOverride} />)
 
     expect(await screen.findAllByText('0.1.2-rc.1')).toHaveLength(2)
     expect(screen.getAllByText('0.1.2-alpha.5').length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByText(en['health.quarantine.solution.incompatible-host-version'])).toHaveLength(2)
     expect(screen.getByRole('button', { name: en['health.quarantine.action.findUpdate'] })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en['health.quarantine.override.action'] }))
+    expect(screen.getByText(en['health.quarantine.override.description'])).toBeTruthy()
+    expect(startHostVersionOverride).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('checkbox', { name: en['health.quarantine.override.acknowledge'] }))
+    fireEvent.click(screen.getByRole('button', { name: en['health.quarantine.override.confirm'] }))
+    await waitFor(() => {
+      expect(startHostVersionOverride).toHaveBeenCalledWith({
+        quarantineId: '00000000-0000-4000-8000-000000000012',
+      })
+    })
   })
 
   it('shows the missing dependency export and compatible-version recovery actions', async () => {

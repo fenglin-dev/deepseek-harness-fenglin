@@ -3,6 +3,7 @@
 import { join } from 'node:path'
 import {
   candidatePreparationUsesLease,
+  parsePluginCommandJson,
   prepareDesktopCandidate,
 } from '../candidate-preparation.ts'
 import { inspectProfileMutationLock } from '../menu-mutation-guard.ts'
@@ -345,7 +346,7 @@ export class DesktopProfileMutation {
         'plugin-candidate-prepare',
         this.#options.timeouts.preparationMs,
       ),
-      parse: output => JSON.parse(output) as { id?: unknown },
+      parse: output => parsePluginCommandJson(output) as { id?: unknown },
       cleanup: candidateId => this.#cleanupPreparation(candidateId),
       cleanupFailed: () => { this.#rollbackFailed = true },
     })
@@ -368,7 +369,7 @@ export class DesktopProfileMutation {
       [0],
       true,
     )
-    const record = JSON.parse(output) as { id?: unknown; producerPid?: unknown; phase?: unknown } | null
+    const record = parsePluginCommandJson(output) as { id?: unknown; producerPid?: unknown; phase?: unknown } | null
     if (record === null) return
     const leased = candidatePreparationUsesLease(
       id,

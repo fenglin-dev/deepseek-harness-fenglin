@@ -156,7 +156,7 @@ async function injectWorkspaceClosure() {
   }
   // Desktop main imports dsh-subprocess, whose ESM entry loads these peers.
   // pnpm records them as peerDependencies, so electron-builder omits them.
-  for (const peer of ['@deepseek-ai/cordis', '@deepseek-ai/cosmokit', '@deepseek-ai/dsh-http-proxy']) {
+  for (const peer of ['@deepseek-ai/cordis', '@deepseek-ai/cosmokit', '@deepseek-ai/dsh-http-proxy', '@deepseek-ai/dsh-nas-protocol']) {
     if (packages.has(peer)) queue.push(peer)
   }
   const injected = new Set()
@@ -177,6 +177,7 @@ async function injectWorkspaceClosure() {
   }
   console.log(`prepare-windows-runtime: injected ${injected.size} workspace packages`)
   await ensureSubprocessLocalProcessControl()
+  await overlayFenglinProcessControl()
 }
 
 /** Desktop recovery resolves @deepseek-ai/dsh-subprocess-local/process-control → lib/process-control.js. */
@@ -192,6 +193,19 @@ async function ensureSubprocessLocalProcessControl() {
     await cp(join(typesRoot, entry.name), join(libRoot, entry.name), { force: true })
   }
   console.log('prepare-windows-runtime: staged subprocess-local lib/*.js from lib/types for process-control resolve')
+}
+
+/** Overlay Fenglin Windows-safe process-control after official tsdown output. */
+async function overlayFenglinProcessControl() {
+  const stub = join(repositoryRoot, 'apps', 'desktop', 'bundled-plugins', 'fenglin-fixes', 'process-control.js')
+  const target = join(harnessRoot, 'node_modules', '@deepseek-ai', 'dsh-subprocess-local', 'lib', 'process-control.js')
+  if (!existsSync(stub)) {
+    console.warn('prepare-windows-runtime: fenglin process-control stub missing; keeping official build')
+    return
+  }
+  await mkdir(dirname(target), { recursive: true })
+  await cp(stub, target, { force: true })
+  console.log('prepare-windows-runtime: overlaid fenglin process-control.js (process-tree fallback)')
 }
 
 async function injectVendoredDependencies() {

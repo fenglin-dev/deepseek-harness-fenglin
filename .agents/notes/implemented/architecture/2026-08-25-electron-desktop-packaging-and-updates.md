@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-08-25-electron-desktop-packaging-and-updates.zh.md)
 
-Profile mutation and recovery follow the [in-place profile decision](2026-09-09-desktop-in-place-profile.md).
+Profile mutation and recovery follow the [in-place profile decision](../../archived/architecture/2026-09-09-desktop-in-place-profile.md).
 
 ## Problem
 
@@ -65,7 +65,7 @@ The renderer uses `nodeIntegration: false`, `contextIsolation: true`, and `sandb
 
 ## Installation and resolution
 
-Desktop stops the Host before modifying its profile in place. Package failures retain partial changes for explicit repair; profile mutation and package-retry ownership follow the [in-place decision](2026-09-09-desktop-in-place-profile.md).
+Desktop stops the Host before modifying its profile in place. Package failures retain partial changes for explicit repair; profile mutation and package-retry ownership follow the [in-place decision](../../archived/architecture/2026-09-09-desktop-in-place-profile.md).
 
 The process-lifetime Electron lock is the authoritative Desktop owner. The package transaction lock is depth defense and records the process that can still mutate package state: Electron between package operations and the spawned pnpm PID while pnpm runs. The owner change is truncated, written, and synchronized through the already-open exclusive lock file. If Electron terminates during pnpm execution, a later process observes the live worker and refuses to start a competing package transaction; after that worker exits, the stale PID can be recovered.
 

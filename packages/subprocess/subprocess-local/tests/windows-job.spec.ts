@@ -184,8 +184,8 @@ describe('Windows parent runner contract', () => {
       'C:\\runner.js', '--', 'tool.exe', 'literal arg',
     ], expect.objectContaining({
       cwd: process.cwd(),
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2],
       windowsHide: true,
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc', 'pipe', 'pipe', 2],
     }))
     expect(child.sent).toEqual([{ type: 'start', cwd: 'C:\\target', env: { TARGET: 'yes' } }])
     expect(result.stdin).toBe(child.targetStdin)

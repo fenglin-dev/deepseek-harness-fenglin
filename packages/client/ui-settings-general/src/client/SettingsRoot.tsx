@@ -22,6 +22,7 @@ import {
 import type { ConnectionIndicatorState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsOnboardingSectionRequest } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
+import { DesktopUpdateIndicator } from './DesktopUpdateIndicator.tsx'
 import {
   moveSettingsSection, moveSettingsSectionToIndex, orderSettingsSections,
   settingsSectionAutoScroll, settingsSectionRowShift, settingsSectionTargetIndex,
@@ -547,8 +548,8 @@ function SettingsPanel({
  */
 export function SettingsRoot(props: SettingsRootComponentProps) {
   const {
-    wide, dismissSidebar, reconnect, useConnectionState, useSections, useOnboardingSteps, useNavigation,
-    useSectionOrder, useSessions, setSectionOrder, renderSlot, t,
+    wide, dismissSidebar, reconnect, openDesktopUpdate, useDesktopUpdate, useConnectionState, useSections,
+    useOnboardingSteps, useNavigation, useSectionOrder, useSessions, setSectionOrder, renderSlot, t,
   } = props
   const [open, setOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
@@ -575,6 +576,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   // seats re-render through their own outlets' subscriptions.
   const rows = useSections(s => s)
   const connectionState = useConnectionState(state => state)
+  const desktopUpdate = useDesktopUpdate(state => state)
   const previousConnectionState = useRef(connectionState)
   const onboardingSteps = useOnboardingSteps(s => s)
   const navigation = useNavigation(s => s)
@@ -600,9 +602,12 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     setActiveId(navigation.sectionId)
     setPreferredSubsectionId(navigation.subsectionId)
   }, [navigation?.revision])
-  const onboardingActive = useSessions(state =>
-    state.phase === 'ready'
-    && (state.current === undefined || state.byId[state.current]?.blank === true))
+  const onboardingActive = useSessions((state) => {
+    if (state.phase !== 'ready') return false
+    const current = Object.values(state.byId)
+      .find(session => (session.retainedBy.mainView ?? 0) > 0)
+    return current === undefined || current.blank
+  })
   const onboardingStep = onboardingActive
     ? onboardingSteps.find(step => !completedOnboarding.has(step.id))
     : undefined
@@ -688,6 +693,13 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           reconnectActionLabel={t('connection.reconnect')}
           restartActionLabel={t('connection.restart')}
           onReconnect={reconnect}
+        />
+        <DesktopUpdateIndicator
+          wide={wide}
+          hidden={connectionIndicator !== undefined}
+          t={t}
+          view={desktopUpdate}
+          onOpen={openDesktopUpdate}
         />
       </div>
       {open && (

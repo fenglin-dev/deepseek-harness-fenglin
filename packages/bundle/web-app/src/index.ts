@@ -55,6 +55,21 @@ export interface Config {
   surfaceContext: boolean
   /** Explicit `--trusted-host` authorities from this invocation. */
   trustedHosts: string[]
+  /** NAS deployment values, absent for an ordinary local Web app. */
+  nas?: {
+    /** Enable NAS Runtime access for this Web application. */
+    enabled: true
+    /** Display name reported to pairing Desktop installations. */
+    name: string
+    /** Harness release version reported by NAS health checks. */
+    version: string
+    /** NAS Wire Protocol version served by this deployment. */
+    protocolVersion: number
+    /** Lifetime in days for each Paired Device credential. */
+    deviceLifetimeDays: number
+    /** Optional fixed eight-digit code; omission generates and logs one. */
+    pairingCode?: string
+  }
 }
 
 export const Config: z<Config> = z.object({
@@ -62,6 +77,16 @@ export const Config: z<Config> = z.object({
   printUrl: z.boolean().default(true),
   surfaceContext: z.boolean().default(true),
   trustedHosts: z.array(String).default([]),
+  // Preserve omission explicitly. A bare Schemastery object defaults to `{}`
+  // and would make every ordinary non-NAS launch fail its required fields.
+  nas: z.object({
+    enabled: z.const(true),
+    name: String,
+    version: String,
+    protocolVersion: z.natural().min(1),
+    deviceLifetimeDays: z.natural().min(1),
+    pairingCode: z.string(),
+  }).default(undefined as unknown as Required<NonNullable<Config['nas']>>),
 })
 
 /** Bind-dependent Web values shared by the trust fence and URL display. */
@@ -70,6 +95,8 @@ export interface WebRuntimeValues {
   lanAddresses: string[]
   /** LAN literals followed by explicit invocation authorities. */
   trustedHosts: string[]
+  /** NAS deployment configuration passed to Connection. */
+  nas?: Config['nas']
 }
 
 /** Environment variable naming the canonical local URL of this Web GUI. */
@@ -120,15 +147,16 @@ try {
  * an OS-assigned port is unknowable before bind.
  * @param bindHost - the active webserver bind host.
  * @param extra - explicit `--trusted-host` values, in argument order.
+ * @param nas - optional NAS deployment values retained in the Runtime snapshot.
  * @returns the LAN display addresses and invocation-derived fence authorities.
  */
-export function resolveLanTrust(bindHost: string, extra: readonly string[]): WebRuntimeValues {
+export function resolveLanTrust(bindHost: string, extra: readonly string[], nas?: Config['nas']): WebRuntimeValues {
   const lanAddresses = bindHost === ALL_INTERFACES_HOST
     ? Object.values(networkInterfaces()).flat()
       .filter((iface): iface is NonNullable<typeof iface> => iface !== undefined && iface.family === 'IPv4' && !iface.internal)
       .map(iface => iface.address)
     : []
-  return { lanAddresses, trustedHosts: [...lanAddresses, ...extra] }
+  return { lanAddresses, trustedHosts: [...lanAddresses, ...extra], ...(nas === undefined ? {} : { nas }) }
 }
 
 /** Model-visible orientation and acceptance boundary for sessions created through `dsh web`. */
@@ -227,7 +255,7 @@ export const internals: {
  * @param config - validated {@link Config}.
  */
 export function apply(ctx: Context, config: Config): void {
-  const runtime = resolveLanTrust(ctx.webServer.host, config.trustedHosts)
+  const runtime = resolveLanTrust(ctx.webServer.host, config.trustedHosts, config.nas)
   // The loopback URL belongs to this host. Under SSH, the operator reaches it
   // through a local forwarding address that this process cannot derive.
   const handoffBrowser = config.openBrowser && !launchedThroughSsh(launchEnvironmentOf(ctx))

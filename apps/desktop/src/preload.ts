@@ -41,6 +41,9 @@ import type { DesktopWebOpenResult, DesktopWebStatus } from './desktop-web-acces
 import type {
   DownloadNetworkPatch, DownloadNetworkSettings, DownloadNetworkTarget, DownloadNetworkTestStatus,
 } from './download-network-settings.ts'
+import type {
+  DesktopRuntimeSelection, NasDeviceSummary, NasDiscoveryCandidate, NasPairingRequest, NasRuntimeStatus,
+} from './nas-runtime.ts'
 
 /** Renderer-visible update methods; no generic process or filesystem access is exposed. */
 export interface DesktopUpdateBridge {
@@ -57,6 +60,7 @@ const bridge: DesktopUpdateBridge = {
 
 /** Capability flags returned by the trusted main process. */
 export interface DesktopCapabilities {
+  runtimeKind: 'local' | 'nas'
   platform: NodeJS.Platform
   packaged: boolean
   launchAtLoginAvailable: boolean
@@ -65,14 +69,10 @@ export interface DesktopCapabilities {
   developmentRecoveryAvailable: boolean
 }
 
-/** Narrow desktop-shell preference and diagnostics bridge. */
-export interface DesktopShellBridge {
-  getCapabilities(): Promise<DesktopCapabilities>
+/** Device-local shell operations that must never cross the NAS renderer boundary implicitly. */
+export interface DesktopLocalShellBridge {
   getDataHome(): Promise<DesktopDataHomeStatus>
   openDataHomeChooser(): Promise<{ restarting: boolean }>
-  getPreferences(): Promise<DesktopPreferences>
-  updatePreferences(patch: DesktopPreferencesPatch): Promise<DesktopPreferences>
-  onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
   openLog(): Promise<OpenLogResult>
   openLogDirectory(): Promise<{ error: string }>
   openSettingsDocument(): Promise<{ error: string }>
@@ -82,6 +82,15 @@ export interface DesktopShellBridge {
   installCommandLine(force: boolean): Promise<DesktopCliStatus>
   removeCommandLine(): Promise<DesktopCliStatus>
   enterRecoveryMode(): Promise<{ entered: true }>
+}
+
+/** Narrow desktop-shell bridge shared by local and NAS renderer projections. */
+export interface DesktopShellBridge extends Partial<DesktopLocalShellBridge> {
+  getCapabilities(): Promise<DesktopCapabilities>
+  getPreferences(): Promise<DesktopPreferences>
+  updatePreferences(patch: DesktopPreferencesPatch): Promise<DesktopPreferences>
+  onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
+  restart(): Promise<{ restarting: true }>
   reportReadiness(phase: 'client' | 'event-dispatch'): void
 }
 
@@ -114,6 +123,20 @@ export interface DesktopWebBridge {
   getStatus(): Promise<DesktopWebStatus>
   open(): Promise<DesktopWebOpenResult>
   onStatus(callback: (status: DesktopWebStatus) => void): () => void
+}
+
+/** Saved NAS runtimes and fixed pairing operations; tokens never reach the renderer. */
+export interface DesktopNasBridge {
+  get(): Promise<NasRuntimeStatus>
+  discover(): Promise<readonly NasDiscoveryCandidate[]>
+  inspect(baseUrl: string): Promise<{ readonly fingerprint: string }>
+  pair(request: NasPairingRequest): Promise<NasRuntimeStatus>
+  select(selection: DesktopRuntimeSelection): Promise<{ readonly restarting: true }>
+  remove(serverId: string): Promise<NasRuntimeStatus>
+  test(serverId: string): Promise<{ readonly healthy: true; readonly version: string }>
+  devices(serverId: string): Promise<readonly NasDeviceSummary[]>
+  revokeDevice(serverId: string, deviceId: string): Promise<readonly NasDeviceSummary[]>
+  onStatus(callback: (status: NasRuntimeStatus) => void): () => void
 }
 
 /** Exact allowlisted bundled-plugin operations; no arbitrary package path is exposed. */
@@ -263,6 +286,25 @@ const downloadNetworkBridge: DesktopDownloadNetworkBridge = {
   },
 }
 
+const nasBridge: DesktopNasBridge = {
+  get: () => ipcRenderer.invoke(DESKTOP_IPC.nasGet) as Promise<NasRuntimeStatus>,
+  discover: () => ipcRenderer.invoke(DESKTOP_IPC.nasDiscover) as Promise<readonly NasDiscoveryCandidate[]>,
+  inspect: baseUrl => ipcRenderer.invoke(DESKTOP_IPC.nasInspect, baseUrl) as Promise<{ fingerprint: string }>,
+  pair: request => ipcRenderer.invoke(DESKTOP_IPC.nasPair, request) as Promise<NasRuntimeStatus>,
+  select: selection => ipcRenderer.invoke(DESKTOP_IPC.nasSelect, selection) as Promise<{ restarting: true }>,
+  remove: serverId => ipcRenderer.invoke(DESKTOP_IPC.nasRemove, serverId) as Promise<NasRuntimeStatus>,
+  test: serverId => ipcRenderer.invoke(DESKTOP_IPC.nasTest, serverId) as Promise<{ healthy: true; version: string }>,
+  devices: serverId => ipcRenderer.invoke(DESKTOP_IPC.nasDevices, serverId) as Promise<readonly NasDeviceSummary[]>,
+  revokeDevice: (serverId, deviceId) => ipcRenderer.invoke(
+    DESKTOP_IPC.nasRevokeDevice, serverId, deviceId,
+  ) as Promise<readonly NasDeviceSummary[]>,
+  onStatus(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, status: NasRuntimeStatus): void => { callback(status) }
+    ipcRenderer.on(DESKTOP_IPC.nasStatus, listener)
+    return () => { ipcRenderer.removeListener(DESKTOP_IPC.nasStatus, listener) }
+  },
+}
+
 const desktopWebBridge: DesktopWebBridge = {
   getStatus: () => ipcRenderer.invoke(DESKTOP_IPC.webGet) as Promise<DesktopWebStatus>,
   open: () => ipcRenderer.invoke(DESKTOP_IPC.webOpen) as Promise<DesktopWebOpenResult>,
@@ -379,6 +421,33 @@ const chatBackgroundBridge: DesktopChatBackgroundBridge = {
 }
 
 const sourceMode = process.argv.includes('--dsh-source')
+const nasMode = process.argv.includes('--dsh-nas-runtime')
+
+if (!nasMode && location.protocol === 'dsh-app:' && location.hostname === 'app') {
+  contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', Object.freeze({
+    pick: () => ipcRenderer.invoke(DESKTOP_IPC.directoryPick) as Promise<string | null>,
+  }))
+}
+
+function installClientBootFailureBridge(): void {
+  if (nasMode) return
+  let reported = false
+  const publish = (): void => {
+    if (reported) return
+    const failure = document.querySelector<HTMLElement>('[data-dsh-boot-failure]')
+    const message = failure?.dataset.dshBootFailure
+    if (message === undefined || message.length === 0) return
+    reported = true
+    ipcRenderer.send(DESKTOP_IPC.clientBootFailure, { message: message.slice(0, 2_000) })
+  }
+  const observer = new MutationObserver(publish)
+  observer.observe(document.documentElement, {
+    attributes: true, attributeFilter: ['data-dsh-boot-failure'], subtree: true,
+  })
+  publish()
+  window.addEventListener('unload', () => { observer.disconnect() }, { once: true })
+}
+
 const iconsBridge: DesktopIconsBridge = {
   getStatus: () => ipcRenderer.invoke(DESKTOP_IPC.iconsGet) as Promise<DesktopIconStatus>,
   choose: () => ipcRenderer.invoke(DESKTOP_IPC.iconsChoose) as Promise<IconSelection | null>,
@@ -394,7 +463,24 @@ const iconsBridge: DesktopIconsBridge = {
     return () => { ipcRenderer.removeListener(DESKTOP_IPC.iconsStatus, listener) }
   },
 }
-contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
+const unavailableInNasMode = (): Promise<never> => Promise.reject(new Error(
+  'desktop: this device-local operation is unavailable while connected to a NAS runtime',
+))
+const remoteShellBridge: DesktopShellBridge = {
+  getCapabilities: () => shellBridge.getCapabilities(),
+  getPreferences: () => shellBridge.getPreferences(),
+  updatePreferences: patch => shellBridge.updatePreferences(patch),
+  onPreferences: callback => shellBridge.onPreferences(callback),
+  restart: () => shellBridge.restart(),
+  reportReadiness: (phase) => { shellBridge.reportReadiness(phase) },
+}
+const remoteDesktopWebBridge: DesktopWebBridge = {
+  getStatus: () => Promise.resolve({ phase: 'error', message: 'Open the paired NAS HTTPS address in a browser.' }),
+  open: unavailableInNasMode,
+  onStatus: () => () => {},
+}
+
+const commonDesktopBridge = {
   menu: Object.freeze({
     reportState(state: { ready: boolean; locale: string }): void {
       ipcRenderer.send(DESKTOP_IPC.menuClientState, state)
@@ -411,24 +497,30 @@ contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
       return () => { ipcRenderer.removeListener(DESKTOP_IPC.menuCommand, listener) }
     },
   }),
-  shell: Object.freeze(shellBridge),
-  icons: Object.freeze(iconsBridge),
+  shell: Object.freeze(nasMode ? remoteShellBridge : shellBridge),
   releases: Object.freeze(releasesBridge),
-  downloadNetwork: Object.freeze(downloadNetworkBridge),
-  desktopWeb: Object.freeze(desktopWebBridge),
-  bundledPlugins: Object.freeze(bundledPluginsBridge),
-  externalTools: Object.freeze(externalToolsBridge),
-  importedPlugins: Object.freeze(sourceMode
-    ? { ...importedPluginsBridge, development: true as const }
-    : importedPluginsBridge),
-  diagnosticLab: Object.freeze(diagnosticLabBridge),
-  pluginSnapshots: Object.freeze(pluginSnapshotsBridge),
-  startupDiagnostics: Object.freeze(startupDiagnosticsBridge),
-  processes: Object.freeze(processesBridge),
-  chatBackground: Object.freeze(chatBackgroundBridge),
-  ...(sourceMode ? {
-    updater: Object.freeze(bridge),
-  } : {}),
+  nas: Object.freeze(nasBridge),
+  desktopWeb: Object.freeze(nasMode ? remoteDesktopWebBridge : desktopWebBridge),
+}
+contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
+  ...commonDesktopBridge,
+  ...(nasMode ? {} : {
+    icons: Object.freeze(iconsBridge),
+    downloadNetwork: Object.freeze(downloadNetworkBridge),
+    bundledPlugins: Object.freeze(bundledPluginsBridge),
+    externalTools: Object.freeze(externalToolsBridge),
+    importedPlugins: Object.freeze(sourceMode
+      ? { ...importedPluginsBridge, development: true as const }
+      : importedPluginsBridge),
+    diagnosticLab: Object.freeze(diagnosticLabBridge),
+    pluginSnapshots: Object.freeze(pluginSnapshotsBridge),
+    startupDiagnostics: Object.freeze(startupDiagnosticsBridge),
+    processes: Object.freeze(processesBridge),
+    chatBackground: Object.freeze(chatBackgroundBridge),
+    ...(sourceMode ? {
+      updater: Object.freeze(bridge),
+    } : {}),
+  }),
 }))
 
 type DesktopThemeSource = 'system' | 'light' | 'dark'
@@ -455,5 +547,6 @@ function installDesktopThemeSync(): void {
 
 window.addEventListener('DOMContentLoaded', () => {
   installDesktopThemeSync()
+  installClientBootFailureBridge()
   installLoadingPage(ipcRenderer)
 }, { once: true })

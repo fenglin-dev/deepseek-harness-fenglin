@@ -5,12 +5,16 @@
  * projections read the product's real sections, its connection control is the
  * roster's Connection, and it survives a Loader rebuild of the declarer.
  */
-import { describe, expect, vi } from 'vitest'
+import { describe, expect, onTestFinished, vi } from 'vitest'
+import { ok } from '@deepseek-ai/dsh-remote-mock'
+import type { SettingsNamespaceView } from '@deepseek-ai/dsh-settings/types'
+import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createClientTest, type TestClient, webApp } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 import { inject } from '../src/client/index.ts'
 import type { SettingsRootInjected } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
+import type { DesktopUpdatePresentation } from '../src/client/desktop-update-bridge.ts'
 
 const SELF = '@deepseek-ai/dsh-client-ui-settings-general'
 const SIDEBAR = '@deepseek-ai/dsh-client-ui-sidebar'
@@ -39,14 +43,42 @@ const CHILD_NAMES = Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>
  * ui-settings-models, ui-settings-plugins, ui-agent-preset, and
  * ui-settings-unarchive-sessions. A plugin adding a section changes this list.
  */
-const PRODUCT_SECTIONS: readonly string[] = ['general', 'models', 'plugins', 'agent-presets', 'archived-sessions']
-/** Onboarding steps the web-app roster registers, in coordinator order; both come from ui-settings-models. */
+const PRODUCT_SECTIONS: readonly string[] = [
+  'general', 'models', 'plugins', 'external-tools', 'agent-presets', 'archived-sessions', 'diagnostics',
+]
+/** Onboarding steps the web-app roster registers, in coordinator order. */
 const PRODUCT_ONBOARDING: readonly { id: string; order: number }[] = [
-  { id: 'welcome-notice', order: -100 },
-  { id: 'deepseek-official', order: 0 },
+  { id: 'setup-wizard', order: 0 },
 ]
 
 describe('ui-settings-general shell', () => {
+  it('shares one carrier subscription between both update locations and releases it on unload', async ({ start }) => {
+    const initial = Promise.withResolvers<DesktopUpdatePresentation>()
+    let publish: ((state: DesktopUpdatePresentation) => void) | undefined
+    const off = vi.fn()
+    const subscribe = vi.fn((listener: typeof publish) => { publish = listener; return off })
+    const open = vi.fn(async () => {})
+    vi.stubGlobal('dshDesktop', { protocolVersion: 1, updates: { status: () => initial.promise, subscribe, open } })
+    onTestFinished(() => { vi.unstubAllGlobals(); initial.resolve({ phase: 'idle' }) })
+    const c = await start()
+    const row = injectedOf(c)
+    const badge = (c.ctx.slots.entries('sidebar.toggle.badge')[0]!.inject as () => Pick<SettingsRootInjected, 'hooks'>)()
+    expect(badge.hooks.desktopUpdate).toBe(row.hooks.desktopUpdate)
+    expect(subscribe).toHaveBeenCalledOnce()
+    const status = { phase: 'available' as const, version: '1.0.1' }
+    publish!(status)
+    expect(row.hooks.desktopUpdate.getSnapshot().presentation).toEqual(status)
+    row.openDesktopUpdate()
+    await c.flush()
+    expect(open).toHaveBeenCalledOnce()
+    await c.unload(SELF)
+    await c.flush()
+    expect(off).toHaveBeenCalledOnce()
+    expect(c.ctx.slots.entries('sidebar.toggle.badge')).toHaveLength(0)
+    publish!({ phase: 'error', version: status.version, failure: 'install' })
+    expect(row.hooks.desktopUpdate.getSnapshot().presentation).toEqual(status)
+  }, COLD_BOOT_TIMEOUT_MS)
+
   it('declares its services', () => {
     expect(inject).toEqual([
       'slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope', 'settingsNavigation',
@@ -115,10 +147,31 @@ describe('ui-settings-general shell', () => {
     off()
   })
 
-  it('exposes the durable section-order source and write operation', async ({ start }) => {
+  it('exposes the durable section-order source and write operation', async ({ start, mock }) => {
+    const current: SettingsNamespaceView = {
+      ns: 'ui-settings-navigation',
+      schema: JSON.parse(JSON.stringify(z.object({
+        sectionOrder: z.array(z.string()).default([]),
+      }).toJSON())) as SettingsNamespaceView['schema'],
+      value: { sectionOrder: [] },
+      applies: 'live',
+      secrets: [],
+      revision: 0,
+    }
+    mock.remote.settings.describe.mockResolvedValueOnce(ok({
+      writable: true,
+      hasDocument: true,
+      namespaces: [current],
+    }))
     const c = await start()
+    await c.ctx.settingsScope.describe().ensure()
     const injected = injectedOf(c)
     expect(injected.hooks.sectionOrder.getSnapshot()).toEqual([])
+    mock.remote.settings.mutate.mockResolvedValueOnce(ok({
+      ...current,
+      value: { sectionOrder: ['models', 'general'] },
+      revision: current.revision + 1,
+    }))
     await expect(injected.setSectionOrder(['models', 'general'])).resolves.toBeUndefined()
     expect(injected.hooks.sectionOrder.getSnapshot()).toEqual(['models', 'general'])
   })

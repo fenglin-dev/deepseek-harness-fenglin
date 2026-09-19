@@ -1,209 +1,209 @@
 {
-  "schema": 2,
-  "plugins": [
-    {
-      "seedId": "dshmarket",
-      "packageName": "dshmarket",
-      "version": "1.47.0",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dshmarket@1.47.0",
-      "archive": "dshmarket-1.47.0.tgz",
-      "integrity": "sha512-pVmakGEyZajwoDwXh7jGfHxtHtI5LCT5/4qmzfoU4gZKYD9F34AbJTF8MdU7Hfw0fBENs/Pkb0WF3kBZEf8QVg=="
-    },
-    {
-      "seedId": "xmanrui-dsh-im",
-      "packageName": "@xmanrui/dsh-im",
-      "version": "4.21.2",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "@xmanrui/dsh-im@4.21.2",
-      "managedUpgradeFrom": [
-        "3.0.6",
-        "4.19.2",
-        "4.21.0",
-        "4.21.1"
-      ],
-      "archive": "xmanrui-dsh-im-4.21.2.tgz",
-      "integrity": "sha512-rHwHzbj8eYrYl10NHPdGRLoKr93wkdf/PXhkDSMhx3AYHutDqaDL8s5pd9YueKmu+mLNeNL2o88Huzy5OyVDFw=="
-    },
-    {
-      "seedId": "dsh-skill-picker",
-      "packageName": "dsh-skill-picker",
-      "version": "0.5.10",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dsh-skill-picker@0.5.10",
-      "managedUpgradeFrom": [
-        "0.2.0"
-      ],
-      "archive": "dsh-skill-picker-0.5.10.tgz",
-      "integrity": "sha512-WB+ofsBV2NT6Hcx3xNEhXb8nXDlpetzXWdDvWe2zJHA48loSMp+O5iNmEwCJ3/SD7OKywymCjtIJMRx7jWku6A=="
-    },
-    {
-      "seedId": "dsh-better-sidebar",
-      "packageName": "dsh-better-sidebar",
-      "version": "0.19.1",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dsh-better-sidebar@0.19.1",
-      "managedUpgradeFrom": [
-        "0.16.1"
-      ],
-      "approvedBuilds": [
-        "node-pty"
-      ],
-      "archive": "dsh-better-sidebar-0.19.1.tgz",
-      "integrity": "sha512-Jr0tPJoDKUVkq+fioL6Td+YwXZ+PULx3CnBJ4iktaQGNP5y9hgpz6V7o7f4Yh2czheVKZsewurqCaiN10GQYeQ=="
-    },
-    {
-      "seedId": "dsh-pocket",
-      "packageName": "dsh-pocket",
-      "version": "2.10.6",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dsh-pocket@2.10.6",
-      "managedUpgradeFrom": [
-        "1.14.5"
-      ],
-      "archive": "dsh-pocket-2.10.6.tgz",
-      "integrity": "sha512-yqybeWWutozi1yBLDpSs6ien9SndFPVNK6HlmhJf8q0AOLauzcLntmFyGQ0/v3EzS3V8ftM4yvqcc/o6LcGcGA=="
-    },
-    {
-      "seedId": "ychris12138-dsh-usage-stats",
-      "packageName": "@ychris12138/dsh-usage-stats",
-      "version": "0.3.3",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "@ychris12138/dsh-usage-stats@0.3.3",
-      "archive": "ychris12138-dsh-usage-stats-0.3.3.tgz",
-      "integrity": "sha512-HMjAAc5fy7RglztdHfgUh4I2ul3a5N2wSz1H2JSqpCqxxdCmHJwC1AwX06eb16AGBgixpcwfnZBcegx/oVbs0A=="
-    },
-    {
-      "seedId": "dsh-smooth-stream",
-      "packageName": "dsh-smooth-stream",
-      "version": "0.6.1",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dsh-smooth-stream@0.6.1",
-      "archive": "dsh-smooth-stream-0.6.1.tgz",
-      "integrity": "sha512-gikVy5Wo5O7wUMOnd6cLCP/NA1fy+XOrhAiWoucjTDoLrfwu/88mK6jltv7Uv1jD4hf68j80oUArS9KnPQztCw=="
-    },
-    {
-      "seedId": "dsh-mermaid",
-      "packageName": "dsh-mermaid",
-      "version": "0.4.0",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dsh-mermaid@0.4.0",
-      "archive": "dsh-mermaid-0.4.0.tgz",
-      "integrity": "sha512-SVXmo3MdINyAf097eEF7A4D41wb+bZr5pX8uoHVbD+ZnMOdfW80AXcHMlMPkcrAHFPzkOeC9cL91zjDEqteTIg=="
-    },
-    {
-      "seedId": "diagnostic-dsh-font",
-      "packageName": "dsh-font",
-      "version": "1.1.0",
-      "profile": "web",
-      "installPolicy": "diagnostic",
-      "archive": "dsh-font-1.1.0.tgz",
-      "integrity": "sha512-FJVCYih4My+9NwqvDjwW17AVP/9F843nL0O0mS8+Z/YQdVkmoGT0q3fPLXvNdr8M68FVo0Wr2upnud0y406a0g=="
-    },
-    {
-      "seedId": "diagnostic-scoped-loader-mismatch",
-      "packageName": "@dsh-diagnostic-lab/scoped-loader-mismatch",
-      "version": "1.0.0",
-      "profile": "web",
-      "installPolicy": "diagnostic",
-      "archive": "dsh-diagnostic-lab-scoped-loader-mismatch-1.0.0.tgz",
-      "integrity": "sha512-AVs8NsGQdMcEr7ATNQqUjmMjUzLgvQoisz5C9fwcAj7oUARQdTo+74ANKzEez2LbNWNOKGwCbilwstPSgVAYxQ=="
-    },
-    {
-      "seedId": "diagnostic-loader-dependency-unavailable",
-      "packageName": "@dsh-diagnostic-lab/loader-dependency-unavailable",
-      "version": "1.0.0",
-      "profile": "web",
-      "installPolicy": "diagnostic",
-      "archive": "dsh-diagnostic-lab-loader-dependency-unavailable-1.0.0.tgz",
-      "integrity": "sha512-sEjViwufnwVG4bWMMIFLwzOMLBUX3pyt/IZzVsSCf53wFIAiDgDWihDUdTVVIL4v5vMIZw8Aa4zZIQA8SQvhLQ=="
-    },
-    {
-      "seedId": "diagnostic-loader-export-unavailable",
-      "packageName": "@dsh-diagnostic-lab/loader-export-unavailable",
-      "version": "1.0.0",
-      "profile": "web",
-      "installPolicy": "diagnostic",
-      "archive": "dsh-diagnostic-lab-loader-export-unavailable-1.0.0.tgz",
-      "integrity": "sha512-WyqR0+nwUFI4iTZTsuUyn7QKq5JCGZ/OTUg5/clbd9dbu2kGFzOe6Kqt0qoL/NeFMqbE46/x0v26wsgkn7LbpQ=="
-    },
-    {
-      "seedId": "diagnostic-legacy-session-api",
-      "packageName": "@dsh-diagnostic-lab/legacy-session-api",
-      "version": "1.0.0",
-      "profile": "web",
-      "installPolicy": "diagnostic",
-      "archive": "dsh-diagnostic-lab-legacy-session-api-1.0.0.tgz",
-      "integrity": "sha512-O20M5EU8zP0YhPBaZGK3+BJmGYlF0w1L5Bo6cUt3dgBxSuSH3Gb5dpz9JUwMH7epP0M0NIumYoLVMz4bnjiCQA=="
-    },
-    {
-      "seedId": "diagnostic-immutable-agent-input-mutation",
-      "packageName": "@dsh-diagnostic-lab/immutable-agent-input-mutation",
-      "version": "1.0.0",
-      "profile": "web",
-      "installPolicy": "diagnostic",
-      "archive": "dsh-diagnostic-lab-immutable-agent-input-mutation-1.0.0.tgz",
-      "integrity": "sha512-K7f22irpTUvxZ+sq7YCfOqsT3rRtlrYDlnOfOJlY0vlLA6tzZd5EVL67F5n+S7NX4VcDGdnDae+jCRj3sTASLQ=="
-    },
-    {
-      "seedId": "linxin666-dsh-web-all",
-      "packageName": "@linxin666/dsh-web-all",
-      "version": "0.3.23",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "@linxin666/dsh-web-all@0.3.23",
-      "archive": "dsh-web-all-0.3.23.tgz",
-      "integrity": "sha512-lrkXMQmcnfQRQS6APUWMLK62cifglg95NE+0K+mAJUnNzMHXtme9N13yeqqvHmaWxOr9aFvhgFXi+O/ad07vpw==",
-      "approvedBuilds": [
-        "ssh2",
-        "cpu-features",
-        "cloudflared"
-      ]
-    },
-    {
-      "seedId": "linxin666-dsh-liangshen",
-      "packageName": "@linxin666/dsh-liangshen",
-      "version": "0.3.23",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "@linxin666/dsh-liangshen@0.3.23",
-      "archive": "dsh-liangshen-0.3.23.tgz",
-      "integrity": "sha512-/EpO5GPUvbLcwZkBNxSRhkOTXFdCULsWB6uPgiX/2gkfvhmf9EklbJktJLHCvySeN7IIWF0ugjmYBtmvPWEPkA=="
-    },
-    {
-      "seedId": "dsh-music-huazai",
-      "packageName": "dsh-music-huazai",
-      "version": "0.1.0",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dsh-music-huazai@0.1.0",
-      "archive": "dsh-music-huazai-0.1.0.tgz",
-      "integrity": "sha512-SjV88gS/gSE+v4ZthionmCp/H4ZZoM65GXmgRnPMwF/LvspbF26ZtUgCLE2tVR9P0Ua75V/tHbQgicfxWmjzaQ==",
-      "approvedBuilds": [
-        "node-hid"
-      ]
-    },
-    {
-      "seedId": "dsh-whale-widget-bowl",
-      "packageName": "dsh-whale-widget-bowl",
-      "version": "0.4.1",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dsh-whale-widget-bowl@0.4.1",
-      "archive": "dsh-whale-widget-bowl-0.4.1.tgz",
-      "managedUpgradeFrom": [
-        "0.3.0",
-        "0.4.0"
-      ],
-      "integrity": "sha512-erpyly3E+WQf2IdsYJvV3Jx6dJMD2mPhOw5p/NOXPpUeRCTvMZAKj+tyjcu45uGnWIKq2SFSwAj66jLY4/6QTw=="
-    }
-  ]
+    "schema":  2,
+    "plugins":  [
+                    {
+                        "seedId":  "dshmarket",
+                        "packageName":  "dshmarket",
+                        "version":  "1.48.0",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dshmarket@1.48.0",
+                        "archive":  "dshmarket-1.48.0.tgz",
+                        "integrity":  "sha512-55++Glg8ZZ/o0ubJh3XiOLVn2GVnCFVavn+ydIpQFkyagbtA6v9AuxN3OkVrgOondeqvzXiNwcYszs1YasX8PQ=="
+                    },
+                    {
+                        "seedId":  "xmanrui-dsh-im",
+                        "packageName":  "@xmanrui/dsh-im",
+                        "version":  "4.21.2",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "@xmanrui/dsh-im@4.21.2",
+                        "managedUpgradeFrom":  [
+                                                   "3.0.6",
+                                                   "4.19.2",
+                                                   "4.21.0",
+                                                   "4.21.1"
+                                               ],
+                        "archive":  "xmanrui-dsh-im-4.21.2.tgz",
+                        "integrity":  "sha512-rHwHzbj8eYrYl10NHPdGRLoKr93wkdf/PXhkDSMhx3AYHutDqaDL8s5pd9YueKmu+mLNeNL2o88Huzy5OyVDFw=="
+                    },
+                    {
+                        "seedId":  "dsh-skill-picker",
+                        "packageName":  "dsh-skill-picker",
+                        "version":  "0.5.10",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dsh-skill-picker@0.5.10",
+                        "managedUpgradeFrom":  [
+                                                   "0.2.0"
+                                               ],
+                        "archive":  "dsh-skill-picker-0.5.10.tgz",
+                        "integrity":  "sha512-WB+ofsBV2NT6Hcx3xNEhXb8nXDlpetzXWdDvWe2zJHA48loSMp+O5iNmEwCJ3/SD7OKywymCjtIJMRx7jWku6A=="
+                    },
+                    {
+                        "seedId":  "dsh-better-sidebar",
+                        "packageName":  "dsh-better-sidebar",
+                        "version":  "0.19.1",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dsh-better-sidebar@0.19.1",
+                        "managedUpgradeFrom":  [
+                                                   "0.16.1"
+                                               ],
+                        "approvedBuilds":  [
+                                               "node-pty"
+                                           ],
+                        "archive":  "dsh-better-sidebar-0.19.1.tgz",
+                        "integrity":  "sha512-Jr0tPJoDKUVkq+fioL6Td+YwXZ+PULx3CnBJ4iktaQGNP5y9hgpz6V7o7f4Yh2czheVKZsewurqCaiN10GQYeQ=="
+                    },
+                    {
+                        "seedId":  "dsh-pocket",
+                        "packageName":  "dsh-pocket",
+                        "version":  "2.10.6",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dsh-pocket@2.10.6",
+                        "managedUpgradeFrom":  [
+                                                   "1.14.5"
+                                               ],
+                        "archive":  "dsh-pocket-2.10.6.tgz",
+                        "integrity":  "sha512-yqybeWWutozi1yBLDpSs6ien9SndFPVNK6HlmhJf8q0AOLauzcLntmFyGQ0/v3EzS3V8ftM4yvqcc/o6LcGcGA=="
+                    },
+                    {
+                        "seedId":  "ychris12138-dsh-usage-stats",
+                        "packageName":  "@ychris12138/dsh-usage-stats",
+                        "version":  "0.3.3",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "@ychris12138/dsh-usage-stats@0.3.3",
+                        "archive":  "ychris12138-dsh-usage-stats-0.3.3.tgz",
+                        "integrity":  "sha512-HMjAAc5fy7RglztdHfgUh4I2ul3a5N2wSz1H2JSqpCqxxdCmHJwC1AwX06eb16AGBgixpcwfnZBcegx/oVbs0A=="
+                    },
+                    {
+                        "seedId":  "dsh-smooth-stream",
+                        "packageName":  "dsh-smooth-stream",
+                        "version":  "0.6.1",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dsh-smooth-stream@0.6.1",
+                        "archive":  "dsh-smooth-stream-0.6.1.tgz",
+                        "integrity":  "sha512-gikVy5Wo5O7wUMOnd6cLCP/NA1fy+XOrhAiWoucjTDoLrfwu/88mK6jltv7Uv1jD4hf68j80oUArS9KnPQztCw=="
+                    },
+                    {
+                        "seedId":  "dsh-mermaid",
+                        "packageName":  "dsh-mermaid",
+                        "version":  "0.4.0",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dsh-mermaid@0.4.0",
+                        "archive":  "dsh-mermaid-0.4.0.tgz",
+                        "integrity":  "sha512-SVXmo3MdINyAf097eEF7A4D41wb+bZr5pX8uoHVbD+ZnMOdfW80AXcHMlMPkcrAHFPzkOeC9cL91zjDEqteTIg=="
+                    },
+                    {
+                        "seedId":  "diagnostic-dsh-font",
+                        "packageName":  "dsh-font",
+                        "version":  "1.1.0",
+                        "profile":  "web",
+                        "installPolicy":  "diagnostic",
+                        "archive":  "dsh-font-1.1.0.tgz",
+                        "integrity":  "sha512-FJVCYih4My+9NwqvDjwW17AVP/9F843nL0O0mS8+Z/YQdVkmoGT0q3fPLXvNdr8M68FVo0Wr2upnud0y406a0g=="
+                    },
+                    {
+                        "seedId":  "diagnostic-scoped-loader-mismatch",
+                        "packageName":  "@dsh-diagnostic-lab/scoped-loader-mismatch",
+                        "version":  "1.0.0",
+                        "profile":  "web",
+                        "installPolicy":  "diagnostic",
+                        "archive":  "dsh-diagnostic-lab-scoped-loader-mismatch-1.0.0.tgz",
+                        "integrity":  "sha512-AVs8NsGQdMcEr7ATNQqUjmMjUzLgvQoisz5C9fwcAj7oUARQdTo+74ANKzEez2LbNWNOKGwCbilwstPSgVAYxQ=="
+                    },
+                    {
+                        "seedId":  "diagnostic-loader-dependency-unavailable",
+                        "packageName":  "@dsh-diagnostic-lab/loader-dependency-unavailable",
+                        "version":  "1.0.0",
+                        "profile":  "web",
+                        "installPolicy":  "diagnostic",
+                        "archive":  "dsh-diagnostic-lab-loader-dependency-unavailable-1.0.0.tgz",
+                        "integrity":  "sha512-sEjViwufnwVG4bWMMIFLwzOMLBUX3pyt/IZzVsSCf53wFIAiDgDWihDUdTVVIL4v5vMIZw8Aa4zZIQA8SQvhLQ=="
+                    },
+                    {
+                        "seedId":  "diagnostic-loader-export-unavailable",
+                        "packageName":  "@dsh-diagnostic-lab/loader-export-unavailable",
+                        "version":  "1.0.0",
+                        "profile":  "web",
+                        "installPolicy":  "diagnostic",
+                        "archive":  "dsh-diagnostic-lab-loader-export-unavailable-1.0.0.tgz",
+                        "integrity":  "sha512-WyqR0+nwUFI4iTZTsuUyn7QKq5JCGZ/OTUg5/clbd9dbu2kGFzOe6Kqt0qoL/NeFMqbE46/x0v26wsgkn7LbpQ=="
+                    },
+                    {
+                        "seedId":  "diagnostic-legacy-session-api",
+                        "packageName":  "@dsh-diagnostic-lab/legacy-session-api",
+                        "version":  "1.0.0",
+                        "profile":  "web",
+                        "installPolicy":  "diagnostic",
+                        "archive":  "dsh-diagnostic-lab-legacy-session-api-1.0.0.tgz",
+                        "integrity":  "sha512-O20M5EU8zP0YhPBaZGK3+BJmGYlF0w1L5Bo6cUt3dgBxSuSH3Gb5dpz9JUwMH7epP0M0NIumYoLVMz4bnjiCQA=="
+                    },
+                    {
+                        "seedId":  "diagnostic-immutable-agent-input-mutation",
+                        "packageName":  "@dsh-diagnostic-lab/immutable-agent-input-mutation",
+                        "version":  "1.0.0",
+                        "profile":  "web",
+                        "installPolicy":  "diagnostic",
+                        "archive":  "dsh-diagnostic-lab-immutable-agent-input-mutation-1.0.0.tgz",
+                        "integrity":  "sha512-K7f22irpTUvxZ+sq7YCfOqsT3rRtlrYDlnOfOJlY0vlLA6tzZd5EVL67F5n+S7NX4VcDGdnDae+jCRj3sTASLQ=="
+                    },
+                    {
+                        "seedId":  "linxin666-dsh-web-all",
+                        "packageName":  "@linxin666/dsh-web-all",
+                        "version":  "0.3.23",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "@linxin666/dsh-web-all@0.3.23",
+                        "archive":  "dsh-web-all-0.3.23.tgz",
+                        "integrity":  "sha512-lrkXMQmcnfQRQS6APUWMLK62cifglg95NE+0K+mAJUnNzMHXtme9N13yeqqvHmaWxOr9aFvhgFXi+O/ad07vpw==",
+                        "approvedBuilds":  [
+                                               "ssh2",
+                                               "cpu-features",
+                                               "cloudflared"
+                                           ]
+                    },
+                    {
+                        "seedId":  "linxin666-dsh-liangshen",
+                        "packageName":  "@linxin666/dsh-liangshen",
+                        "version":  "0.3.23",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "@linxin666/dsh-liangshen@0.3.23",
+                        "archive":  "dsh-liangshen-0.3.23.tgz",
+                        "integrity":  "sha512-/EpO5GPUvbLcwZkBNxSRhkOTXFdCULsWB6uPgiX/2gkfvhmf9EklbJktJLHCvySeN7IIWF0ugjmYBtmvPWEPkA=="
+                    },
+                    {
+                        "seedId":  "dsh-music-huazai",
+                        "packageName":  "dsh-music-huazai",
+                        "version":  "0.1.0",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dsh-music-huazai@0.1.0",
+                        "archive":  "dsh-music-huazai-0.1.0.tgz",
+                        "integrity":  "sha512-SjV88gS/gSE+v4ZthionmCp/H4ZZoM65GXmgRnPMwF/LvspbF26ZtUgCLE2tVR9P0Ua75V/tHbQgicfxWmjzaQ==",
+                        "approvedBuilds":  [
+                                               "node-hid"
+                                           ]
+                    },
+                    {
+                        "seedId":  "dsh-whale-widget-bowl",
+                        "packageName":  "dsh-whale-widget-bowl",
+                        "version":  "0.4.1",
+                        "profile":  "web",
+                        "installPolicy":  "startup",
+                        "registrySpec":  "dsh-whale-widget-bowl@0.4.1",
+                        "archive":  "dsh-whale-widget-bowl-0.4.1.tgz",
+                        "managedUpgradeFrom":  [
+                                                   "0.3.0",
+                                                   "0.4.0"
+                                               ],
+                        "integrity":  "sha512-erpyly3E+WQf2IdsYJvV3Jx6dJMD2mPhOw5p/NOXPpUeRCTvMZAKj+tyjcu45uGnWIKq2SFSwAj66jLY4/6QTw=="
+                    }
+                ]
 }

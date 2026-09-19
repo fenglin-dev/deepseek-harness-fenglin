@@ -13,6 +13,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import {
+  approveQuarantinedProfilePluginHostVersion,
   clearLastProfileRepairReport,
   clearQuarantinedProfilePlugin,
   classifyProfileDiagnostic,
@@ -61,13 +62,18 @@ import type {
   ExternalToolsSnapshot,
   ExternalToolId,
   ExternalToolToggleRequest,
+  ExperimentalCapabilityRecipe,
 } from './types.ts'
 import { InstallProgressTracker } from './install-progress.ts'
 
 export type * from './types.ts'
 
-/** Brand an existing Loader-tree entry id at the owning boundary. */
-function pluginEntryId(value: string): PluginEntryId {
+/**
+ * Brand an existing Loader-tree entry id at the owning boundary.
+ * @param value - Raw Loader-tree entry id.
+ * @returns the branded entry id used by the inventory protocol.
+ */
+export function pluginEntryId(value: string): PluginEntryId {
   return value as PluginEntryId
 }
 
@@ -90,6 +96,44 @@ const FIBER_PHASE = {
   [FIBER_STATE.DISPOSED]: null,
   [FIBER_STATE.UNLOADING]: 'unloading',
 } as const satisfies Record<FiberState, PluginFiberPhase>
+
+type LoaderPluginInventory = Pick<
+  PluginInventorySnapshot,
+  'entries' | 'agentPresets' | 'managementAvailable'
+>
+
+/**
+ * Read the loader-facing portion of the inventory for the shared profile
+ * manager. The diagnostic gateway below remains the owner of retained repair,
+ * quarantine, and dependency-health projections.
+ * @param ctx - Active Host context that owns the Loader and optional preset roster.
+ * @returns the current Loader entries plus available preset and management metadata.
+ */
+export async function readPluginInventory(ctx: Context): Promise<LoaderPluginInventory> {
+  const entries: PluginInventoryEntry[] = []
+  for (const entry of ctx.loader.entries()) {
+    if (entry.options.group) continue
+    entries.push({
+      entryId: pluginEntryId(entry.id),
+      moduleName: entry.options.name,
+      enabled: !entry.disabled,
+      fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
+    })
+  }
+  const presets = ctx.get('agentPresets')
+  const management = ctx.get('pluginManager') === undefined ? {} : { managementAvailable: true as const }
+  if (presets === undefined) return { entries, ...management }
+  const agentPresets: AgentPresetPluginGroup[] = (await presets.compositionInventory()).map(
+    composition => ({
+      ...composition,
+      rows: composition.rows.map(({ fiberState, ...row }) => ({
+        ...row,
+        fiberPhase: fiberState === undefined ? null : FIBER_PHASE[fiberState],
+      })),
+    }),
+  )
+  return { entries, agentPresets, ...management }
+}
 
 /** Default cap for each collected package-manager stream. */
 export const DEFAULT_INSTALL_OUTPUT_MAX_BYTES = 64 * 1024
@@ -204,6 +248,28 @@ const REGISTRY_PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[
 const QUARANTINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 const REPAIR_REPORT_PREFIX = 'dsh: profile dependency health '
 
+const EXPERIMENTAL_CAPABILITY_RECIPES = {
+  'browser-use-playwright-visible': {
+    packageSpec: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.1.6-alpha.2',
+    dependencies: ['@deepseek-ai/dsh-browser-use@0.1.6-alpha.2'],
+  },
+  'browser-use-devtools-visible': {
+    packageSpec: '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp@0.1.6-alpha.2',
+    dependencies: ['@deepseek-ai/dsh-browser-use@0.1.6-alpha.2'],
+  },
+  'computer-use-native': {
+    packageSpec: '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native@0.1.6-alpha.2',
+    dependencies: ['@deepseek-ai/dsh-computer-use@0.1.6-alpha.2'],
+  },
+  'computer-use-mcp': {
+    packageSpec: '@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp@0.1.6-alpha.2',
+    dependencies: ['@deepseek-ai/dsh-computer-use@0.1.6-alpha.2'],
+  },
+} as const satisfies Record<ExperimentalCapabilityRecipe, {
+  readonly packageSpec: string
+  readonly dependencies: readonly string[]
+}>
+
 /** Product-specific tool bindings kept out of the generic preset package. */
 const EXTERNAL_TOOL_CONFIGS = {
   codex: {
@@ -227,6 +293,15 @@ function validateInstallRequest(request: PluginInstallRequest): void {
   validateProfile(request.profile)
   if (!REGISTRY_PACKAGE_SPEC.test(request.packageSpec)) {
     throw new TypeError(`pluginInventory: invalid registry package spec ${JSON.stringify(request.packageSpec)}`)
+  }
+  if (request.experimentalCapability !== undefined) {
+    const recipe = (EXPERIMENTAL_CAPABILITY_RECIPES as Partial<Record<string, {
+      readonly packageSpec: string
+      readonly dependencies: readonly string[]
+    }>>)[request.experimentalCapability]
+    if (recipe === undefined || request.profile !== 'web' || recipe.packageSpec !== request.packageSpec) {
+      throw new TypeError('pluginInventory: invalid experimental capability install request')
+    }
   }
 }
 
@@ -680,6 +755,26 @@ export class PluginInventoryGateway extends TypertRemoteService {
   }
 
   /**
+   * Record an exact Host/plugin-version risk approval, then retry that quarantined plugin.
+   * Only compatibility-manifest exclusions can use this path; dependency and Loader failures remain blocked.
+   * @param request - opaque incompatible-version quarantine selected after explicit user confirmation.
+   * @returns initial running state for the ordinary transactional retry.
+   */
+  @Remote('startHostVersionOverride')
+  startHostVersionOverride(request: PluginQuarantineRequest): PluginInstallSnapshot {
+    validateQuarantineId(request.quarantineId)
+    const record = this.expectQuarantine(request.quarantineId)
+    if (record.profile !== this.profile) throw new TypeError('pluginInventory: quarantine belongs to another profile')
+    if (record.reason !== 'incompatible-host-version') {
+      throw new TypeError('pluginInventory: only a Host version declaration can be overridden')
+    }
+    if (!approveQuarantinedProfilePluginHostVersion(request.quarantineId)) {
+      throw new Error('pluginInventory: quarantine no longer exists')
+    }
+    return this.startQuarantineRetry(request)
+  }
+
+  /**
    * Approve one retained exact build key and retry only its quarantined plugin.
    * @param request - Quarantine selected after a separate user confirmation.
    * @returns Initial running state, or the existing mutation for this quarantine.
@@ -806,7 +901,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
   @Remote('startInstall')
   startInstall(request: PluginInstallRequest): PluginInstallSnapshot {
     validateInstallRequest(request)
-    const target = `add\0${request.profile}\0${request.packageSpec}`
+    const target = `add\0${request.profile}\0${request.packageSpec}\0${request.experimentalCapability ?? ''}`
     const activeId = this.activeTargets.get(target)
     if (activeId !== undefined) return this.expectJob(activeId).snapshot
 
@@ -819,11 +914,20 @@ export class PluginInventoryGateway extends TypertRemoteService {
       phase: 'running',
       installProgress: { stage: 'preparing' },
     }
+    const experimentalCapability = request.experimentalCapability
+    const steps: InstallJob['steps'] = experimentalCapability === undefined
+      ? [{ args: ['add', request.packageSpec] }]
+      : [
+        ...EXPERIMENTAL_CAPABILITY_RECIPES[experimentalCapability].dependencies
+          .map(packageSpec => ({ args: ['add', packageSpec] as const })),
+        { args: ['add', request.packageSpec] },
+        { args: ['configure-experimental-capability', experimentalCapability] },
+      ]
     const job: InstallJob = {
       snapshot,
       target,
       progress: new InstallProgressTracker(this.outputMaxBytes),
-      steps: [{ args: ['add', request.packageSpec] }],
+      steps,
     }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)

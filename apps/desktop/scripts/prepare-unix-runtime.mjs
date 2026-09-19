@@ -36,7 +36,6 @@ const targets = {
     ],
   },
   'linux-x64': {
-
     nativePackages: [
       '@koromix/koffi-linux-x64',
       '@img/sharp-linux-x64/sharp.node',
@@ -54,7 +53,6 @@ const archive = join(repositoryRoot, '.artifacts', `${runtimeName}.tar`)
 const prebuilt = join(repositoryRoot, '.artifacts', `desktop-prebuilt-${target}`)
 const prebuiltArchive = join(repositoryRoot, '.artifacts', `desktop-prebuilt-${target}.tar`)
 const runtimeMarker = '.desktop-runtime-v3'
-
 const pnpmVersion = '11.7.0'
 const nodeArchiveName = nodeRuntimeArchivesByTarget[target].name
 const nodeArchiveSha256 = nodeRuntimeArchivesByTarget[target].sha256
@@ -160,40 +158,6 @@ async function injectWorkspaceClosure() {
   await indexWorkspacePackages(repositoryRoot, packages)
   const rootManifest = JSON.parse(await readFile(join(repositoryRoot, 'apps', 'cli', 'package.json'), 'utf8'))
   const queue = [...workspaceDependencies(rootManifest, packages)]
-  // Desktop process recovery resolves process-control from the packaged harness.
-  if (packages.has('@deepseek-ai/dsh-subprocess-local')) {
-    queue.push('@deepseek-ai/dsh-subprocess-local')
-  }
-  for (const peer of ['@deepseek-ai/cordis', '@deepseek-ai/cosmokit', '@deepseek-ai/dsh-http-proxy']) {
-    if (packages.has(peer)) queue.push(peer)
-  }
-  const injected = new Set()
-  while (queue.length > 0) {
-    const name = queue.shift()
-    if (name === undefined || injected.has(name)) continue
-    const project = packages.get(name)
-    if (project === undefined) continue
-    injected.add(name)
-    for (const dependency of workspaceDependencies(project.manifest, packages)) queue.push(dependency)
-    const destination = join(harnessRoot, 'node_modules', ...name.split('/'))
-    await rm(destination, { recursive: true, force: true })
-    await cp(project.directory, destination, {
-      recursive: true,
-      dereference: true,
-      filter: path => !relative(project.directory, path).split(sep).includes('node_modules'),
-    })
-  }
-  console.log(`prepare-unix-runtime: injected ${injected.size} workspace packages`)
-  const packageRoot = join(harnessRoot, 'node_modules', '@deepseek-ai', 'dsh-subprocess-local')
-  const libRoot = join(packageRoot, 'lib')
-  const typesRoot = join(libRoot, 'types')
-  if (existsSync(typesRoot) && !existsSync(join(libRoot, 'process-control.js'))) {
-    for (const entry of await readdir(typesRoot, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith('.js')) continue
-      await cp(join(typesRoot, entry.name), join(libRoot, entry.name), { force: true })
-    }
-  }
-}
   const injected = new Set()
   while (queue.length > 0) {
     const name = queue.shift()

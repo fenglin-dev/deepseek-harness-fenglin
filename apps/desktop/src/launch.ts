@@ -167,9 +167,12 @@ export function resolveHarnessLaunch(
   environment: DesktopLaunchEnvironment,
   options: DesktopLaunchOptions = {},
 ): HarnessLaunch {
+  const dshHome = (environment.DSH_HOME ?? '').trim() !== '' ? environment.DSH_HOME : undefined
+  const guard = join(dshHome ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '.', '.dsh'), 'fenglin-ui-guard.yml')
   return resolveHarnessInvocation(
     environment,
-    ['web', '--host', '127.0.0.1', '--port', '0', '--no-open'],
+    // Fenglin: launcher flags must precede web-app args; --patch outranks user cordis.patch.yml.
+    ['web', '--patch', guard, '--host', '127.0.0.1', '--port', '0', '--no-open'],
     options,
   )
 }
@@ -189,7 +192,7 @@ export function resolveHarnessInvocation(
   const command = environment.DSH_DESKTOP_NODE_BIN ?? options.nodeCommand ?? 'node'
   const launch: HarnessLaunch = {
     command,
-    args: [harnessBin, ...invocationArgs],
+    args: ['--expose-internals', harnessBin, ...invocationArgs],
   }
   const launchEnvironment: NodeJS.ProcessEnv = {}
   if (environment.DSH_HOME !== undefined && environment.DSH_HOME.trim() !== '') {

@@ -1,12 +1,16 @@
 /** Materialize checksummed, single-root desktop archives into versioned user-data caches. */
 
 import { createHash } from 'node:crypto'
+import { once } from 'node:events'
 import { createReadStream } from 'node:fs'
 import { access, mkdir, mkdtemp, readFile, rename, rm } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { dirname, isAbsolute, join, posix } from 'node:path'
-import { extract, list } from 'tar'
+import { extract } from 'tar'
 import { readPrebuiltProfile } from './prebuilt-profile.ts'
+
+/** User-visible work performed while one packaged archive stream is authenticated and materialized. */
+export type PackagedArchiveProgress = 'verifying-archive' | 'extracting-archive'
 
 export interface PackagedRuntimeOptions {
   expandedPath?: string
@@ -14,6 +18,7 @@ export interface PackagedRuntimeOptions {
   checksumPath?: string
   destination: string
   archiveRoot: string
+  onProgress?: (phase: PackagedArchiveProgress) => void
 }
 
 export interface PackagedPrebuiltProfileOptions {
@@ -21,6 +26,7 @@ export interface PackagedPrebuiltProfileOptions {
   checksumPath?: string
   destination: string
   archiveRoot: string
+  onProgress?: (phase: PackagedArchiveProgress) => void
 }
 
 /** Return the expected archive root for a packaged Unix runtime. */
@@ -43,18 +49,12 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function sha256File(path: string): Promise<string> {
-  const hash = createHash('sha256')
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
-  return hash.digest('hex')
-}
-
-async function verifyArchiveChecksum(archivePath: string, checksumPath?: string): Promise<void> {
-  if (checksumPath === undefined) return
+async function expectedArchiveChecksum(archivePath: string, checksumPath?: string): Promise<string | undefined> {
+  if (checksumPath === undefined) return undefined
   const source = (await readFile(checksumPath, 'utf8')).trim()
   const match = /^([0-9a-f]{64})\s{2}([^/\\]+)$/u.exec(source)
   if (match === null || match[2] !== archivePath.split(/[\\/]/u).at(-1)) throw new Error('desktop: invalid packaged archive checksum file')
-  if (await sha256File(archivePath) !== match[1]) throw new Error('desktop: packaged archive checksum mismatch; reinstall the application')
+  return match[1]
 }
 
 function safeArchivePath(path: string, root: string): boolean {
@@ -64,29 +64,35 @@ function safeArchivePath(path: string, root: string): boolean {
     && normalized.split('/').every(part => part !== '' && part !== '.' && part !== '..')
 }
 
-async function validateArchive(archivePath: string, root: string): Promise<void> {
+function archiveEntryValidator(root: string, onFirstEntry: () => void): {
+  filter: (path: string, entry: { size?: number; type?: string; linkpath?: string }) => boolean
+  assertNotEmpty: () => void
+} {
   let entries = 0
   let bytes = 0
-  let validationError: Error | undefined
-  await list({
-    file: archivePath,
-    strict: true,
-    onReadEntry: (entry) => {
-      if (validationError !== undefined) return
+  return {
+    filter: (path, entry) => {
+      if (entries === 0) onFirstEntry()
       entries += 1
-      bytes += entry.size
-      if (entries > 100_000 || bytes > 8 * 1024 * 1024 * 1024) validationError = new Error('desktop: packaged archive exceeds safety limits')
-      else if (!safeArchivePath(entry.path, root)) validationError = new Error(`desktop: unsafe packaged archive path ${entry.path}`)
-      else if (!['File', 'OldFile', 'Directory', 'SymbolicLink', 'Link'].includes(entry.type)) validationError = new Error(`desktop: unsupported packaged archive entry ${entry.type}`)
-      if (entry.type === 'SymbolicLink') {
-        const target = posix.normalize(posix.join(posix.dirname(entry.path), entry.linkpath ?? ''))
-        if (!safeArchivePath(target, root)) validationError = new Error(`desktop: unsafe packaged archive link ${entry.path}`)
+      bytes += entry.size ?? 0
+      if (entries > 100_000 || bytes > 8 * 1024 * 1024 * 1024) throw new Error('desktop: packaged archive exceeds safety limits')
+      if (!safeArchivePath(path, root)) throw new Error(`desktop: unsafe packaged archive path ${path}`)
+      if (entry.type === undefined || !['File', 'OldFile', 'Directory', 'SymbolicLink', 'Link'].includes(entry.type)) {
+        throw new Error(`desktop: unsupported packaged archive entry ${entry.type ?? 'unknown'}`)
       }
-      if (entry.type === 'Link' && !safeArchivePath(posix.normalize(entry.linkpath ?? ''), root)) validationError = new Error(`desktop: unsafe packaged archive link ${entry.path}`)
+      if (entry.type === 'SymbolicLink') {
+        const target = posix.normalize(posix.join(posix.dirname(path), entry.linkpath ?? ''))
+        if (!safeArchivePath(target, root)) throw new Error(`desktop: unsafe packaged archive link ${path}`)
+      }
+      if (entry.type === 'Link' && !safeArchivePath(posix.normalize(entry.linkpath ?? ''), root)) {
+        throw new Error(`desktop: unsafe packaged archive link ${path}`)
+      }
+      return true
     },
-  })
-  if (validationError !== undefined) throw validationError
-  if (entries === 0) throw new Error('desktop: packaged archive is empty')
+    assertNotEmpty: () => {
+      if (entries === 0) throw new Error('desktop: packaged archive is empty')
+    },
+  }
 }
 
 async function extractArchive(
@@ -95,13 +101,63 @@ async function extractArchive(
   destination: string,
   root: string,
   ready: (path: string) => Promise<boolean>,
+  onProgress?: (phase: PackagedArchiveProgress) => void,
 ): Promise<string> {
-  await verifyArchiveChecksum(archivePath, checksumPath)
-  await validateArchive(archivePath, root)
+  onProgress?.('verifying-archive')
+  const expectedChecksum = await expectedArchiveChecksum(archivePath, checksumPath)
   await mkdir(dirname(destination), { recursive: true })
   const temporary = await mkdtemp(join(dirname(destination), '.extract-'))
   try {
-    await extract({ file: archivePath, cwd: temporary, strict: true, preservePaths: false, preserveOwner: false, unlink: true })
+    const hash = createHash('sha256')
+    let extractingReported = false
+    const validator = archiveEntryValidator(root, () => {
+      if (extractingReported) return
+      extractingReported = true
+      onProgress?.('extracting-archive')
+    })
+    const unpack = extract({
+      cwd: temporary,
+      strict: true,
+      preservePaths: false,
+      preserveOwner: false,
+      unlink: true,
+      filter: validator.filter,
+    })
+    let unpackError: unknown
+    const unpackDone = new Promise<void>((resolve) => {
+      unpack.once('close', resolve)
+      unpack.once('error', (error: unknown) => {
+        unpackError = error
+        resolve()
+      })
+    })
+    for await (const chunk of createReadStream(archivePath)) {
+      const bytes = chunk as Buffer
+      hash.update(bytes)
+      if (unpackError !== undefined) continue
+      try {
+        if (!unpack.write(bytes)) {
+          await Promise.race([
+            once(unpack, 'drain').then(() => undefined).catch((error: unknown) => { unpackError = error }),
+            unpackDone,
+          ])
+        }
+      } catch (error) {
+        unpackError = error
+      }
+    }
+    unpack.end()
+    if (unpackError === undefined) await unpackDone
+    const checksumMatches = expectedChecksum === undefined || hash.digest('hex') === expectedChecksum
+    if (!checksumMatches) {
+      throw new Error('desktop: packaged archive checksum mismatch; reinstall the application')
+    }
+    if (unpackError !== undefined) {
+      throw unpackError instanceof Error
+        ? unpackError
+        : new Error(typeof unpackError === 'string' ? unpackError : 'desktop: packaged archive extraction failed')
+    }
+    validator.assertNotEmpty()
     const extracted = join(temporary, root)
     if (!await ready(extracted)) throw new Error('desktop: packaged archive payload is incomplete')
     await rm(destination, { recursive: true, force: true })
@@ -137,12 +193,13 @@ export async function ensurePackagedRuntime(options: PackagedRuntimeOptions): Pr
     return options.expandedPath
   }
   if (await isPackagedRuntimeReady(options.destination)) return options.destination
-  return await extractArchive(options.archivePath, options.checksumPath, options.destination, options.archiveRoot, isPackagedRuntimeReady)
+  return await extractArchive(options.archivePath, options.checksumPath, options.destination, options.archiveRoot,
+    isPackagedRuntimeReady, options.onProgress)
 }
 
 /** Atomically materialize a verified prebuilt Profile archive when first start needs it. */
 export async function ensurePackagedPrebuiltProfile(options: PackagedPrebuiltProfileOptions): Promise<string> {
   if (await isPackagedPrebuiltProfileReady(options.destination)) return options.destination
   return await extractArchive(options.archivePath, options.checksumPath, options.destination, options.archiveRoot,
-    isPackagedPrebuiltProfileReady)
+    isPackagedPrebuiltProfileReady, options.onProgress)
 }

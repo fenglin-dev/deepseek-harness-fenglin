@@ -31,9 +31,10 @@ An earlier permission to push a packaging-fix branch does not authorize a tag or
 ## Required invariants
 
 - Use `.github/workflows/desktop-packages.yml`; do not substitute a local cross-build for the native runners.
+- On macOS, packaging entry scripts preserve explicit proxy variables and otherwise import enabled fixed proxies from `scutil --proxy` for their `gh`, `curl`, and `aria2c` children. Source `scripts/configure-cli-proxy.sh` before standalone `gh`, npm, or pnpm commands in the same release shell. Clash Verge's Global mode controls traffic after it enters Clash; System Proxy alone does not guarantee that CLI clients use it. Set `ODSH_USE_SYSTEM_PROXY=0` only when the user explicitly wants a direct route or supplies another proxy.
 - Before changing release state or dispatching native builds, measure a non-expired desktop Actions artifact through its signed download address with `scripts/check-release-download-speed.sh`. Report the artifact, run, measured rate, and configured floor. The default floor is `1.0 MiB/s`; a failed or unavailable exact-node check stops preparation unless the user explicitly chooses another floor or waives the check.
 - Run `windows-x64` first, then `macos`, then `linux-x64` when the user requests the established staged flow.
-- Keep `publish=false` during package qualification.
+- Before dispatching package qualification, verify that `.github/workflows/desktop-packages.yml` declares `permissions: contents: read` and has no release-publication step. Dispatch only inputs the workflow actually declares; package qualification does not publish a GitHub Release.
 - Native builds must retain and relocate the full prebuilt preset Profile. Verify its final installed resource inventory after copying and signing, plus ordinary isolated startup and offline plugin maintenance. Missing resources or integrity failures block acceptance; see the prebuilt-resource checks in the runbook.
 - Every accepted platform run must use the same final Git commit. If a packaging fix changes the commit, rebuild every platform already accepted from the older commit.
 - The workflow resolves current stable registry-backed bundled plugins. When separate platform runs are used, compare the complete `bundled-plugin-snapshot` artifact contents; mismatched snapshots are not one coherent release set.
@@ -57,6 +58,8 @@ Run the network preflight before step 1:
 .agents/skills/open-dsh-desktop-release-packaging/scripts/check-release-download-speed.sh \
   flaqai/open-deepseek-harness-desktop
 ```
+
+The preflight prints `release network: adopted macOS system proxy` when it imports a fixed macOS proxy. If it remains slow, compare `env | grep -i proxy` with `scutil --proxy`; do not infer the CLI route from browser speed or Clash Verge's Global-mode label.
 
 Exit status 75 means the measured route is below `ODSH_MIN_DOWNLOAD_MIBPS`. Tell the user the measured rate and threshold, stop the workflow, and retain any existing resumable staging directory. Do not lower the floor or resume automatically. The user may choose another network/proxy/node or explicitly set another floor. The download helper repeats this check against each large artifact and stops an active transfer after the aggregate rate remains below the floor for the configured sustained window.
 

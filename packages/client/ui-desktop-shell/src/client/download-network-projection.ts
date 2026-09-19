@@ -76,48 +76,66 @@ export class DownloadNetworkProjection {
     this.#listeners.clear()
   }
 
-  /** Replace the application source in the unsaved draft. @param source - Selected source. */
+  /** Replace the application source in the unsaved draft.
+   * @param source - Selected source.
+   */
   setApplicationSource(source: DownloadNetworkSettings['application']['source']): void {
     const draft = this.#snapshot.draft
     if (draft !== null) this.#publish({ draft: { ...draft, application: { ...draft.application, source } } })
   }
 
-  /** Replace the npm registry in the unsaved draft. @param registry - Selected registry. */
+  /** Replace the npm registry in the unsaved draft.
+   * @param registry - Selected registry.
+   */
   setNpmRegistry(registry: DownloadNetworkSettings['npm']['registry']): void {
     const draft = this.#snapshot.draft
     if (draft !== null) this.#publish({ draft: { ...draft, npm: { ...draft.npm, registry } } })
   }
 
-  /** Replace the custom npm registry URL. @param registryUrl - User-entered URL. */
+  /** Replace the custom npm registry URL.
+   * @param registryUrl - User-entered URL.
+   */
   setNpmRegistryUrl(registryUrl: string): void {
     const draft = this.#snapshot.draft
     if (draft !== null) this.#publish({ draft: { ...draft, npm: { ...draft.npm, registryUrl } } })
   }
 
-  /** Replace the GitHub download route. @param download - Selected route. */
+  /** Replace the GitHub download route.
+   * @param download - Selected route.
+   */
   setGithubDownload(download: DownloadNetworkSettings['github']['download']): void {
     const draft = this.#snapshot.draft
     if (draft !== null) this.#publish({ draft: { ...draft, github: { ...draft.github, download } } })
   }
 
-  /** Replace the custom GitHub accelerator URL. @param acceleratorUrl - User-entered URL. */
+  /** Replace the custom GitHub accelerator URL.
+   * @param acceleratorUrl - User-entered URL.
+   */
   setGithubAcceleratorUrl(acceleratorUrl: string): void {
     const draft = this.#snapshot.draft
     if (draft !== null) this.#publish({ draft: { ...draft, github: { ...draft.github, acceleratorUrl } } })
   }
 
-  /** Replace one target's proxy draft. @param target - Download target. @param proxy - Redacted proxy fields. */
+  /** Replace one target's proxy draft.
+   * @param target - Download target.
+   * @param proxy - Redacted proxy fields.
+   */
   setProxy(target: DownloadNetworkTarget, proxy: DownloadProxySettings): void {
     const draft = this.#snapshot.draft
     if (draft !== null) this.#publish({ draft: { ...draft, [target]: { ...draft[target], proxy } } })
   }
 
-  /** Replace one target's transient password draft. @param target - Download target. @param password - Plaintext draft. */
+  /** Replace one target's transient password draft.
+   * @param target - Download target.
+   * @param password - Plaintext draft.
+   */
   setPassword(target: DownloadNetworkTarget, password: string): void {
     this.#publish({ passwords: { ...this.#snapshot.passwords, [target]: password } })
   }
 
-  /** Persist one target's validated draft. @param target - Download target. */
+  /** Persist one target's validated draft.
+   * @param target - Download target.
+   */
   async save(target: DownloadNetworkTarget): Promise<void> {
     const draft = this.#snapshot.draft
     if (draft === null) return
@@ -143,7 +161,9 @@ export class DownloadNetworkProjection {
     }
   }
 
-  /** Restore one target to its desktop defaults. @param target - Download target. */
+  /** Restore one target to its desktop defaults.
+   * @param target - Download target.
+   */
   async reset(target: DownloadNetworkTarget): Promise<void> {
     this.#publish({ busy: target, error: null })
     try {
@@ -156,7 +176,9 @@ export class DownloadNetworkProjection {
     }
   }
 
-  /** Run the bounded main-process connectivity test. @param target - Download target. */
+  /** Run the bounded main-process connectivity test.
+   * @param target - Download target.
+   */
   async test(target: DownloadNetworkTarget): Promise<void> {
     try { this.#publish({ test: await this.bridge.test(target), error: null }) } catch (error) {
       this.#publish({ error: messageOf(error) })

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { PluginInventorySnapshot } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
+  ExperimentalCapabilityRecipe,
   ExternalToolId,
   ExternalToolsSnapshot,
   PluginInstallId,
@@ -14,7 +15,10 @@ import { Button, IconRefreshOutline16, Modal, TerminalBlock } from '@deepseek-ai
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginInventoryLocaleKey } from './locales.ts'
 import css from './ExternalToolsSection.module.css'
-import type { InstallableExternalToolId } from './external-tool-compatibility-bridge.ts'
+import type {
+  ExperimentalCapabilityInstallId,
+  InstallableExternalToolId,
+} from './external-tool-compatibility-bridge.ts'
 import { ExternalToolIcon, type ExternalToolIconId } from './ExternalToolIcon.tsx'
 
 interface ToolDefinition {
@@ -26,6 +30,54 @@ interface ToolDefinition {
   readonly community?: true
   readonly descriptionKey: PluginInventoryLocaleKey
 }
+
+type ExperimentalCapabilityId = 'browser-use' | 'computer-use' | 'auto-review'
+
+interface ExperimentalCapabilityDefinition {
+  readonly id: ExperimentalCapabilityId
+  readonly name: string
+  readonly descriptionKey: PluginInventoryLocaleKey
+  readonly moduleNames: readonly string[]
+}
+
+const EXPERIMENTAL_CAPABILITIES: readonly ExperimentalCapabilityDefinition[] = [
+  {
+    id: 'browser-use',
+    name: 'Browser Use',
+    descriptionKey: 'external.capability.browser.description',
+    moduleNames: [
+      '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp',
+      '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp',
+      '@deepseek-ai/dsh-experimental-browser-use-stagehand-native',
+    ],
+  },
+  {
+    id: 'computer-use',
+    name: 'Computer Use',
+    descriptionKey: 'external.capability.computer.description',
+    moduleNames: [
+      '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native',
+      '@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp',
+    ],
+  },
+  {
+    id: 'auto-review',
+    name: 'Auto review',
+    descriptionKey: 'external.capability.review.description',
+    moduleNames: ['@deepseek-ai/dsh-experimental-auto-review'],
+  },
+]
+
+const BROWSER_PROVIDER_INSTALL_IDS = {
+  playwright: 'browser-use-playwright',
+  devtools: 'browser-use-devtools',
+  stagehand: 'browser-use-stagehand',
+} as const satisfies Readonly<Record<'playwright' | 'devtools' | 'stagehand', ExperimentalCapabilityInstallId>>
+
+const COMPUTER_PROVIDER_INSTALL_IDS = {
+  native: 'computer-use-native',
+  mcp: 'computer-use-mcp',
+} as const satisfies Readonly<Record<'native' | 'mcp', ExperimentalCapabilityInstallId>>
 
 const TOOLS: readonly ToolDefinition[] = [
   {
@@ -69,12 +121,16 @@ export interface ExternalToolsSectionInjected {
   list: () => Promise<PluginInventorySnapshot>
   externalTools: () => Promise<ExternalToolsSnapshot>
   setExternalTool: (tool: ExternalToolId, enabled: boolean) => Promise<ExternalToolsSnapshot>
-  installExternalTool: (toolId: InstallableExternalToolId) => Promise<PluginInstallSnapshot>
+  installExternalTool: (
+    toolId: InstallableExternalToolId,
+    experimentalCapability?: ExperimentalCapabilityRecipe,
+  ) => Promise<PluginInstallSnapshot>
   getInstall: (installId: PluginInstallId) => Promise<PluginInstallSnapshot>
   getInstallOutput: (installId: PluginInstallId, offset: number) => Promise<PluginInstallOutputRead>
   pauseInstall: (installId: PluginInstallId) => Promise<PluginInstallSnapshot>
   cancelInstall: (installId: PluginInstallId) => Promise<PluginInstallSnapshot>
   restart: () => Promise<boolean>
+  activateAutoReview: () => Promise<'switched' | 'no-session'>
 }
 
 /** Full props assembled by the Settings section slot. */
@@ -123,6 +179,7 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
   const [request, setRequest] = useState(0)
   const [state, setState] = useState<PageState>({ phase: 'loading' })
   const [installs, setInstalls] = useState<Readonly<Record<string, PluginInstallSnapshot>>>({})
+  const [composedInstalls, setComposedInstalls] = useState<Readonly<Record<string, boolean>>>({})
   const [busyTool, setBusyTool] = useState<ExternalToolId | null>(null)
   const [restartingTool, setRestartingTool] = useState<ToolDefinition['id'] | null>(null)
   const [controllingInstall, setControllingInstall] = useState<{
@@ -131,9 +188,16 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [progressTool, setProgressTool] = useState<ToolDefinition['id'] | null>(null)
+  const [capabilityDialog, setCapabilityDialog] = useState<ExperimentalCapabilityId | null>(null)
+  const [browserBackend, setBrowserBackend] = useState<'playwright' | 'devtools' | 'stagehand'>('playwright')
+  const [browserMode, setBrowserMode] = useState<'launch' | 'attach'>('launch')
+  const [computerBackend, setComputerBackend] = useState<'native' | 'mcp'>('native')
+  const [autoReviewAcknowledged, setAutoReviewAcknowledged] = useState(false)
+  const [autoReviewOutcome, setAutoReviewOutcome] = useState<'switched' | 'no-session' | null>(null)
   const [transcripts, setTranscripts] = useState<Readonly<Record<string, TranscriptState>>>({})
   const terminalScrollRef = useRef<HTMLDivElement>(null)
   const followTerminalRef = useRef(true)
+  const activatedAutoReviewInstalls = useRef(new Set<string>())
 
   useEffect(() => {
     let current = true
@@ -170,6 +234,20 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
       window.clearTimeout(timer)
     }
   }, [getInstall, running, t])
+
+  const autoReviewInstall = installs['auto-review']
+  useEffect(() => {
+    if (autoReviewInstall === undefined
+      || (autoReviewInstall.phase !== 'succeeded' && autoReviewInstall.phase !== 'repaired')
+      || activatedAutoReviewInstalls.current.has(autoReviewInstall.installId)) return
+    activatedAutoReviewInstalls.current.add(autoReviewInstall.installId)
+    let current = true
+    void props.activateAutoReview().then(
+      (outcome) => { if (current) setAutoReviewOutcome(outcome) },
+      () => { if (current) setError(t('external.capability.review.switchFailed')) },
+    )
+    return () => { current = false }
+  }, [autoReviewInstall, props.activateAutoReview, t])
 
   const progressInstall = progressTool === null ? undefined : installs[progressTool]
   const progressTranscript = progressTool === null ? undefined : transcripts[progressTool]
@@ -221,6 +299,32 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
     }
   }
 
+  const installCapability = async (
+    capabilityId: ExperimentalCapabilityId,
+    installId: InstallableExternalToolId,
+    experimentalCapability?: ExperimentalCapabilityRecipe,
+  ): Promise<void> => {
+    setError(null)
+    try {
+      const snapshot = experimentalCapability === undefined
+        ? await installExternalTool(installId)
+        : await installExternalTool(installId, experimentalCapability)
+      setTranscripts(previous => ({
+        ...previous,
+        [capabilityId]: { text: '', offset: 0, lossy: false, settled: false },
+      }))
+      setInstalls(previous => ({ ...previous, [capabilityId]: snapshot }))
+      setComposedInstalls(previous => ({ ...previous, [capabilityId]: experimentalCapability !== undefined }))
+      setCapabilityDialog(null)
+    } catch {
+      setError(t('external.install.failed'))
+    }
+  }
+
+  const installAutoReview = async (): Promise<void> => {
+    await installCapability('auto-review', 'auto-review')
+  }
+
   const toggle = async (tool: ExternalToolId, enabled: boolean): Promise<void> => {
     if (state.phase !== 'ready') return
     setBusyTool(tool)
@@ -248,7 +352,7 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
   }
 
   const controlInstall = async (
-    tool: ToolDefinition,
+    tool: Pick<ToolDefinition, 'id'>,
     installId: PluginInstallId,
     action: 'pause' | 'cancel',
   ): Promise<void> => {
@@ -292,7 +396,174 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
         </span>
       </header>
 
-      <ul className={css.grid}>
+      <div className={css.groupHeading}>
+        <div>
+          <div className={css.headingLine}>
+            <h3>{t('external.capability.title')}</h3>
+            <span className={css.releaseBadge}>{t('external.capability.releaseBadge')}</span>
+          </div>
+          <p>{t('external.capability.description')}</p>
+        </div>
+      </div>
+
+      <ul className={css.grid} data-testid="experimental-capability-grid">
+        {EXPERIMENTAL_CAPABILITIES.map((capability) => {
+          const entries = state.inventory.entries.filter(entry => capability.moduleNames.includes(entry.moduleName))
+          const active = entries.some(entry => entry.enabled && entry.fiberPhase === 'active')
+          const installed = entries.length > 0
+          const installState = installs[capability.id]
+          const installSucceeded = installState?.phase === 'succeeded' || installState?.phase === 'repaired'
+          const restartRequired = installSucceeded && composedInstalls[capability.id] === true
+          const installing = installState?.phase === 'running'
+          const paused = installState?.phase === 'paused'
+          const cancelled = installState?.phase === 'cancelled'
+          const selectedInstallId: InstallableExternalToolId = capability.id === 'browser-use'
+            ? BROWSER_PROVIDER_INSTALL_IDS[browserBackend]
+            : capability.id === 'computer-use'
+              ? COMPUTER_PROVIDER_INSTALL_IDS[computerBackend]
+              : 'auto-review'
+          const selectedRecipe: ExperimentalCapabilityRecipe | undefined = capability.id === 'browser-use'
+            ? browserMode === 'launch' && browserBackend === 'playwright'
+              ? 'browser-use-playwright-visible'
+              : browserMode === 'launch' && browserBackend === 'devtools'
+                ? 'browser-use-devtools-visible'
+                : undefined
+            : capability.id === 'computer-use'
+              ? computerBackend === 'native' ? 'computer-use-native' : 'computer-use-mcp'
+              : undefined
+          const status = active
+            ? t('external.capability.status.ready')
+            : restartRequired
+              ? t('external.status.restart')
+              : paused
+                ? t('external.status.paused')
+                : cancelled
+                  ? t('external.status.cancelled')
+                  : capability.id === 'computer-use' && installed
+                    ? t('external.capability.status.permission')
+                    : installed || installSucceeded
+                      ? t('external.capability.status.configuration')
+                      : t('external.capability.status.notInstalled')
+          return (
+            <li key={capability.id} className={css.card} data-connected={active ? 'true' : undefined}>
+              <div className={css.cardTop}>
+                <span className={css.toolMark} data-tool={capability.id} data-testid={`experimental-capability-icon-${capability.id}`}>
+                  <ExternalToolIcon tool={capability.id} />
+                </span>
+                <span className={css.status} data-state={active ? 'connected' : 'idle'}>{status}</span>
+              </div>
+              <div className={css.cardBody}>
+                <div className={css.toolTitle}><h3>{capability.name}</h3></div>
+                <p>{t(capability.descriptionKey)}</p>
+              </div>
+              <div className={css.cardAction}>
+                {active ? (
+                  <Button variant="outline" disabled>{t('external.capability.action.ready')}</Button>
+                ) : (
+                  <>
+                    <Button
+                      variant="toolbar"
+                      disabled={installState === undefined}
+                      onClick={() => { followTerminalRef.current = true; setProgressTool(capability.id) }}
+                    >
+                      {t('external.action.viewProgress')}
+                    </Button>
+                    {restartRequired ? (
+                      <Button
+                        variant="primary"
+                        disabled={restartingTool !== null}
+                        onClick={() => { void restartToEnable({
+                          id: capability.id,
+                          name: capability.name,
+                          descriptionKey: capability.descriptionKey,
+                        }) }}
+                      >
+                        {restartingTool === capability.id ? t('external.action.restarting') : t('external.action.restart')}
+                      </Button>
+                    ) : installing ? (
+                      <div
+                        className={css.installSplit}
+                        role="group"
+                        aria-label={t('external.action.downloadControls')}
+                      >
+                        <span
+                          className={css.installFill}
+                          style={{ '--install-progress': `${String(installState.installProgress?.percent ?? 100)}%` } as CSSProperties}
+                          data-indeterminate={installState.installProgress?.percent === undefined ? 'true' : undefined}
+                          aria-hidden="true"
+                        />
+                        <button
+                          type="button"
+                          className={css.pauseButton}
+                          disabled={controllingInstall !== null}
+                          onClick={() => { void controlInstall(capability, installState.installId, 'pause') }}
+                        >
+                          <span>{controllingInstall?.toolId === capability.id && controllingInstall.action === 'pause'
+                            ? t('external.action.pausing')
+                            : t('external.action.pause')}</span>
+                          <span className={css.progressCopy}>{progressCopy(installState.installProgress, t)}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={css.stopButton}
+                          disabled={controllingInstall !== null}
+                          onClick={() => { void controlInstall(capability, installState.installId, 'cancel') }}
+                        >
+                          {controllingInstall?.toolId === capability.id && controllingInstall.action === 'cancel'
+                            ? t('external.action.stopping')
+                            : t('external.action.stop')}
+                        </button>
+                        <span
+                          className={css.visualProgress}
+                          role="progressbar"
+                          aria-label={progressCopy(installState.installProgress, t)}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={installState.installProgress?.percent}
+                        />
+                      </div>
+                    ) : (
+                      <Button
+                        variant="primary"
+                        className={css.installButton}
+                        disabled={running !== undefined}
+                        onClick={() => {
+                          if (installState === undefined || capability.id === 'auto-review') {
+                            setCapabilityDialog(capability.id)
+                          } else {
+                            void installCapability(capability.id, selectedInstallId, selectedRecipe)
+                          }
+                        }}
+                      >
+                        {paused
+                          ? t('external.action.resume')
+                          : cancelled || installState?.phase === 'failed' || installState?.phase === 'quarantined'
+                            ? t('external.action.retryDownload')
+                            : t('external.capability.action.configure')}
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
+              {installState?.phase === 'failed' || installState?.phase === 'quarantined' ? (
+                <details className={css.diagnostic}>
+                  <summary>{t('external.install.details')}</summary>
+                  <pre>{installState.diagnostic ?? t('external.install.failed')}</pre>
+                </details>
+              ) : null}
+            </li>
+          )
+        })}
+      </ul>
+
+      <div className={css.groupHeading}>
+        <div>
+          <h3>{t('external.tools.title')}</h3>
+          <p>{t('external.tools.description')}</p>
+        </div>
+      </div>
+
+      <ul className={css.grid} data-testid="external-tools-grid">
         {TOOLS.map((tool) => {
           const supported = tool.installable === true && tool.moduleName !== undefined
           const active = supported && state.inventory.entries.some(entry =>
@@ -442,14 +713,129 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
         })}
       </ul>
       <p className={css.footnote}>{t('external.footnote')}</p>
+      {autoReviewOutcome === null ? null : (
+        <p className={css.footnote} role="status">
+          {autoReviewOutcome === 'switched'
+            ? t('external.capability.review.switched')
+            : t('external.capability.review.noSession')}
+        </p>
+      )}
       {error === null ? null : <p className={css.error} role="alert">{error}</p>}
+      <Modal
+        open={capabilityDialog !== null}
+        onClose={() => { setCapabilityDialog(null) }}
+        closeLabel={t('external.capability.dialog.close')}
+        title={capabilityDialog === null
+          ? t('external.capability.title')
+          : EXPERIMENTAL_CAPABILITIES.find(item => item.id === capabilityDialog)?.name ?? capabilityDialog}
+        description={capabilityDialog === null
+          ? t('external.capability.description')
+          : t(`external.capability.${capabilityDialog}.dialogDescription`)}
+      >
+        {capabilityDialog === 'browser-use' ? (
+          <div className={css.capabilityForm}>
+            <fieldset>
+              <legend>{t('external.capability.browser.backend')}</legend>
+              {(['playwright', 'devtools', 'stagehand'] as const).map(value => (
+                <label key={value}>
+                  <input type="radio" name="browser-backend" value={value} checked={browserBackend === value} onChange={() => { setBrowserBackend(value) }} />
+                  <span>{t(`external.capability.browser.backend.${value}`)}</span>
+                </label>
+              ))}
+              <p className={css.capabilityOptionHint} aria-live="polite">
+                {t(`external.capability.browser.backend.${browserBackend}Notice`)}
+              </p>
+            </fieldset>
+            <fieldset>
+              <legend>{t('external.capability.browser.mode')}</legend>
+              {(['launch', 'attach'] as const).map(value => (
+                <label key={value}>
+                  <input type="radio" name="browser-mode" value={value} checked={browserMode === value} onChange={() => { setBrowserMode(value) }} />
+                  <span>{t(`external.capability.browser.mode.${value}`)}</span>
+                </label>
+              ))}
+              <p className={css.capabilityOptionHint} aria-live="polite">
+                {t(`external.capability.browser.mode.${browserMode}Notice`)}
+              </p>
+            </fieldset>
+            <div className={css.dialogActions}>
+              <Button
+                variant="primary"
+                disabled={running !== undefined}
+                onClick={() => { void installCapability(
+                  'browser-use',
+                  BROWSER_PROVIDER_INSTALL_IDS[browserBackend],
+                  browserMode === 'launch' && browserBackend === 'playwright'
+                    ? 'browser-use-playwright-visible'
+                    : browserMode === 'launch' && browserBackend === 'devtools'
+                      ? 'browser-use-devtools-visible'
+                      : undefined,
+                ) }}
+              >
+                {t('external.capability.action.installSelected')}
+              </Button>
+            </div>
+          </div>
+        ) : capabilityDialog === 'computer-use' ? (
+          <div className={css.capabilityForm}>
+            <fieldset>
+              <legend>{t('external.capability.computer.backend')}</legend>
+              {(['native', 'mcp'] as const).map(value => (
+                <label key={value}>
+                  <input type="radio" name="computer-backend" value={value} checked={computerBackend === value} onChange={() => { setComputerBackend(value) }} />
+                  <span>{t(`external.capability.computer.backend.${value}`)}</span>
+                </label>
+              ))}
+              <p className={css.capabilityOptionHint} aria-live="polite">
+                {t(`external.capability.computer.backend.${computerBackend}Notice`)}
+              </p>
+            </fieldset>
+            <div className={css.dialogActions}>
+              <Button
+                variant="primary"
+                disabled={running !== undefined}
+                onClick={() => { void installCapability(
+                  'computer-use',
+                  COMPUTER_PROVIDER_INSTALL_IDS[computerBackend],
+                  computerBackend === 'native' ? 'computer-use-native' : 'computer-use-mcp',
+                ) }}
+              >
+                {t('external.capability.action.installSelected')}
+              </Button>
+            </div>
+          </div>
+        ) : capabilityDialog === 'auto-review' ? (
+          <div className={css.capabilityForm}>
+            <p className={css.capabilityNotice}>{t('external.capability.review.riskNotice')}</p>
+            <p className={css.capabilityHint}>{t('external.capability.review.sessionNotice')}</p>
+            <label className={css.riskAcknowledgement}>
+              <input
+                type="checkbox"
+                checked={autoReviewAcknowledged}
+                onChange={(event) => { setAutoReviewAcknowledged(event.currentTarget.checked) }}
+              />
+              <span>{t('external.capability.review.acknowledge')}</span>
+            </label>
+            <div className={css.dialogActions}>
+              <Button variant="primary" disabled={!autoReviewAcknowledged || running !== undefined} onClick={() => { void installAutoReview() }}>
+                {t('external.capability.review.install')}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
       <Modal
         open={progressInstall !== undefined}
         onClose={() => { setProgressTool(null) }}
         closeLabel={t('external.progress.close')}
         title={progressTool === null
           ? t('external.progress.title')
-          : t('external.progress.titleFor').replace('{tool}', TOOLS.find(tool => tool.id === progressTool)?.name ?? progressTool)}
+          : t('external.progress.titleFor').replace(
+            '{tool}',
+            TOOLS.find(tool => tool.id === progressTool)?.name
+              ?? EXPERIMENTAL_CAPABILITIES.find(capability => capability.id === progressTool)?.name
+              ?? progressTool,
+          )}
         description={progressCopy(progressInstall?.installProgress, t)}
         {...(css.progressDialog === undefined ? {} : { className: css.progressDialog })}
       >
@@ -475,6 +861,7 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
             labels={{
               signal: signal => t('external.terminal.signal').replace('{signal}', signal),
               exitCode: code => t('external.terminal.exitCode').replace('{code}', String(code)),
+              noExitCode: t('external.terminal.noExitCode'),
               running: t('external.terminal.running'),
               failed: t('external.terminal.failed'),
               done: t('external.terminal.done'),

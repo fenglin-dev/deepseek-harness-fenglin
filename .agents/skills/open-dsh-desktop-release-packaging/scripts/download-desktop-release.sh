@@ -19,6 +19,7 @@ else
   targets=(windows-x64 macos linux-x64)
 fi
 script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$script_directory/configure-cli-proxy.sh"
 repository_root=$(cd "$script_directory/../../../.." && pwd)
 speed_check_script="$script_directory/check-release-download-speed.sh"
 speed_monitor_script="$script_directory/monitor-release-download.mjs"

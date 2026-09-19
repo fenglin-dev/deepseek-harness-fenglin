@@ -39,7 +39,8 @@ function readDesktopRestart(): (() => Promise<void>) | undefined {
 function appendAvailable(ctx: Context, sessionId: SessionId | undefined): boolean {
   if (sessionId === undefined) return false
   const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
-  if (summary === undefined || ctx.uiSession.pendingInteractions.getSnapshot().has(sessionId)) return false
+  if (summary === undefined
+    || ctx.uiSession.sessionStatus.getSnapshot().get(sessionId)?.pendingInteraction !== undefined) return false
   const actx = ctx.sessions.scope(sessionId)
   if (actx === undefined) return false
   const session = ctx.sessions.sessionOf(actx)?.getSnapshot()
@@ -51,9 +52,14 @@ function appendAvailable(ctx: Context, sessionId: SessionId | undefined): boolea
   return phase !== 'adjudicating' && phase !== 'submitting'
 }
 
+function currentSessionId(ctx: Context): SessionId | undefined {
+  return Object.values(ctx.sessions.list.getSnapshot().byId)
+    .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
+}
+
 function createAppendAvailability(ctx: Context): HostObservable<boolean> {
   return {
-    getSnapshot: () => appendAvailable(ctx, ctx.sessions.list.getSnapshot().current),
+    getSnapshot: () => appendAvailable(ctx, currentSessionId(ctx)),
     subscribe: (listener) => {
       let nestedStops: (() => void)[] = []
       const stopNested = (): void => {
@@ -62,7 +68,7 @@ function createAppendAvailability(ctx: Context): HostObservable<boolean> {
       }
       const bindCurrent = (): void => {
         stopNested()
-        const sessionId = ctx.sessions.list.getSnapshot().current
+        const sessionId = currentSessionId(ctx)
         if (sessionId === undefined) return
         const actx = ctx.sessions.scope(sessionId)
         if (actx === undefined) return
@@ -70,7 +76,7 @@ function createAppendAvailability(ctx: Context): HostObservable<boolean> {
         if (session === undefined) return
         nestedStops = [
           session.subscribe(listener),
-          ctx.uiSession.pendingInteractions.subscribe(listener),
+          ctx.uiSession.sessionStatus.subscribe(listener),
           ctx.conversation.input.for(actx).state.subscribe(listener),
           ctx.conversation.blocks.storeFor(sessionId).subscribe(listener),
         ]
@@ -97,14 +103,14 @@ export function apply(ctx: Context): void {
     hooks: { appendAvailable: availability },
     copy: writeClipboard,
     askInNewConversation: async (workspaceId, draft) => {
-      const sessionId = await ctx.uiWorkspace.connectWorkspace(workspaceId)
-      const actx = ctx.sessions.scope(sessionId)
-      if (actx === undefined) throw new Error(`selection actions: session "${sessionId}" has no scope`)
-      ctx.conversation.input.for(actx).setDraft(draft)
-      ctx.sessions.open(sessionId)
+      await ctx.uiWorkspace.openWorkspace(workspaceId, (sessionId) => {
+        const actx = ctx.sessions.scope(sessionId)
+        if (actx === undefined) throw new Error(`selection actions: session "${sessionId}" has no scope`)
+        ctx.conversation.input.for(actx).setDraft(draft)
+      })
     },
     appendToCurrent: (sessionId, text) => {
-      const current = ctx.sessions.list.getSnapshot().current
+      const current = currentSessionId(ctx)
       if (current !== sessionId || !appendAvailable(ctx, sessionId)) {
         throw new Error('selection actions: current composer is not editable')
       }

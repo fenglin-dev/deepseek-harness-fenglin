@@ -76,6 +76,8 @@ pnpm exec vitest related packages/<group>/<package>/src/<changed>.ts \
 
 Run the complete local approximation only when the user explicitly requests it, while diagnosing a CI failure, or when the change spans the repository so broadly that no narrower set is credible. Use the current workflow and package scripts as the inventory; do not recreate the removed `check:pre-push` aggregate.
 
+Once a full rehearsal is run, every deterministic failure it exposes becomes part of the outgoing repair scope, even when the failure predates or is unrelated to the original diff. Reduce each failure to its owning focused check, repair it, and rerun both that check and the full rehearsal before pushing. A reproducible baseline failure is a blocker, not an exclusion; stop only when repair needs unavailable authority, credentials, hardware, or another external dependency, and report that exact blocker.
+
 ## Protect history-rewriting pushes
 
 Rebase is allowed for standalone and stacked PR branches, including after review. Before a standalone history rewrite, fetch the current remote branch and record its exact OID; publish with `--force-with-lease=<branch>:<observed-oid>` so a concurrent update aborts the push. `gh stack push` and `gh stack sync` supply lease protection for their managed branches. Raw `--force` is never allowed.
@@ -95,7 +97,7 @@ If post-sync evidence fails, leave the lease-protected published heads in place,
 
 ## Handle failures
 
-If a relevant check fails before an ordinary push, stop and fix or explain the blocker. Do not push and hope CI differs. For the post-sync exception, block the merge and follow the repair procedure above.
+If a selected check fails before an ordinary push, stop and repair it or report a concrete blocker. This includes failures admitted by a full local rehearsal. Do not push and hope CI differs. For the post-sync exception, block the merge and follow the repair procedure above.
 
 If a failure looks environment-specific, prove it:
 

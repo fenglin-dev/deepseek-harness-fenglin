@@ -71,6 +71,7 @@ export class BootPage {
    */
   fail(message: string): void {
     this.failure = message
+    this.root.dataset.dshBootFailure = message
     this.render()
   }
 
@@ -80,6 +81,7 @@ export class BootPage {
    */
   recover(packageName: string): void {
     this.failure = undefined
+    delete this.root.dataset.dshBootFailure
     this.hint.textContent = `Isolating incompatible plugin ${packageName}…`
     this.card.replaceChildren(this.wordmark, this.spinner, this.hint)
   }

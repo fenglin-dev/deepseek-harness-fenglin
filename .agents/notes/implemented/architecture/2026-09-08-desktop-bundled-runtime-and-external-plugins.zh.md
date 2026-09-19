@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-09-08-desktop-bundled-runtime-and-external-plugins.md) | 中文
 
-profile 修改与恢复遵循[直接修改 profile 决策](2026-09-09-desktop-in-place-profile.zh.md)。
+profile 修改与恢复遵循[直接修改 profile 决策](../../archived/architecture/2026-09-09-desktop-in-place-profile.md)。
 
 ## 问题
 
@@ -40,7 +40,7 @@ profile manifest 分别记录精确的已安装插件依赖和已启用 bundle �
 
 依赖修改先禁用脚本安装，验证插件依赖图和宿主链接，运行经过审查的待执行生命周期构建，再次验证。这允许已批准的原生依赖解析宿主 peer，同时阻止意外的重复宿主包进入启动过程。`allowBuilds` 策略保持明确；不受支持且需要构建的依赖会使事务失败。
 
-Desktop 在包修改前停止 Host，并等待 pnpm 退出后再重启它。[直接修改决策](2026-09-09-desktop-in-place-profile.zh.md)规定部分失败和持久重试状态的处理方式。记录的宿主链接用于识别自有目录，与包操作是否完成相互独立。
+Desktop 在包修改前停止 Host，并等待 pnpm 退出后再重启它。[直接修改决策](../../archived/architecture/2026-09-09-desktop-in-place-profile.md)规定部分失败和持久重试状态的处理方式。记录的宿主链接用于识别自有目录，与包操作是否完成相互独立。
 
 [立即显示窗口决策](2026-09-09-desktop-immediate-window-and-direct-start.zh.md)规定实际 Host 启动和主窗口恢复。用户可以更新、删除、禁用或重新启用插件并重试启动。不兼容插件不会被静默删除或自动降级。每次后端启动都要求当前运行时标识。
 

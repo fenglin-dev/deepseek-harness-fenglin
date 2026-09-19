@@ -5,6 +5,14 @@ import type { ProfileMutationLockStatus } from './menu-mutation-guard.ts'
 
 /** Maximum lifetime of the shared dependency-copy step, independent of archive installation. */
 export const CANDIDATE_PREPARATION_TIMEOUT_MS = 5 * 60_000
+const PLUGIN_SNAPSHOT_JSON_MARKER = 'dsh:plugin-snapshot-json '
+
+/** Parse the CLI's line-framed structured result without trusting adjacent diagnostics. */
+export function parsePluginCommandJson(output: string): unknown {
+  const line = output.split(/\r?\n/u).find(candidate => candidate.startsWith(PLUGIN_SNAPSHOT_JSON_MARKER))
+  if (line === undefined) throw new Error('desktop: plugin command returned no structured result')
+  return JSON.parse(line.slice(PLUGIN_SNAPSHOT_JSON_MARKER.length)) as unknown
+}
 
 /** Validate journal ownership and return whether rollback must use the desktop lease. */
 export function candidatePreparationUsesLease(

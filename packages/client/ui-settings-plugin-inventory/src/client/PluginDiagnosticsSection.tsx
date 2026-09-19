@@ -51,6 +51,8 @@ export interface PluginDiagnosticsSectionInjected {
   startUninstall: (request: PluginUninstallRequest) => Promise<PluginInstallSnapshot>
   /** Retry one quarantined plugin from its retained package specifier. */
   startQuarantineRetry: (request: PluginQuarantineRequest) => Promise<PluginInstallSnapshot>
+  /** Approve one exact compatibility-manifest mismatch and retry that quarantined plugin. */
+  startHostVersionOverride: (request: PluginQuarantineRequest) => Promise<PluginInstallSnapshot>
   /** Approve one exact retained build key and retry its quarantined plugin. */
   approveQuarantineBuild: (request: PluginBuildApprovalRequest) => Promise<PluginInstallSnapshot>
   /** Approve one exact build key retained by a failed package operation. */
@@ -237,6 +239,7 @@ export function PluginDiagnosticsSection({
   getInstall,
   startUninstall,
   startQuarantineRetry,
+  startHostVersionOverride,
   approveQuarantineBuild,
   approveDiagnosticBuild,
   exportDiagnostics,
@@ -269,6 +272,10 @@ export function PluginDiagnosticsSection({
     snapshot: PluginInstallSnapshot
   } | null>(null)
   const [uninstallAcknowledged, setUninstallAcknowledged] = useState(false)
+  const [compatibilityOverrideTarget, setCompatibilityOverrideTarget] = useState<
+    PluginInventorySnapshot['dependencyHealth']['quarantined'][number] | null
+  >(null)
+  const [compatibilityOverrideAcknowledged, setCompatibilityOverrideAcknowledged] = useState(false)
   const [startupIncidents, setStartupIncidents] = useState<readonly StartupDiagnosticIncident[]>([])
   const [startupRetryStatus, setStartupRetryStatus] = useState<Record<string, StartupRetryStatus>>({})
 
@@ -426,6 +433,17 @@ export function PluginDiagnosticsSection({
     }
     void approveDiagnosticBuild({ diagnosticId: target.issue.diagnosticId }).then(
       (snapshot) => { setDiagnosticBuildInstall({ diagnosticId: target.issue.diagnosticId, snapshot }) },
+      (error: unknown) => { setActionError(errorMessage(error)) },
+    )
+  }
+  const confirmCompatibilityOverride = (): void => {
+    if (compatibilityOverrideTarget === null) return
+    const target = compatibilityOverrideTarget
+    setCompatibilityOverrideTarget(null)
+    setCompatibilityOverrideAcknowledged(false)
+    setActionError(null)
+    void startHostVersionOverride({ quarantineId: target.quarantineId }).then(
+      (snapshot) => { setQuarantineInstall({ quarantineId: target.quarantineId, snapshot }) },
       (error: unknown) => { setActionError(errorMessage(error)) },
     )
   }
@@ -926,6 +944,16 @@ export function PluginDiagnosticsSection({
                       packageName: record.packageName,
                     })
                   }}>{removal?.phase === 'running' ? t('health.uninstall.running') : t('health.uninstall')}</Button>
+                  {record.reason === 'incompatible-host-version' ? (
+                    <Button
+                      variant="outline"
+                      disabled={active?.phase === 'running' || removal?.phase === 'running'}
+                      onClick={() => {
+                        setCompatibilityOverrideAcknowledged(false)
+                        setCompatibilityOverrideTarget(record)
+                      }}
+                    >{t('health.quarantine.override.action')}</Button>
+                  ) : null}
                   {active !== undefined && active.phase !== 'running'
                     ? <span role={active.phase === 'failed' || active.phase === 'quarantined' ? 'alert' : 'status'}>{t(RETRY_KEYS[active.phase])}</span>
                     : null}
@@ -982,6 +1010,22 @@ export function PluginDiagnosticsSection({
           </div>
         </div>
       </Modal>
+      <RiskConfirmation
+        open={compatibilityOverrideTarget !== null}
+        closeLabel={t('health.quarantine.override.cancel')}
+        title={t('health.quarantine.override.title')}
+        description={t('health.quarantine.override.description')}
+        acknowledgeLabel={t('health.quarantine.override.acknowledge')}
+        cancelLabel={t('health.quarantine.override.cancel')}
+        confirmLabel={t('health.quarantine.override.confirm')}
+        acknowledged={compatibilityOverrideAcknowledged}
+        onAcknowledgedChange={setCompatibilityOverrideAcknowledged}
+        onCancel={() => {
+          setCompatibilityOverrideTarget(null)
+          setCompatibilityOverrideAcknowledged(false)
+        }}
+        onConfirm={confirmCompatibilityOverride}
+      />
       <RiskConfirmation
         open={uninstallTarget !== null}
         closeLabel={t('diagnostics.uninstall.confirm.cancel')}

@@ -33,10 +33,7 @@ const SEAT_CONTENT: Record<string, string> = {
   'settings.close': 'Close',
 }
 
-type AttentionSnapshot = Parameters<Parameters<SettingsRootComponentProps['useSessionPendingInteraction']>[0]>[0]
 type ConnectionSnapshot = Parameters<Parameters<SettingsRootComponentProps['useConnectionState']>[0]>[0]
-const noAttention: AttentionSnapshot = new Map()
-const useSessionPendingInteraction: SettingsRootComponentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
 
 function mount({
   wide = true,
@@ -78,24 +75,26 @@ function mount({
     }) as SettingsRootComponentProps['renderSlot'],
   )
   const useSessions = ((select: (state: unknown) => unknown) => select(onboardingActive
-    ? { phase: 'ready', current: undefined, byId: {} }
+    ? { phase: 'ready', byId: {} }
     : {
       phase: 'ready',
-      current: 'active-session',
-      byId: { 'active-session': { blank: false } },
+      byId: { 'active-session': { blank: false, retainedBy: { mainView: 1 } } },
     })) as never
   const unusedHook = (() => { throw new Error('unused by SettingsRoot') }) as never
   const setSectionOrder = vi.fn<(ids: readonly string[]) => Promise<void>>(() => Promise.resolve())
   const dismissSidebar = vi.fn()
   const props: SettingsRootComponentProps = {
     useSessions,
-    useSessionPendingInteraction,
+    useSessionStatus: unusedHook,
+    useSessionRetainInfo: unusedHook,
     usePanelInfo, useResource,
     useWorkspaces: unusedHook,
     wide,
     dismissSidebar,
+    openDesktopUpdate: vi.fn(),
     reconnect,
     t: makeTranslate(dictionary),
+    useDesktopUpdate: select => select({ failed: false, opening: false }),
     useConnectionState: (select) => {
       const [, force] = useState(0)
       useEffect(() => {

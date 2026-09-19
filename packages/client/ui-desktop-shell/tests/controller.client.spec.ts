@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type {
-  DesktopBridge, DesktopPreferences, DesktopReleaseStatus, DownloadNetworkSettings,
+  DesktopBridge, DesktopCapabilities, DesktopPreferences, DesktopReleaseStatus, DownloadNetworkSettings,
 } from '../src/client/bridge.ts'
 import { DesktopShellController } from '../src/client/controller.ts'
 
@@ -30,17 +30,23 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
     }
     return Promise.resolve(downloadNetwork)
   })
+  const getDataHome = vi.fn(() => Promise.resolve({
+    activePath: '/desktop/dsh-home', activeKind: 'desktop' as const,
+    desktopPath: '/desktop/dsh-home', officialPath: '/home/user/.dsh',
+    officialAvailable: true, managedExternally: false,
+  }))
+  const getCommandLine = vi.fn(() => Promise.resolve({
+    phase: 'uninstalled' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
+  }))
+  const getDesktopWebStatus = vi.fn(() => Promise.resolve({ phase: 'ready' as const }))
+  const getCapabilities = vi.fn((): Promise<DesktopCapabilities> => Promise.resolve({
+    runtimeKind: 'local' as const, platform: 'darwin', packaged: true, launchAtLoginAvailable: true,
+    sourceUpdateAvailable: false, commandLineAvailable: true, developmentRecoveryAvailable: false,
+  }))
   const bridge: DesktopBridge = {
     shell: {
-      getCapabilities: vi.fn(() => Promise.resolve({
-        platform: 'darwin', packaged: true, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
-        commandLineAvailable: true, developmentRecoveryAvailable: false,
-      })),
-      getDataHome: vi.fn(() => Promise.resolve({
-        activePath: '/desktop/dsh-home', activeKind: 'desktop' as const,
-        desktopPath: '/desktop/dsh-home', officialPath: '/home/user/.dsh',
-        officialAvailable: true, managedExternally: false,
-      })),
+      getCapabilities,
+      getDataHome,
       openDataHomeChooser,
       getPreferences: vi.fn(() => Promise.resolve(preferences)),
       updatePreferences: vi.fn((patch: Partial<DesktopPreferences>) => {
@@ -51,9 +57,7 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
       openLog: vi.fn(),
       openLogDirectory: vi.fn(() => Promise.resolve({ error: '' })),
       openSettingsDocument: vi.fn(() => Promise.resolve({ error: '' })),
-      getCommandLine: vi.fn(() => Promise.resolve({
-        phase: 'uninstalled' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
-      })),
+      getCommandLine,
       installCommandLine: vi.fn(() => Promise.resolve({
         phase: 'installed' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
       })),
@@ -91,7 +95,7 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
       onSettings: vi.fn(() => () => {}), onTestStatus: vi.fn(() => () => {}),
     },
     desktopWeb: {
-      getStatus: vi.fn(() => Promise.resolve({ phase: 'ready' as const })),
+      getStatus: getDesktopWebStatus,
       open: openDesktopWeb,
       onStatus: vi.fn(() => () => {}),
     },
@@ -99,11 +103,35 @@ function bench(initialRelease: DesktopReleaseStatus = { phase: 'idle', currentVe
   const controller = new DesktopShellController(bridge)
   return {
     bridge, controller, openDownload, startDownload, openInstaller, openDesktopWeb, openDataHomeChooser,
-    enterRecoveryMode, updateDownloadNetwork,
+    enterRecoveryMode, updateDownloadNetwork, getCapabilities, getDataHome, getCommandLine, getDesktopWebStatus,
   }
 }
 
 describe('DesktopShellController', () => {
+  it('does not request local Profile, CLI, or browser-handoff state in NAS mode', async () => {
+    const b = bench()
+    b.getCapabilities.mockResolvedValue({
+      runtimeKind: 'nas', platform: 'darwin', packaged: true, launchAtLoginAvailable: true,
+      sourceUpdateAvailable: false, commandLineAvailable: false, developmentRecoveryAvailable: false,
+    })
+    delete b.bridge.shell.getDataHome
+    delete b.bridge.shell.openDataHomeChooser
+    delete b.bridge.shell.openLog
+    delete b.bridge.shell.openLogDirectory
+    delete b.bridge.shell.openSettingsDocument
+    delete b.bridge.shell.getCommandLine
+    delete b.bridge.shell.installCommandLine
+    delete b.bridge.shell.removeCommandLine
+    delete b.bridge.shell.enterRecoveryMode
+    b.controller.start()
+    await vi.waitFor(() => { expect(b.controller.getSnapshot().capabilities?.runtimeKind).toBe('nas') })
+    expect(b.getDataHome).not.toHaveBeenCalled()
+    expect(b.getCommandLine).not.toHaveBeenCalled()
+    expect(b.getDesktopWebStatus).not.toHaveBeenCalled()
+    expect(b.controller.getSnapshot().dataHome).toBeNull()
+    b.controller.dispose()
+  })
+
   it('publishes one shared simulated-update state in development mode', async () => {
     const b = bench({ phase: 'unsupported' })
     b.controller.start()

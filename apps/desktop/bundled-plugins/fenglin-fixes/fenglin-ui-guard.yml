@@ -1,0 +1,66 @@
+# Fenglin UI guard — applied after profile cordis.patch.yml.
+# Only re-enables rows required by desktop UI. Never mass-disables.
+- id: plugin-manager
+  name: "@deepseek-ai/dsh-plugin-manager"
+  disabled: false
+- id: "@linxin666/dsh-web-all"
+  name: "@linxin666/dsh-web-all"
+  disabled: false
+- id: web-ui-compat
+  name: "@linxin666/dsh-web-all"
+  disabled: false
+- id: web-ui-liangshen
+  name: "@linxin666/dsh-web-all/liangshen"
+  config:
+    plugin: "@linxin666/dsh-liangshen"
+  disabled: false
+- id: liangshen
+  name: "@linxin666/dsh-liangshen"
+  disabled: false
+- id: web-ui-ssh
+  name: "@linxin666/dsh-web-all/ssh"
+  config:
+    plugin: "@linxin666/dsh-ssh"
+  disabled: false
+- id: web-ui-task-board
+  name: "@linxin666/dsh-web-all/task-board"
+  config:
+    plugin: "@linxin666/dsh-client-ui-task-board"
+  disabled: false
+# Skill center (技能中心) ships disabled in web-all; exclusive pack expects it on.
+- id: web-ui-skill-explorer
+  name: "@linxin666/dsh-web-all/skill-explorer"
+  config:
+    plugin: "@linxin666/dsh-client-ui-skill-explorer"
+  disabled: false
+- id: web-ui-skin-center
+  name: "@linxin666/dsh-web-all/skin-center"
+  disabled: false
+- id: web-ui-plugin-manager
+  name: "@deepseek-ai/dsh-client-ui-plugin-manager"
+  disabled: false
+- id: ui-plugin-manager
+  name: "@deepseek-ai/dsh-client-ui-plugin-manager"
+  disabled: false
+- id: web-ui-market
+  name: "@linxin666/dsh-web-all/market"
+  disabled: false
+- id: web-ui-settings
+  name: "@linxin666/dsh-web-all/settings"
+  disabled: false
+# Better Sidebar bottom workbench: loader treats dsh-better-sidebar as a
+# singleton. Official `better-sidebar` must own it; the web-all aggregate row
+# is the duplicate the loader disables. Never force-enable both.
+- id: better-sidebar
+  name: "dsh-better-sidebar"
+  disabled: false
+- id: web-ui-better-sidebar
+  name: "dsh-better-sidebar"
+  disabled: true
+# Official music row default ON; market duplicate mkt-music stays off.
+- id: music
+  name: "dsh-music-huazai"
+  disabled: false
+- id: mkt-music
+  name: "dsh-music-huazai"
+  disabled: true

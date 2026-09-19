@@ -1,4 +1,5 @@
 /** Renderer-visible values and capabilities from the narrow Electron preload protocol. */
+import type { NasDeviceSummary } from '@deepseek-ai/dsh-nas-protocol'
 import type { DesktopIconsBridge } from './icon-protocol.ts'
 
 /** Closing hides the window in the tray or quits the desktop application. */
@@ -71,6 +72,53 @@ export interface DesktopWebBridge {
   onStatus(callback: (status: DesktopWebStatus) => void): () => void
 }
 
+/** Durable choice between the Local Runtime and one saved NAS Runtime. */
+export type DesktopRuntimeSelection = { readonly kind: 'local' } | { readonly kind: 'nas'; readonly serverId: string }
+
+/** Renderer-safe metadata for one saved NAS Runtime. */
+export interface NasRuntimeRecord {
+  readonly id: string
+  readonly name: string
+  readonly baseUrl: string
+  readonly certificateFingerprint?: string
+  readonly deviceId?: string
+  readonly credentialExpiresAt?: string
+  readonly lastConnectedAt?: string
+}
+
+/** Renderer-safe Runtime Selection, saved NAS Runtimes, and active metadata. */
+export interface NasRuntimeStatus {
+  readonly selection: DesktopRuntimeSelection
+  readonly servers: readonly NasRuntimeRecord[]
+  readonly secureStorageAvailable: boolean
+  readonly active?: NasRuntimeRecord
+}
+export type { NasDeviceSummary } from '@deepseek-ai/dsh-nas-protocol'
+/** Untrusted LAN address suggestion that still requires the Pairing Ceremony. */
+export interface NasDiscoveryCandidate {
+  readonly baseUrl: string
+  readonly name: string
+}
+
+/** Fixed renderer intents for NAS Runtime discovery, pairing, and management. */
+export interface DesktopNasBridge {
+  get(): Promise<NasRuntimeStatus>
+  discover(): Promise<readonly NasDiscoveryCandidate[]>
+  inspect(baseUrl: string): Promise<{ readonly fingerprint: string }>
+  pair(request: {
+    readonly baseUrl: string
+    readonly code: string
+    readonly deviceName: string
+    readonly certificateFingerprint: string
+  }): Promise<NasRuntimeStatus>
+  select(selection: DesktopRuntimeSelection): Promise<{ readonly restarting: true }>
+  remove(serverId: string): Promise<NasRuntimeStatus>
+  test(serverId: string): Promise<{ readonly healthy: true; readonly version: string }>
+  devices(serverId: string): Promise<readonly NasDeviceSummary[]>
+  revokeDevice(serverId: string, deviceId: string): Promise<readonly NasDeviceSummary[]>
+  onStatus(callback: (status: NasRuntimeStatus) => void): () => void
+}
+
 /** Redacted managed process state from Electron. */
 export interface DesktopProcessSnapshot {
   schema: 'open-dsh-desktop/managed-process/v1'
@@ -109,6 +157,7 @@ export interface DesktopPersistentServiceSummary {
 
 /** Platform and build-mode support reported by Electron. */
 export interface DesktopCapabilities {
+  runtimeKind: 'local' | 'nas'
   platform: string
   packaged: boolean
   launchAtLoginAvailable: boolean
@@ -177,14 +226,10 @@ export type DesktopReleaseDownloadStatus =
   | { phase: 'cancelled'; version: string }
   | { phase: 'error'; version?: string; message: string }
 
-/** Preference and fixed-log operations exposed by the preload. */
-export interface DesktopShellBridge {
-  getCapabilities(): Promise<DesktopCapabilities>
+/** Device-local operations that are intentionally absent from the NAS renderer. */
+export interface DesktopLocalShellBridge {
   getDataHome(): Promise<DesktopDataHomeStatus>
   openDataHomeChooser(): Promise<{ restarting: boolean }>
-  getPreferences(): Promise<DesktopPreferences>
-  updatePreferences(patch: Partial<DesktopPreferences>): Promise<DesktopPreferences>
-  onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
   openLog(): Promise<{ kind: 'file' | 'directory'; error: string }>
   openLogDirectory(): Promise<{ error: string }>
   openSettingsDocument(): Promise<{ error: string }>
@@ -192,7 +237,35 @@ export interface DesktopShellBridge {
   installCommandLine(force: boolean): Promise<DesktopCliStatus>
   removeCommandLine(): Promise<DesktopCliStatus>
   enterRecoveryMode(): Promise<{ entered: true }>
+}
+
+/** Preference bridge shared by local and NAS renderer projections. */
+export interface DesktopShellBridge extends Partial<DesktopLocalShellBridge> {
+  getCapabilities(): Promise<DesktopCapabilities>
+  getPreferences(): Promise<DesktopPreferences>
+  updatePreferences(patch: Partial<DesktopPreferences>): Promise<DesktopPreferences>
+  onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
   reportReadiness(phase: 'client' | 'event-dispatch'): void
+}
+
+/**
+ * Return the complete local projection, or undefined when the renderer is remote.
+ * @param shell - renderer bridge that may be the reduced NAS projection.
+ * @returns complete local capabilities only when every required method exists.
+ */
+export function readDesktopLocalShell(shell: DesktopShellBridge): DesktopLocalShellBridge | undefined {
+  const candidate = shell as Partial<DesktopLocalShellBridge>
+  return typeof candidate.getDataHome === 'function'
+    && typeof candidate.openDataHomeChooser === 'function'
+    && typeof candidate.openLog === 'function'
+    && typeof candidate.openLogDirectory === 'function'
+    && typeof candidate.openSettingsDocument === 'function'
+    && typeof candidate.getCommandLine === 'function'
+    && typeof candidate.installCommandLine === 'function'
+    && typeof candidate.removeCommandLine === 'function'
+    && typeof candidate.enterRecoveryMode === 'function'
+    ? candidate as DesktopLocalShellBridge
+    : undefined
 }
 
 /** Release discovery plus verified installer download operations. */
@@ -220,6 +293,8 @@ export interface DesktopBridge {
   desktopWeb: DesktopWebBridge
   icons?: DesktopIconsBridge
   processes?: DesktopProcessesBridge
+  /** NAS runtime management, absent on older desktop hosts and ordinary Web. */
+  nas?: DesktopNasBridge
 }
 
 /**
@@ -235,12 +310,14 @@ export function readDesktopBridge(): DesktopBridge | null {
     desktopWeb?: DesktopWebBridge
     icons?: DesktopIconsBridge
     processes?: DesktopProcessesBridge
+    nas?: DesktopNasBridge
     menu?: DesktopBridge['menu']
   } | undefined
   return candidate?.shell === undefined || candidate.releases === undefined || candidate.desktopWeb === undefined
     ? null
     : { shell: candidate.shell, releases: candidate.releases, desktopWeb: candidate.desktopWeb,
       ...(candidate.downloadNetwork === undefined ? {} : { downloadNetwork: candidate.downloadNetwork }),
+      ...(candidate.nas === undefined ? {} : { nas: candidate.nas }),
       ...(candidate.menu === undefined ? {} : { menu: candidate.menu }),
       ...(candidate.icons === undefined ? {} : { icons: candidate.icons }),
       ...(candidate.processes === undefined ? {} : { processes: candidate.processes }) }

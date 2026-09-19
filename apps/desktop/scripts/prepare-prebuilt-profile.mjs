@@ -1,6 +1,8 @@
 /** Build preset dependencies with the packaged runtime; retain only portable, reviewed application state. */
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, writeFile, cp } from 'node:fs/promises'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { existsSync } from 'node:fs'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { parseBundledPluginManifest } from '../lib/bundled-plugin-installer.js'
@@ -129,15 +131,17 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
   const workspace = parseYaml(await readFile(join(destination, 'profiles/web/pnpm-workspace.yaml'), 'utf8'))
   // Never deliver package-manager stores, logs, locks, snapshots, or user settings.
   for (const name of await readdir(destination)) {
-    if (!['profiles', 'bundled-plugins'].includes(name)) await rm(join(destination, name), { recursive: true, force: true })
+    if (!['profiles', 'bundled-plugins', '.agent-presets'].includes(name)) {
+      await rm(join(destination, name), { recursive: true, force: true })
+    }
   }
   for (const name of await readdir(join(destination, 'profiles'))) {
     if (name !== 'web') await rm(join(destination, 'profiles', name), { recursive: true, force: true })
   }
   await rm(join(destination, 'profiles/web/cordis.patch.yml'), { force: true })
-  // Stock web-all ships LiangShen disabled; restore the composer lever and
-  // keep official attachment/file-upload rows in the Loader graph.
-  await writeFile(join(destination, 'profiles', 'web', 'cordis.patch.yml'), `# Fenglin default after 0.1.6 merge.
+  // Fenglin: enable LiangShen lever + SSH row. Pet UI stays available;
+  // default OFF is settings.yaml `pet.enabled`, not a Loader disable.
+  await writeFile(join(destination, 'profiles', 'web', 'cordis.patch.yml'), `# Fenglin exclusive defaults on clean upstream.
 - insert:
     - id: ui-attachment
       name: "@deepseek-ai/dsh-client-ui-attachment"
@@ -145,13 +149,138 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
       name: "@deepseek-ai/dsh-client-file-upload"
     - id: liangshen
       name: "@linxin666/dsh-liangshen"
+    - id: web-ui-liangshen
+      name: "@linxin666/dsh-web-all/liangshen"
+      config:
+        plugin: "@linxin666/dsh-liangshen"
 
 - id: web-ui-liangshen
   name: "@linxin666/dsh-web-all/liangshen"
   config:
     plugin: "@linxin666/dsh-liangshen"
   disabled: false
+
+- id: liangshen
+  name: "@linxin666/dsh-liangshen"
+  disabled: false
+
+- id: web-ui-ssh
+  name: "@linxin666/dsh-web-all/ssh"
+  config:
+    plugin: "@linxin666/dsh-ssh"
+  disabled: false
+
+# Desktop Web GUI needs host pluginManager for market install/uninstall.
+- id: plugin-manager
+  name: "@deepseek-ai/dsh-plugin-manager"
+  disabled: false
+
+- id: "@linxin666/dsh-web-all"
+  name: "@linxin666/dsh-web-all"
+  disabled: false
+
+- id: web-ui-compat
+  name: "@linxin666/dsh-web-all"
+  disabled: false
+
+- id: web-ui-task-board
+  name: "@linxin666/dsh-web-all/task-board"
+  config:
+    plugin: "@linxin666/dsh-client-ui-task-board"
+  disabled: false
+
+- id: web-ui-skill-explorer
+  name: "@linxin666/dsh-web-all/skill-explorer"
+  config:
+    plugin: "@linxin666/dsh-client-ui-skill-explorer"
+  disabled: false
+
+- id: web-ui-skin-center
+  name: "@linxin666/dsh-web-all/skin-center"
+  disabled: false
+
+# Better Sidebar bottom workbench — official singleton owns dsh-better-sidebar.
+- id: better-sidebar
+  name: "dsh-better-sidebar"
+  disabled: false
+
+- id: web-ui-better-sidebar
+  name: "dsh-better-sidebar"
+  disabled: true
+
+- id: mkt-music
+  disabled: true
 `)
+  // Market hot-mount of bundled music fails loader lifecycle; keep official music row only.
+  await mkdir(join(destination, 'profiles', 'web', '.dsh-market'), { recursive: true })
+  await writeFile(join(destination, 'profiles', 'web', '.dsh-market', 'hot-1.yml'), `- id: 'mkt-music'
+  name: 'file:///__DSH_HOME__/profiles/web/node_modules/dsh-music-huazai/lib/index.js'
+  disabled: true
+`)
+  await writeFile(join(destination, 'profiles', 'web', '.dsh-market', 'state.json'), `{"disabled":["mkt-music"],"groups":{},"groupOrder":[],"region":"china","regionAuto":true}
+`)
+  await writeFile(join(destination, 'settings.yaml'), `ui-onboarding:
+  welcomeNoticeVersion: 2026-08-19.1
+pet:
+  enabled: false
+  decorationEnabled: false
+  visible: false
+dsh-better-sidebar:
+  autoOpenSubagent: false
+  autoOpenJobs: false
+  bottomPanelAutoTerminal: false
+`)
+  // Desktop launch uses --patch on this file so UI rows stay available after
+  // user/plugin-manager edits to cordis.patch.yml.
+  await writeFile(join(destination, 'fenglin-ui-guard.yml'), await readFile(join(dirname(fileURLToPath(import.meta.url)), '..', 'bundled-plugins', 'fenglin-fixes', 'fenglin-ui-guard.yml'), 'utf8'))
+  // Clear leftover blocked health rows so diagnostics stay quiet after first boot.
+  await mkdir(join(destination, 'profile-health'), { recursive: true })
+  await writeFile(join(destination, 'profile-health', 'web.json'), '{"schema":"dsh/profile-dependency-repair/v1","diagnosticSchema":"dsh/profile-diagnostic/v2","profile":"web","status":"repaired","conflicts":[],"quarantined":[],"diagnostic":null,"issues":[]}')
+  // Ship a health-checked LiangShen preset and a lever client that can switch.
+  const fenglinFixes = join(dirname(fileURLToPath(import.meta.url)), '..', 'bundled-plugins', 'fenglin-fixes')
+  const presetDir = join(destination, '.agent-presets', 'liangshen')
+  const presetSource = join(fenglinFixes, 'liangshen-agent.cordis.yml')
+  if (existsSync(presetSource)) {
+    await mkdir(presetDir, { recursive: true })
+    const pluginPreset = join(destination, 'profiles', 'web', 'node_modules', '@linxin666', 'dsh-liangshen', 'presets', 'liangshen')
+    if (existsSync(pluginPreset)) {
+      for (const name of await readdir(pluginPreset)) {
+        await cp(join(pluginPreset, name), join(presetDir, name), { recursive: true, force: true })
+      }
+    }
+    await cp(presetSource, join(presetDir, 'agent.cordis.yml'), { force: true })
+  }
+  const leverClient = join(fenglinFixes, 'liangshen-client.js')
+  const leverTarget = join(destination, 'profiles', 'web', 'node_modules', '@linxin666', 'dsh-liangshen', 'lib', 'client.js')
+  if (existsSync(leverClient) && existsSync(dirname(leverTarget))) {
+    await cp(leverClient, leverTarget, { force: true })
+  }
+  // Fenglin runtime libs: copy the live-verified patched bundles over extracted
+  // profile packages so the Windows installer matches the tested local build.
+  const runtimeLibs = join(fenglinFixes, 'runtime-libs')
+  const runtimeCopies = [
+    ['dsh-better-sidebar/lib/client.js', 'dsh-better-sidebar/lib/client.js'],
+    ['dsh-better-sidebar/lib/client-terminal.js', 'dsh-better-sidebar/lib/client-terminal.js'],
+    ['dsh-better-sidebar/lib/index.js', 'dsh-better-sidebar/lib/index.js'],
+    ['dshmarket/lib/hot.js', 'dshmarket/lib/hot.js'],
+    ['@linxin666/dsh-web-all/lib/client.js', 'dsh-web-all/lib/client.js'],
+  ]
+  for (const [from, to] of runtimeCopies) {
+    const src = join(runtimeLibs, from)
+    const dest = join(destination, 'profiles', 'web', 'node_modules', ...to.split('/'))
+    if (existsSync(src) && existsSync(dirname(dest))) await cp(src, dest, { force: true })
+  }
+  // web-all ships its own lever; keep it from dual-mounting the same slot id.
+  const { patchWebAllLiangShenClient } = await import(pathToFileURL(join(fenglinFixes, 'patch-web-all-liangshen-client.mjs')).href)
+  const webAllClient = join(destination, 'profiles', 'web', 'node_modules', '@linxin666', 'dsh-web-all', 'lib', 'client.js')
+  await patchWebAllLiangShenClient(webAllClient)
+  // Better Sidebar: real session ids for terminal WS + skill entry UI ensure.
+  const { patchBetterSidebarClient } = await import(pathToFileURL(join(fenglinFixes, 'patch-better-sidebar-client.mjs')).href)
+  const betterSidebarRoot = join(destination, 'profiles', 'web', 'node_modules', 'dsh-better-sidebar')
+  await patchBetterSidebarClient(betterSidebarRoot)
+  // Only patch web-all client.js for lever visibility. Never rewrite the
+  // plugin-bundle cordis.patch.yml — user-layer profiles/web/cordis.patch.yml
+  // owns pet-off / liangshen-on overrides after bundle layers apply.
   // Seal after native signing. Builder must not rewrite these checksummed data resources.
   if (target.startsWith('darwin-')) await signNativeResources(destination, run)
   const sealed = await sealPrebuiltProfile(destination, {

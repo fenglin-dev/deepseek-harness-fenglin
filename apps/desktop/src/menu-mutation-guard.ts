@@ -1,13 +1,10 @@
 /** Read the existing plugin mutation lease without acquiring or removing it. */
-import { lstatSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-
-/** Stale leases are released so a reused PID or crashed installer cannot block uninstall forever. */
-const LOCK_STALE_MS = 15 * 60 * 1000
 
 export interface ProfileMutationLockStatus {
   readonly active: boolean
-  readonly state: 'dead' | 'live' | 'malformed' | 'missing' | 'unreadable' | 'stale'
+  readonly state: 'dead' | 'live' | 'malformed' | 'missing' | 'unreadable'
   readonly lockPath: string
   readonly pid?: number
   readonly workerPid?: number
@@ -66,14 +63,6 @@ export function inspectProfileMutationLock(home: string): ProfileMutationLockSta
   const ownerActive = processActive(candidate.pid)
   const workerActive = typeof candidate.workerPid === 'number' ? processActive(candidate.workerPid) : undefined
   const activity = { ...metadata, ...(workerActive === undefined ? {} : { workerActive }) }
-  let lockAgeMs: number | undefined
-  try {
-    lockAgeMs = Date.now() - lstatSync(lockPath).mtimeMs
-  } catch {
-    lockAgeMs = undefined
-  }
-  const stale = lockAgeMs !== undefined && lockAgeMs > LOCK_STALE_MS
-  if (stale) return { active: false, state: 'stale', lockPath, ...activity }
   if (ownerActive === undefined || (candidate.workerPid !== undefined && workerActive === undefined)) {
     return { active: true, state: 'unreadable', lockPath, ...activity }
   }

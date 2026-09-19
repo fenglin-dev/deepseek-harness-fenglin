@@ -33,7 +33,7 @@ describe('desktop Harness launch', () => {
       DSH_DESKTOP_NODE_BIN: '/opt/node/bin/node',
     })).toEqual({
       command: '/opt/node/bin/node',
-      args: [harnessBin, 'web', '--host', '127.0.0.1', '--port', '0', '--no-open'],
+      args: ['--expose-internals', harnessBin, 'web', '--host', '127.0.0.1', '--port', '0', '--no-open'],
     })
   })
 
@@ -49,7 +49,7 @@ describe('desktop Harness launch', () => {
     expect(resolveHarnessInvocation({}, ['plugin', '--profile', 'web', 'remove', 'dshmarket'], {
       harnessBin,
       nodeCommand: '/runtime/node',
-    }).args).toEqual([harnessBin, 'plugin', '--profile', 'web', 'remove', 'dshmarket'])
+    }).args).toEqual(['--expose-internals', harnessBin, 'plugin', '--profile', 'web', 'remove', 'dshmarket'])
   })
 
   it('passes the selected independent Harness home to lifecycle invocations', () => {
@@ -102,7 +102,7 @@ describe('desktop Harness launch', () => {
       nodeCommand: 'C:\\Program Files\\DeepSeek Harness\\resources\\runtime\\win32-x64\\node.exe',
     })).toEqual({
       command: 'C:\\Program Files\\DeepSeek Harness\\resources\\runtime\\win32-x64\\node.exe',
-      args: [harnessBin, 'web', '--host', '127.0.0.1', '--port', '0', '--no-open'],
+      args: ['--expose-internals', harnessBin, 'web', '--host', '127.0.0.1', '--port', '0', '--no-open'],
     })
   })
 
@@ -117,7 +117,7 @@ describe('desktop Harness launch', () => {
       runtimeBinPath: '/runtime/bin',
     })).toEqual({
       command: '/runtime/bin/node',
-      args: [harnessBin, 'web', '--host', '127.0.0.1', '--port', '0', '--no-open'],
+      args: ['--expose-internals', harnessBin, 'web', '--host', '127.0.0.1', '--port', '0', '--no-open'],
       environment: {
         DSH_PNPM_BIN: '/runtime/bin/pnpm',
         PATH: `/runtime/bin${process.platform === 'win32' ? ';' : ':'}/usr/bin:/bin`,

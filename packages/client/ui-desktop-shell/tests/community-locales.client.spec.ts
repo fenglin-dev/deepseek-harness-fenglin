@@ -13,4 +13,34 @@ describe('community desktop locales', () => {
     expect(typeof dispose).toBe('function')
     expect(() => dispose()).not.toThrow()
   })
+
+  it('does not register any community locale namespaces', () => {
+    const added: string[] = []
+    const registered: string[] = []
+    const ctx = {
+      locale: {
+        getSnapshot: () => ({
+          active: 'zh',
+          revision: 0,
+          locales: [
+            { id: 'zh', label: '中文' },
+            { id: 'en', label: 'English' },
+          ],
+        }),
+        addLanguage: ({ id }: { id: string }) => {
+          added.push(id)
+          return () => undefined
+        },
+        register: (namespace: string, locale: string) => {
+          registered.push(`${namespace}/${locale}`)
+          return () => undefined
+        },
+      },
+    } as unknown as Context
+
+    registerDesktopLanguages(ctx)
+
+    expect(added).toHaveLength(0)
+    expect(registered).toHaveLength(0)
+  })
 })

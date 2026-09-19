@@ -38,7 +38,7 @@ function snapshot(partial: typeof EMPTY_CHAT_SNAPSHOT.legacy.partial = null): Co
 
 function sessionSnapshot(running = false): SessionSnapshot {
   return {
-    sessionId: SID, queue: [], pendingSubmissions: [], running, subagent: null,
+    sessionId: SID, pendingSubmissions: [], running, subagent: null,
     removed: false, openState: 'open', openError: null, hasMore: false,
     loadingOlder: false, promptError: null, blank: false, lastAgentError: null,
     promptAttempted: true, awaitingFirstTurn: false,

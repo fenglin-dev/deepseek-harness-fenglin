@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-17-nas-remote-bridge-projection.md
+2026-09-17-nas-remote-bridge-projection.md: 801dc4a895d44fbfcd55915621962552b6223576
+2026-09-17-nas-remote-bridge-projection.zh.md: 56ac5af21d3c6f43a24be0858a8f17cd1fe96395

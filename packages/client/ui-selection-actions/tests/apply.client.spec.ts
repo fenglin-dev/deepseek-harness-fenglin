@@ -22,10 +22,9 @@ async function bench() {
   locale.setLocale('en')
   ctx.provide('locale', locale)
   const list = observable({
-    current: 'session-1',
-    byId: { 'session-1': {} },
+    byId: { 'session-1': { id: 'session-1', retainedBy: { mainView: 1 } } },
   })
-  const pendingInteractions = observable(new Map())
+  const sessionStatus = observable(new Map())
   const session = observable({
     removed: false,
     openState: 'open',
@@ -36,16 +35,17 @@ async function bench() {
   const block = observable(undefined)
   const actx = {} as Context
   const setDraft = vi.fn((text: string) => { input.set({ ...input.getSnapshot(), draft: text }) })
-  const open = vi.fn()
   const connectWorkspace = vi.fn(async () => 'session-1')
+  const openWorkspace = vi.fn(async (_workspaceId: string, beforeOpen?: (sessionId: string) => void) => {
+    beforeOpen?.('session-1')
+  })
   ctx.provide('sessions', {
     list,
     scope: () => actx,
     sessionOf: () => session,
-    open,
   } as never)
-  ctx.provide('uiSession', { pendingInteractions } as never)
-  ctx.provide('uiWorkspace', { connectWorkspace } as never)
+  ctx.provide('uiSession', { sessionStatus } as never)
+  ctx.provide('uiWorkspace', { connectWorkspace, openWorkspace } as never)
   ctx.provide('conversation', {
     input: { for: () => ({ state: input, setDraft }) },
     blocks: { storeFor: () => block },
@@ -58,7 +58,7 @@ async function bench() {
   await ctx.plugin({ inject: [...inject], apply }).await()
   const entry = slots.entries('shell.overlay')[0]!
   const injected = (entry.inject as unknown as () => SelectionActionsInjected)()
-  return { ctx, slots, entry, injected, list, pendingInteractions, input, setDraft, open, connectWorkspace }
+  return { ctx, slots, entry, injected, list, sessionStatus, input, setDraft, openWorkspace }
 }
 
 describe('ui-selection-actions apply', () => {
@@ -74,9 +74,8 @@ describe('ui-selection-actions apply', () => {
   it('fills a new-conversation draft without sending and appends to the current draft', async () => {
     const b = await bench()
     await b.injected.askInNewConversation('workspace-1' as never, 'question draft')
-    expect(b.connectWorkspace).toHaveBeenCalledWith('workspace-1')
+    expect(b.openWorkspace).toHaveBeenCalledWith('workspace-1', expect.any(Function))
     expect(b.setDraft).toHaveBeenCalledWith('question draft')
-    expect(b.open).toHaveBeenCalledWith('session-1')
 
     b.injected.appendToCurrent('session-1' as never, 'line one\nline two')
     expect(b.input.getSnapshot().draft).toBe('question draft\n\n> line one\n> line two')
@@ -88,7 +87,7 @@ describe('ui-selection-actions apply', () => {
     const notified = vi.fn()
     const stop = b.injected.hooks.appendAvailable.subscribe(notified)
     expect(b.injected.hooks.appendAvailable.getSnapshot()).toBe(true)
-    b.pendingInteractions.set(new Map([['session-1', { kind: 'approval' }]]) as never)
+    b.sessionStatus.set(new Map([['session-1', { pendingInteraction: { kind: 'approval' } }]]) as never)
     expect(b.injected.hooks.appendAvailable.getSnapshot()).toBe(false)
     expect(notified).toHaveBeenCalled()
     expect(() => { b.injected.appendToCurrent('session-1' as never, 'blocked') }).toThrow('not editable')
