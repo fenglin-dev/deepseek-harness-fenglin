@@ -30,6 +30,7 @@ describe('community desktop locales', () => {
     for (const definition of DESKTOP_LANGUAGE_DEFINITIONS) {
       expect(registrations).toContain(`desktop-shell/${definition.id}`)
       expect(dictionaries.get(`desktop-shell/${definition.id}`)?.['nas.title']).toBeTruthy()
+      expect(dictionaries.get(`desktop-shell/${definition.id}`)?.['nas.address.placeholder']).toContain('https://')
     }
     dispose()
     expect(registrations).toHaveLength(0)
