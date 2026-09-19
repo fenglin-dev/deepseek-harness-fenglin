@@ -34,6 +34,33 @@ async function runManagedCliSmoke(): Promise<void> {
   ])
   const observer = await loadProcessObserver(harnessBin, nodeCommand)
   try {
+    const { handle } = observer.launch({
+      label: 'Package client smoke',
+      lifecycle: 'client',
+      argv: [nodeCommand, '--input-type=module', '--eval', `
+        import { spawnSync } from 'node:child_process';
+        const child = spawnSync(process.execPath, ['-e', "process.stdout.write('nested-ready')"], { encoding: 'utf8' });
+        if (child.error || child.status !== 0 || child.stdout !== 'nested-ready') throw new Error('nested client process failed');
+        setTimeout(() => process.stdout.write('DSH_MANAGED_CLIENT_SMOKE_READY'), 1500);
+      `],
+      cwd: packageSmokeRoot,
+      env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+      stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
+      graceMs: 1_000,
+      signal: AbortSignal.timeout(10_000),
+    })
+    let clientOutput = ''
+    let clientError = ''
+    handle.stdout?.on('data', (chunk: Buffer) => { clientOutput += chunk.toString() })
+    handle.stderr?.on('data', (chunk: Buffer) => { clientError += chunk.toString() })
+    const result = await handle.done
+    if (result.exitCode !== 0 || result.signal !== null || !clientOutput.includes('DSH_MANAGED_CLIENT_SMOKE_READY')) {
+      throw new Error(`desktop: managed client smoke failed (${String(result.exitCode)}, ${String(result.signal)}): ${clientError}`)
+    }
+    if (!await handle.waitForExit(AbortSignal.timeout(5_000))) {
+      throw new Error('desktop: managed client smoke left an active process range')
+    }
+    console.log(clientOutput)
     const output = await runHarnessInvocation(resolveHarnessInvocation({
       ...process.env,
       DSH_HOME: join(packageSmokeRoot, 'managed-cli-home'),

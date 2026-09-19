@@ -285,7 +285,6 @@ class WindowsJobRunner {
     await new Promise<void>((resolveImmediate) => { setImmediate(resolveImmediate) })
     if (this.finished) return
     // IPC may set this field while start() is suspended above.
-    // oxlint-disable-next-line typescript/no-unnecessary-condition
     if (this.terminateRequested) {
       await this.publishTerminalResult({ type: 'error', error: windowsStartCancelledError() }, 0)
       return
@@ -313,6 +312,7 @@ class WindowsJobRunner {
         args,
         cwd: request.cwd,
         env: request.env,
+        ...(request.allowChildBreakaway === undefined ? {} : { allowChildBreakaway: request.allowChildBreakaway }),
         stdio: { stdin: 4, stdout: 5, stderr: 6, ...request.control === 'pipe' ? { control: SUBPROCESS_CONTROL_FD } : {} },
       })
       this.processHandle = spawned.process

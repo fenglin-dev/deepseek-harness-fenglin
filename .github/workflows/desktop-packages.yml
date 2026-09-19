@@ -168,6 +168,9 @@ jobs:
       - name: Verify Windows packaging contracts
         run: node --test apps/desktop/scripts/runtime-deploy-config.test.mjs
 
+      - name: Verify Windows runner protocol
+        run: pnpm exec vitest run packages/subprocess/subprocess-local/tests/spawn-runner.spec.ts packages/subprocess/subprocess-local/tests/windows-job.spec.ts
+
       - name: Prepare bundled plugins
         run: pnpm run prepare:desktop:bundled-plugins
 

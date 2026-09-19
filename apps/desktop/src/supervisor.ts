@@ -276,16 +276,21 @@ export class HarnessSupervisor {
         this.#restartTimer = undefined
         this.start()
       }, delay)
-    }, (error: unknown) => {
+    }).catch(async (error: unknown) => {
       const failure = error instanceof Error ? error : new Error(String(error))
-      return child.waitForExit().then((rangeStopped) => {
-        if (this.#child?.token === child.token) this.#child = undefined
-        this.#failed = true
-        const message = rangeStopped
-          ? `Harness process owner failed: ${failure.message}`
-          : `Harness process owner failed and cleanup is unconfirmed: ${failure.message}`
-        this.#reportStartupFailure(message, message)
-      })
+      let rangeStopped = false
+      let cleanupFailure = ''
+      try {
+        rangeStopped = await child.waitForExit()
+      } catch (cleanupError) {
+        cleanupFailure = `; cleanup observation failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`
+      }
+      if (rangeStopped && this.#child?.token === child.token) this.#child = undefined
+      this.#failed = true
+      const message = rangeStopped
+        ? `Harness process owner failed: ${failure.message}`
+        : `Harness process owner failed and cleanup is unconfirmed: ${failure.message}${cleanupFailure}`
+      this.#reportStartupFailure(message, message)
     })
   }
 

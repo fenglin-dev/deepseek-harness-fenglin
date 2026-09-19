@@ -1,5 +1,13 @@
 $ErrorActionPreference = 'Stop'
 
+function Assert-HarnessStartupHealthy([string] $LogText) {
+  # Only terminal supervisor errors fail qualification; plugin stderr and
+  # recoverable diagnostic-mode transitions are not terminal failures.
+  if ($LogText -match '(?m)^\[[^\r\n]+\] \[desktop-supervisor\] \[error\] (Harness process owner (?:failed|could not start)[^\r\n]*|Harness process range did not become idle[^\r\n]*|Harness startup failed after[^\r\n]*)') {
+    throw "Installed Harness startup failed: $($Matches[1])"
+  }
+}
+
 $installer = (Resolve-Path (Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe')).Path
 $installRoot = Join-Path $env:RUNNER_TEMP 'Open DeepSeek Harness Desktop 安装测试'
 $dshHome = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness Home'
@@ -156,7 +164,9 @@ try {
       throw "Installed application exited before Harness readiness with $($app.ExitCode).`n$entryLog`nstdout:`n$($appStdout.GetAwaiter().GetResult())`nstderr:`n$($appStderr.GetAwaiter().GetResult())"
     }
     $logExists = Test-Path -LiteralPath $harnessLog
-    if ($logExists -and (Get-Content -LiteralPath $harnessLog -Raw) -match '(?m)^\[[^\r\n]+\] \[harness-stdout\] \[info\] dsh web: http://127\.0\.0\.1:\d+(?:/[^\r\n]*)?\r?$') {
+    $startupLog = if ($logExists) { Get-Content -LiteralPath $harnessLog -Raw } else { '' }
+    Assert-HarnessStartupHealthy $startupLog
+    if ($startupLog -match '(?m)^\[[^\r\n]+\] \[harness-stdout\] \[info\] dsh web: http://127\.0\.0\.1:\d+(?:/[^\r\n]*)?\r?$') {
       $ready = $true
       break
     }
@@ -236,13 +246,17 @@ try {
 
   Remove-Item -LiteralPath $harnessLog -Force -ErrorAction SilentlyContinue
   $app = [System.Diagnostics.Process]::Start($appStart)
+  $appStdout = $app.StandardOutput.ReadToEndAsync()
+  $appStderr = $app.StandardError.ReadToEndAsync()
   $deadline = (Get-Date).AddSeconds(300)
   $ready = $false
   while ((Get-Date) -lt $deadline) {
     Start-Sleep -Milliseconds 500
     $app.Refresh()
     if ($app.HasExited) { throw "Restarted application exited before Harness readiness with $($app.ExitCode)" }
-    if ((Test-Path -LiteralPath $harnessLog) -and ((Get-Content -LiteralPath $harnessLog -Raw) -match '(?m)^\[[^\r\n]+\] \[harness-stdout\] \[info\] dsh web: http://127\.0\.0\.1:\d+(?:/[^\r\n]*)?\r?$')) {
+    $startupLog = if (Test-Path -LiteralPath $harnessLog) { Get-Content -LiteralPath $harnessLog -Raw } else { '' }
+    Assert-HarnessStartupHealthy $startupLog
+    if ($startupLog -match '(?m)^\[[^\r\n]+\] \[harness-stdout\] \[info\] dsh web: http://127\.0\.0\.1:\d+(?:/[^\r\n]*)?\r?$') {
       $ready = $true
       break
     }

@@ -85,6 +85,11 @@ describe('desktop package workflow bundled plugins', () => {
     const smoke = workflow.jobs['windows-smoke']
 
     expect(build?.steps?.some(step => step.run === 'node --test apps/desktop/scripts/runtime-deploy-config.test.mjs')).toBe(true)
+    const protocolCheck = build?.steps?.findIndex(step => step.name === 'Verify Windows runner protocol') ?? -1
+    const hostBuild = build?.steps?.findIndex(step => step.name === 'Build clean-checkout Host and Desktop') ?? -1
+    expect(protocolCheck).toBeGreaterThanOrEqual(0)
+    expect(protocolCheck).toBeLessThan(hostBuild)
+    expect(build?.steps?.[protocolCheck]?.run).toContain('packages/subprocess/subprocess-local/tests/spawn-runner.spec.ts')
     expect(build?.steps?.some(step => step.run === 'pnpm run build:community-desktop')).toBe(true)
     expect(build?.steps?.some(step => step.run === 'node apps/desktop/scripts/prepare-windows-runtime.mjs')).toBe(true)
     expect(build?.steps?.some(step => step.run === 'node apps/desktop/scripts/smoke-windows-unpacked.mjs')).toBe(true)
