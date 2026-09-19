@@ -1,7 +1,11 @@
 # Build each desktop artifact on the operating system and CPU architecture it ships for.
+# Tag `dsh-v*` auto-builds Linux + Windows installers and attaches them to the GitHub Release.
 name: Desktop packages
 
 on:
+  push:
+    tags:
+      - 'dsh-v*'
   workflow_dispatch:
     inputs:
       target:
@@ -20,7 +24,7 @@ on:
         default: true
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,6 +33,9 @@ concurrency:
 env:
   PRIMARY_NODE_VERSION: '24.21.0'
   DSH_TELEMETRY_DISABLED: '1'
+  # Tag builds stay packaging-only (same plugin snapshot as the verified local install).
+  # workflow_dispatch keeps the refresh_plugins switch.
+  PACKAGE_TARGET: ${{ github.ref_type == 'tag' && 'all' || inputs.target || 'all' }}
 
 jobs:
   bundled-plugins:
@@ -55,7 +62,7 @@ jobs:
         run: node --test apps/desktop/scripts/node-runtime-pins.test.mjs
 
       - name: Resolve latest stable plugin archives
-        if: ${{ inputs.refresh_plugins }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_plugins }}
         run: pnpm run refresh:desktop:bundled-plugins
 
       - uses: actions/upload-artifact@v4
@@ -67,7 +74,7 @@ jobs:
 
   windows:
     name: Windows x64
-    if: ${{ inputs.target == 'all' || inputs.target == 'windows-x64' }}
+    if: ${{ github.ref_type == 'tag' || inputs.target == 'all' || inputs.target == 'windows-x64' }}
     needs: bundled-plugins
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
@@ -87,6 +94,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Use resolved bundled plugin snapshot
+        shell: pwsh
         run: |
           node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
 
@@ -96,7 +104,8 @@ jobs:
           path: apps/desktop/bundled-plugins
 
       - name: Build Windows installer
-        run: pnpm run package:desktop:win:x64
+        shell: pwsh
+        run: pnpm run package:desktop:windows:x64
 
       - name: Smoke test installed Windows package
         id: smoke
@@ -128,7 +137,7 @@ jobs:
 
   linux:
     name: Linux x64
-    if: ${{ inputs.target == 'all' || inputs.target == 'linux-x64' }}
+    if: ${{ github.ref_type == 'tag' || inputs.target == 'all' || inputs.target == 'linux-x64' }}
     needs: bundled-plugins
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
@@ -181,7 +190,7 @@ jobs:
     needs: [windows, linux]
     if: >-
       ${{ always() && (
-        (inputs.target == 'all' && needs.windows.result == 'success' && needs.linux.result == 'success') ||
+        ((github.ref_type == 'tag' || inputs.target == 'all' || inputs.target == '') && needs.windows.result == 'success' && needs.linux.result == 'success') ||
         (inputs.target == 'windows-x64' && needs.windows.result == 'success') ||
         (inputs.target == 'linux-x64' && needs.linux.result == 'success')
       ) }}
@@ -203,3 +212,25 @@ jobs:
           path: dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
+
+  publish-release:
+    name: Attach desktop assets to Release
+    needs: [windows, linux, checksums]
+    if: ${{ github.ref_type == 'tag' && always() && (needs.windows.result == 'success' || needs.linux.result == 'success') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: dist
+          merge-multiple: true
+
+      - name: Upload installers to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+          gh release view "${GITHUB_REF_NAME}" --json tagName,assets --jq '{tag: .tagName, assets: [.assets[].name]}'
