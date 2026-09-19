@@ -227,6 +227,7 @@ jobs:
               'apps/desktop/scripts/collect-windows-smoke-diagnostics.ps1',
               'apps/desktop/scripts/runtime-deploy-config.test.mjs',
               'apps/desktop/scripts/smoke-windows-package.ps1',
+              'apps/desktop/tests/desktop-cli-package.spec.ts',
               'apps/desktop/tests/desktop-packages-workflow.spec.ts'
             )
             git fetch --no-tags --depth=1 origin $run.head_sha

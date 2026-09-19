@@ -105,6 +105,7 @@ describe('desktop package workflow bundled plugins', () => {
     expect(reuseCheck).toContain('git fetch --no-tags --depth=1')
     expect(reuseCheck).toContain('git diff --name-only')
     expect(reuseCheck).toContain('apps/desktop/scripts/smoke-windows-package.ps1')
+    expect(reuseCheck).toContain('apps/desktop/tests/desktop-cli-package.spec.ts')
     expect(smoke?.steps?.some(step => step.with?.['run-id'] === '${{ inputs.windows_candidate_run_id || github.run_id }}')).toBe(true)
     expect(smoke?.steps?.some(step => step.name === 'Collect Windows smoke diagnostics')).toBe(true)
     expect(smoke?.steps?.some(step => step.with?.name === 'qualification-windows-x64-diagnostics')).toBe(true)
