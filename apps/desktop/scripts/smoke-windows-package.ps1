@@ -277,6 +277,10 @@ $cliStart.FileName = Join-Path $cliDirectory 'dsh.cmd'
 $cliStart.UseShellExecute = $false
 $cliStart.RedirectStandardOutput = $true
 $cliStart.RedirectStandardError = $true
+# The packaged command resolves its setup record through %APPDATA%, just as a
+# normal terminal launched by the same Windows user would. Keep that lookup in
+# the same private AppData root used by the installed desktop smoke above.
+$cliStart.Environment['APPDATA'] = $desktopAppDataRoot
 $cliStart.ArgumentList.Add('--help')
 $cli = [System.Diagnostics.Process]::Start($cliStart)
 if (-not $cli.WaitForExit(30000)) {
