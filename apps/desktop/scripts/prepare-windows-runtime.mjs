@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { preparePrebuiltProfile } from './prepare-prebuilt-profile.mjs'
 import { nodeRuntimeArchivesByTarget, nodeVersion } from './node-runtime-pins.mjs'
 import { createPackagedArchive } from './create-packaged-archive.mjs'
+import { preservePnpmWorkspaceState } from '../../../scripts/preserve-pnpm-workspace-state.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = resolve(desktopRoot, '../..')
@@ -390,7 +391,7 @@ if (outputRoot === repositoryRoot || repositoryRoot.startsWith(outputRoot + sep)
 }
 await rm(outputRoot, { recursive: true, force: true })
 await mkdir(outputRoot, { recursive: true })
-await run(process.execPath, [
+await preservePnpmWorkspaceState(repositoryRoot, () => run(process.execPath, [
   pnpmEntry,
   '--filter',
   '@deepseek-ai/dsh',
@@ -401,7 +402,7 @@ await run(process.execPath, [
   '--config.auto-install-peers=false',
   '--config.link-workspace-packages=true',
   harnessRoot,
-])
+]))
 await materializeLinks()
 await injectWorkspaceClosure()
 await injectVendoredDependencies()

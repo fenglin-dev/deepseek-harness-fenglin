@@ -11,6 +11,7 @@ import { parseArgs } from 'node:util'
 import { preparePrebuiltProfile } from './prepare-prebuilt-profile.mjs'
 import { nodeRuntimeArchivesByTarget, nodeVersion } from './node-runtime-pins.mjs'
 import { createPackagedArchive } from './create-packaged-archive.mjs'
+import { preservePnpmWorkspaceState } from '../../../scripts/preserve-pnpm-workspace-state.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = resolve(desktopRoot, '../..')
@@ -209,7 +210,7 @@ if (staging === repositoryRoot || repositoryRoot.startsWith(staging + sep)) {
 }
 await rm(staging, { recursive: true, force: true })
 await rm(archive, { force: true })
-await run('pnpm', [
+await preservePnpmWorkspaceState(repositoryRoot, () => run('pnpm', [
   // This deploy intentionally selects only the CLI closure. Root-only patches
   // (for example Electron signing) cannot match that subset and must not make
   // the portable runtime build fail as long as patches in the closure still apply.
@@ -222,7 +223,7 @@ await run('pnpm', [
   '--config.node-linker=hoisted',
   '--config.auto-install-peers=false',
   staging,
-])
+]))
 await injectWorkspaceClosure()
 await stagePackageRuntime()
 await verifyRuntime()

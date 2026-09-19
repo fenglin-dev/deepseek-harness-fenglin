@@ -13,6 +13,7 @@ import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { parseArgs } from 'node:util'
 import { resolveLinuxNodePtyAddon, resolveWindowsNodePtyAddons } from './build-exe-for-python-sdk-native-pty.ts'
 import { copyOfficeSidecar, OFFICE_ASSET_IGNORES } from './build-exe-for-python-sdk-office.ts'
+import { preservePnpmWorkspaceState } from './preserve-pnpm-workspace-state.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -287,7 +288,7 @@ class SingleExeBuild {
     }
     if (this.cli.dryRun) console.log(`build-exe-for-python-sdk: [dry-run] rm -rf ${this.staging}`)
     else await rm(this.staging, { recursive: true, force: true })
-    await this.runPnpm('deploy', [
+    await preservePnpmWorkspaceState(root, () => this.runPnpm('deploy', [
       '--filter',
       DEPLOY_ROOT_PACKAGE,
       'deploy',
@@ -299,7 +300,7 @@ class SingleExeBuild {
       '--config.auto-install-peers=false',
       '--config.link-workspace-packages=true',
       this.staging,
-    ])
+    ]))
     await this.restoreLegacyHoists()
     await this.materializeStagedLinks()
     if (this.cli.dryRun) {
