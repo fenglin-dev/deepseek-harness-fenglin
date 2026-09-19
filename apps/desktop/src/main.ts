@@ -1520,13 +1520,9 @@ async function startApplication(): Promise<void> {
     await pluginDownloadSession.closeAllConnections()
     return (input, init) => pluginDownloadSession?.fetch(input, init) ?? Promise.reject(new Error('Plugin download session is unavailable'))
   }
-  app.on('login', (event, webContents, _details, authInfo, callback) => {
-    if (!authInfo.isProxy || authInfo.host !== '127.0.0.1' || downloadNetworkProxy === undefined) return
-    const credentials = webContents.session === applicationDownloadSession
-      ? downloadNetworkProxy.applicationProxyCredentials
-      : webContents.session === pluginDownloadSession
-        ? downloadNetworkProxy.pluginProxyCredentials
-        : undefined
+  app.on('login', (event, _webContents, _details, authInfo, callback) => {
+    if (!authInfo.isProxy || downloadNetworkProxy === undefined) return
+    const credentials = downloadNetworkProxy.credentialsForProxyAuth(authInfo.host, authInfo.port)
     if (credentials === undefined) return
     event.preventDefault()
     callback(credentials.username, credentials.password)

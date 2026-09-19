@@ -173,7 +173,7 @@ Electron 主进程不经过 shell，直接启动 `node apps/cli/lib/bin.js web -
 
 ## 下载源与代理
 
-“通用设置”提供应用更新及 Desktop 发起的 npm 包安装下载策略。应用更新可以使用 GitHub 或固定的 `hecoococ/open-deepseek-harness-desktop` CNB 索引，并可选择系统代理、直接连接或带认证的 HTTP(S) 代理。由 Desktop 管理的 npm 安装默认使用 `npmmirror`，也可选择 npm 官方源或自定义 registry 与代理。官方市场尚未为其自行执行的目录、README、源码归档和 Git 操作提供宿主管理网络策略，因此这些操作继续使用市场原有网络配置。这些设置不会改变模型、MCP、Git SSH 或其他应用流量。系统支持时，Electron 安全存储保存代理密码；否则密码只在本次运行的内存中保留，渲染层和日志均无法取得密码。
+“通用设置”提供应用更新及 Desktop 发起的 npm 包安装下载策略。应用更新可以使用 GitHub 或固定的 `hecoococ/open-deepseek-harness-desktop` CNB 索引，并可选择系统代理、直接连接或带认证的 HTTP(S) 代理。由 Desktop 管理的 npm 安装默认使用 `npmmirror`，也可选择 npm 官方源或自定义 registry 与代理。应用下载和插件下载分别使用经过认证的回环端点，因此 Electron 可以在主进程发起请求时回应代理认证质询，且无需向渲染进程暴露凭据或混用两类策略。官方市场尚未为其自行执行的目录、README、源码归档和 Git 操作提供宿主管理网络策略，因此这些操作继续使用市场原有网络配置。这些设置不会改变模型、MCP、Git SSH 或其他应用流量。系统支持时，Electron 安全存储保存代理密码；否则密码只在本次运行的内存中保留，渲染层和日志均无法取得密码。
 
 预装的 `dshmarket` 使用其上游维护者发布的未修改归档。市场列表、README、源码归档和自身更新请求使用市场自己的网络配置。CNB 发现只接受未过期的匿名索引，且其中的附件必须匹配精确文件名、大小和 SHA-256；只有同时配置仓库变量 `CNB_SYNC_ENABLED` 和 Secret `CNB_TOKEN` 后，休眠的同步工作流才会镜像附件并发布该索引。
 
