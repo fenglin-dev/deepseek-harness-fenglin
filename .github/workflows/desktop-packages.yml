@@ -166,7 +166,7 @@ jobs:
           path: apps/desktop/bundled-plugins
 
       - name: Verify Windows packaging contracts
-        run: node --test apps/desktop/scripts/runtime-deploy-config.test.mjs
+        run: node --test apps/desktop/scripts/runtime-deploy-config.test.mjs apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs
 
       - name: Verify Windows runner protocol
         run: pnpm exec vitest run packages/subprocess/subprocess-local/tests/spawn-runner.spec.ts packages/subprocess/subprocess-local/tests/windows-job.spec.ts
@@ -224,7 +224,10 @@ jobs:
           if ($run.head_sha -ne '${{ github.sha }}') {
             $allowed = @(
               '.github/workflows/desktop-packages.yml',
+              'CONTEXT.md',
               'apps/desktop/scripts/collect-windows-smoke-diagnostics.ps1',
+              'apps/desktop/scripts/collect-windows-smoke-evidence.mjs',
+              'apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs',
               'apps/desktop/scripts/runtime-deploy-config.test.mjs',
               'apps/desktop/scripts/smoke-windows-package.ps1',
               'apps/desktop/tests/desktop-cli-package.spec.ts',
@@ -252,17 +255,17 @@ jobs:
         shell: pwsh
         run: apps/desktop/scripts/smoke-windows-package.ps1
 
-      - name: Collect Windows smoke diagnostics
+      - name: Collect Windows smoke evidence
         if: ${{ always() }}
-        shell: pwsh
-        run: apps/desktop/scripts/collect-windows-smoke-diagnostics.ps1
+        continue-on-error: true
+        run: node apps/desktop/scripts/collect-windows-smoke-evidence.mjs
 
-      - name: Preserve Windows smoke diagnostics
+      - name: Preserve Windows smoke evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: qualification-windows-x64-diagnostics
-          path: .artifacts/windows-smoke-diagnostics
+          name: qualification-windows-x64-evidence
+          path: .artifacts/windows-smoke-evidence
           if-no-files-found: warn
           retention-days: 3
 

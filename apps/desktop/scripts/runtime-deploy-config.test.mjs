@@ -56,10 +56,10 @@ test('Windows readiness fails on terminal supervisor errors but permits recovera
   assert.equal(source.match(/\$appStderr = \$app\.StandardError\.ReadToEndAsync\(\)/gu)?.length, 2)
 })
 
-test('Windows diagnostics always contain uploadable metadata', async () => {
-  const source = await readFile(new URL('collect-windows-smoke-diagnostics.ps1', import.meta.url), 'utf8')
-  assert.match(source, /summary\.json/u)
-  assert.match(source, /ConvertTo-Json -InputObject \$processes/u)
+test('Windows smoke evidence excludes sensitive process fields and file reads', async () => {
+  const source = await readFile(new URL('collect-windows-smoke-evidence.mjs', import.meta.url), 'utf8')
+  assert.match(source, /open-dsh\/windows-smoke-evidence\/v1/u)
+  assert.doesNotMatch(source, /readFile|ExecutablePath|CommandLine/u)
 })
 
 test('Desktop ships the runtime peers required by dsh-subprocess', async () => {

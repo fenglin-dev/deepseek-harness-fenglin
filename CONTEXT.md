@@ -31,3 +31,13 @@ _Avoid_: NAS API, Desktop bridge
 **Pairing Ceremony**:
 The user-visible sequence that inspects a NAS Runtime certificate, confirms its fingerprint, and exchanges a one-time code for one Paired Device credential.
 _Avoid_: Login, trust checkbox
+
+## Release Language
+
+**Package Qualification**:
+The evidence-backed decision that one platform installer satisfies the required release checks. A completed qualification is changed only by a failed required check, not by a later observability failure.
+_Avoid_: Successful build, green workflow
+
+**Smoke Evidence**:
+Bounded, non-sensitive facts retained from a package qualification run to explain its phases and outcome. Missing or degraded Smoke Evidence does not change the Package Qualification result.
+_Avoid_: User data archive, full diagnostic dump
