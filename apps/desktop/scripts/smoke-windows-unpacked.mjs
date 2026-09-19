@@ -24,6 +24,8 @@ const requiredPackages = [
   '@deepseek-ai/dsh-http-proxy',
 ]
 const asarEntries = new Set(listPackage(asarPath).map(entry => entry.replaceAll('\\', '/')))
+const runtimeLock = '/scripts/primary-runtime-lock.json'
+if (!asarEntries.has(runtimeLock)) throw new Error(`Packaged app.asar is missing ${runtimeLock}`)
 for (const packageName of requiredPackages) {
   const manifest = `/node_modules/${packageName}/package.json`
   if (!asarEntries.has(manifest)) throw new Error(`Packaged app.asar is missing ${manifest}`)
