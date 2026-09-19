@@ -1,34 +1,48 @@
 <p align="center">
-  <img src="../../apps/desktop/src/icon.png" width="112" alt="Open DeepSeek Harness Desktop icon">
+  <img src="../../apps/desktop/src/icon.png" width="112" alt="DeepSeek Harness Desktop Fenglin edition icon">
 </p>
 
-# Open DeepSeek Harness Desktop
+# DeepSeek Harness Desktop 3.0.0 (Fenglin Edition)
 
 <p align="center">
-  <strong>A ready-to-use, dependency-safe desktop edition of DeepSeek Harness</strong>
+  <strong>A ready-to-use, dependency-safe independent desktop edition of DeepSeek Harness</strong>
 </p>
 
-Languages: [简体中文](../../README.md) · English · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Português](README.pt-BR.md)
+Languages: [简体中文](../../README.zh.md) · English
 
 > [!IMPORTANT]
 >
-> **[v0.1.5-rc.2.3 is now available](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3).** This release remains based on the official DeepSeek Harness `0.1.5-rc.2` core baseline and focuses on phone and small-window layouts, model search and long-response performance, community-profile import, bundled-plugin upgrades and recovery, Marketplace restart confirmation, and persistent diagnostic logs.
+> **[v3.0.0 is now available](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.0).**
 >
-> Although the version name retains `rc`, it is published as a regular GitHub Release. Back up important configuration before upgrading, and include relevant logs or diagnostic reports when reporting problems.
+> Rebuilt from the upstream `0.1.6-alpha.2` baseline with Fenglin exclusive features and recent stability fixes. This is a large version jump: a **clean install is recommended** (remove the old install directory; optionally clear `%APPDATA%\open-deepseek-harness-desktop` before reinstalling).
+>
+> Language support: **Simplified Chinese / English** only.
+
+### What's new in 3.0.0
+
+- **Branding**: version 3.0.0, About page “maintained independently by Fenglin”, whale-girl icon, update checks pointed at this repository, `Ctrl+R` reload, attachment entry on the composer.
+- **Plugins**: Skill Center enabled by default with unified sidebar UI; LiangShen switchable while idle (locked only while a reply is running); Better Sidebar bottom workbench works and does not auto-expand after refresh; bundled music enabled by default; “Add plugin” remains clickable on local desktop.
+- **Stability**: LiangShen `no session id` / dual-mount / burst crash; bottom and side terminal `sessionId`; new-chat React #130; `mkt-music` loader diagnostic; Windows packaging and prebuilt-seal allowlist fixes.
+- **Release CI**: `dsh-v*` tags auto-build Linux and Windows installers and attach them to GitHub Releases.
+
+> [!NOTE]
+>
+> Repository: [fenglin-dev/deepseek-harness-fenglin](https://github.com/fenglin-dev/deepseek-harness-fenglin). Upstream [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop) ships additional phone/small-window work; a future mobile build may be considered here. **This edition currently prioritizes desktop.**
 
 <p align="center">
-  <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="Downloads"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/github/license/flaqai/open-deepseek-harness-desktop?style=flat" alt="MIT License"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases"><img src="https://img.shields.io/github/downloads/fenglin-dev/deepseek-harness-fenglin/total.svg?style=flat" alt="Downloads"></a>
+  <a href="../../LICENSE"><img src="https://img.shields.io/github/license/fenglin-dev/deepseek-harness-fenglin?style=flat" alt="MIT License"></a>
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/upstream-DeepSeek%20Harness-4d6bfe?style=flat" alt="DeepSeek Harness upstream"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.0"><img src="https://img.shields.io/badge/release-3.0.0-4d6bfe?style=flat" alt="3.0.0"></a>
 </p>
 
-Open DeepSeek Harness Desktop is an independent, community-maintained desktop distribution of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It combines the upstream plugin-based agent runtime, Web workspace, and native desktop integration into an installable app for configuring models, running coding sessions, inspecting execution, managing plugins and Skills, and connecting external coding tools or IM bots.
+DeepSeek Harness Desktop (Fenglin Edition) is an independent desktop distribution of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), maintained at [fenglin-dev/deepseek-harness-fenglin](https://github.com/fenglin-dev/deepseek-harness-fenglin). It combines the upstream plugin-based agent runtime, Web workspace, and native desktop integration into an installable app for configuring models, running coding sessions, inspecting execution, managing plugins and Skills, and connecting external coding tools or IM bots.
 
 Installers include Node.js, pnpm, and the Harness runtime, so users do not need to prepare a development environment. Electron does not become a second agent runtime: configuration, credentials, sessions, plugins, and Skills remain owned by the local Harness service, while Electron exposes only capability-scoped desktop integration.
 
 > [!NOTE]
 >
-> This repository is not an official DeepSeek product. It is an open-source community project built on DeepSeek Harness and remains in preview; local data formats, plugin compatibility policies, and installation details may continue to evolve.
+> This repository is not an official DeepSeek product. It is an independent fork built on DeepSeek Harness; local data formats, plugin compatibility policies, and installation details may continue to evolve.
 
 ## Current feature highlights
 
@@ -389,7 +403,7 @@ The desktop baseline uses upstream `dsh-v0.1.5-rc.2`. Conversation, model, subag
 
 ## Installation
 
-Download builds only from this project's [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) page. [`v0.1.5-rc.2.3`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) provides the following artifacts:
+Download builds only from this project's [GitHub Releases](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.0) page. [`v0.1.5-rc.2.3`](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.0) provides the following artifacts:
 
 | Platform | Architecture | Release package | Status |
 | --- | --- | --- | --- |
@@ -438,7 +452,7 @@ sudo dnf install "/path/to/DeepSeek-Harness-linux-x64.rpm"
 Install Node.js `^22.19.0 || >=24.0.0` and pnpm `11.7.0`, then run:
 
 ```sh
-git clone https://github.com/flaqai/open-deepseek-harness-desktop.git
+git clone https://github.com/fenglin-dev/deepseek-harness-fenglin.git
 cd open-deepseek-harness-desktop
 pnpm install
 pnpm run build
@@ -506,7 +520,7 @@ These items describe direction, not completed support. See the [desktop release 
 ## Documentation and community
 
 - Read the [user guide](../../docs/user/guide/index.md), [plugin introduction](../../docs/user/develop/framework/index.md), and [Skill guide](../../docs/subsystems/skills.md).
-- Use [GitHub Issues](https://github.com/flaqai/open-deepseek-harness-desktop/issues) for reproducible bugs and feature requests.
+- Use [GitHub Issues](https://github.com/fenglin-dev/deepseek-harness-fenglin/issues) for reproducible bugs and feature requests.
 - Discuss the upstream runtime in [DeepSeek Harness Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) or its [Discord community](https://discord.gg/Ycq5dCaS4).
 - See [CONTRIBUTING.md](../../CONTRIBUTING.md) before contributing and [AGENTS.md](../../AGENTS.md) when working with coding agents in this repository.
 

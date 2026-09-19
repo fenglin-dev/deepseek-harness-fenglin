@@ -1,34 +1,48 @@
 <p align="center">
-  <img src="./apps/desktop/src/icon.png" width="112" alt="Open DeepSeek Harness Desktop 图标">
+  <img src="./apps/desktop/src/icon.png" width="112" alt="DeepSeek Harness Desktop 枫林独立版图标">
 </p>
 
-# Open DeepSeek Harness Desktop
+# DeepSeek Harness Desktop 3.0.0（枫林独立版）
 
 <p align="center">
-  <strong>开箱即用、依赖安全的 DeepSeek Harness 社区桌面版</strong>
+  <strong>开箱即用、依赖安全的 DeepSeek Harness 独立桌面发行版</strong>
 </p>
 
-语言：简体中文（默认） · [English](.github/readme/README.en.md) · [日本語](.github/readme/README.ja.md) · [한국어](.github/readme/README.ko.md) · [Español](.github/readme/README.es.md) · [Français](.github/readme/README.fr.md) · [Deutsch](.github/readme/README.de.md) · [Português](.github/readme/README.pt-BR.md)
+语言：简体中文（默认） · [English](.github/readme/README.en.md)
 
 > [!IMPORTANT]
 >
-> **[v0.1.5-rc.2.3 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3)。** 本版本继续以官方 DeepSeek Harness `0.1.5-rc.2` 为核心基线，重点改进手机端和小窗口布局、模型搜索及长回答性能、社区配置导入、预设插件升级恢复、插件市场重启确认和持久化诊断日志。
+> **[v3.0.0 已发布，欢迎下载体验](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.0)。**
 >
-> 虽然版本名保留 `rc`，本次在 GitHub 上按正式 Release 发布。升级前仍建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈给我们。
+> 本版本由上游 `0.1.6-alpha.2` 基线重建，保留枫林专属能力并修复近期稳定性问题。跨大版本升级，**建议干净安装**（删除旧安装目录，可选清空 `%APPDATA%\open-deepseek-harness-desktop` 后重装）。
+>
+> 语言支持：**简体中文 / English** 双语。
+
+### v3.0.0 更新内容
+
+- **品牌**：版本 3.0.0，关于页「由枫林维护的独立版」；鲸鱼少女图标；更新检测指向本仓库；`Ctrl+R` 刷新；输入栏附件入口。
+- **插件**：技能中心默认启用且侧栏 UI 统一；梁神模式空闲可切换（AI 回复进行中锁定）；Better Sidebar 底部工作台可用，刷新后侧边工具不自动展开；音乐插件默认启用；「添加插件」在本机场景仍可点击。
+- **稳定性**：修复梁神 `no session id` / 双挂载 / Burst 崩溃；修复底部与侧栏终端 `sessionId`；修复新对话 React #130；修复 `mkt-music` 诊断失败；Windows 打包与 prebuilt seal 白名单修复。
+- **发布与 CI**：`dsh-v*` tag 自动构建 Linux + Windows 安装包并挂到 GitHub Release。
+
+> [!NOTE]
+>
+> 项目链接：[fenglin-dev/deepseek-harness-fenglin](https://github.com/fenglin-dev/deepseek-harness-fenglin)。上游 [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop) 另有手机端等布局能力；本独立版后续版本也在评估手机端，**当前以桌面为主**。
 
 <p align="center">
-  <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="下载量"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/github/license/flaqai/open-deepseek-harness-desktop?style=flat" alt="MIT 许可证"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases"><img src="https://img.shields.io/github/downloads/fenglin-dev/deepseek-harness-fenglin/total.svg?style=flat" alt="下载量"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/fenglin-dev/deepseek-harness-fenglin?style=flat" alt="MIT 许可证"></a>
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/upstream-DeepSeek%20Harness-4d6bfe?style=flat" alt="DeepSeek Harness 上游"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.0"><img src="https://img.shields.io/badge/release-3.0.0-4d6bfe?style=flat" alt="3.0.0"></a>
 </p>
 
-Open DeepSeek Harness Desktop 是由社区独立维护的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 桌面发行版。它把上游插件化智能体运行时、Web 工作区和桌面系统能力组合为可以直接安装的应用，可用于配置模型、运行编码会话、查看执行轨迹、管理插件与 Skill，并连接外部编码工具或 IM 机器人。
+DeepSeek Harness Desktop 枫林独立版是由枫林维护的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 桌面发行版，仓库为 [fenglin-dev/deepseek-harness-fenglin](https://github.com/fenglin-dev/deepseek-harness-fenglin)。它把上游插件化智能体运行时、Web 工作区和桌面系统能力组合为可以直接安装的应用，可用于配置模型、运行编码会话、查看执行轨迹、管理插件与 Skill，并连接外部编码工具或 IM 机器人。
 
 安装包内置 Node.js、pnpm 与 Harness 运行时，无需用户先准备开发环境。本项目不会把 Electron 变成第二套智能体运行时：配置、凭据、会话、插件和 Skill 仍由本机 Harness 服务管理，Electron 只提供受限的桌面宿主能力。
 
 > [!NOTE]
 >
-> 本仓库并非 DeepSeek 官方产品，而是基于 DeepSeek Harness 的社区开源项目。项目仍处于预览阶段，本地数据结构、插件兼容策略和安装方式可能继续演进。
+> 本仓库并非 DeepSeek 官方产品，而是基于 DeepSeek Harness 的独立二创发行版。本地数据结构、插件兼容策略和安装方式可能继续演进。
 
 ## 当前功能亮点
 
@@ -369,7 +383,7 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 ## 下载安装
 
-请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) 页面下载安装包。[`v0.1.5-rc.2.3`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) 已提供以下发行产物：
+请只从本项目的 [GitHub Releases](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.0) 页面下载安装包。[`v0.1.5-rc.2.3`](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.0) 已提供以下发行产物：
 
 | 平台 | 架构 | 发行包 | 状态 |
 | --- | --- | --- | --- |
@@ -420,7 +434,7 @@ sudo dnf install "/path/to/DeepSeek-Harness-linux-x64.rpm"
 安装 Node.js `^22.19.0 || >=24.0.0` 与 pnpm `11.7.0`，然后执行：
 
 ```sh
-git clone https://github.com/flaqai/open-deepseek-harness-desktop.git
+git clone https://github.com/fenglin-dev/deepseek-harness-fenglin.git
 cd open-deepseek-harness-desktop
 pnpm install
 pnpm run build
@@ -486,7 +500,7 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 ## 文档与社区
 
 - 阅读[用户指南](docs/user/guide/index.zh.md)、[插件介绍](docs/user/develop/framework/index.zh.md)和 [Skill 指南](docs/subsystems/skills.zh.md)。
-- 通过 [GitHub Issues](https://github.com/flaqai/open-deepseek-harness-desktop/issues) 提交可复现的缺陷、使用反馈和功能建议。
+- 通过 [GitHub Issues](https://github.com/fenglin-dev/deepseek-harness-fenglin/issues) 提交可复现的缺陷、使用反馈和功能建议。
 - 在 [DeepSeek Harness Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) 或其 [Discord 社区](https://discord.gg/Ycq5dCaS4)讨论上游运行时。
 - 贡献前请阅读 [CONTRIBUTING.md](CONTRIBUTING.zh.md)；使用编码智能体处理本仓库时请遵循 [AGENTS.md](AGENTS.md)。
 
