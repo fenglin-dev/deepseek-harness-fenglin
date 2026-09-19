@@ -2254,6 +2254,21 @@ async function startApplication(): Promise<void> {
     return value as WorkspaceRuntimeCapability
   }
   ipcMain.handle(DESKTOP_IPC.workspaceRuntimesGet, event => requireWorkspaceRuntimes(event.sender).get())
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesChoosePython, async (event) => {
+    const manager = requireWorkspaceRuntimes(event.sender)
+    const result = mainWindow === undefined
+      ? await dialog.showOpenDialog({ title: 'Select Python interpreter', properties: ['openFile'] })
+      : await dialog.showOpenDialog(mainWindow, { title: 'Select Python interpreter', properties: ['openFile'] })
+    const path = result.filePaths[0]
+    return path === undefined ? undefined : manager.selectCustomPython(path)
+  })
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesManagedPython, event => (
+    requireWorkspaceRuntimes(event.sender).selectManagedPython()
+  ))
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesInstallOffice, (event, allowPackageChanges: unknown) => {
+    if (typeof allowPackageChanges !== 'boolean') throw new TypeError('desktop: invalid Office dependency confirmation')
+    return requireWorkspaceRuntimes(event.sender).installCustomOffice(allowPackageChanges)
+  })
   ipcMain.handle(DESKTOP_IPC.workspaceRuntimesStart, (event, capability: unknown) => (
     requireWorkspaceRuntimes(event.sender).start(workspaceCapability(capability))
   ))
@@ -3308,15 +3323,22 @@ async function startApplication(): Promise<void> {
       const reference = await workspaceRuntimeManager.reference(dshHome, capability)
       if (action === 'enable' && reference === undefined) throw new Error(`desktop: ${capability} workspace-runtime reference is missing`)
       const payloadRoot = reference?.payloadRoot ?? join(app.getPath('userData'), 'optional-runtimes', 'removed')
-      const python = process.platform === 'win32'
-        ? join(payloadRoot, 'python', 'python.exe')
-        : join(payloadRoot, 'python', 'bin', 'python3')
+      const python = reference?.custom === true && reference.python !== undefined
+        ? reference.python.executable
+        : process.platform === 'win32'
+          ? join(payloadRoot, 'python', 'python.exe')
+          : join(payloadRoot, 'python', 'bin', 'python3')
       const paths: WorkspaceRuntimeProfilePaths = {
         runtimeRoot: payloadRoot,
         python,
         node: launch.command,
         pnpm,
         nodePackages,
+        ...(reference?.custom === true && reference.python !== undefined ? { customPython: {
+          executable: reference.python.executable,
+          sitePackages: reference.python.sitePackages,
+          distributions: reference.python.packages,
+        } } : {}),
       }
       await desktopMutations.applyAtStartup({
         operation: `workspace-runtime-${capability}-${action}`,

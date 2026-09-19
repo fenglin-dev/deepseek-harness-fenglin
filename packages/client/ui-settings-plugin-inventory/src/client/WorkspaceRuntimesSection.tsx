@@ -39,6 +39,7 @@ export function WorkspaceRuntimesSection(props: Props): ReactNode {
   const [output, setOutput] = useState<Record<string, { text: string; offset: number; lossy: boolean; settled: boolean }>>({})
   const [riskOpen, setRiskOpen] = useState(false)
   const [riskAccepted, setRiskAccepted] = useState(false)
+  const [packagePlanOpen, setPackagePlanOpen] = useState(false)
   const [error, setError] = useState<string>()
   const terminal = useRef<HTMLDivElement>(null)
 
@@ -109,6 +110,20 @@ export function WorkspaceRuntimesSection(props: Props): ReactNode {
     if (!await props.restart()) setError(props.t('external.restart.failed'))
   }
 
+  const choosePython = async (): Promise<void> => {
+    setError(undefined)
+    try {
+      const next = await props.chooseWorkspacePython()
+      if (next !== undefined) setSnapshot(next)
+    } catch { setError(props.t('external.runtime.python.error')) }
+  }
+
+  const installOffice = async (allowPackageChanges: boolean): Promise<void> => {
+    setError(undefined)
+    try { setSnapshot(await props.installWorkspaceOffice(allowPackageChanges)); setPackagePlanOpen(false) }
+    catch { setError(props.t('external.runtime.office.installError')) }
+  }
+
   return (
     <>
       <div className={css.groupHeading}>
@@ -118,11 +133,35 @@ export function WorkspaceRuntimesSection(props: Props): ReactNode {
         </div>
       </div>
       <ul className={css.grid} data-testid="workspace-runtime-grid">
+        <li className={css.card} data-testid="workspace-python-card">
+          <div className={css.cardTop}>
+            <span className={css.toolMark} data-tool="workspace-runtime" aria-hidden="true"><IconCodeOutline16 size={20} /></span>
+            <span className={css.status}>{snapshot?.python?.source === 'custom'
+              ? props.t('external.runtime.python.custom') : props.t('external.runtime.python.managed')}</span>
+          </div>
+          <div className={css.cardBody}>
+            <div className={css.toolTitle}><h3>{props.t('external.runtime.python.title')}</h3></div>
+            <p>{props.t('external.runtime.python.description')}</p>
+            {snapshot?.python?.probe === undefined ? null : <p className={css.runtimeNotice}>
+              {`${snapshot.python.probe.implementation} ${snapshot.python.probe.version} · ${snapshot.python.probe.architecture} · ${snapshot.python.probe.executable}`}
+            </p>}
+          </div>
+          <div className={css.cardAction}>
+            <Button variant="outline" disabled={snapshot?.capabilities.office.phase === 'nas-unavailable'} onClick={() => { void choosePython() }}>
+              {props.t('external.runtime.python.choose')}
+            </Button>
+            {snapshot?.python?.source === 'custom' ? <Button variant="toolbar" onClick={() => {
+              void props.useManagedWorkspacePython().then(setSnapshot, () => { setError(props.t('external.runtime.python.error')) })
+            }}>{props.t('external.runtime.python.useManaged')}</Button> : null}
+          </div>
+        </li>
         {DEFINITIONS.map((definition) => {
           const status = snapshot?.capabilities[definition.id]
           const job = jobs[definition.id]
           const downloaded = job?.phase === 'succeeded'
             || (snapshot?.sharedPayload !== undefined && status?.phase !== 'needs-update')
+            || (snapshot?.python?.source === 'custom' && (definition.id === 'ptc'
+              || (snapshot.python.plan?.changes.length ?? 0) === 0))
           const waiting = status?.phase === 'waiting-restart'
           const enabled = status?.phase === 'enabled'
           const unavailable = status?.phase === 'unsupported' || status?.phase === 'nas-unavailable'
@@ -150,7 +189,13 @@ export function WorkspaceRuntimesSection(props: Props): ReactNode {
                       if (definition.id === 'ptc') setRiskOpen(true)
                       else void activate(definition.id)
                     }}>{props.t('external.runtime.action.activate')}</Button>
-                      : <Button variant="primary" disabled={unavailable || job?.phase === 'running'} onClick={() => { void start(definition.id) }}>
+                      : <Button variant="primary" disabled={unavailable || job?.phase === 'running'} onClick={() => {
+                        if (definition.id === 'office' && snapshot?.python?.source === 'custom') {
+                          if ((snapshot.python.plan?.changes.length ?? 0) === 0) void activate('office')
+                          else if (snapshot.python.plan?.requiresConfirmation === true) setPackagePlanOpen(true)
+                          else void installOffice(false)
+                        } else void start(definition.id)
+                      }}>
                         {job?.phase === 'paused' ? props.t('external.action.resume') : props.t('external.runtime.action.install')}
                       </Button>}
               </div>
@@ -203,6 +248,17 @@ export function WorkspaceRuntimesSection(props: Props): ReactNode {
           </label>
           <div className={css.dialogActions}>
             <Button variant="primary" disabled={!riskAccepted} onClick={() => { setRiskOpen(false); void activate('ptc') }}>{props.t('external.runtime.action.activate')}</Button>
+          </div>
+        </div>
+      </Modal>
+      <Modal open={packagePlanOpen} onClose={() => { setPackagePlanOpen(false) }} closeLabel={props.t('external.capability.dialog.close')} title={props.t('external.runtime.office.confirmTitle')}>
+        <div className={css.capabilityForm}>
+          <p className={css.capabilityNotice}>{props.t('external.runtime.office.confirmDescription')}</p>
+          <ul>{snapshot?.python?.plan?.changes.map(change => <li key={change.name}>
+            {`${change.name}: ${change.installed ?? '—'} → ${change.target} (${change.action})`}
+          </li>)}</ul>
+          <div className={css.dialogActions}>
+            <Button variant="primary" onClick={() => { void installOffice(true) }}>{props.t('external.runtime.office.confirm')}</Button>
           </div>
         </div>
       </Modal>

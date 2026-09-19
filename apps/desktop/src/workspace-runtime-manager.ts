@@ -14,6 +14,8 @@ import {
   type WorkspaceRuntimeManifest,
   type WorkspaceRuntimeTarget,
 } from './workspace-runtime-manifest.ts'
+import { PythonEnvironment, type PythonEnvironmentPort, type PythonEnvironmentProbe, type PythonPackagePlan } from './workspace-python-environment.ts'
+import runtimeLock from '../scripts/primary-runtime-lock.json' with { type: 'json' }
 
 export type WorkspaceRuntimePhase =
   | 'not-installed' | 'downloading' | 'paused' | 'verifying' | 'waiting-restart'
@@ -33,6 +35,7 @@ export interface WorkspaceRuntimeSnapshot {
   readonly currentHome: string
   readonly target?: WorkspaceRuntimeTarget
   readonly sharedPayload?: { readonly payloadDigest: string; readonly path: string; readonly desktopVersion: string }
+  readonly python: { readonly source: 'managed' | 'custom'; readonly probe?: PythonEnvironmentProbe; readonly plan?: PythonPackagePlan }
   readonly capabilities: Readonly<Record<WorkspaceRuntimeCapability, WorkspaceRuntimeCapabilityStatus>>
 }
 
@@ -58,15 +61,18 @@ interface RuntimeReference {
   payloadDigest: string
   desktopVersion: string
   state: 'pending-enable' | 'enabled' | 'pending-remove' | 'cleaning'
+  source?: 'managed' | 'custom'
+  python?: string
 }
 
 interface HomeRecord {
+  python?: PythonEnvironmentProbe
   office?: RuntimeReference
   ptc?: RuntimeReference
 }
 
 interface PersistedState {
-  schema: 'open-dsh-desktop/workspace-runtimes/v1'
+  schema: 'open-dsh-desktop/workspace-runtimes/v2'
   homes: Record<string, HomeRecord>
   pendingCleanup: string[]
 }
@@ -93,13 +99,14 @@ export interface OptionalRuntimeManagerOptions {
   readonly fetch: (input: string, init?: RequestInit) => Promise<Response>
   readonly target?: WorkspaceRuntimeTarget
   readonly maxOutputBytes?: number
+  readonly pythonEnvironment?: PythonEnvironmentPort
 }
 
 const MAX_ARCHIVE_ENTRIES = 100_000
 const MAX_EXTRACTED_BYTES = 4 * 1024 * 1024 * 1024
 
 function emptyState(): PersistedState {
-  return { schema: 'open-dsh-desktop/workspace-runtimes/v1', homes: {}, pendingCleanup: [] }
+  return { schema: 'open-dsh-desktop/workspace-runtimes/v2', homes: {}, pendingCleanup: [] }
 }
 
 function normalizedHome(home: string): string {
@@ -116,11 +123,13 @@ function object(value: unknown): Record<string, unknown> {
 function reference(value: unknown): RuntimeReference | undefined {
   if (value === undefined) return undefined
   const record = object(value)
-  if (Object.keys(record).some(key => !['payloadDigest', 'desktopVersion', 'state'].includes(key))
+  if (Object.keys(record).some(key => !['payloadDigest', 'desktopVersion', 'state', 'source', 'python'].includes(key))
     || typeof record.payloadDigest !== 'string' || !/^[a-f0-9]{64}$/u.test(record.payloadDigest)
     || typeof record.desktopVersion !== 'string'
     || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(record.desktopVersion)
-    || !['pending-enable', 'enabled', 'pending-remove', 'cleaning'].includes(String(record.state))) {
+    || !['pending-enable', 'enabled', 'pending-remove', 'cleaning'].includes(String(record.state))
+    || (record.source !== undefined && record.source !== 'managed' && record.source !== 'custom')
+    || (record.python !== undefined && typeof record.python !== 'string')) {
     throw new TypeError('desktop: invalid workspace-runtime state')
   }
   return record as unknown as RuntimeReference
@@ -128,7 +137,7 @@ function reference(value: unknown): RuntimeReference | undefined {
 
 function persistedState(value: unknown): PersistedState {
   const root = object(value)
-  if (root.schema !== 'open-dsh-desktop/workspace-runtimes/v1') {
+  if (root.schema !== 'open-dsh-desktop/workspace-runtimes/v1' && root.schema !== 'open-dsh-desktop/workspace-runtimes/v2') {
     throw new TypeError('desktop: invalid workspace-runtime state')
   }
   const homesSource = object(root.homes)
@@ -136,11 +145,21 @@ function persistedState(value: unknown): PersistedState {
   for (const [home, value] of Object.entries(homesSource)) {
     if (normalizedHome(home) !== home) throw new TypeError('desktop: invalid workspace-runtime state')
     const source = object(value)
-    if (Object.keys(source).some(key => !WORKSPACE_RUNTIME_CAPABILITIES.includes(key as WorkspaceRuntimeCapability))) {
+    if (Object.keys(source).some(key => key !== 'python' && !WORKSPACE_RUNTIME_CAPABILITIES.includes(key as WorkspaceRuntimeCapability))) {
       throw new TypeError('desktop: invalid workspace-runtime state')
     }
+    const pythonRecord = source.python === undefined ? undefined : object(source.python)
+    if (pythonRecord !== undefined && (pythonRecord.implementation !== 'CPython' || typeof pythonRecord.executable !== 'string'
+      || typeof pythonRecord.requestedPath !== 'string' || typeof pythonRecord.version !== 'string'
+      || typeof pythonRecord.architecture !== 'string' || typeof pythonRecord.pipVersion !== 'string'
+      || typeof pythonRecord.sitePackages !== 'string'
+      || typeof pythonRecord.writable !== 'boolean' || pythonRecord.packages === null || typeof pythonRecord.packages !== 'object')) {
+      throw new TypeError('desktop: invalid workspace-runtime Python selection')
+    }
+    const python = pythonRecord as unknown as PythonEnvironmentProbe | undefined
     const record = { office: reference(source.office), ptc: reference(source.ptc) }
     homes[home] = {
+      ...(python === undefined ? {} : { python }),
       ...(record.office === undefined ? {} : { office: record.office }),
       ...(record.ptc === undefined ? {} : { ptc: record.ptc }),
     }
@@ -150,7 +169,7 @@ function persistedState(value: unknown): PersistedState {
     || new Set(root.pendingCleanup).size !== root.pendingCleanup.length) {
     throw new TypeError('desktop: invalid workspace-runtime state')
   }
-  return { schema: root.schema, homes, pendingCleanup: root.pendingCleanup as string[] }
+  return { schema: 'open-dsh-desktop/workspace-runtimes/v2', homes, pendingCleanup: root.pendingCleanup as string[] }
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -175,9 +194,11 @@ export class OptionalRuntimeManager {
   readonly #options: OptionalRuntimeManagerOptions
   readonly #jobs = new Map<string, Job>()
   #state: PersistedState | undefined
+  readonly #python: PythonEnvironmentPort
 
   constructor(options: OptionalRuntimeManagerOptions) {
     this.#options = options
+    this.#python = options.pythonEnvironment ?? new PythonEnvironment()
   }
 
   async #readState(): Promise<PersistedState> {
@@ -240,7 +261,8 @@ export class OptionalRuntimeManager {
       if (reference.desktopVersion !== this.#options.desktopVersion) return { capabilityId, phase: 'needs-update' }
       return { capabilityId, phase: 'enabled' }
     }
-    const reference = [record.office, record.ptc].find(value => value?.state !== 'cleaning')
+    const reference = [record.office, record.ptc].find(value => value?.state !== 'cleaning' && value?.source !== 'custom')
+    const python = record.python
     return {
       currentHome: home,
       ...(target === undefined ? {} : { target }),
@@ -251,8 +273,50 @@ export class OptionalRuntimeManager {
           desktopVersion: reference.desktopVersion,
         },
       }),
+      python: python === undefined
+        ? { source: 'managed' }
+        : { source: 'custom', probe: python, plan: this.#python.plan(python, runtimeLock.pythonPackages) },
       capabilities: { office: capability('office'), ptc: capability('ptc') },
     }
+  }
+
+  async selectCustomPython(path: string): Promise<WorkspaceRuntimeSnapshot> {
+    if (this.#options.isNas()) throw new Error('desktop: Python selection is managed by the NAS runtime')
+    const probe = await this.#python.probe(path)
+    const state = await this.#readState()
+    const record = state.homes[normalizedHome(this.#options.getHome())] ??= {}
+    record.python = probe
+    for (const capability of WORKSPACE_RUNTIME_CAPABILITIES) {
+      const value = record[capability]
+      if (value?.source !== 'custom' && value !== undefined && !state.pendingCleanup.includes(value.payloadDigest)) {
+        state.pendingCleanup.push(value.payloadDigest)
+      }
+      if (value !== undefined) record[capability] = { ...value, state: 'pending-remove' }
+    }
+    await this.#writeState()
+    return this.get()
+  }
+
+  async selectManagedPython(): Promise<WorkspaceRuntimeSnapshot> {
+    if (this.#options.isNas()) throw new Error('desktop: Python selection is managed by the NAS runtime')
+    const state = await this.#readState()
+    const record = state.homes[normalizedHome(this.#options.getHome())] ??= {}
+    delete record.python
+    for (const capability of WORKSPACE_RUNTIME_CAPABILITIES) {
+      const value = record[capability]
+      if (value?.source === 'custom') record[capability] = { ...value, state: 'pending-remove' }
+    }
+    await this.#writeState()
+    return this.get()
+  }
+
+  async installCustomOffice(allowPackageChanges: boolean): Promise<WorkspaceRuntimeSnapshot> {
+    const state = await this.#readState()
+    const record = state.homes[normalizedHome(this.#options.getHome())] ??= {}
+    if (record.python === undefined) throw new Error('desktop: no custom Python environment is selected')
+    record.python = await this.#python.install(record.python, runtimeLock.pythonPackages, allowPackageChanges)
+    await this.#writeState()
+    return this.get()
   }
 
   start(capabilityId: WorkspaceRuntimeCapability): Promise<WorkspaceRuntimeJobSnapshot> {
@@ -327,6 +391,22 @@ export class OptionalRuntimeManager {
     this.#assertCapability(capabilityId)
     if (this.#options.isNas()) throw new Error('desktop: workspace runtimes are unavailable in NAS mode')
     if (!this.#supported(capabilityId)) throw new Error('desktop: workspace runtime capability is unsupported on this platform')
+    const home = normalizedHome(this.#options.getHome())
+    const state = await this.#readState()
+    const record = state.homes[home] ??= {}
+    if (record.python !== undefined) {
+      const probe = await this.#python.probe(record.python.executable)
+      if (capabilityId === 'office' && this.#python.plan(probe, runtimeLock.pythonPackages).changes.length > 0) {
+        throw new Error('desktop: Office dependencies are not installed in the selected Python environment')
+      }
+      record.python = probe
+      record[capabilityId] = {
+        payloadDigest: createHash('sha256').update(probe.executable).digest('hex'),
+        desktopVersion: this.#options.desktopVersion, state: 'pending-enable', source: 'custom', python: probe.executable,
+      }
+      await this.#writeState()
+      return this.get()
+    }
     const manifest = await this.#options.loadManifest()
     this.#assertManifest(manifest)
     const target = this.#target() as WorkspaceRuntimeTarget
@@ -334,8 +414,6 @@ export class OptionalRuntimeManager {
     const payloadRoot = this.payloadRoot(artifact)
     if (!await exists(join(payloadRoot, 'runtime.json'))) throw new Error('desktop: workspace runtime must be downloaded before activation')
     await this.#validatePayload(payloadRoot, artifact)
-    const home = normalizedHome(this.#options.getHome())
-    const state = await this.#readState()
     if (state.pendingCleanup.includes(artifact.payloadDigest)) {
       await this.#collectUnused()
       if (state.pendingCleanup.includes(artifact.payloadDigest)) {
@@ -345,11 +423,10 @@ export class OptionalRuntimeManager {
         throw new Error('desktop: workspace runtime must be downloaded again after cleanup')
       }
     }
-    const record = state.homes[home] ??= {}
     const previous = record[capabilityId]
     if (previous !== undefined && previous.payloadDigest !== artifact.payloadDigest
       && !state.pendingCleanup.includes(previous.payloadDigest)) state.pendingCleanup.push(previous.payloadDigest)
-    record[capabilityId] = { payloadDigest: artifact.payloadDigest, desktopVersion: manifest.desktopVersion, state: 'pending-enable' }
+    record[capabilityId] = { payloadDigest: artifact.payloadDigest, desktopVersion: manifest.desktopVersion, state: 'pending-enable', source: 'managed' }
     await this.#writeState()
     return this.get()
   }
@@ -378,10 +455,15 @@ export class OptionalRuntimeManager {
   async reference(
     home: string,
     capability: WorkspaceRuntimeCapability,
-  ): Promise<{ payloadRoot: string; desktopVersion: string } | undefined> {
+  ): Promise<{ payloadRoot: string; desktopVersion: string; python?: PythonEnvironmentProbe; custom?: boolean } | undefined> {
     const target = this.#target()
     const value = (await this.#readState()).homes[normalizedHome(home)]?.[capability]
     if (value === undefined || value.state === 'cleaning' || target === undefined) return undefined
+    if (value.source === 'custom' && value.python !== undefined) {
+      const probe = (await this.#readState()).homes[normalizedHome(home)]?.python
+      if (probe === undefined) return undefined
+      return { payloadRoot: dirname(value.python), desktopVersion: value.desktopVersion, python: probe, custom: true }
+    }
     return { payloadRoot: join(this.#options.cacheRoot, value.payloadDigest, target), desktopVersion: value.desktopVersion }
   }
 
@@ -394,8 +476,14 @@ export class OptionalRuntimeManager {
       const reference = record[capability]
       if (reference?.state === 'pending-enable') record[capability] = { ...reference, state: 'enabled' }
       else if (reference?.state === 'pending-remove') {
-        if (!state.pendingCleanup.includes(reference.payloadDigest)) state.pendingCleanup.push(reference.payloadDigest)
-        record[capability] = { ...reference, state: 'cleaning' }
+        if (reference.source === 'custom') {
+          if (capability === 'office') delete record.office
+          else delete record.ptc
+        }
+        else {
+          if (!state.pendingCleanup.includes(reference.payloadDigest)) state.pendingCleanup.push(reference.payloadDigest)
+          record[capability] = { ...reference, state: 'cleaning' }
+        }
       }
     }
     await this.#writeState()
@@ -526,8 +614,8 @@ export class OptionalRuntimeManager {
     const state = await this.#readState()
     const retained = new Set<string>()
     for (const record of Object.values(state.homes)) {
-      if (record.office !== undefined && record.office.state !== 'cleaning') retained.add(record.office.payloadDigest)
-      if (record.ptc !== undefined && record.ptc.state !== 'cleaning') retained.add(record.ptc.payloadDigest)
+      if (record.office !== undefined && record.office.state !== 'cleaning' && record.office.source !== 'custom') retained.add(record.office.payloadDigest)
+      if (record.ptc !== undefined && record.ptc.state !== 'cleaning' && record.ptc.source !== 'custom') retained.add(record.ptc.payloadDigest)
     }
     for (const digest of [...state.pendingCleanup]) {
       if (!retained.has(digest)) {

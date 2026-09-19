@@ -19,6 +19,28 @@ export interface WorkspaceRuntimeSnapshot {
   readonly currentHome: string
   readonly target?: string
   readonly sharedPayload?: { readonly payloadDigest: string; readonly path: string; readonly desktopVersion: string }
+  readonly python?: {
+    readonly source: 'managed' | 'custom'
+    readonly probe?: {
+      readonly executable: string
+      readonly implementation: 'CPython'
+      readonly version: string
+      readonly architecture: string
+      readonly pipVersion: string
+      readonly sitePackages: string
+      readonly writable: boolean
+      readonly packages: Readonly<Record<string, string>>
+    }
+    readonly plan?: {
+      readonly requiresConfirmation: boolean
+      readonly changes: readonly {
+        readonly name: string
+        readonly installed?: string
+        readonly target: string
+        readonly action: 'add' | 'upgrade' | 'downgrade' | 'replace'
+      }[]
+    }
+  }
   readonly capabilities: Readonly<Record<WorkspaceRuntimeCapability, WorkspaceRuntimeCapabilityStatus>>
 }
 
@@ -43,6 +65,9 @@ export interface WorkspaceRuntimeOutputRead {
 /** Host operations consumed by the workspace-runtime settings cards. */
 export interface WorkspaceRuntimeInjected {
   getWorkspaceRuntimes: () => Promise<WorkspaceRuntimeSnapshot>
+  chooseWorkspacePython: () => Promise<WorkspaceRuntimeSnapshot | undefined>
+  useManagedWorkspacePython: () => Promise<WorkspaceRuntimeSnapshot>
+  installWorkspaceOffice: (allowPackageChanges: boolean) => Promise<WorkspaceRuntimeSnapshot>
   startWorkspaceRuntime: (capabilityId: WorkspaceRuntimeCapability) => Promise<WorkspaceRuntimeJobSnapshot>
   getWorkspaceRuntimeJob: (jobId: string) => Promise<WorkspaceRuntimeJobSnapshot>
   readWorkspaceRuntimeOutput: (jobId: string, offset: number) => Promise<WorkspaceRuntimeOutputRead>
@@ -54,6 +79,9 @@ export interface WorkspaceRuntimeInjected {
 
 interface DesktopWorkspaceRuntimesBridge {
   get(): Promise<WorkspaceRuntimeSnapshot>
+  choosePython(): Promise<WorkspaceRuntimeSnapshot | undefined>
+  useManagedPython(): Promise<WorkspaceRuntimeSnapshot>
+  installOffice(allowPackageChanges: boolean): Promise<WorkspaceRuntimeSnapshot>
   start(capabilityId: WorkspaceRuntimeCapability): Promise<WorkspaceRuntimeJobSnapshot>
   getJob(jobId: string): Promise<WorkspaceRuntimeJobSnapshot>
   readOutput(jobId: string, offset: number): Promise<WorkspaceRuntimeOutputRead>
@@ -70,6 +98,7 @@ function bridge(): DesktopWorkspaceRuntimesBridge | undefined {
   if (candidate === null || typeof candidate !== 'object') return undefined
   const value = candidate as Partial<DesktopWorkspaceRuntimesBridge>
   if (typeof value.get !== 'function' || typeof value.start !== 'function' || typeof value.getJob !== 'function'
+    || typeof value.choosePython !== 'function' || typeof value.useManagedPython !== 'function' || typeof value.installOffice !== 'function'
     || typeof value.readOutput !== 'function' || typeof value.pause !== 'function' || typeof value.cancel !== 'function'
     || typeof value.activate !== 'function' || typeof value.remove !== 'function') return undefined
   return value as DesktopWorkspaceRuntimesBridge
@@ -85,6 +114,9 @@ function required(): DesktopWorkspaceRuntimesBridge {
 export function workspaceRuntimeInjected(): WorkspaceRuntimeInjected {
   return {
     getWorkspaceRuntimes: () => required().get(),
+    chooseWorkspacePython: () => required().choosePython(),
+    useManagedWorkspacePython: () => required().useManagedPython(),
+    installWorkspaceOffice: allowPackageChanges => required().installOffice(allowPackageChanges),
     startWorkspaceRuntime: capability => required().start(capability),
     getWorkspaceRuntimeJob: jobId => required().getJob(jobId),
     readWorkspaceRuntimeOutput: (jobId, offset) => required().readOutput(jobId, offset),

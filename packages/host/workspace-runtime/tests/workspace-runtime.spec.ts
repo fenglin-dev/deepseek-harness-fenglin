@@ -43,6 +43,18 @@ async function fixture(): Promise<{ root: string; node: string; pnpm: string; no
 }
 
 describe('host workspace-runtime adapter', () => {
+  it('uses trusted custom Python paths without managed payload metadata', async () => {
+    const value = await fixture()
+    const python = join(value.root, 'custom-python')
+    const sitePackages = join(value.root, 'custom-site-packages')
+    await Promise.all([writeFile(python, ''), mkdir(sitePackages)])
+    await expect(resolveWorkspaceDependencies({
+      runtimeRoot: value.root, python, pythonPackages: sitePackages,
+      pythonDistributions: { openpyxl: '3.1.5' }, node: value.node, pnpm: value.pnpm,
+      nodePackages: value.nodePackages,
+    })).resolves.toMatchObject({ python, pythonPackages: sitePackages, pythonDistributions: { openpyxl: '3.1.5' } })
+  })
+
   it('validates payload identity and resolves only application-owned absolute paths', async () => {
     const value = await fixture()
     await expect(readWorkspaceRuntimePayload(value.root)).resolves.toMatchObject({

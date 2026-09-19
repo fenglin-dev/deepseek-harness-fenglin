@@ -10,11 +10,11 @@ Desktop 过去把 Python 与 Office 依赖视为安装包资源。这会让每�
 
 ## 决策
 
-`OptionalRuntimeManager` 是 Electron 主进程中负责可选工作运行时的深 module。只有它可以解析经过签名、与版本和目标绑定的元数据，通过应用网络路径下载、续传部分文件、校验大小与 SHA-256、执行 tar 策略、原子解压、拥有共享的 `userData/optional-runtimes` 缓存，并为规范化 Harness home 记录引用。其渲染层接口只接受闭合能力 `office` 与 `ptc`；绝不接受 URL、路径、可执行文件、归档或包坐标。
+`OptionalRuntimeManager` 是 Electron 主进程中负责可选工作运行时的深 module。只有它可以解析经过签名、与版本和目标绑定的元数据，通过应用网络路径下载、续传部分文件、校验大小与 SHA-256、执行 tar 策略、原子解压、拥有共享的 `userData/optional-runtimes` 缓存，并为规范化 Harness home 记录引用。其能力接口仍只接受闭合的 `office` 与 `ptc`。受信任的原生选择器可以选择本机解释器；渲染层绝不提供 URL、可执行文件路径、归档或包坐标。
 
 载荷针对 Windows x64、macOS arm64/x64 与 Linux x64 独立发布。版本化清单根据 Release 中不可变的字节重新生成，并由仅允许 master 的 GitHub 工作流进行证明。GitHub 与 CNB 镜像同名、相同内容的文件。安装包继续携带 Node、pnpm、小型 `@deepseek-ai/dsh-host-workspace-runtime` adapter 与 Office Skill 资源，但不包含 Python 解释器、wheel 或可选运行时归档。
 
-Office 与 PTC 拥有独立 Profile 受管块，只共享已经校验的 Python 载荷。Office 挂载 adapter，由它使用应用选择的绝对路径发布 `load_workspace_dependencies` 与 Office Skill。PTC 直接挂载实验性 CPython 运行时并指定解释器。Windows 不开放 PTC；支持的平台也必须先明确确认风险。
+Python 选择、Office 与 PTC 是三种独立状态。`PythonEnvironment` 解析符号链接，接受 CPython 3.10+，校验 pip，并记录架构和 site-packages，再规划精确的 Office 分发包变更。纯新增计划可以继续；变更已安装版本必须显式确认，并通过对应解释器的 `python -m pip` 执行，继承其 pip 配置。Office 只在依赖一致后挂载 adapter 与 Office Skill。PTC 挂载所选解释器，在 Windows 上保持不可用，并要求独立风险确认。
 
 启用和停用进入现有 Desktop Profile 启动事务。在普通客户端与事件分发正常就绪、候选 Profile 提交之前，manager 会保留等待状态。候选启动失败时保留原 Profile 和已经校验的缓存。只有最后一个引用消失后才清理载荷；清理失败会继续保持等待，不能静默重新启用一个已经无人引用的载荷。NAS 只展示不可用状态，因为本决策不扩展远程安装协议。
 

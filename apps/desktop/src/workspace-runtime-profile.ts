@@ -13,6 +13,11 @@ export interface WorkspaceRuntimeProfilePaths {
   readonly node: string
   readonly pnpm: string
   readonly nodePackages: string
+  readonly customPython?: {
+    readonly executable: string
+    readonly sitePackages: string
+    readonly distributions: Readonly<Record<string, string>>
+  }
 }
 
 function markers(capability: WorkspaceRuntimeCapability): readonly [string, string] {
@@ -31,6 +36,11 @@ function block(capability: WorkspaceRuntimeCapability, paths: WorkspaceRuntimePr
       `        node: ${JSON.stringify(paths.node)}`,
       `        pnpm: ${JSON.stringify(paths.pnpm)}`,
       `        nodePackages: ${JSON.stringify(paths.nodePackages)}`,
+      ...(paths.customPython === undefined ? [] : [
+        `        python: ${JSON.stringify(paths.customPython.executable)}`,
+        `        pythonPackages: ${JSON.stringify(paths.customPython.sitePackages)}`,
+        `        pythonDistributions: ${JSON.stringify(paths.customPython.distributions)}`,
+      ]),
       '        office: true',
     ]
     : [
@@ -38,7 +48,7 @@ function block(capability: WorkspaceRuntimeCapability, paths: WorkspaceRuntimePr
       '    - id: community-desktop.workspace-runtime.ptc',
       "      name: '@deepseek-ai/dsh-experimental-ptc-runtime-python'",
       '      config:',
-      `        pythonBin: ${JSON.stringify(paths.python)}`,
+      `        pythonBin: ${JSON.stringify(paths.customPython?.executable ?? paths.python)}`,
     ]
   return `${start}\n${rows.join('\n')}\n${end}`
 }

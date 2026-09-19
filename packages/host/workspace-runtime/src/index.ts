@@ -30,6 +30,9 @@ export interface WorkspaceDependencies {
 /** Application-owned paths. Renderer input never reaches these fields. */
 export interface Config {
   readonly runtimeRoot: string
+  readonly python?: string
+  readonly pythonPackages?: string
+  readonly pythonDistributions?: Readonly<Record<string, string>>
   readonly node: string
   readonly pnpm: string
   readonly nodePackages: string
@@ -88,6 +91,17 @@ export async function readWorkspaceRuntimePayload(root: string): Promise<Workspa
  * @returns Paths safe to return from `load_workspace_dependencies`.
  */
 export async function resolveWorkspaceDependencies(config: Config): Promise<WorkspaceDependencies> {
+  if (config.python !== undefined) {
+    if (config.pythonPackages === undefined || config.pythonDistributions === undefined) {
+      throw new Error('workspace runtime: custom Python metadata is incomplete')
+    }
+    for (const path of [config.python, config.pythonPackages, config.node, config.pnpm, config.nodePackages]) await stat(path)
+    return {
+      python: config.python, node: config.node, pnpm: config.pnpm,
+      pythonPackages: config.pythonPackages, nodePackages: config.nodePackages,
+      pythonDistributions: config.pythonDistributions,
+    }
+  }
   const manifest = await readWorkspaceRuntimePayload(config.runtimeRoot)
   if (manifest.platform !== process.platform || manifest.arch !== process.arch) {
     throw new Error('workspace runtime: payload does not match this platform')

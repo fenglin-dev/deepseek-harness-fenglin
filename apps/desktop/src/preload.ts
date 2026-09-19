@@ -160,6 +160,9 @@ export interface DesktopExternalToolsBridge {
 /** Closed optional-runtime operations; renderer input contains no URL, path, or package coordinate. */
 export interface DesktopWorkspaceRuntimesBridge {
   get(): Promise<WorkspaceRuntimeSnapshot>
+  choosePython(): Promise<WorkspaceRuntimeSnapshot | undefined>
+  useManagedPython(): Promise<WorkspaceRuntimeSnapshot>
+  installOffice(allowPackageChanges: boolean): Promise<WorkspaceRuntimeSnapshot>
   start(capabilityId: WorkspaceRuntimeCapability): Promise<WorkspaceRuntimeJobSnapshot>
   getJob(jobId: string): Promise<WorkspaceRuntimeJobSnapshot>
   readOutput(jobId: string, offset: number): Promise<WorkspaceRuntimeOutputRead>
@@ -349,6 +352,11 @@ const externalToolsBridge: DesktopExternalToolsBridge = {
 
 const workspaceRuntimesBridge: DesktopWorkspaceRuntimesBridge = {
   get: () => ipcRenderer.invoke(DESKTOP_IPC.workspaceRuntimesGet) as Promise<WorkspaceRuntimeSnapshot>,
+  choosePython: () => ipcRenderer.invoke(DESKTOP_IPC.workspaceRuntimesChoosePython) as Promise<WorkspaceRuntimeSnapshot | undefined>,
+  useManagedPython: () => ipcRenderer.invoke(DESKTOP_IPC.workspaceRuntimesManagedPython) as Promise<WorkspaceRuntimeSnapshot>,
+  installOffice: allowPackageChanges => ipcRenderer.invoke(
+    DESKTOP_IPC.workspaceRuntimesInstallOffice, allowPackageChanges,
+  ) as Promise<WorkspaceRuntimeSnapshot>,
   start: capabilityId => ipcRenderer.invoke(
     DESKTOP_IPC.workspaceRuntimesStart, capabilityId,
   ) as Promise<WorkspaceRuntimeJobSnapshot>,
@@ -372,11 +380,15 @@ const remoteWorkspaceRuntimeUnavailable = (): Promise<never> => Promise.reject(
 const remoteWorkspaceRuntimesBridge: DesktopWorkspaceRuntimesBridge = {
   get: () => Promise.resolve({
     currentHome: '',
+    python: { source: 'managed' },
     capabilities: {
       office: { capabilityId: 'office', phase: 'nas-unavailable' },
       ptc: { capabilityId: 'ptc', phase: 'nas-unavailable' },
     },
   }),
+  choosePython: remoteWorkspaceRuntimeUnavailable,
+  useManagedPython: remoteWorkspaceRuntimeUnavailable,
+  installOffice: remoteWorkspaceRuntimeUnavailable,
   start: remoteWorkspaceRuntimeUnavailable,
   getJob: remoteWorkspaceRuntimeUnavailable,
   readOutput: remoteWorkspaceRuntimeUnavailable,

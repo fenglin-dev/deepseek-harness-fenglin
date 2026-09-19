@@ -6,6 +6,7 @@ import { c } from 'tar'
 import { afterEach, describe, expect, it } from 'vitest'
 import { OptionalRuntimeManager } from '../src/workspace-runtime-manager.ts'
 import type { WorkspaceRuntimeManifest } from '../src/workspace-runtime-manifest.ts'
+import type { PythonEnvironmentPort, PythonEnvironmentProbe } from '../src/workspace-python-environment.ts'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -16,6 +17,7 @@ async function fixture(options: {
   arch?: string
   corruptDigest?: boolean
   slowDownload?: boolean
+  pythonEnvironment?: PythonEnvironmentPort
 } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workspace-runtime-'))
   roots.push(root)
@@ -73,6 +75,7 @@ async function fixture(options: {
       })
       return Promise.resolve(new Response(stream, { status: 200, headers }))
     },
+    ...(options.pythonEnvironment === undefined ? {} : { pythonEnvironment: options.pythonEnvironment }),
   })
   return {
     manager, root, digest, stateFile, fetchCount: () => fetchCount,
@@ -124,6 +127,30 @@ describe('OptionalRuntimeManager', () => {
     const windows = await fixture({ platform: 'win32', arch: 'x64' })
     expect((await windows.manager.get()).capabilities.ptc.phase).toBe('unsupported')
     await expect(windows.manager.start('ptc')).rejects.toThrow(/unsupported/u)
+  })
+
+  it('keeps custom Python separate from Office and PTC capabilities', async () => {
+    const probe: PythonEnvironmentProbe = {
+      requestedPath: '/custom/python', executable: '/custom/python', implementation: 'CPython',
+      version: '3.12.8', architecture: 'arm64', pipVersion: 'pip 25.2',
+      sitePackages: '/custom/site-packages', writable: true, packages: {},
+    }
+    let current = probe
+    const pythonEnvironment: PythonEnvironmentPort = {
+      probe: () => Promise.resolve(current),
+      plan: value => ({ changes: value.packages.openpyxl === '3.1.5'
+        ? [] : [{ name: 'openpyxl', target: '3.1.5', action: 'add' }], requiresConfirmation: false }),
+      install: () => { current = { ...probe, packages: { openpyxl: '3.1.5' } }; return Promise.resolve(current) },
+    }
+    const { manager } = await fixture({ pythonEnvironment })
+    await manager.selectCustomPython('/custom/python')
+    expect((await manager.get()).python).toMatchObject({ source: 'custom', probe: { executable: '/custom/python' } })
+    await expect(manager.activate('office')).rejects.toThrow(/Office dependencies/u)
+    await manager.installCustomOffice(false)
+    await manager.activate('office')
+    expect(await manager.pending()).toEqual({ office: 'enable', ptc: undefined })
+    await manager.activate('ptc')
+    expect(await manager.pending()).toEqual({ office: 'enable', ptc: 'enable' })
   })
 
   it('rejects an archive whose signed digest does not match', async () => {

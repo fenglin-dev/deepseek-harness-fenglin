@@ -562,6 +562,9 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
         restart={restart}
         t={t}
         getWorkspaceRuntimes={props.getWorkspaceRuntimes}
+        chooseWorkspacePython={props.chooseWorkspacePython}
+        useManagedWorkspacePython={props.useManagedWorkspacePython}
+        installWorkspaceOffice={props.installWorkspaceOffice}
         startWorkspaceRuntime={props.startWorkspaceRuntime}
         getWorkspaceRuntimeJob={props.getWorkspaceRuntimeJob}
         readWorkspaceRuntimeOutput={props.readWorkspaceRuntimeOutput}
