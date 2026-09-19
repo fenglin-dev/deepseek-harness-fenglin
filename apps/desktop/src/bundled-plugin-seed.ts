@@ -67,6 +67,20 @@ export interface BundledPluginSeedProgress {
   readonly progress: number
 }
 
+/** Render a bounded Error.cause chain so startup wrappers do not hide the actionable failure. */
+export function bundledPluginFailureDiagnostic(error: unknown): string {
+  const seen = new Set<unknown>()
+  const parts: string[] = []
+  let current: unknown = error
+  for (let depth = 0; depth < 8 && current !== undefined && !seen.has(current); depth++) {
+    seen.add(current)
+    const detail = current instanceof Error ? current.stack ?? current.message : String(current)
+    parts.push(depth === 0 ? detail : `Caused by: ${detail}`)
+    current = current instanceof Error ? current.cause : undefined
+  }
+  return parts.join('\n')
+}
+
 /**
  * Persist a preset installation failure before the Harness supervisor starts.
  * @param logPath - Desktop Harness log path.
@@ -74,7 +88,7 @@ export interface BundledPluginSeedProgress {
  * @returns Completion after the diagnostic is durable.
  */
 export async function appendBundledPluginFailure(logPath: string, error: unknown): Promise<void> {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error)
+  const message = bundledPluginFailureDiagnostic(error)
   await mkdir(dirname(logPath), { recursive: true })
   await appendFile(logPath, formatPersistentLogLine('bundled-plugin', 'error', message))
 }

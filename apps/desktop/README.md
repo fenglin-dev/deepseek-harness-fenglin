@@ -207,6 +207,8 @@ The source host uses only Electron and Node process APIs that are shared by macO
 
 The Windows job silently installs its final NSIS artifact into a path containing spaces and Chinese characters, verifies the installed runtime, launches the installed application with isolated app data, and requires Harness readiness, all six startup dependencies and bundle entries, the profile lockfile, and their durable seed markers before uploading the artifact. Better Sidebar must already be installed before Harness becomes ready, while Codex and Claude Code must remain absent before user action. Native installation, first launch, shutdown, child cleanup, directory selection, file opening, PTY, and sandbox behavior remain release validation requirements for the other platforms. Signed update metadata waits for release signing and rollback support.
 
+Windows qualification checks the runner protocol before building, then probes both managed client and CLI task launches in the unpacked application. The client probe starts a nested process and requires confirmed range cleanup. Installed startup and post-upgrade startup stop waiting as soon as the supervisor records a terminal failure; recoverable plugin errors do not end qualification. Process-owner failures retain both the original error and any cleanup-observation error.
+
 Do not package the checkout by copying all workspace sources into Electron. The release artifact must contain the published runtime closure, generated third-party notices, and no development credentials.
 
 ## Extension direction

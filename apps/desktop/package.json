@@ -11,6 +11,8 @@
   "type": "module",
   "main": "lib/entry.js",
   "dependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-http-proxy": "workspace:^",
     "@deepseek-ai/dsh-nas-protocol": "workspace:^",
     "@deepseek-ai/dsh-subprocess": "workspace:^",
     "semver": "^7.8.5",

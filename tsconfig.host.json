@@ -183,6 +183,7 @@
     { "path": "./vendor/include" },
     { "path": "./vendor/group" },
     { "path": "./vendor/timer" },
+    { "path": "./vendor/hmr" },
     { "path": "./packages/boot/hmr" },
     { "path": "./vendor/logger-console" },
     { "path": "./packages/util/brand" },

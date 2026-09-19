@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HarnessSupervisor, type HarnessFailure, type HarnessState } from '../src/supervisor.ts'
 
@@ -11,6 +12,44 @@ afterEach(async () => {
 })
 
 describe('Harness supervisor startup failures', () => {
+  it.each([true, false])('reports rejected range observation without losing the original failure (direct rejection: %s)', async (directRejected) => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-owner-failure-'))
+    roots.push(root)
+    const done = Promise.withResolvers<{ exitCode: number | null; signal: NodeJS.Signals | null }>()
+    const reported = Promise.withResolvers<HarnessFailure>()
+    const stdout = new PassThrough()
+    const stderr = new PassThrough()
+    const waitForExit = vi.fn().mockRejectedValue(new Error('range observation failed'))
+    const terminate = vi.fn()
+    const supervisor = new HarnessSupervisor({
+      launch: { command: 'node', args: [] }, environment: {}, logPath: join(root, 'harness.log'),
+      onReady: () => {}, onDiagnosticReady: () => {}, onState: () => {}, onFailure: reported.resolve,
+      stopTimeoutMs: 1,
+      managedRuntime: {
+        register: () => 'owner', preserve: async () => {}, stopAll: async () => {}, stop: async () => {},
+        stopRecovered: async () => {}, list: () => [],
+        launch: () => ({ containment: 'windows-job', handle: {
+          stdin: undefined, stdout, stderr, done: done.promise, waitForExit, terminate,
+        } }),
+      },
+    })
+    try {
+      supervisor.start()
+      if (directRejected) done.reject(new Error('invalid Windows start request'))
+      else done.resolve({ exitCode: 0, signal: null })
+      const failure = await reported.promise
+      expect(failure.message).toContain('cleanup observation failed: range observation failed')
+      if (directRejected) expect(failure.message).toContain('invalid Windows start request')
+      expect(await readFile(join(root, 'harness.log'), 'utf8')).toContain(failure.message)
+    } finally {
+      waitForExit.mockResolvedValue(true)
+      await supervisor.stop()
+      stdout.destroy()
+      stderr.destroy()
+    }
+    expect(terminate).toHaveBeenCalled()
+  })
+
   it('does not delegate Desktop transaction authority to resident plugin children', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-resident-env-'))
     roots.push(root)

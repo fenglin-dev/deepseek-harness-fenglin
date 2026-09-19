@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   appendBundledPluginFailure,
   assertBundledPluginManifestEntry,
+  bundledPluginFailureDiagnostic,
   bundledPluginSeedIsSettled,
   seedBundledPlugin,
   seedBundledPluginsBatch,
@@ -135,6 +136,13 @@ describe('bundled plugin seed', () => {
     await expect(readFile(logPath, 'utf8')).resolves.toMatch(
       /^\[[^\]]+\] \[bundled-plugin\] \[error\] Error: pnpm failed/mu,
     )
+  })
+
+  it('retains the actionable cause chain behind startup wrappers', () => {
+    const command = new Error('runner could not start target')
+    const preparation = new Error('candidate preparation failed', { cause: command })
+    expect(bundledPluginFailureDiagnostic(preparation)).toContain('candidate preparation failed')
+    expect(bundledPluginFailureDiagnostic(preparation)).toContain('Caused by: Error: runner could not start target')
   })
 
   it('ships the pinned preset archives with matching integrity', async () => {
