@@ -15,6 +15,12 @@ test('Windows installed smoke isolates Electron application data', async () => {
   assert.match(source, /--dsh-native-smoke/u)
   assert.match(source, /RedirectStandardError = \$true/u)
   assert.match(source, /desktop-entry\.log/u)
+  for (const phase of [
+    'package-contract', 'install', 'native-entry', 'first-start', 'process-guard',
+    'upgrade', 'restart', 'cli', 'plugins', 'uninstall',
+  ]) assert.match(source, new RegExp(`Start-SmokePhase -Name '${phase}'`, 'u'))
+  assert.match(source, /Complete-SmokeJournal -Outcome 'passed'/u)
+  assert.match(source, /catch \{\s+Complete-SmokeJournal -Outcome 'failed'\s+throw\s+\}/u)
 })
 
 test('Windows unpacked probe checks packaged peers, Electron entries, and managed CLI launch', async () => {
@@ -56,10 +62,11 @@ test('Windows readiness fails on terminal supervisor errors but permits recovera
   assert.equal(source.match(/\$appStderr = \$app\.StandardError\.ReadToEndAsync\(\)/gu)?.length, 2)
 })
 
-test('Windows smoke evidence excludes sensitive process fields and file reads', async () => {
+test('Windows smoke evidence excludes sensitive process fields and limits content reads to its safe journal', async () => {
   const source = await readFile(new URL('collect-windows-smoke-evidence.mjs', import.meta.url), 'utf8')
   assert.match(source, /open-dsh\/windows-smoke-evidence\/v1/u)
-  assert.doesNotMatch(source, /readFile|ExecutablePath|CommandLine/u)
+  assert.match(source, /readFile\(journalPath, 'utf8'\)/u)
+  assert.doesNotMatch(source, /Get-Content|ExecutablePath|CommandLine/u)
 })
 
 test('Desktop ships the runtime peers required by dsh-subprocess', async () => {

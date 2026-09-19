@@ -41,3 +41,7 @@ _Avoid_: Successful build, green workflow
 **Smoke Evidence**:
 Bounded, non-sensitive facts retained from a package qualification run to explain its phases and outcome. Missing or degraded Smoke Evidence does not change the Package Qualification result.
 _Avoid_: User data archive, full diagnostic dump
+
+**Smoke Journal**:
+The ordered, non-sensitive phase outcomes and durations produced during one Package Qualification run and retained as part of its Smoke Evidence.
+_Avoid_: Console log, failure stack

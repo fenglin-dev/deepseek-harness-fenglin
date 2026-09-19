@@ -14,6 +14,22 @@ async function fixture() {
   await writeFile(join(runnerTemp, 'DeepSeek Harness AppData', 'desktop-entry.log'), 'secret-entry-content')
   await writeFile(join(runnerTemp, 'DeepSeek Harness AppData', 'open-deepseek-harness-desktop', 'logs', 'harness.log'), 'token=secret-token')
   await writeFile(join(runnerTemp, 'DeepSeek Harness Home', 'profiles', 'web', 'package.json'), '{"private":"secret-value"}')
+  const phaseNames = [
+    'package-contract', 'install', 'native-entry', 'first-start', 'process-guard',
+    'upgrade', 'restart', 'cli', 'plugins', 'uninstall',
+  ]
+  await writeFile(join(runnerTemp, 'DeepSeek-Harness-smoke-status.json'), JSON.stringify({
+    schema: 'open-dsh/windows-package-smoke/v1',
+    status: 'passed',
+    startedAt: '2026-09-19T00:00:00.000Z',
+    completedAt: '2026-09-19T00:00:01.000Z',
+    currentPhase: 'uninstall',
+    phases: phaseNames.map(name => ({
+      name, outcome: 'passed', startedAt: '2026-09-19T00:00:00.000Z',
+      completedAt: '2026-09-19T00:00:01.000Z', durationMs: 1000, unsafeDetail: 'journal-secret',
+    })),
+    unsafeDetail: 'journal-secret',
+  }))
   return { root, runnerTemp, destination }
 }
 
@@ -31,9 +47,11 @@ test('collects stable metadata without file contents or source paths', async () 
   assert.equal(first.status, 'complete')
   assert.equal(first.files.find(entry => entry.label === 'desktop-entry')?.status, 'present')
   assert.equal(first.files.find(entry => entry.label === 'profile-lock')?.status, 'missing')
+  assert.equal(first.smoke.status, 'collected')
+  assert.equal(first.smoke.journal.status, 'passed')
   const persisted = await readFile(join(destination, 'evidence.json'), 'utf8')
   assert.deepEqual(JSON.parse(persisted), first)
-  for (const secret of ['secret-entry-content', 'secret-token', 'secret-value', runnerTemp]) {
+  for (const secret of ['secret-entry-content', 'secret-token', 'secret-value', 'journal-secret', runnerTemp]) {
     assert.equal(persisted.includes(secret), false, secret)
   }
   assert.deepEqual(first.processes, { status: 'unsupported', entries: [] })
@@ -48,6 +66,44 @@ test('records path probe failures as degraded evidence', async () => {
   assert.ok(evidence.files.every(entry => entry.status === 'unavailable'))
   assert.ok(evidence.files.every(entry => entry.errorKind === 'path-too-long'))
   assert.doesNotMatch(JSON.stringify(evidence), /ENAMETOOLONG|no such file|permission denied/iu)
+})
+
+test('rejects an invalid smoke journal without retaining its contents', async () => {
+  const { runnerTemp, destination } = await fixture()
+  await writeFile(join(runnerTemp, 'DeepSeek-Harness-smoke-status.json'), JSON.stringify({
+    schema: 'open-dsh/windows-package-smoke/v1', status: 'failed', secret: 'unsafe-journal-value', phases: [],
+  }))
+  const evidence = await collectWindowsSmokeEvidence({ runnerTemp, destination, platform: 'linux' })
+  assert.deepEqual(evidence.smoke, { status: 'degraded', errorKind: 'journal-invalid' })
+  assert.equal(JSON.stringify(evidence).includes('unsafe-journal-value'), false)
+})
+
+test('accepts a failed phase prefix and preserves only its safe category', async () => {
+  const { runnerTemp, destination } = await fixture()
+  await writeFile(join(runnerTemp, 'DeepSeek-Harness-smoke-status.json'), JSON.stringify({
+    schema: 'open-dsh/windows-package-smoke/v1',
+    status: 'failed',
+    startedAt: '2026-09-19T00:00:00.000Z',
+    completedAt: '2026-09-19T00:00:01.000Z',
+    currentPhase: 'install',
+    phases: [
+      { name: 'package-contract', outcome: 'passed', startedAt: '2026-09-19T00:00:00.000Z', completedAt: '2026-09-19T00:00:00.500Z', durationMs: 500 },
+      { name: 'install', outcome: 'failed', startedAt: '2026-09-19T00:00:00.500Z', completedAt: '2026-09-19T00:00:01.000Z', durationMs: 500, errorKind: 'install-failed', unsafeDetail: 'secret-stack' },
+    ],
+  }))
+  const evidence = await collectWindowsSmokeEvidence({ runnerTemp, destination, platform: 'linux' })
+  assert.equal(evidence.smoke.status, 'collected')
+  assert.equal(evidence.smoke.journal.phases.at(-1).errorKind, 'install-failed')
+  assert.equal(JSON.stringify(evidence).includes('secret-stack'), false)
+})
+
+test('collects native Windows process metadata through the real interface', { skip: process.platform !== 'win32' }, async () => {
+  const { runnerTemp, destination } = await fixture()
+  const evidence = await collectWindowsSmokeEvidence({ runnerTemp, destination })
+  assert.equal(evidence.processes.status, 'collected')
+  for (const entry of evidence.processes.entries) {
+    assert.deepEqual(Object.keys(entry).sort(), ['name', 'parentProcessId', 'processId'])
+  }
 })
 
 test('fails only when the evidence destination cannot be created', async () => {

@@ -102,11 +102,16 @@ describe('desktop package workflow bundled plugins', () => {
 
     expect(smoke?.if).toContain('inputs.windows_candidate_run_id')
     const reuseCheck = smoke?.steps?.find(step => step.name === 'Verify reused candidate commit')?.run
+    const evidenceCheck = smoke?.steps?.find(step => step.name === 'Verify Windows smoke evidence interface')
+    expect(evidenceCheck?.run).toContain('windows-smoke-journal.test.ps1')
+    expect(evidenceCheck?.run).toContain('node --test apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs')
     expect(reuseCheck).toContain('git fetch --no-tags --depth=1')
     expect(reuseCheck).toContain('git diff --name-only')
     expect(reuseCheck).toContain('CONTEXT.md')
     expect(reuseCheck).toContain('apps/desktop/scripts/collect-windows-smoke-evidence.mjs')
     expect(reuseCheck).toContain('apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs')
+    expect(reuseCheck).toContain('apps/desktop/scripts/windows-smoke-journal.ps1')
+    expect(reuseCheck).toContain('apps/desktop/scripts/windows-smoke-journal.test.ps1')
     expect(reuseCheck).toContain('apps/desktop/scripts/smoke-windows-package.ps1')
     expect(reuseCheck).toContain('apps/desktop/tests/desktop-cli-package.spec.ts')
     expect(smoke?.steps?.some(step => step.with?.['run-id'] === '${{ inputs.windows_candidate_run_id || github.run_id }}')).toBe(true)

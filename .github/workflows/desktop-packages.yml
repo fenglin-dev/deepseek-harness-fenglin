@@ -214,6 +214,12 @@ jobs:
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
 
+      - name: Verify Windows smoke evidence interface
+        shell: pwsh
+        run: |
+          & apps/desktop/scripts/windows-smoke-journal.test.ps1
+          node --test apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs
+
       - name: Verify reused candidate commit
         if: ${{ inputs.windows_candidate_run_id != '' }}
         shell: pwsh
@@ -230,6 +236,8 @@ jobs:
               'apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs',
               'apps/desktop/scripts/runtime-deploy-config.test.mjs',
               'apps/desktop/scripts/smoke-windows-package.ps1',
+              'apps/desktop/scripts/windows-smoke-journal.ps1',
+              'apps/desktop/scripts/windows-smoke-journal.test.ps1',
               'apps/desktop/tests/desktop-cli-package.spec.ts',
               'apps/desktop/tests/desktop-packages-workflow.spec.ts'
             )

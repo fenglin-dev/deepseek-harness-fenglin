@@ -8,6 +8,12 @@ function Assert-HarnessStartupHealthy([string] $LogText) {
   }
 }
 
+. (Join-Path $PSScriptRoot 'windows-smoke-journal.ps1')
+$smokeJournalPath = Join-Path $env:RUNNER_TEMP 'DeepSeek-Harness-smoke-status.json'
+Initialize-SmokeJournal -Path $smokeJournalPath
+
+try {
+Start-SmokePhase -Name 'package-contract'
 $installer = (Resolve-Path (Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe')).Path
 $installRoot = Join-Path $env:RUNNER_TEMP 'Open DeepSeek Harness Desktop 安装测试'
 $dshHome = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness Home'
@@ -36,6 +42,7 @@ foreach ($path in @(
   if (-not (Test-Path $path)) { throw "Unpacked package is missing $path" }
 }
 
+Start-SmokePhase -Name 'install'
 $installStart = [System.Diagnostics.ProcessStartInfo]::new()
 $installStart.FileName = $installer
 $installStart.UseShellExecute = $false
@@ -108,6 +115,7 @@ if ($cliRegistration.CliPathRegistered -ne 1 -or
   throw 'Silent installer and Settings do not share the expected CLI registration marker.'
 }
 
+Start-SmokePhase -Name 'native-entry'
 $env:DSH_HOME = $dshHome
 Remove-Item -LiteralPath $desktopAppDataRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $desktopAppDataRoot -Force | Out-Null
@@ -136,6 +144,7 @@ if ($nativeSmoke.ExitCode -ne 0 -or $nativeSmokeOutput -notmatch 'DSH_NATIVE_SMO
   throw "Installed Electron entry smoke failed with $($nativeSmoke.ExitCode).`nstdout:`n$nativeSmokeOutput`nstderr:`n$nativeSmokeError"
 }
 Write-Host "Installed Electron entry smoke passed.`n$nativeSmokeOutput"
+Start-SmokePhase -Name 'first-start'
 $appStart = [System.Diagnostics.ProcessStartInfo]::new()
 $appStart.FileName = Join-Path $installRoot 'Open DeepSeek Harness Desktop.exe'
 $appStart.UseShellExecute = $false
@@ -188,6 +197,7 @@ try {
   # This fresh CI-only home contains no user credentials. Preserve first-boot
   # evidence before the restart clears the log.
   Write-Host "First installed startup log:`n$((Get-Content -LiteralPath $harnessLog -Tail 200) -join "`n")"
+  Start-SmokePhase -Name 'process-guard'
   $guardScript = Join-Path $PSScriptRoot '../build/installer-process-guard.ps1'
   $guardOutput = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guardScript -Action inspect -InstallDirectory $installRoot -AppExecutable 'Open DeepSeek Harness Desktop.exe' -ExcludeProcessId $PID 2>&1
   $guardExitCode = $LASTEXITCODE
@@ -204,6 +214,7 @@ try {
   # app. An external process briefly holds the top-level executable, just as a
   # virus scanner or indexer can after reboot. The installer's bounded recovery
   # must wait for release and complete the same-directory atomic upgrade.
+  Start-SmokePhase -Name 'upgrade'
   $lockedExecutable = Join-Path $installRoot 'Open DeepSeek Harness Desktop.exe'
   $lockReady = Join-Path $env:RUNNER_TEMP 'dsh-upgrade-lock-ready.txt'
   Remove-Item -LiteralPath $lockReady -Force -ErrorAction SilentlyContinue
@@ -244,6 +255,7 @@ try {
   $decoy.Refresh()
   if ($decoy.HasExited) { throw 'Same-directory Windows upgrade closed the prefix-similar decoy process' }
 
+  Start-SmokePhase -Name 'restart'
   Remove-Item -LiteralPath $harnessLog -Force -ErrorAction SilentlyContinue
   $app = [System.Diagnostics.Process]::Start($appStart)
   $appStdout = $app.StandardOutput.ReadToEndAsync()
@@ -272,6 +284,7 @@ try {
   if (-not $decoy.HasExited) { Stop-Process -Id $decoy.Id -Force }
 }
 
+Start-SmokePhase -Name 'cli'
 $cliStart = [System.Diagnostics.ProcessStartInfo]::new()
 $cliStart.FileName = Join-Path $cliDirectory 'dsh.cmd'
 $cliStart.UseShellExecute = $false
@@ -295,6 +308,7 @@ if ($cliOutput -notmatch '(?i)deepseek|dsh|usage') {
   throw "Installed desktop dsh command did not print recognizable help.`n$cliOutput"
 }
 
+Start-SmokePhase -Name 'plugins'
 $profileDirectory = Join-Path $dshHome 'profiles/web'
 $profileManifestPath = Join-Path $profileDirectory 'package.json'
 $profileLockPath = Join-Path $profileDirectory 'pnpm-lock.yaml'
@@ -366,6 +380,7 @@ if ($bundledFailure) {
   throw "Bundled plugin failure was written to $harnessLog"
 }
 
+Start-SmokePhase -Name 'uninstall'
 $uninstaller = Join-Path $installRoot 'Uninstall Open DeepSeek Harness Desktop.exe'
 if (-not (Test-Path $uninstaller)) { throw "Installed package is missing $uninstaller" }
 $uninstallStart = [System.Diagnostics.ProcessStartInfo]::new()
@@ -403,3 +418,8 @@ if (-not $pathRestored -or -not $registrationRemoved -or -not $installationRemov
 }
 
 Write-Host 'Installed and upgraded the Windows package, precisely cleaned owned processes without touching a prefix-similar decoy, reached Harness readiness, seeded startup plugins, ran desktop dsh, kept external tools online-only, and restored PATH on uninstall.'
+Complete-SmokeJournal -Outcome 'passed'
+} catch {
+  Complete-SmokeJournal -Outcome 'failed'
+  throw
+}
