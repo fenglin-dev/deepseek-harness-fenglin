@@ -230,7 +230,9 @@ jobs:
       - name: Upload installers to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
-          gh release view "${GITHUB_REF_NAME}" --json tagName,assets --jq '{tag: .tagName, assets: [.assets[].name]}'
+          # --repo avoids gh requiring a local .git checkout.
+          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber --repo "${GH_REPO}"
+          gh release view "${GITHUB_REF_NAME}" --repo "${GH_REPO}" --json tagName,assets --jq '{tag: .tagName, assets: [.assets[].name]}'
