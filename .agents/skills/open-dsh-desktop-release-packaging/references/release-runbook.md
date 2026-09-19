@@ -10,12 +10,13 @@ Before creating a release branch, editing a version, or dispatching a native bui
 
 ```sh
 skill=.agents/skills/open-dsh-desktop-release-packaging
+source "$skill/scripts/release-proxy-env.sh"
 
 "$skill/scripts/check-release-download-speed.sh" \
   flaqai/open-deepseek-harness-desktop
 ```
 
-The check selects the newest non-expired desktop artifact, preferring the larger artifact when timestamps match, unless `--run-id`, `--artifact-name`, or `--artifact-id` narrows it. It downloads at most 32 MiB for up to 15 seconds and reports the Actions run, artifact, measured rate, and floor. `ODSH_MIN_DOWNLOAD_MIBPS` sets the floor and defaults to `1.0`; zero disables enforcement only after the user explicitly accepts proceeding without a minimum.
+The helper defaults missing proxy variables to `http://127.0.0.1:7890`. An existing proxy environment takes precedence; `ODSH_PROXY_URL` selects another default, while an explicitly empty `ODSH_PROXY_URL` requests a direct connection. The check selects the newest non-expired desktop artifact, preferring the larger artifact when timestamps match, unless `--run-id`, `--artifact-name`, or `--artifact-id` narrows it. It downloads at most 32 MiB for up to 15 seconds and reports the Actions run, artifact, measured rate, and floor. `ODSH_MIN_DOWNLOAD_MIBPS` sets the floor and defaults to `1.0`; zero disables enforcement only after the user explicitly accepts proceeding without a minimum.
 
 Exit status 75 means the route is slower than the configured floor. Report the result and stop before consuming native-runner time. Ask the user to switch network, proxy, or node, or to select a different floor. A missing non-expired artifact means the exact Actions storage route is unverified, not that the network passed.
 
@@ -54,10 +55,11 @@ As soon as the version and release-bound compatibility files are prepared, deriv
 Use the final packaging branch and keep publication disabled:
 
 ```sh
+source .agents/skills/open-dsh-desktop-release-packaging/scripts/release-proxy-env.sh
 gh workflow run desktop-packages.yml \
   --ref <branch> \
   -f target=windows-x64 \
-  -f publish=false
+  -f refresh_plugins=true
 ```
 
 Find the new run and verify its `headSha` equals the intended commit:

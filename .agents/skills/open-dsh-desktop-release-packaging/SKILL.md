@@ -30,10 +30,11 @@ An earlier permission to push a packaging-fix branch does not authorize a tag or
 
 ## Required invariants
 
+- Release network commands and helper scripts default to `http://127.0.0.1:7890`. Preserve a caller-provided proxy; set `ODSH_PROXY_URL` to another URL to select a different route, or to an empty value for an intentional direct connection. Source `scripts/release-proxy-env.sh` before direct `gh` commands in this workflow.
 - Use `.github/workflows/desktop-packages.yml`; do not substitute a local cross-build for the native runners.
 - Before changing release state or dispatching native builds, measure a non-expired desktop Actions artifact through its signed download address with `scripts/check-release-download-speed.sh`. Report the artifact, run, measured rate, and configured floor. The default floor is `1.0 MiB/s`; a failed or unavailable exact-node check stops preparation unless the user explicitly chooses another floor or waives the check.
 - Run `windows-x64` first, then `macos`, then `linux-x64` when the user requests the established staged flow.
-- Keep `publish=false` during package qualification.
+- The packaging workflow must retain read-only `contents` permission and expose no publication input; publication stays in the reviewed local publication script.
 - Native builds must retain and relocate the full prebuilt preset Profile. Verify its final installed resource inventory after copying and signing, plus ordinary isolated startup and offline plugin maintenance. Missing resources or integrity failures block acceptance; see the prebuilt-resource checks in the runbook.
 - Every accepted platform run must use the same final Git commit. If a packaging fix changes the commit, rebuild every platform already accepted from the older commit.
 - The workflow resolves current stable registry-backed bundled plugins. When separate platform runs are used, compare the complete `bundled-plugin-snapshot` artifact contents; mismatched snapshots are not one coherent release set.
@@ -54,6 +55,7 @@ An earlier permission to push a packaging-fix branch does not authorize a tag or
 Run the network preflight before step 1:
 
 ```sh
+source .agents/skills/open-dsh-desktop-release-packaging/scripts/release-proxy-env.sh
 .agents/skills/open-dsh-desktop-release-packaging/scripts/check-release-download-speed.sh \
   flaqai/open-deepseek-harness-desktop
 ```
