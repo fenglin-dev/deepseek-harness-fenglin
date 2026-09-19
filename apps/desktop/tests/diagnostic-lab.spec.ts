@@ -245,13 +245,52 @@ describe('DiagnosticLabManager', () => {
 
     expect(final.phase).toBe('active')
     expect(final.results.every(result => result.phase === 'passed')).toBe(true)
-    expect(b.installProfile).not.toHaveBeenCalled()
+    expect(b.installProfile).toHaveBeenCalledTimes(2)
     expect(runDoctor).toHaveBeenCalledTimes(16)
     for (const home of calls.keys()) {
       const workspace = await readFile(join(home, 'profiles', 'web', 'pnpm-workspace.yaml'), 'utf8')
       expect(workspace).toBe('packages:\n  - .\n\nnodeLinker: hoisted\n')
       expect(workspace).not.toContain('@deepseek-ai/dsh-tools')
     }
+  })
+
+  it('restores an absent workspace file when Host-shadow fixture installation fails', async () => {
+    const b = await bench()
+    const manager = new DiagnosticLabManager({
+      root: join(b.root, 'failed-host-shadow-lab'),
+      activeDshHome: b.home,
+      logDirectory: join(b.root, 'failed-host-shadow-logs'),
+      suspendHarness: b.suspendHarness,
+      resumeHarness: b.resumeHarness,
+      installProfile: async (_home, _force) => { throw new Error('fixture install failed') },
+      installDiagnosticPlugin: b.installDiagnosticPlugin,
+      runDoctor: async (home) => {
+        const profileDir = join(home, 'profiles', 'web')
+        await mkdir(profileDir, { recursive: true })
+        if (!existsSync(join(profileDir, 'package.json'))) {
+          await writeFile(join(profileDir, 'package.json'), '{"name":"dsh-profile-web","private":true}\n')
+        }
+        return { status: 'healthy', issueCodes: [], output: '{}' }
+      },
+      onSnapshot: () => {},
+    })
+    const initial = manager.start({ scenarioIds: ['host-shadow-compatible'], target: 'isolated' })
+    const final = await waitForTerminal(manager, initial.runId)
+    const workspacePath = join(
+      b.root,
+      'failed-host-shadow-lab',
+      'runs',
+      initial.runId,
+      'runtime',
+      'doctor-homes',
+      'host-shadow-compatible',
+      'profiles',
+      'web',
+      'pnpm-workspace.yaml',
+    )
+
+    expect(final).toMatchObject({ phase: 'failed', diagnostic: 'fixture install failed' })
+    expect(existsSync(workspacePath)).toBe(false)
   })
 
   it('stages and restores the real legacy quarantine-removal residue shape', async () => {
