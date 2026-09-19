@@ -72,6 +72,38 @@ export interface Config {
 const DEFAULT_COMPRESSION = 'none' as const
 const DEFAULT_COMPRESSION_LEVEL = 1
 const DEFAULT_COMPRESSION_THRESHOLD_BYTES = 1024
+const STATIC_INDEX_PROBE = '<!doctype html><html><head></head><body></body></html>'
+
+function decodeHtmlAttribute(value: string): string {
+  return value
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#39;', "'")
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&amp;', '&')
+}
+
+function legacyExternalScriptInjections(html: string): IndexInjection[] {
+  const headEnd = html.search(/<\/head\s*>/iu)
+  const bodyStart = html.search(/<body(?:\s[^>]*)?>/iu)
+  if (headEnd === -1 || bodyStart === -1 || bodyStart < headEnd) return []
+  const rows: IndexInjection[] = []
+  const seen = new Set<string>()
+  const scripts = /<script\b([^>]*)\bsrc\s*=\s*(["'])(.*?)\2[^>]*>\s*<\/script\s*>/giu
+  for (const match of html.matchAll(scripts)) {
+    const src = match[3]
+    if (src === undefined || src === '') continue
+    const decoded = decodeHtmlAttribute(src)
+    if (seen.has(decoded)) continue
+    seen.add(decoded)
+    rows.push({
+      kind: 'script-src',
+      placement: match.index < headEnd ? 'head' : 'body',
+      src: decoded,
+    })
+  }
+  return rows
+}
 
 interface ResolvedConfig extends Config {
   compression: 'none' | 'gzip'
@@ -348,6 +380,20 @@ export class WebServer extends Service {
     const table: IndexInjection[] = []
     this.ctx.emit('webserver/index-inject', table)
     return table
+  }
+
+  /**
+   * Gather rows for a static page and project legacy external-script index
+   * taps into that table. Inline scripts and arbitrary HTML transforms remain
+   * server-only because they cannot be transported as trusted data safely.
+   * @returns structured rows executable by a static page bootstrap.
+   */
+  collectStaticIndexInjections(): IndexInjection[] {
+    const rows = this.collectIndexInjections()
+    const knownScripts = new Set(rows.flatMap(row => row.kind === 'script-src' ? [row.src] : []))
+    const legacy = legacyExternalScriptInjections(this.applyIndexTaps(STATIC_INDEX_PROBE))
+      .filter(row => row.kind !== 'script-src' || !knownScripts.has(row.src))
+    return [...rows, ...legacy]
   }
 
   /**

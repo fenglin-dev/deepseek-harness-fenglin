@@ -67,19 +67,34 @@ describe('bootClient', () => {
   })
 
   it('reports a row waiting on a service the roster never provides', async () => {
-    const graph = graphOf(['orphan'])
-    const { modules } = modulesOf(graph, { orphan: { inject: ['nothing'], apply: () => {} } })
+    const graph = graphOf(['@deepseek-ai/orphan'])
+    const { modules } = modulesOf(graph, { '@deepseek-ai/orphan': { inject: ['nothing'], apply: () => {} } })
     const ctx = new Context()
 
     await expect(bootClient({ ctx, modules, manifest: modules.manifest })).rejects.toThrow(
-      'orphan: pending (waiting for service: nothing)',
+      '@deepseek-ai/orphan: pending (waiting for service: nothing)',
     )
     await ctx.fiber.dispose()
   })
 
+  it('keeps the application bootable when an optional external plugin fails', async () => {
+    const graph = graphOf(['@deepseek-ai/dsh-client-ui-renderer', '@fixture/broken'])
+    const { modules } = modulesOf(graph, {
+      '@deepseek-ai/dsh-client-ui-renderer': { apply: () => {} },
+      '@fixture/broken': { apply: () => { throw new Error('fixture failed') } },
+    })
+    const ctx = new Context()
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    onTestFinished(() => { warn.mockRestore() })
+    onTestFinished(() => ctx.fiber.dispose())
+
+    await expect(bootClient({ ctx, modules, manifest: modules.manifest })).resolves.toBeUndefined()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('@fixture/broken: failed'))
+  })
+
   it('reports and logs an import failure for a row that is neither seeded nor a graph row', async () => {
     const { modules } = modulesOf(graphOf(['seeded']), { seeded: { apply: () => {} } })
-    const manifest = parseBootManifest(graphOf(['ghost']))
+    const manifest = parseBootManifest(graphOf(['@deepseek-ai/ghost']))
     const ctx = new Context()
     onTestFinished(() => ctx.fiber.dispose())
     const error = vi.spyOn(ctx.logger, 'error').mockImplementation(() => {})
@@ -87,9 +102,9 @@ describe('bootClient', () => {
     const sink = stateSink()
 
     await expect(bootClient({ ctx, modules, manifest, onEntryState: sink.onEntryState })).rejects.toThrow(
-      'web boot: 1 entry did not activate\nghost: import failed (see console for the import error)',
+      'web boot: 1 entry did not activate\n@deepseek-ai/ghost: import failed (see console for the import error)',
     )
-    expect(sink.states.get('ghost')).toEqual(['loading', 'failed'])
+    expect(sink.states.get('@deepseek-ai/ghost')).toEqual(['loading', 'failed'])
     expect(error).toHaveBeenCalledOnce()
     expect(error.mock.calls[0]?.[0]).toHaveProperty('message', expect.stringContaining('client-modules: cannot resolve'))
   })
@@ -116,22 +131,34 @@ describe('assertEntriesActive', () => {
 
   it('names import failures, missing services, and other non-active states', () => {
     const ctx = auditCtx([
-      { name: 'lost' },
-      { name: 'waiting', fiber: { state: FIBER_STATE.PENDING, inject: { present: null, a: null, b: null } } },
-      { name: 'opaque', fiber: { state: FIBER_STATE.PENDING, inject: {} } },
-      { name: 'broken', fiber: { state: FIBER_STATE.FAILED, inject: {} } },
+      { name: '@deepseek-ai/lost' },
+      { name: '@deepseek-ai/waiting', fiber: { state: FIBER_STATE.PENDING, inject: { present: null, a: null, b: null } } },
+      { name: '@deepseek-ai/opaque', fiber: { state: FIBER_STATE.PENDING, inject: {} } },
+      { name: '@deepseek-ai/broken', fiber: { state: FIBER_STATE.FAILED, inject: {} } },
     ], { present: {} })
 
     expect(() => { assertEntriesActive(ctx) }).toThrow([
       'web boot: 4 entries did not activate',
-      'lost: import failed (see console for the import error)',
-      'waiting: pending (waiting for services: a, b)',
-      'opaque: pending (waiting for services: unknown)',
-      'broken: failed',
+      '@deepseek-ai/lost: import failed (see console for the import error)',
+      '@deepseek-ai/waiting: pending (waiting for services: a, b)',
+      '@deepseek-ai/opaque: pending (waiting for services: unknown)',
+      '@deepseek-ai/broken: failed',
     ].join('\n'))
   })
 
   it('uses the singular form for one failing entry', () => {
-    expect(() => { assertEntriesActive(auditCtx([{ name: 'lost' }])) }).toThrow('web boot: 1 entry did not activate\n')
+    expect(() => { assertEntriesActive(auditCtx([{ name: '@deepseek-ai/lost' }])) }).toThrow('web boot: 1 entry did not activate\n')
+  })
+
+  it('reports optional external failures without rejecting required client entries', () => {
+    const warn = vi.fn()
+    const ctx = auditCtx([
+      { name: '@deepseek-ai/dsh-client-ui-renderer', fiber: { state: FIBER_STATE.ACTIVE, inject: {} } },
+      { name: '@fixture/broken', fiber: { state: FIBER_STATE.FAILED, inject: {} } },
+    ])
+    Object.assign(ctx, { logger: { warn } })
+
+    expect(() => { assertEntriesActive(ctx) }).not.toThrow()
+    expect(warn).toHaveBeenCalledWith('web boot: optional client plugin did not activate\n@fixture/broken: failed')
   })
 })

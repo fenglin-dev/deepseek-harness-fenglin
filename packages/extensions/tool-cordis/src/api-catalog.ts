@@ -3222,6 +3222,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'rows in subscriber activation order.',
       },
       {
+        signature: 'collectStaticIndexInjections(): IndexInjection[]',
+        description: 'Gather rows for a static page and project legacy external-script index taps into that table. Inline scripts and arbitrary HTML transforms remain server-only because they cannot be transported as trusted data safely.',
+        parameters: [],
+        returns: 'structured rows executable by a static page bootstrap.',
+      },
+      {
         signature: 'renderIndex(html: string): string',
         description: 'Render one index.html body: the structured injection table first, then the raw `tapIndex` transforms over the result.',
         parameters: [{ name: 'html', description: 'the raw index.html body.' }],
