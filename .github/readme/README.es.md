@@ -2,6 +2,8 @@
 
 # Open DeepSeek Harness Desktop
 
+<p align="center"><strong>🎉 ¡Enhorabuena! La interfaz de este proyecto ya está disponible en español.</strong></p>
+
 <p align="center"><strong>La edición comunitaria de escritorio de DeepSeek Harness, lista para usar y con dependencias más seguras</strong></p>
 
 Idiomas: [简体中文](../../README.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · Español · [Français](README.fr.md) · [Deutsch](README.de.md) · [Português](README.pt-BR.md)

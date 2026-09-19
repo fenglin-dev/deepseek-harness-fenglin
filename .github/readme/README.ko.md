@@ -2,6 +2,8 @@
 
 # Open DeepSeek Harness Desktop
 
+<p align="center"><strong>🎉 축하합니다! 이제 이 프로젝트의 인터페이스에서 한국어 번역을 지원합니다.</strong></p>
+
 <p align="center"><strong>바로 사용할 수 있고 의존성 안전성을 강화한 DeepSeek Harness 커뮤니티 데스크톱 버전</strong></p>
 
 언어: [简体中文](../../README.md) · [English](README.en.md) · [日本語](README.ja.md) · 한국어 · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Português](README.pt-BR.md)
