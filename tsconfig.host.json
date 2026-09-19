@@ -163,6 +163,7 @@
   "references": [
     { "path": "./packages/client/connection/tsconfig.host.json" },
     { "path": "./packages/skill/skill-office" },
+    { "path": "./packages/host/workspace-runtime" },
     { "path": "./packages/browser-use/browser-use" },
     { "path": "./packages/experimental/browser-use-runtime" },
     { "path": "./packages/experimental/browser-use-playwright-mcp" },

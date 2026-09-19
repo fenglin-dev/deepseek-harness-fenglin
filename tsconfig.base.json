@@ -175,6 +175,7 @@
       "@deepseek-ai/dsh-host-open-in-app/shared": ["./packages/host/open-in-app/src/shared.ts"],
       "@deepseek-ai/dsh-host-webserver": ["./packages/host/webserver/src"],
       "@deepseek-ai/dsh-host-frontend-static": ["./packages/host/frontend-static/src"],
+      "@deepseek-ai/dsh-host-workspace-runtime": ["./packages/host/workspace-runtime/src"],
       "@deepseek-ai/dsh-plugin-manager": ["./packages/boot/plugin-manager/src"],
       "@deepseek-ai/dsh-plugin-manager/types": ["./packages/boot/plugin-manager/src/types.ts"],
       "@deepseek-ai/dsh-plugin-manager/operations": ["./packages/boot/plugin-manager/src/operations.ts"],

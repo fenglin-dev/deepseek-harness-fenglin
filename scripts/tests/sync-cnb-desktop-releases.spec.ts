@@ -48,6 +48,10 @@ describe('CNB desktop Release sync', () => {
         { name: 'SHA256SUMS', size: Buffer.byteLength(checksumText), url: 'https://api.github.com/assets/checksums' },
         ...installerNames.map((name, index) => ({ name, size: installer.byteLength,
           url: `https://api.github.com/assets/installer-${index}` })),
+        { name: 'workspace-runtimes-1.0.0.v1.json', size: installer.byteLength,
+          url: 'https://api.github.com/assets/runtime-catalog' },
+        { name: 'workspace-runtimes.v1.sigstore.json', size: installer.byteLength,
+          url: 'https://api.github.com/assets/runtime-signature' },
       ],
     }
     const fetchMock = vi.fn<typeof fetch>((input, init) => {
@@ -63,7 +67,7 @@ describe('CNB desktop Release sync', () => {
       if (url.endsWith('/assets/checksums')) {
         return Promise.resolve(new Response(checksumText))
       }
-      if (url.includes('/assets/installer-')) return Promise.resolve(new Response(installer))
+      if (url.includes('/assets/installer-') || url.includes('/assets/runtime-')) return Promise.resolve(new Response(installer))
       if (url.endsWith('/-/releases') && init?.method === 'POST') {
         return Promise.resolve(Response.json({ id: 'release-1', tag_name: tag, assets: [] }, { status: 201 }))
       }
@@ -91,7 +95,8 @@ describe('CNB desktop Release sync', () => {
     expect(result.expiresAt).toBe('2026-09-10T07:00:00.000Z')
     expect(DEFAULT_CNB_INDEX_TTL_HOURS).toBe(6)
     expect(result.releases).toHaveLength(1)
-    expect((result.releases[0] as { assets: unknown[] }).assets).toHaveLength(7)
+    expect((result.releases[0] as { assets: unknown[] }).assets).toHaveLength(installerNames.length)
+    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).endsWith('/assets/runtime-catalog'))).toBe(true)
     expect(JSON.parse(await readFile(outputPath, 'utf8'))).toMatchObject({ revision: 9 })
     expect(CNB_DEFAULT_BRANCH).toBe('master')
     const createReleaseCall = fetchMock.mock.calls.find(([input, init]) => {

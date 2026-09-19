@@ -13,7 +13,7 @@ export const CNB_DEFAULT_BRANCH = 'master'
 export const DEFAULT_CNB_INDEX_TTL_HOURS = 6
 const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPOSITORY}`
 const CNB_API = `https://api.cnb.cool/${CNB_REPOSITORY}`
-const ASSET_PATTERN = /^DeepSeek-Harness-(?:macos-(?:arm64|x64)\.(?:dmg|zip)|windows-x64\.exe|linux-x64\.(?:deb|rpm))$/u
+const ASSET_PATTERN = /^DeepSeek-Harness-(?:macos-(?:arm64|x64)\.(?:dmg|zip)|windows-x64\.exe|linux-x64\.(?:deb|rpm)|workspace-runtime-(?:win32-x64|darwin-arm64|darwin-x64|linux-x64)\.tar\.gz)$/u
 const RELEASE_TAG_PATTERN = /^odsh-v[0-9A-Za-z][0-9A-Za-z._-]*$/u
 export const DESKTOP_INSTALLER_NAMES = Object.freeze([
   'DeepSeek-Harness-linux-x64.deb',
@@ -23,6 +23,10 @@ export const DESKTOP_INSTALLER_NAMES = Object.freeze([
   'DeepSeek-Harness-macos-x64.dmg',
   'DeepSeek-Harness-macos-x64.zip',
   'DeepSeek-Harness-windows-x64.exe',
+  'DeepSeek-Harness-workspace-runtime-darwin-arm64.tar.gz',
+  'DeepSeek-Harness-workspace-runtime-darwin-x64.tar.gz',
+  'DeepSeek-Harness-workspace-runtime-linux-x64.tar.gz',
+  'DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz',
 ])
 
 export function parseChecksums(source) {
@@ -150,6 +154,20 @@ export async function syncCnbDesktopReleases({ githubToken, cnbToken, outputPath
     assets.push({ name: asset.name, size: bytes.byteLength, sha256: checksum, url })
   }
   const version = distributableRelease.tag_name.replace(/^(?:odsh-|dsh-)?v/u, '')
+  const metadataNames = new Set([`workspace-runtimes-${version}.v1.json`, 'workspace-runtimes.v1.sigstore.json'])
+  const metadata = distributableRelease.assets.filter(asset => metadataNames.has(asset.name))
+  if (metadata.length !== 0 && metadata.length !== metadataNames.size) {
+    throw new Error(`GitHub Release contains an incomplete workspace-runtime metadata set: ${distributableRelease.tag_name}`)
+  }
+  for (const asset of metadata) {
+    const bytes = await assetBytes(fetchImpl, githubToken, asset)
+    const checksum = createHash('sha256').update(bytes).digest('hex')
+    await uploadCnbAsset(fetchImpl, cnbToken, cnbRelease, asset.name, bytes, checksum)
+    const url = `https://cnb.cool/${CNB_REPOSITORY}/-/releases/download/${distributableRelease.tag_name}/${asset.name}`
+    const probe = await checkedFetch(fetchImpl, url, { method: 'HEAD', redirect: 'follow' })
+    const size = Number(probe.headers.get('content-length'))
+    if (Number.isFinite(size) && size !== bytes.byteLength) throw new Error(`CNB asset size mismatch for ${asset.name}`)
+  }
   const indexReleases = [{ version, tagName: distributableRelease.tag_name, publishedAt: distributableRelease.published_at,
     releaseUrl: `https://cnb.cool/${CNB_REPOSITORY}/-/releases/tag/${distributableRelease.tag_name}`, withdrawn: false, assets }]
   const previous = await readFile(outputPath, 'utf8').then(JSON.parse).catch(() => undefined)

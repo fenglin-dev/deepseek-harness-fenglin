@@ -226,6 +226,9 @@ importers:
       '@deepseek-ai/dsh-experimental-agent-team-web-profile':
         specifier: workspace:^
         version: link:../../packages/experimental/agent-team-web-profile
+      '@deepseek-ai/dsh-experimental-ptc-runtime-python':
+        specifier: workspace:^
+        version: link:../../packages/experimental/ptc-runtime-python
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:^
         version: link:../../packages/fs/fs-local
@@ -250,6 +253,9 @@ importers:
       '@deepseek-ai/dsh-hooks-codex':
         specifier: workspace:^
         version: link:../../packages/hooks/hooks-codex
+      '@deepseek-ai/dsh-host-workspace-runtime':
+        specifier: workspace:^
+        version: link:../../packages/host/workspace-runtime
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
         version: link:../../packages/util/http-proxy
@@ -301,6 +307,9 @@ importers:
       '@deepseek-ai/dsh-skill-filesystem':
         specifier: workspace:^
         version: link:../../packages/skill/skill-filesystem
+      '@deepseek-ai/dsh-skill-office':
+        specifier: workspace:^
+        version: link:../../packages/skill/skill-office
       '@deepseek-ai/dsh-terminal':
         specifier: workspace:^
         version: link:../../packages/terminal/terminal
@@ -431,9 +440,6 @@ importers:
       '@deepseek-ai/dsh-experimental-agent-team':
         specifier: workspace:^
         version: link:../../packages/experimental/agent-team
-      '@deepseek-ai/dsh-experimental-ptc-runtime-python':
-        specifier: workspace:^
-        version: link:../../packages/experimental/ptc-runtime-python
       '@deepseek-ai/dsh-experimental-tool-agent-team':
         specifier: workspace:^
         version: link:../../packages/experimental/tool-agent-team
@@ -550,7 +556,7 @@ importers:
         version: 7.8.5
       sigstore:
         specifier: 4.1.1
-        version: 4.1.1
+        version: 4.1.1(supports-color@9.4.0)
       tar:
         specifier: ^7.5.22
         version: 7.5.22
@@ -573,6 +579,9 @@ importers:
       electron-builder:
         specifier: 26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
+      extract-zip:
+        specifier: 2.0.1
+        version: 2.0.1(supports-color@9.4.0)
       pnpm:
         specifier: 11.7.0
         version: 11.7.0
@@ -600,18 +609,12 @@ importers:
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:^
         version: link:../../packages/client/connection
-      '@deepseek-ai/dsh-home-paths':
-        specifier: workspace:^
-        version: link:../../packages/util/home-paths
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:^
         version: link:../../packages/host/webserver
       '@deepseek-ai/dsh-jobs':
         specifier: workspace:^
         version: link:../../packages/jobs/jobs
-      '@deepseek-ai/dsh-skill-office':
-        specifier: workspace:^
-        version: link:../../packages/skill/skill-office
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../packages/core/tools
@@ -4182,6 +4185,9 @@ importers:
 
   packages/client/ui-settings-general:
     dependencies:
+      '@deepseek-ai/dsh-settings':
+        specifier: workspace:^
+        version: link:../../settings/settings
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -4225,9 +4231,6 @@ importers:
       '@deepseek-ai/dsh-remote-mock':
         specifier: workspace:^
         version: link:../../test-support/remote-mock
-      '@deepseek-ai/dsh-settings':
-        specifier: workspace:^
-        version: link:../../settings/settings
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
@@ -8033,6 +8036,34 @@ importers:
       '@types/negotiator':
         specifier: ^0.6.5
         version: 0.6.5
+
+  packages/host/workspace-runtime:
+    dependencies:
+      '@deepseek-ai/dsh-skill-office':
+        specifier: workspace:^
+        version: link:../../skill/skill-office
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-skill':
+        specifier: workspace:^
+        version: link:../../skill/skill
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
 
   packages/identity/anonymous-user-id:
     devDependencies:
@@ -16071,6 +16102,9 @@ packages:
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
+  '@types/yauzl@2.10.3':
+    resolution: {integrity: sha512-oJoftv0LSuaDZE3Le4DbKX+KS9G36NzOeSap90UIK0yMA/NhKJhqlSGtNDORNRaIbQfzjXDrQa0ytJ6mNRGz/Q==}
+
   '@typescript-eslint/types@8.61.0':
     resolution: {integrity: sha512-9QTQpZ5Iin4CdIodfbDQFSeiSJKidgYJYug1P9CC2xWgUTvlmixViqDZNciMjwLBZyJnG4tGmPl97rVAFb1AJg==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
@@ -16810,10 +16844,6 @@ packages:
     resolution: {integrity: sha512-nTjqfcBFEipKdXCv4YDQWCfmcLZKm81ldF0pAopTvyrFGVbcR6P/VAAd5G7N+0tTr8QqiU0tFadD6FK4NtJwOA==}
     engines: {node: '>= 0.6'}
 
-  content-type@2.0.0:
-    resolution: {integrity: sha512-j/O/d7GcZCyNl7/hwZAb606rzqkyvaDctLmckbxLzHvFBzTJHuGEdodATcP3yIRoDrLHkIATJuvzbFlp/ki2cQ==}
-    engines: {node: '>=18'}
-
   content-type@2.1.0:
     resolution: {integrity: sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag==}
     engines: {node: '>=18'}
@@ -17412,6 +17442,11 @@ packages:
 
   extend@3.0.2:
     resolution: {integrity: sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g==}
+
+  extract-zip@2.0.1:
+    resolution: {integrity: sha512-GDhU9ntwuKyGXdZBUgTIe+vXnWj0fppUEtMDL0+idd5Sta8TGpHssn/eusA9mrPr9qNDym6SxAYZjNvCn/9RBg==}
+    engines: {node: '>= 10.17.0'}
+    hasBin: true
 
   fast-check@4.8.0:
     resolution: {integrity: sha512-GOJ158CUMnN6cSahsv4+ExARvIDuzzinFjkp0E9WtiBa5zcVeLozVkWaE4IzFcc+Y48Wp1EDlUZsXRyAztQcSg==}
@@ -21779,13 +21814,13 @@ snapshots:
 
   '@nodable/entities@2.2.0': {}
 
-  '@npmcli/agent@4.0.2':
+  '@npmcli/agent@4.0.2(supports-color@9.4.0)':
     dependencies:
       agent-base: 7.1.4
       http-proxy-agent: 7.0.2
       https-proxy-agent: 7.0.6
       lru-cache: 11.5.1
-      socks-proxy-agent: 8.0.3
+      socks-proxy-agent: 8.0.3(supports-color@9.4.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -22392,21 +22427,21 @@ snapshots:
 
   '@sigstore/protobuf-specs@0.5.2': {}
 
-  '@sigstore/sign@4.1.1':
+  '@sigstore/sign@4.1.1(supports-color@9.4.0)':
     dependencies:
       '@gar/promise-retry': 1.0.3
       '@sigstore/bundle': 4.0.0
       '@sigstore/core': 3.2.1
       '@sigstore/protobuf-specs': 0.5.2
-      make-fetch-happen: 15.0.6
+      make-fetch-happen: 15.0.6(supports-color@9.4.0)
       proc-log: 6.1.0
     transitivePeerDependencies:
       - supports-color
 
-  '@sigstore/tuf@4.0.2':
+  '@sigstore/tuf@4.0.2(supports-color@9.4.0)':
     dependencies:
       '@sigstore/protobuf-specs': 0.5.2
-      tuf-js: 4.1.0
+      tuf-js: 4.1.0(supports-color@9.4.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -22894,6 +22929,11 @@ snapshots:
   '@types/ws@8.18.1':
     dependencies:
       '@types/node': 22.20.0
+
+  '@types/yauzl@2.10.3':
+    dependencies:
+      '@types/node': 22.20.0
+    optional: true
 
   '@typescript-eslint/types@8.61.0': {}
 
@@ -23462,7 +23502,7 @@ snapshots:
   body-parser@2.3.0:
     dependencies:
       bytes: 3.1.2
-      content-type: 2.0.0
+      content-type: 2.1.0
       debug: 4.4.3(supports-color@9.4.0)
       http-errors: 2.0.1
       iconv-lite: 0.7.3
@@ -23703,8 +23743,6 @@ snapshots:
   content-disposition@1.1.0: {}
 
   content-type@1.0.5: {}
-
-  content-type@2.0.0: {}
 
   content-type@2.1.0: {}
 
@@ -24456,6 +24494,16 @@ snapshots:
       - supports-color
 
   extend@3.0.2: {}
+
+  extract-zip@2.0.1(supports-color@9.4.0):
+    dependencies:
+      debug: 4.4.3(supports-color@9.4.0)
+      get-stream: 5.2.0
+      yauzl: 3.4.0
+    optionalDependencies:
+      '@types/yauzl': 2.10.3
+    transitivePeerDependencies:
+      - supports-color
 
   fast-check@4.8.0:
     dependencies:
@@ -25336,10 +25384,10 @@ snapshots:
     dependencies:
       semver: 7.8.5
 
-  make-fetch-happen@15.0.6:
+  make-fetch-happen@15.0.6(supports-color@9.4.0):
     dependencies:
       '@gar/promise-retry': 1.0.3
-      '@npmcli/agent': 4.0.2
+      '@npmcli/agent': 4.0.2(supports-color@9.4.0)
       '@npmcli/redact': 4.0.0
       cacache: 20.0.4
       http-cache-semantics: 4.2.0
@@ -26122,8 +26170,7 @@ snapshots:
 
   pe-library@0.4.1: {}
 
-  pend@1.2.0:
-    optional: true
+  pend@1.2.0: {}
 
   perfect-debounce@1.0.0: {}
 
@@ -26718,13 +26765,13 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
-  sigstore@4.1.1:
+  sigstore@4.1.1(supports-color@9.4.0):
     dependencies:
       '@sigstore/bundle': 4.0.0
       '@sigstore/core': 3.2.1
       '@sigstore/protobuf-specs': 0.5.2
-      '@sigstore/sign': 4.1.1
-      '@sigstore/tuf': 4.0.2
+      '@sigstore/sign': 4.1.1(supports-color@9.4.0)
+      '@sigstore/tuf': 4.0.2(supports-color@9.4.0)
       '@sigstore/verify': 3.1.1
     transitivePeerDependencies:
       - supports-color
@@ -26747,7 +26794,7 @@ snapshots:
 
   smol-toml@1.7.1: {}
 
-  socks-proxy-agent@8.0.3:
+  socks-proxy-agent@8.0.3(supports-color@9.4.0):
     dependencies:
       agent-base: 7.1.4
       debug: 4.4.3(supports-color@9.4.0)
@@ -27056,11 +27103,11 @@ snapshots:
     optionalDependencies:
       fsevents: 2.3.3
 
-  tuf-js@4.1.0:
+  tuf-js@4.1.0(supports-color@9.4.0):
     dependencies:
       '@tufjs/models': 4.1.0
       debug: 4.4.3(supports-color@9.4.0)
-      make-fetch-happen: 15.0.6
+      make-fetch-happen: 15.0.6(supports-color@9.4.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -27081,7 +27128,7 @@ snapshots:
 
   type-is@2.1.0:
     dependencies:
-      content-type: 2.0.0
+      content-type: 2.1.0
       media-typer: 1.1.1
       mime-types: 3.0.2
 
@@ -27589,7 +27636,6 @@ snapshots:
   yauzl@3.4.0:
     dependencies:
       pend: 1.2.0
-    optional: true
 
   yocto-queue@0.1.0: {}
 

@@ -5,8 +5,6 @@ import { loadLayeredEnv, loadProfileDirectory } from '@deepseek-ai/dsh-app-boot'
 import { runProfile } from '@deepseek-ai/dsh/profile-boot'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import * as desktopOffice from './office.ts'
 
 import { installDesktopUpdateTaskControl } from './update-tasks.ts'
 
@@ -66,10 +64,6 @@ async function main(): Promise<void> {
   process.once('disconnect', () => { void stop() })
   const { ctx } = await application
   control.updateTasks = installDesktopUpdateTaskControl(ctx)
-  await ctx.plugin(desktopOffice, {
-    source: process.argv[4] ?? join(runtimeDir, '..', 'runtime', 'primary-runtime'),
-    root: join(resolveDshHome(), 'dsh-runtimes', 'dsh-primary-runtime'),
-  })
   const url = ctx.connection.authenticatedUrl(`http://127.0.0.1:${String(ctx.webServer.port)}`)
   if (process.connected) process.send?.({ type: 'ready', url, injections: ctx.webServer.collectIndexInjections() }, (error) => { if (error !== null) console.error(error) })
 }

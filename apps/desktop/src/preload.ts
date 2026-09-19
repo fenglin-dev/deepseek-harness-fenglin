@@ -44,6 +44,12 @@ import type {
 import type {
   DesktopRuntimeSelection, NasDeviceSummary, NasDiscoveryCandidate, NasPairingRequest, NasRuntimeStatus,
 } from './nas-runtime.ts'
+import type {
+  WorkspaceRuntimeJobSnapshot,
+  WorkspaceRuntimeOutputRead,
+  WorkspaceRuntimeSnapshot,
+} from './workspace-runtime-manager.ts'
+import type { WorkspaceRuntimeCapability } from './workspace-runtime-manifest.ts'
 
 /** Renderer-visible update methods; no generic process or filesystem access is exposed. */
 export interface DesktopUpdateBridge {
@@ -149,6 +155,18 @@ export interface DesktopBundledPluginsBridge {
 /** Closed external-tool ids resolved to signed, exact coordinates by main. */
 export interface DesktopExternalToolsBridge {
   resolve(toolId: DesktopExternalToolId): Promise<ExternalToolInstallResolution>
+}
+
+/** Closed optional-runtime operations; renderer input contains no URL, path, or package coordinate. */
+export interface DesktopWorkspaceRuntimesBridge {
+  get(): Promise<WorkspaceRuntimeSnapshot>
+  start(capabilityId: WorkspaceRuntimeCapability): Promise<WorkspaceRuntimeJobSnapshot>
+  getJob(jobId: string): Promise<WorkspaceRuntimeJobSnapshot>
+  readOutput(jobId: string, offset: number): Promise<WorkspaceRuntimeOutputRead>
+  pause(jobId: string): Promise<WorkspaceRuntimeJobSnapshot>
+  cancel(jobId: string): Promise<WorkspaceRuntimeJobSnapshot>
+  activate(capabilityId: WorkspaceRuntimeCapability): Promise<WorkspaceRuntimeSnapshot>
+  remove(capabilityId: WorkspaceRuntimeCapability): Promise<WorkspaceRuntimeSnapshot>
 }
 
 /** Opaque-id restore operations; package specs never cross from renderer to main. */
@@ -329,6 +347,45 @@ const externalToolsBridge: DesktopExternalToolsBridge = {
   ) as Promise<ExternalToolInstallResolution>,
 }
 
+const workspaceRuntimesBridge: DesktopWorkspaceRuntimesBridge = {
+  get: () => ipcRenderer.invoke(DESKTOP_IPC.workspaceRuntimesGet) as Promise<WorkspaceRuntimeSnapshot>,
+  start: capabilityId => ipcRenderer.invoke(
+    DESKTOP_IPC.workspaceRuntimesStart, capabilityId,
+  ) as Promise<WorkspaceRuntimeJobSnapshot>,
+  getJob: jobId => ipcRenderer.invoke(DESKTOP_IPC.workspaceRuntimesGetJob, jobId) as Promise<WorkspaceRuntimeJobSnapshot>,
+  readOutput: (jobId, offset) => ipcRenderer.invoke(
+    DESKTOP_IPC.workspaceRuntimesOutput, jobId, offset,
+  ) as Promise<WorkspaceRuntimeOutputRead>,
+  pause: jobId => ipcRenderer.invoke(DESKTOP_IPC.workspaceRuntimesPause, jobId) as Promise<WorkspaceRuntimeJobSnapshot>,
+  cancel: jobId => ipcRenderer.invoke(DESKTOP_IPC.workspaceRuntimesCancel, jobId) as Promise<WorkspaceRuntimeJobSnapshot>,
+  activate: capabilityId => ipcRenderer.invoke(
+    DESKTOP_IPC.workspaceRuntimesActivate, capabilityId,
+  ) as Promise<WorkspaceRuntimeSnapshot>,
+  remove: capabilityId => ipcRenderer.invoke(
+    DESKTOP_IPC.workspaceRuntimesRemove, capabilityId,
+  ) as Promise<WorkspaceRuntimeSnapshot>,
+}
+
+const remoteWorkspaceRuntimeUnavailable = (): Promise<never> => Promise.reject(
+  new Error('desktop workspace runtimes require the local runtime'),
+)
+const remoteWorkspaceRuntimesBridge: DesktopWorkspaceRuntimesBridge = {
+  get: () => Promise.resolve({
+    currentHome: '',
+    capabilities: {
+      office: { capabilityId: 'office', phase: 'nas-unavailable' },
+      ptc: { capabilityId: 'ptc', phase: 'nas-unavailable' },
+    },
+  }),
+  start: remoteWorkspaceRuntimeUnavailable,
+  getJob: remoteWorkspaceRuntimeUnavailable,
+  readOutput: remoteWorkspaceRuntimeUnavailable,
+  pause: remoteWorkspaceRuntimeUnavailable,
+  cancel: remoteWorkspaceRuntimeUnavailable,
+  activate: remoteWorkspaceRuntimeUnavailable,
+  remove: remoteWorkspaceRuntimeUnavailable,
+}
+
 const importedPluginsBridge: DesktopImportedPluginsBridge = {
   get: () => ipcRenderer.invoke(DESKTOP_IPC.importedPluginsGet) as Promise<ImportedPluginRestoreSnapshot | undefined>,
   checkSources: () => ipcRenderer.invoke(
@@ -501,6 +558,7 @@ const commonDesktopBridge = {
   releases: Object.freeze(releasesBridge),
   nas: Object.freeze(nasBridge),
   desktopWeb: Object.freeze(nasMode ? remoteDesktopWebBridge : desktopWebBridge),
+  workspaceRuntimes: Object.freeze(nasMode ? remoteWorkspaceRuntimesBridge : workspaceRuntimesBridge),
 }
 contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
   ...commonDesktopBridge,

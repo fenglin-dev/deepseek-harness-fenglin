@@ -34,18 +34,20 @@ it('boots every bundled preload before DOM globals are available with only Elect
         return { contextBridge: { exposeInMainWorld }, ipcRenderer: { invoke } }
       })
       runInNewContext(await readFile(join(outDir, `${name}.cjs`), 'utf8'), {
-        require, window: { addEventListener }, process: { platform: 'darwin', argv: [] },
+        require, window: { addEventListener }, location: { protocol: 'dsh-app:', hostname: 'app' },
+        process: { platform: 'darwin', argv: [] },
       }, { timeout: 1000 })
       expect(require).toHaveBeenCalledWith('electron')
       expect(addEventListener).toHaveBeenCalledWith('DOMContentLoaded', expect.any(Function), { once: true })
       if (name === 'preload') {
         expect(exposeInMainWorld).toHaveBeenCalledWith('deepSeekHarnessDesktop', expect.any(Object))
-        const exposed = exposeInMainWorld.mock.calls[0]?.[1] as {
+        const exposed = exposeInMainWorld.mock.calls.find(([name]) => name === 'deepSeekHarnessDesktop')?.[1] as {
           shell: { openLogDirectory(): Promise<{ error: string }> }
         }
         expect(Object.keys(exposed)).toEqual([
-          'menu', 'shell', 'releases', 'nas', 'desktopWeb', 'icons', 'downloadNetwork', 'bundledPlugins', 'externalTools',
-          'importedPlugins', 'diagnosticLab', 'pluginSnapshots', 'startupDiagnostics', 'processes', 'chatBackground',
+          'menu', 'shell', 'releases', 'nas', 'desktopWeb', 'workspaceRuntimes', 'icons', 'downloadNetwork',
+          'bundledPlugins', 'externalTools', 'importedPlugins', 'diagnosticLab', 'pluginSnapshots', 'startupDiagnostics', 'processes',
+          'chatBackground',
         ])
         expect(exposed).not.toHaveProperty('invoke')
         expect(exposed).not.toHaveProperty('send')
@@ -61,12 +63,13 @@ it('boots every bundled preload before DOM globals are available with only Elect
         runInNewContext(await readFile(join(outDir, `${name}.cjs`), 'utf8'), {
           require: remoteRequire,
           window: { addEventListener: vi.fn() },
+          location: { protocol: 'https:', hostname: 'nas.example.test' },
           process: { platform: 'darwin', argv: ['--dsh-nas-runtime'] },
         }, { timeout: 1000 })
         const remoteExposed = remoteExposeInMainWorld.mock.calls[0]?.[1] as {
           shell: Record<string, unknown>
         } & Record<string, unknown>
-        expect(Object.keys(remoteExposed)).toEqual(['menu', 'shell', 'releases', 'nas', 'desktopWeb'])
+        expect(Object.keys(remoteExposed)).toEqual(['menu', 'shell', 'releases', 'nas', 'desktopWeb', 'workspaceRuntimes'])
         expect(Object.keys(remoteExposed.shell)).toEqual([
           'getCapabilities', 'getPreferences', 'updatePreferences', 'onPreferences', 'restart', 'reportReadiness',
         ])
@@ -77,6 +80,14 @@ it('boots every bundled preload before DOM globals are available with only Elect
         expect(remoteExposed.shell).not.toHaveProperty('enterRecoveryMode')
         expect(remoteExposed).not.toHaveProperty('icons')
         expect(remoteExposed).not.toHaveProperty('downloadNetwork')
+        const remoteWorkspaceRuntimes = remoteExposed.workspaceRuntimes as {
+          get(): Promise<{ capabilities: { office: { phase: string }; ptc: { phase: string } } }>
+          start(capability: string): Promise<never>
+        }
+        await expect(remoteWorkspaceRuntimes.get()).resolves.toMatchObject({
+          capabilities: { office: { phase: 'nas-unavailable' }, ptc: { phase: 'nas-unavailable' } },
+        })
+        await expect(remoteWorkspaceRuntimes.start('office')).rejects.toThrow(/local runtime/u)
       }
     }
   } finally {

@@ -36,6 +36,7 @@
     "@types/node": "^22.20.0",
     "electron": "44.0.0",
     "electron-builder": "26.15.3",
+    "extract-zip": "2.0.1",
     "pnpm": "11.7.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.8"

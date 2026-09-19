@@ -20,6 +20,8 @@ import type {
   InstallableExternalToolId,
 } from './external-tool-compatibility-bridge.ts'
 import { ExternalToolIcon, type ExternalToolIconId } from './ExternalToolIcon.tsx'
+import { WorkspaceRuntimesSection } from './WorkspaceRuntimesSection.tsx'
+import type { WorkspaceRuntimeInjected } from './workspace-runtime-bridge.ts'
 
 interface ToolDefinition {
   readonly id: ExternalToolIconId
@@ -117,7 +119,7 @@ const TOOLS: readonly ToolDefinition[] = [
 ]
 
 /** Host operations used by the external-tools settings page. */
-export interface ExternalToolsSectionInjected {
+export interface ExternalToolsSectionInjected extends WorkspaceRuntimeInjected {
   list: () => Promise<PluginInventorySnapshot>
   externalTools: () => Promise<ExternalToolsSnapshot>
   setExternalTool: (tool: ExternalToolId, enabled: boolean) => Promise<ExternalToolsSnapshot>
@@ -555,6 +557,19 @@ export function ExternalToolsSection(props: ExternalToolsSectionProps): ReactNod
           )
         })}
       </ul>
+
+      <WorkspaceRuntimesSection
+        restart={restart}
+        t={t}
+        getWorkspaceRuntimes={props.getWorkspaceRuntimes}
+        startWorkspaceRuntime={props.startWorkspaceRuntime}
+        getWorkspaceRuntimeJob={props.getWorkspaceRuntimeJob}
+        readWorkspaceRuntimeOutput={props.readWorkspaceRuntimeOutput}
+        pauseWorkspaceRuntime={props.pauseWorkspaceRuntime}
+        cancelWorkspaceRuntime={props.cancelWorkspaceRuntime}
+        activateWorkspaceRuntime={props.activateWorkspaceRuntime}
+        removeWorkspaceRuntime={props.removeWorkspaceRuntime}
+      />
 
       <div className={css.groupHeading}>
         <div>

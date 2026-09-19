@@ -84,6 +84,10 @@ Windows 辅助卸载向导默认保留本地配置和数据。用户可以主动
 
 每次外部工具安装请求都会读取以应用完整桌面版本命名的不可变清单；同时发起的请求共享进行中的查询。后续请求可以从此前的网络失败中恢复，但不能采用为其他桌面构建发布的 Provider 坐标，也不能采用本构建后来发生变化的修订版。发布门禁要求记录的源码审核基线及运行时版本与工作区一致，因此任一坐标变化都需要新的桌面版本和新清单。桌面端从 `https://flaqai.github.io/open-deepseek-harness-desktop/metadata/external-tools/v2/` 获取带版本文件和共用的多主体证明。仅允许 master 的发布工作流会保留所有带版本的源清单，拒绝用不同内容覆盖同一公开 URL 上已经存在的文档，签名完整保留集合，并且只通过 GitHub Pages 部署这些文档，不具备 Release 写入权限。发布要求仓库的 Pages 来源设为 GitHub Actions，且 `github-pages` 环境允许 master 部署。本仓库的 Pages 专用于元数据；文档部署在这里被排除，避免覆盖元数据站点。使用旧滚动地址编译的客户端在该地址不可用后会回退到自身内置的精确坐标；此工作流既不删除，也不重建 GitHub Release。
 
+工作区 Python 是独立的可选 Release 载荷，不属于外部工具插件，也不属于安装包资源。打包工作流从 Python 3.12 锁定文件分别生成 `win32-x64`、`darwin-arm64`、`darwin-x64` 与 `linux-x64` 归档，包含 NumPy、pandas、Pillow、lxml、python-docx、python-pptx、openpyxl、XlsxWriter 及锁定的传递依赖。仅允许 master 的工作流会根据 Release 中四份不可变归档重新生成版本化清单，通过 GitHub OIDC/Sigstore 为其摘要签名，把清单和证明附加到同一 Release，并请求刷新 CNB 镜像。已发布客户端只接受与完整桌面版本、原生目标、预期文件名、大小上限、SHA-256、载荷摘要和签名身份全部匹配的内容。只有未打包的开发版可以指定测试元数据 URL；正式构建不接受任意 URL 覆盖。
+
+`OptionalRuntimeManager` 统一拥有断点续传、有界输出、归档策略、原子解压、共享的 `userData/optional-runtimes` 缓存，以及按规范化 `DSH_HOME` 保存的独立引用。渲染层 IPC 只能提交 `office` 或 `ptc`，不能提交 URL、路径或包坐标。启用操作通过现有启动 Profile 事务写入受管块；只有普通客户端与事件分发都正常就绪并提交事务后，状态才会从等待重启变为已启用。Office 加载 `@deepseek-ai/dsh-host-workspace-runtime`，由它发布 `load_workspace_dependencies` 和内置 Office Skill，并显式指向经过校验的载荷以及安装包 Node/pnpm。PTC 使用独立受管块，Windows 不支持。停用一项不会影响另一项；无人引用的载荷只会在停用事务提交后回收。NAS 模式中的两张卡片仅展示不可用状态。
+
 桌面端只为官方 Codex Provider 解析系统代理，显式代理设置优先。插件下载保留 pnpm 与 Git 自身配置，不继承面向 ChatGPT 的专用路由。网络失败会附带有长度边界的分类与耗时提示；不会仅凭环境变量推断实际路由。详见[代理作用范围与验证限制](../../.agents/notes/implemented/bug-fix/2026-09-03-desktop-codex-proxy-scope.zh.md)。
 
 开发与打包脚本会从 Desktop 和 Web 各自的应用目录执行。每个 Unix 打包命令都会把明确的平台与架构同时传给运行时和 Codex 准备步骤，使 macOS Apple 芯片、macOS Intel、Linux x64 与 Windows x64 的 staging 相互独立。
@@ -120,7 +124,7 @@ npm run package:desktop:macos:arm64
 npm run package:desktop:macos:x64
 ```
 
-产物写入 `.artifacts/desktop-macos/`。原生安装包携带展开后的 Harness 生产依赖、Node 24.21.0、pnpm 11.7.0，以及独立的预构建 Profile 模板。复制 `.app` 时一并安装这些资源，首次启动不再解压嵌套运行时归档。Linux deb/rpm 使用相同的展开布局，Windows 保留 NSIS 资源部署。安装程序不执行用户插件脚本，也不选择配置目录。旧布局测试包仍可读取原有运行时归档。准备阶段验证固定 Node 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
+产物写入 `.artifacts/desktop-macos/`。原生安装包携带展开后的 Harness 生产依赖、Node 24.21.0、pnpm 11.7.0、小型工作运行时适配模块、内置 Office Skill 资源，以及独立的预构建 Profile 模板；不携带 Python 解释器、wheel 或可选运行时归档。复制 `.app` 时一并安装这些资源，首次启动不再解压嵌套 Harness 运行时归档。Linux deb/rpm 使用相同的展开布局，Windows 保留 NSIS 资源部署。安装程序不执行用户插件脚本，也不选择配置目录。旧布局测试包仍可读取原有运行时归档。准备阶段验证固定 Node 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
 
 在 Windows 上使用下列命令构建未签名的 Windows x64 NSIS 安装程序：
 

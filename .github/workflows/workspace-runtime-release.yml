@@ -1,0 +1,69 @@
+name: Workspace runtime release metadata
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing Desktop release tag containing all four runtime archives
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-runtime-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    if: github.repository == 'flaqai/open-deepseek-harness-desktop' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.17.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Download immutable runtime archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download '${{ inputs.tag }}' --dir dist --pattern 'DeepSeek-Harness-workspace-runtime-*.tar.gz'
+          test "$(find dist -name 'DeepSeek-Harness-workspace-runtime-*.tar.gz' -type f | wc -l)" -eq 4
+
+      - name: Build catalog subject from release bytes
+        run: pnpm exec tsx apps/desktop/scripts/workspace-runtime-manifest-from-release.ts dist '${{ inputs.tag }}'
+
+      - id: attest
+        name: Sign runtime catalog with GitHub OIDC
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/workspace-runtimes-*.v1.json
+
+      - name: Upload signed catalog to the same release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp '${{ steps.attest.outputs.bundle-path }}' dist/workspace-runtimes.v1.sigstore.json
+          gh release upload '${{ inputs.tag }}' dist/workspace-runtimes-*.v1.json dist/workspace-runtimes.v1.sigstore.json --clobber
+
+      - name: Refresh the CNB mirror after metadata is present
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run sync-cnb-desktop-releases.yml --ref master -f target_tag='${{ inputs.tag }}'
