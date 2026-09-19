@@ -80,7 +80,7 @@
 
 诊断 Profile 记录进入时间、跳过的 bundle 名称，以及是否跳过用户层。其裸模块解析以安装方维护的 `$DSH_HOME/profiles/node_modules` fallback 为锚点，不再使用活动 Profile 或 CLI 包。桌面端绝不把这个最小 Profile 当作普通工作区打开；它就绪后只展示明确的“诊断模式”页面，提供插件卸载、快照回退、配置目录安全切换、诊断导出和打开本机日志。重新尝试会先停止诊断进程，再正常启动当前 Profile。启动最多执行一次普通尝试和一次诊断尝试；若安装自带的诊断 Profile 也失败，监督器会立即停止，保留原始 Profile incident 作为主证据，并把诊断失败追加为次级证据。
 
-诊断演练中心为这些规则提供固定场景。`@dsh-diagnostic-lab/legacy-session-api` 场景可在隔离 home 和当前 Profile 中使用且默认不勾选，用于验证 `profile.session-api-incompatible` 风险提示的归属，不调用旧接口辅助函数，也不隔离测试包。`@dsh-diagnostic-lab/loader-dependency-unavailable` 会在隔离 home 与当前 Profile 中验证安装后缺失软件包的归属和隔离。仅限当前 Profile 的 `@dsh-diagnostic-lab/loader-export-unavailable` 会从已安装的 settings Host 导入一个故意不存在的命名导出，恢复真实 Harness，并验证系统在诊断模式兜底前完成运行时隔离。损坏设置场景写入重复键，等待真实活动 Profile 报告 `config.settings-invalid` 与 `skippedUserSettings: true`，确认原始字节保持不变，并通过**全部恢复**逐字节还原演练前设置。测试包始终属于 `diagnostic` 资源，普通启动绝不会预装。
+诊断演练中心为这些规则提供固定场景。兼容与不兼容 Host 影子副本场景会先通过 pnpm 安装经过审核的本地测试包，并在 Doctor 统一或隔离已登记软件包前恢复原始 workspace 设置。`@dsh-diagnostic-lab/legacy-session-api` 场景可在隔离 home 和当前 Profile 中使用且默认不勾选，用于验证 `profile.session-api-incompatible` 风险提示的归属，不调用旧接口辅助函数，也不隔离测试包。`@dsh-diagnostic-lab/loader-dependency-unavailable` 会在隔离 home 与当前 Profile 中验证安装后缺失软件包的归属和隔离。仅限当前 Profile 的 `@dsh-diagnostic-lab/loader-export-unavailable` 会从已安装的 settings Host 导入一个故意不存在的命名导出，恢复真实 Harness，并验证系统在诊断模式兜底前完成运行时隔离。损坏设置场景写入重复键，等待真实活动 Profile 报告 `config.settings-invalid` 与 `skippedUserSettings: true`，确认原始字节保持不变，并通过**全部恢复**逐字节还原演练前设置。测试包始终属于 `diagnostic` 资源，普通启动绝不会预装。
 
 隔离的 `plugin-transaction-interrupted` 演练会将无副作用的候选状态停留在 `checking-startup`，再运行独立 CLI，恢复旧依赖目录并移除已完成的日志。它不会停止活动 Harness，也不修改其 Profile。所有演练场景仍默认不选中。现有的缺失导出演练也覆盖依赖不可用核心 API 的插件，与仅提示风险的旧 Session API 用法保持区分。
 

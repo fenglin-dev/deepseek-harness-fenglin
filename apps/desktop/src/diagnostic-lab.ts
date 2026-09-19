@@ -1331,7 +1331,6 @@ export class DiagnosticLabManager {
     const packageName = `@dsh-diagnostic-lab/${scenarioId}`
     const fixtureRoot = join(home, 'diagnostic-fixtures', this.#requireActive().runId)
     const fixtureDir = join(fixtureRoot, scenarioId)
-    const installedDir = join(profileDir, 'node_modules', packageName)
     await atomicWrite(join(fixtureDir, 'package.json'), `${JSON.stringify({
       name: packageName,
       version: '1.0.0',
@@ -1350,21 +1349,32 @@ export class DiagnosticLabManager {
     manifest.dsh.profile.bundles ??= []
     if (!manifest.dsh.profile.bundles.includes(packageName)) manifest.dsh.profile.bundles.push(packageName)
     await atomicWrite(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`)
-    if (scenarioId !== 'orphaned-bundle') {
-      await atomicWrite(join(installedDir, 'package.json'), `${JSON.stringify({
-        name: packageName,
-        version: '1.0.0',
-        dependencies: scenarioId === 'host-shadow-compatible'
-          ? { '@deepseek-ai/dsh-tools': '*' }
-          : { '@deepseek-ai/dsh-tools': '<0.0.0' },
-        dsh: { bundle: { patch: './cordis.patch.yml' } },
-      }, undefined, 2)}\n`)
-      await atomicWrite(join(installedDir, 'cordis.patch.yml'), '[]\n')
-      await atomicWrite(join(installedDir, 'node_modules', '@deepseek-ai', 'dsh-tools', 'package.json'), `${JSON.stringify({
+    if (scenarioId === 'host-shadow-compatible' || scenarioId === 'host-shadow-incompatible') {
+      const shadowPackageDir = join(fixtureRoot, `${scenarioId}-shared-host`)
+      await atomicWrite(join(shadowPackageDir, 'package.json'), `${JSON.stringify({
         name: '@deepseek-ai/dsh-tools',
         version: '0.0.0-diagnostic',
       }, undefined, 2)}\n`)
-    } else {
+      const workspacePath = join(profileDir, 'pnpm-workspace.yaml')
+      const workspaceExisted = existsSync(workspacePath)
+      const workspaceSource = workspaceExisted ? await readFile(workspacePath, 'utf8') : ''
+      const workspace = parseDocument(workspaceSource)
+      if (workspace.errors.length > 0) {
+        throw new Error(`diagnostic fixture workspace is invalid: ${workspace.errors[0]?.message ?? 'unknown YAML error'}`)
+      }
+      workspace.set('nodeLinker', 'isolated')
+      workspace.setIn(
+        ['overrides', '@deepseek-ai/dsh-tools'],
+        `link:${relative(profileDir, shadowPackageDir).split(sep).join('/')}`,
+      )
+      await atomicWrite(workspacePath, workspace.toString())
+      try {
+        await this.#options.installProfile(home, true)
+      } finally {
+        if (workspaceExisted) await atomicWrite(workspacePath, workspaceSource)
+        else await rm(workspacePath, { force: true })
+      }
+    } else if (scenarioId === 'orphaned-bundle') {
       manifest.dependencies = Object.fromEntries(
         Object.entries(manifest.dependencies).filter(([name]) => name !== packageName),
       )
