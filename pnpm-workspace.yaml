@@ -14,6 +14,12 @@ packages:
   # closure is what the exe bundles and what the Python runtime distributes.
   - python/sdk-runtime
 
+# pnpm 11 verifies workspace state before `run` and `exec`. Production deploys
+# can record their `--prod` selection in the source workspace even though their
+# output is elsewhere; never let a later read-only command silently reuse that
+# selection to remove development dependencies.
+verifyDepsBeforeRun: error
+
 # Vendored framework packages keep their upstream semver ranges, while local
 # builds must resolve those matching names to this workspace's pinned sources.
 linkWorkspacePackages: true
