@@ -60,11 +60,11 @@ test('collects stable metadata without file contents or source paths', async () 
 test('records path probe failures as degraded evidence', async () => {
   const { destination } = await fixture()
   const evidence = await collectWindowsSmokeEvidence({
-    runnerTemp: join(tmpdir(), 'x'.repeat(5000)), destination, platform: 'linux',
+    runnerTemp: join(tmpdir(), 'invalid\0path'), destination, platform: 'linux',
   })
   assert.equal(evidence.status, 'degraded')
   assert.ok(evidence.files.every(entry => entry.status === 'unavailable'))
-  assert.ok(evidence.files.every(entry => entry.errorKind === 'path-too-long'))
+  assert.ok(evidence.files.every(entry => entry.errorKind === 'io-error'))
   assert.doesNotMatch(JSON.stringify(evidence), /ENAMETOOLONG|no such file|permission denied/iu)
 })
 
