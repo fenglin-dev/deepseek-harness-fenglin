@@ -29,13 +29,21 @@ export interface WorkspaceDependencies {
 
 /** Application-owned paths. Renderer input never reaches these fields. */
 export interface Config {
+  /** Absolute root of the verified managed payload containing `runtime.json`. */
   readonly runtimeRoot: string
+  /** Absolute executable path for an optional user-selected Python interpreter. */
   readonly python?: string
+  /** Absolute site-packages directory belonging to the user-selected interpreter. */
   readonly pythonPackages?: string
+  /** Installed distribution versions belonging to the user-selected interpreter. */
   readonly pythonDistributions?: Readonly<Record<string, string>>
+  /** Absolute executable path for the application-packaged Node.js runtime. */
   readonly node: string
+  /** Absolute entry-point path for the application-packaged pnpm runtime. */
   readonly pnpm: string
+  /** Absolute node_modules directory exposed to Workspace dependency consumers. */
   readonly nodePackages: string
+  /** Whether to register the packaged Office skills for this Profile. */
   readonly office?: boolean
 }
 

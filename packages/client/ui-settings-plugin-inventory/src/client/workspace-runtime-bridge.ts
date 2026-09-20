@@ -1,10 +1,14 @@
 /** Renderer adapter for the closed Desktop workspace-runtime bridge. */
 
+/** Optional runtime capability managed by the Desktop application. */
 export type WorkspaceRuntimeCapability = 'office' | 'ptc'
+
+/** User-visible lifecycle phase for one optional runtime capability. */
 export type WorkspaceRuntimePhase =
   | 'not-installed' | 'downloading' | 'paused' | 'verifying' | 'waiting-restart'
   | 'enabled' | 'needs-update' | 'cleaning' | 'failed' | 'unsupported' | 'nas-unavailable'
 
+/** Current activation and transfer status for one runtime capability. */
 export interface WorkspaceRuntimeCapabilityStatus {
   readonly capabilityId: WorkspaceRuntimeCapability
   readonly phase: WorkspaceRuntimePhase
@@ -15,6 +19,7 @@ export interface WorkspaceRuntimeCapabilityStatus {
   readonly percent?: number
 }
 
+/** Desktop-owned runtime selection and capability state rendered by Settings. */
 export interface WorkspaceRuntimeSnapshot {
   readonly currentHome: string
   readonly target?: string
@@ -44,6 +49,7 @@ export interface WorkspaceRuntimeSnapshot {
   readonly capabilities: Readonly<Record<WorkspaceRuntimeCapability, WorkspaceRuntimeCapabilityStatus>>
 }
 
+/** Progress snapshot for one managed runtime download or activation job. */
 export interface WorkspaceRuntimeJobSnapshot {
   readonly jobId: string
   readonly capabilityId: WorkspaceRuntimeCapability
@@ -55,6 +61,7 @@ export interface WorkspaceRuntimeJobSnapshot {
   readonly message?: string
 }
 
+/** Incremental, bounded terminal output returned for a managed runtime job. */
 export interface WorkspaceRuntimeOutputRead {
   readonly text: string
   readonly nextOffset: number
@@ -110,7 +117,10 @@ function required(): DesktopWorkspaceRuntimesBridge {
   return value
 }
 
-/** Build the Settings injection without exposing the global bridge to components. */
+/**
+ * Build the Settings injection without exposing the global bridge to components.
+ * @returns Callbacks backed by the verified Desktop preload bridge.
+ */
 export function workspaceRuntimeInjected(): WorkspaceRuntimeInjected {
   return {
     getWorkspaceRuntimes: () => required().get(),
