@@ -277,15 +277,19 @@ class WindowsJobRunner {
     this.finish(127, false)
   }
 
+  private startCancellationRequested(): boolean {
+    return this.terminateRequested
+  }
+
   private async start(request: WindowsStartRequest): Promise<void> {
-    if (this.terminateRequested) {
+    if (this.startCancellationRequested()) {
       await this.publishTerminalResult({ type: 'error', error: windowsStartCancelledError() }, 0)
       return
     }
     await new Promise<void>((resolveImmediate) => { setImmediate(resolveImmediate) })
     if (this.finished) return
     // IPC may set this field while start() is suspended above.
-    if (this.terminateRequested) {
+    if (this.startCancellationRequested()) {
       await this.publishTerminalResult({ type: 'error', error: windowsStartCancelledError() }, 0)
       return
     }

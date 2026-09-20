@@ -145,6 +145,14 @@ describe('bundled plugin seed', () => {
     expect(bundledPluginFailureDiagnostic(preparation)).toContain('Caused by: Error: runner could not start target')
   })
 
+  it('renders non-Error rejection details without default object coercion', () => {
+    expect(bundledPluginFailureDiagnostic({ code: 'EPLUGIN', plugin: 'fixture' }))
+      .toBe('{"code":"EPLUGIN","plugin":"fixture"}')
+    const circular: { self?: unknown } = {}
+    circular.self = circular
+    expect(bundledPluginFailureDiagnostic(circular)).toBe('unserializable failure object')
+  })
+
   it('ships the pinned preset archives with matching integrity', async () => {
     const manifest = JSON.parse(await readFile(new URL('../bundled-plugins/manifest.json', import.meta.url), 'utf8')) as {
       schema: number

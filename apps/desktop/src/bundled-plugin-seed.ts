@@ -67,6 +67,22 @@ export interface BundledPluginSeedProgress {
   readonly progress: number
 }
 
+/** Render an arbitrary rejected value without relying on the default object stringification. */
+function rejectedValueDiagnostic(value: unknown): string {
+  if (value === null) return 'null'
+  if (typeof value === 'string') return value
+  if (typeof value === 'function') return value.name === '' ? 'anonymous function' : `function ${value.name}`
+  if (typeof value === 'undefined') return 'undefined'
+  if (typeof value === 'number' || typeof value === 'bigint') return value.toString()
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value === 'symbol') return value.description === undefined ? 'symbol' : `symbol ${value.description}`
+  try {
+    return JSON.stringify(value)
+  } catch (_serializationFailure) {
+    return 'unserializable failure object'
+  }
+}
+
 /** Render a bounded Error.cause chain so startup wrappers do not hide the actionable failure. */
 export function bundledPluginFailureDiagnostic(error: unknown): string {
   const seen = new Set<unknown>()
@@ -74,7 +90,7 @@ export function bundledPluginFailureDiagnostic(error: unknown): string {
   let current: unknown = error
   for (let depth = 0; depth < 8 && current !== undefined && !seen.has(current); depth++) {
     seen.add(current)
-    const detail = current instanceof Error ? current.stack ?? current.message : String(current)
+    const detail = current instanceof Error ? current.stack ?? current.message : rejectedValueDiagnostic(current)
     parts.push(depth === 0 ? detail : `Caused by: ${detail}`)
     current = current instanceof Error ? current.cause : undefined
   }
