@@ -2,7 +2,7 @@
   <img src="./apps/desktop/src/icon.png" width="112" alt="DeepSeek Harness Desktop Fenglin edition icon">
 </p>
 
-# DeepSeek Harness Desktop 3.0.1 (Fenglin Edition)
+# DeepSeek Harness Desktop 3.0.2 (Fenglin Edition)
 
 <p align="center">
   <strong>A ready-to-use, dependency-safe independent desktop edition of DeepSeek Harness</strong>
@@ -12,11 +12,17 @@ Languages: Simplified Chinese（见 [README.zh.md](./README.zh.md)） · [Englis
 
 > [!IMPORTANT]
 >
-> **[v3.0.1 is now available](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.1).**
+> **[v3.0.2 is now available](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.2).**
 >
 > Rebuilt from upstream `0.1.6-alpha.2` with Fenglin exclusive features and stability fixes. Large version jump: **clean install recommended**.
 >
 > Official languages: **Simplified Chinese / English** only. Other locale files under `.github/readme/` are not maintained for this fork.
+
+### What's new in 3.0.2
+
+- **Plugin uninstall/reinstall**: explicit reinstall clears market `removed` seed markers; `hot-mount` only skips when the package is installed on disk; stuck profile-transaction journals can be archived so the app can exit/restart.
+- **Session upgrade compatibility**: on startup, missing legacy `sessions` trees are copied into the active home without overwriting existing sessions (helps 2.2.2 upgrades).
+- **Music plugin**: still bundled in prebuilt; uninstall can be reinstalled from the desktop archive.
 
 ### What's new in 3.0.1
 
@@ -40,7 +46,7 @@ Languages: Simplified Chinese（见 [README.zh.md](./README.zh.md)） · [Englis
   <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases"><img src="https://img.shields.io/github/downloads/fenglin-dev/deepseek-harness-fenglin/total.svg?style=flat" alt="Downloads"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/fenglin-dev/deepseek-harness-fenglin?style=flat" alt="MIT License"></a>
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/upstream-DeepSeek%20Harness-4d6bfe?style=flat" alt="DeepSeek Harness upstream"></a>
-  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.1"><img src="https://img.shields.io/badge/release-3.0.1-4d6bfe?style=flat" alt="3.0.1"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.2"><img src="https://img.shields.io/badge/release-3.0.2-4d6bfe?style=flat" alt="3.0.2"></a>
 </p>
 
 DeepSeek Harness Desktop (Fenglin Edition) is an independent desktop distribution of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) maintained at [fenglin-dev/deepseek-harness-fenglin](https://github.com/fenglin-dev/deepseek-harness-fenglin). Installers bundle Node.js, pnpm, and the Harness runtime. Electron is only a desktop host: configuration, credentials, sessions, plugins, and Skills stay owned by the local Harness service.

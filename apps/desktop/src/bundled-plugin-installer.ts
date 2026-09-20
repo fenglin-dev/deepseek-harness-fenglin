@@ -1,6 +1,7 @@
 /** Policy-aware coordinator for trusted plugins carried by desktop packages. */
 
 import { randomUUID } from 'node:crypto'
+import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { CandidatePreparationError } from './candidate-preparation.ts'
 import {
@@ -14,6 +15,25 @@ import {
   type BundledPluginSeedStage,
   type SeedBundledPluginResult,
 } from './bundled-plugin-seed.ts'
+
+async function readBundledPluginSeedMarker(path: string): Promise<{ state?: string } | undefined> {
+  try {
+    const value = JSON.parse(await readFile(path, 'utf8')) as { state?: unknown }
+    return typeof value.state === 'string' ? { state: value.state } : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Drop a market-uninstall seed marker so an explicit reinstall can proceed. */
+async function clearBundledPluginRemovedMarker(
+  dshHome: string,
+  entry: BundledPluginManifestEntry,
+): Promise<void> {
+  const path = join(dshHome, 'bundled-plugins', `${entry.seedId}.seeded.json`)
+  const marker = await readBundledPluginSeedMarker(path)
+  if (marker?.state === 'removed') await rm(path, { force: true })
+}
 
 export interface BundledPluginManifest {
   readonly schema: 2
@@ -244,6 +264,8 @@ export class BundledPluginInstaller {
     const entry = this.findManual(profile, packageSpec)
     if (entry === undefined) return { handled: false }
 
+    // Fenglin: an explicit reinstall must clear a prior market-uninstall marker.
+    void clearBundledPluginRemovedMarker(this.options.dshHome, entry)
     return this.startJob(entry, true)
   }
 
@@ -251,12 +273,19 @@ export class BundledPluginInstaller {
   async startDeferred(profile: string, packageSpec: string): Promise<BundledPluginDeferredStartResult> {
     const entry = this.findManual(profile, packageSpec)
     if (entry === undefined) return { handled: false }
-    if (await bundledPluginSeedIsSettled(
+    const markerPath = join(this.options.dshHome, 'bundled-plugins', `${entry.seedId}.seeded.json`)
+    const marker = await readBundledPluginSeedMarker(markerPath)
+    // Explicit deferred reinstall after a user uninstall: clear removed state.
+    if (marker?.state === 'removed') {
+      await clearBundledPluginRemovedMarker(this.options.dshHome, entry)
+    } else if (await bundledPluginSeedIsSettled(
       this.options.dshHome,
       entry,
       this.options.repairLegacyMarkers ?? false,
       this.options.sourceDshHome ?? this.options.dshHome,
-    )) return { handled: true }
+    )) {
+      return { handled: true }
+    }
     if (await hasBundledPluginQuarantineRecord(this.options.dshHome, entry)) return { handled: true }
     return this.startJob(entry, false)
   }

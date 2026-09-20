@@ -2,7 +2,7 @@
   <img src="./apps/desktop/src/icon.png" width="112" alt="DeepSeek Harness Desktop 枫林独立版图标">
 </p>
 
-# DeepSeek Harness Desktop 3.0.1（枫林独立版）
+# DeepSeek Harness Desktop 3.0.2（枫林独立版）
 
 <p align="center">
   <strong>开箱即用、依赖安全的 DeepSeek Harness 独立桌面发行版</strong>
@@ -12,11 +12,17 @@
 
 > [!IMPORTANT]
 >
-> **[v3.0.1 已发布，欢迎下载体验](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.1)。**
+> **[v3.0.2 已发布，欢迎下载体验](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.2)。**
 >
 > 本版本由上游 `0.1.6-alpha.2` 基线重建，保留枫林专属能力并修复近期稳定性问题。跨大版本升级，**建议干净安装**（删除旧安装目录，可选清空 `%APPDATA%\open-deepseek-harness-desktop` 后重装）。
 >
 > 语言支持：**简体中文 / English** 双语。
+
+### v3.0.2 更新内容
+
+- **插件装卸**：市场卸载后的 `removed` 标记在显式重装时会清除；`hot-mount` 仅在包已安装时跳过，避免“bundles 有名、磁盘无包”的假成功；本机卡死的 profile 事务 journal 可归档后正常退出重启。
+- **会话兼容层**：启动时自动扫描旧数据目录，将缺失的历史 `sessions` 树补拷到当前 home（不覆盖已有会话），缓解 2.2.2 升级后工作区会话列表为空。
+- **音乐插件**：预置包继续内置 `dsh-music-huazai`；卸载后可从 bundled 档案重装。
 
 ### v3.0.1 更新内容
 
@@ -40,7 +46,7 @@
   <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases"><img src="https://img.shields.io/github/downloads/fenglin-dev/deepseek-harness-fenglin/total.svg?style=flat" alt="下载量"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/fenglin-dev/deepseek-harness-fenglin?style=flat" alt="MIT 许可证"></a>
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/upstream-DeepSeek%20Harness-4d6bfe?style=flat" alt="DeepSeek Harness 上游"></a>
-  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.1"><img src="https://img.shields.io/badge/release-3.0.1-4d6bfe?style=flat" alt="3.0.1"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.2"><img src="https://img.shields.io/badge/release-3.0.2-4d6bfe?style=flat" alt="3.0.2"></a>
 </p>
 
 DeepSeek Harness Desktop 枫林独立版是由枫林维护的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 桌面发行版，仓库为 [fenglin-dev/deepseek-harness-fenglin](https://github.com/fenglin-dev/deepseek-harness-fenglin)。它把上游插件化智能体运行时、Web 工作区和桌面系统能力组合为可以直接安装的应用，可用于配置模型、运行编码会话、查看执行轨迹、管理插件与 Skill，并连接外部编码工具或 IM 机器人。

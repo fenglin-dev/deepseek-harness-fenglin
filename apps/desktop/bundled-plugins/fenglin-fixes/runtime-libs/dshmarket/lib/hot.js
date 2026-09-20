@@ -23,7 +23,7 @@ var __rewriteRelativeImportExtension = (this && this.__rewriteRelativeImportExte
     }
     return path;
 };
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -402,19 +402,33 @@ export async function hotUnmount(packageName) {
  */
 export async function hotMount(ctx, profileDir, packageName) {
     try {
-        // Fenglin: never hot-mount a package the profile already ships as a
-        // bundled official row (e.g. dsh-music-huazai / include:music). Market
-        // reinstall would otherwise create include:dsh-market:mkt-* which
-        // fails activation and keeps loader.lifecycle-failed in diagnostics.
+        // Fenglin: skip hot-mount only when the package is BOTH listed in
+        // dsh.profile.bundles AND actually present under node_modules. A
+        // market uninstall can drop the dependency while leaving the bundle
+        // name behind; that state must not look like a successful mount.
         try {
             const manifest = JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8'));
             const bundles = new Set(manifest.dsh?.profile?.bundles ?? []);
-            if (bundles.has(packageName)) {
+            const installed = (() => {
+                try {
+                    return existsSync(join(profileDir, 'node_modules', packageName, 'package.json'));
+                } catch {
+                    return false;
+                }
+            })();
+            if (bundles.has(packageName) && installed) {
                 logEvent('info', 'hot-mount', `${packageName}: skip — already in dsh.profile.bundles`);
                 return {
                     ok: true,
                     reason: null,
                     skipped: 'already-bundled',
+                };
+            }
+            if (bundles.has(packageName) && !installed) {
+                logEvent('warn', 'hot-mount', `${packageName}: listed in bundles but missing on disk — require reinstall/restart`);
+                return {
+                    ok: false,
+                    reason: '插件已在 bundles 中登记但文件缺失，请从市场或插件管理重新安装后重启 / package is listed in bundles but missing on disk — reinstall then restart',
                 };
             }
         } catch { /* fall through to normal mount */ }

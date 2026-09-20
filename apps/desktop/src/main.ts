@@ -96,6 +96,7 @@ import {
   type DiagnosticLabStartRequest,
 } from './diagnostic-lab.ts'
 import { parseStartupBuildApproval } from './startup-build-approval.ts'
+import { ensureLegacySessionCompatibility } from './session-legacy-compatibility.ts'
 import {
   readDesktopDataHomeSetup,
   resolveDesktopApplicationDataRoot,
@@ -1403,6 +1404,16 @@ async function startApplication(): Promise<void> {
     ? await readDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile)
     : undefined
   if (activeNasRuntime === undefined) await applyFreshProfileDefaults(dshHome, dataHomeSetup)
+  // Fenglin: upgrade compatibility — copy missing legacy session trees into the
+  // active home without overwriting existing sessions.
+  if (activeNasRuntime === undefined) {
+    try {
+      const summary = await ensureLegacySessionCompatibility(dshHome, app.getPath('userData'))
+      await appendDesktopStartupLog(summary)
+    } catch (error) {
+      await appendDesktopStartupLog(`legacy session compatibility skipped: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
   // Releases before the portable community import copied the complete Profile and did not write a
   // restore plan. Keep those deployments intact; new copies carry a plan and use normal first-start
   // preparation so packaged presets come from local archives before optional plugin restoration.
