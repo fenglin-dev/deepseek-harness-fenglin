@@ -84,7 +84,23 @@ Then monitor it:
 gh run watch <run-id> --exit-status
 ```
 
-Repeat for `macos`, then `linux-x64`. The accepted jobs are:
+After Windows qualifies, dispatch `macos` and `linux-x64` with the successful Windows run ID as `bundled_plugin_run_id`. Both platform runs then verify that the snapshot came from the exact same source commit and reuse it instead of resolving registry versions again. They may run in parallel because Windows has already acted as the first native gate:
+
+```sh
+gh workflow run desktop-packages.yml \
+  --ref <branch> \
+  -f target=macos \
+  -f refresh_plugins=false \
+  -f bundled_plugin_run_id=<windows-run-id>
+
+gh workflow run desktop-packages.yml \
+  --ref <branch> \
+  -f target=linux-x64 \
+  -f refresh_plugins=false \
+  -f bundled_plugin_run_id=<windows-run-id>
+```
+
+The accepted jobs are:
 
 - packaged-resource contract verification before bundled plugin resolution or native packaging;
 - bundled plugin resolution;
@@ -122,7 +138,7 @@ Run `node --test apps/desktop/scripts/smoke-macos-package.test.mjs`, then `node 
 
 The native probe establishes Electron initialization, not Harness or UI readiness. Before publication, also launch the extracted application with isolated test data, inspect newly appended logs for `dsh web:`, `client ready`, and `event-dispatch is ready`, verify its client URL responds and Electron remains alive, then quit cleanly. Record the tested architecture and distinguish any untested platform; a developer Electron launch is not a packaged-app test. Do not disable SIP or Gatekeeper as a workaround for a Helper-name defect.
 
-Each workflow run resolves registry-backed entries at their current stable version and passes one offline snapshot to that run's native builders. Separate Windows, macOS, and Linux runs can resolve different snapshots if a plugin publishes between runs.
+The first workflow run resolves registry-backed entries at their current stable version and passes one offline snapshot to that run's native builders. Pass that run as `bundled_plugin_run_id` to later same-commit platform runs. A mismatched source commit is rejected before packaging. Independent runs without this input can still resolve different snapshots if a plugin publishes between them.
 
 The download helper computes one complete content digest for each run's `bundled-plugin-snapshot` artifact in temporary storage. The three digests must match. If they differ, do not combine those artifacts into one release. Re-run the stale targets close together, or use one `target=all` run when a single shared snapshot is more important than staged platform diagnosis.
 
