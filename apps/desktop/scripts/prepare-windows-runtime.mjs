@@ -267,6 +267,11 @@ async function pruneNodeModules(directory, counters) {
       continue
     }
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    if (typeof manifest.name === 'string' && manifest.name.startsWith('@deepseek-ai/libreoffice-kit-')) {
+      await rm(candidate, { recursive: true, force: true })
+      counters.foreignPackages += 1
+      continue
+    }
     if (!packageSupportsWindowsX64(manifest)) {
       await rm(candidate, { recursive: true, force: true })
       counters.foreignPackages += 1
@@ -376,6 +381,10 @@ async function verifyRuntime() {
   if (remainingLink !== undefined) throw new Error(`prepare-windows-runtime: retained symlink ${remainingLink}`)
   for (const secretName of ['.env', 'auth.json']) {
     if (existsSync(join(harnessRoot, secretName))) throw new Error(`prepare-windows-runtime: contains forbidden ${secretName}`)
+  }
+  const officeScope = join(harnessRoot, 'node_modules', '@deepseek-ai')
+  if (existsSync(officeScope) && (await readdir(officeScope)).some(name => name.startsWith('libreoffice-kit-'))) {
+    throw new Error('prepare-windows-runtime: optional LibreOffice engine remained in the installer runtime')
   }
   await run(nodeExecutable, ['--version'])
   await run(nodeExecutable, [stagedPnpmEntry, '--version'])

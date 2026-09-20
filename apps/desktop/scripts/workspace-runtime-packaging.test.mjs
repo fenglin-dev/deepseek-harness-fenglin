@@ -24,6 +24,16 @@ test('desktop installers exclude optional Python payloads while the Harness clos
   ]) assert.equal(typeof cli.dependencies[name], 'string', `${name} must remain in the production closure`)
 
   assert.doesNotMatch(await read('apps/desktop-host/src/index.ts'), /primary-runtime|desktopOffice/u)
+
+  const [unixRuntime, windowsRuntime, optionalRuntime] = await Promise.all([
+    read('apps/desktop/scripts/prepare-unix-runtime.mjs'),
+    read('apps/desktop/scripts/prepare-windows-runtime.mjs'),
+    read('apps/desktop/scripts/prepare-workspace-runtime.ts'),
+  ])
+  assert.match(unixRuntime, /removeOptionalOfficeEngines/u)
+  assert.match(windowsRuntime, /libreoffice-kit-/u)
+  assert.match(optionalRuntime, /stageOfficeEngine/u)
+  assert.match(optionalRuntime, /officeEngine/u)
 })
 
 test('the optional runtime lock and package workflow cover the exact supported targets and Office set', async () => {
@@ -38,6 +48,9 @@ test('the optional runtime lock and package workflow cover the exact supported t
   assert.match(workflow, /workspace-runtime-win32-x64/u)
   assert.match(workflow, /workspace-runtime-linux-x64/u)
   assert.match(workflow, /workspace-runtime-darwin-\$\{\{ matrix\.arch \}\}/u)
+  assert.match(workflow, /office-runtime-win32-x64/u)
+  assert.match(workflow, /office-runtime-linux-x64/u)
+  assert.match(workflow, /office-runtime-darwin-\$\{\{ matrix\.arch \}\}/u)
   assert.match(workflow, /arch: arm64/u)
   assert.match(workflow, /arch: x64/u)
 })

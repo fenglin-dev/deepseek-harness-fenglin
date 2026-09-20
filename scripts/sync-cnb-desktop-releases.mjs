@@ -13,7 +13,7 @@ export const CNB_DEFAULT_BRANCH = 'master'
 export const DEFAULT_CNB_INDEX_TTL_HOURS = 6
 const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPOSITORY}`
 const CNB_API = `https://api.cnb.cool/${CNB_REPOSITORY}`
-const ASSET_PATTERN = /^DeepSeek-Harness-(?:macos-(?:arm64|x64)\.(?:dmg|zip)|windows-x64\.exe|linux-x64\.(?:deb|rpm)|workspace-runtime-(?:win32-x64|darwin-arm64|darwin-x64|linux-x64)\.tar\.gz)$/u
+const ASSET_PATTERN = /^DeepSeek-Harness-(?:macos-(?:arm64|x64)\.(?:dmg|zip)|windows-x64\.exe|linux-x64\.(?:deb|rpm)|(?:workspace|office)-runtime-(?:win32-x64|darwin-arm64|darwin-x64|linux-x64)\.tar\.gz)$/u
 const RELEASE_TAG_PATTERN = /^odsh-v[0-9A-Za-z][0-9A-Za-z._-]*$/u
 export const DESKTOP_INSTALLER_NAMES = Object.freeze([
   'DeepSeek-Harness-linux-x64.deb',
@@ -27,6 +27,10 @@ export const DESKTOP_INSTALLER_NAMES = Object.freeze([
   'DeepSeek-Harness-workspace-runtime-darwin-x64.tar.gz',
   'DeepSeek-Harness-workspace-runtime-linux-x64.tar.gz',
   'DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz',
+  'DeepSeek-Harness-office-runtime-darwin-arm64.tar.gz',
+  'DeepSeek-Harness-office-runtime-darwin-x64.tar.gz',
+  'DeepSeek-Harness-office-runtime-linux-x64.tar.gz',
+  'DeepSeek-Harness-office-runtime-win32-x64.tar.gz',
 ])
 
 export function parseChecksums(source) {

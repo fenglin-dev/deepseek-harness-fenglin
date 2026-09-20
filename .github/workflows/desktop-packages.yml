@@ -143,6 +143,7 @@ jobs:
           name: workspace-runtime-darwin-${{ matrix.arch }}
           path: |
             .artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-darwin-${{ matrix.arch }}.tar.gz
+            .artifacts/workspace-runtime/DeepSeek-Harness-office-runtime-darwin-${{ matrix.arch }}.tar.gz
             .artifacts/workspace-runtime/workspace-runtime-darwin-${{ matrix.arch }}.json
           if-no-files-found: error
           retention-days: 14
@@ -306,6 +307,7 @@ jobs:
           name: workspace-runtime-win32-x64
           path: |
             .artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz
+            .artifacts/workspace-runtime/DeepSeek-Harness-office-runtime-win32-x64.tar.gz
             .artifacts/workspace-runtime/workspace-runtime-win32-x64.json
           if-no-files-found: error
           retention-days: 14
@@ -368,6 +370,7 @@ jobs:
           name: workspace-runtime-linux-x64
           path: |
             .artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-linux-x64.tar.gz
+            .artifacts/workspace-runtime/DeepSeek-Harness-office-runtime-linux-x64.tar.gz
             .artifacts/workspace-runtime/workspace-runtime-linux-x64.json
           if-no-files-found: error
           retention-days: 14

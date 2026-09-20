@@ -15,6 +15,8 @@ const artifacts: Record<string, unknown> = {}
 for (const target of WORKSPACE_RUNTIME_TARGETS) {
   const fileName = `DeepSeek-Harness-workspace-runtime-${target}.tar.gz`
   const archive = join(directory, fileName)
+  const officeFileName = `DeepSeek-Harness-office-runtime-${target}.tar.gz`
+  const officeArchive = join(directory, officeFileName)
   const staging = await mkdtemp(join(tmpdir(), 'dsh-runtime-manifest-'))
   try {
     await x({ file: archive, cwd: staging, strict: true })
@@ -26,7 +28,32 @@ for (const target of WORKSPACE_RUNTIME_TARGETS) {
     if (payload.desktopVersion !== version || typeof payload.payloadDigest !== 'string' || typeof payload.pythonVersion !== 'string') {
       throw new Error(`workspace runtime: ${fileName} has incompatible payload metadata`)
     }
+    const officeStaging = await mkdtemp(join(tmpdir(), 'dsh-office-runtime-manifest-'))
     const bytes = await readFile(archive)
+    const officeBytes = await readFile(officeArchive)
+    let office: Record<string, unknown>
+    try {
+      await x({ file: officeArchive, cwd: officeStaging, strict: true })
+      const metadata = JSON.parse(await readFile(join(officeStaging, 'workspace-runtime', 'office-runtime.json'), 'utf8')) as {
+        desktopVersion?: unknown
+        payloadDigest?: unknown
+        officeEngine?: { package?: unknown; version?: unknown }
+      }
+      if (metadata.desktopVersion !== version || typeof metadata.payloadDigest !== 'string'
+        || typeof metadata.officeEngine?.package !== 'string' || typeof metadata.officeEngine.version !== 'string') {
+        throw new Error(`workspace runtime: ${officeFileName} has incompatible payload metadata`)
+      }
+      office = {
+        fileName: officeFileName,
+        size: (await stat(officeArchive)).size,
+        sha256: createHash('sha256').update(officeBytes).digest('hex'),
+        payloadDigest: metadata.payloadDigest,
+        enginePackage: metadata.officeEngine.package,
+        engineVersion: metadata.officeEngine.version,
+        githubUrl: `https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/${tag}/${officeFileName}`,
+        cnbUrl: `https://cnb.cool/hecoococ/open-deepseek-harness-desktop/-/releases/download/${tag}/${officeFileName}`,
+      }
+    } finally { await rm(officeStaging, { recursive: true, force: true }) }
     artifacts[target] = {
       target, fileName, size: (await stat(archive)).size,
       sha256: createHash('sha256').update(bytes).digest('hex'),
@@ -34,6 +61,7 @@ for (const target of WORKSPACE_RUNTIME_TARGETS) {
       pythonVersion: payload.pythonVersion,
       githubUrl: `https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/${tag}/${fileName}`,
       cnbUrl: `https://cnb.cool/hecoococ/open-deepseek-harness-desktop/-/releases/download/${tag}/${fileName}`,
+      office,
     }
   } finally { await rm(staging, { recursive: true, force: true }) }
 }

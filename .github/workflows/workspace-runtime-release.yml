@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing Desktop release tag containing all four runtime archives
+        description: Existing Desktop release tag containing all eight optional runtime archives
         required: true
         type: string
 
@@ -44,8 +44,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p dist
-          gh release download '${{ inputs.tag }}' --dir dist --pattern 'DeepSeek-Harness-workspace-runtime-*.tar.gz'
-          test "$(find dist -name 'DeepSeek-Harness-workspace-runtime-*.tar.gz' -type f | wc -l)" -eq 4
+          gh release download '${{ inputs.tag }}' --dir dist --pattern 'DeepSeek-Harness-workspace-runtime-*.tar.gz' --pattern 'DeepSeek-Harness-office-runtime-*.tar.gz'
+          test "$(find dist -name 'DeepSeek-Harness-*-runtime-*.tar.gz' -type f | wc -l)" -eq 8
 
       - name: Build catalog subject from release bytes
         run: pnpm exec tsx apps/desktop/scripts/workspace-runtime-manifest-from-release.ts dist '${{ inputs.tag }}'
