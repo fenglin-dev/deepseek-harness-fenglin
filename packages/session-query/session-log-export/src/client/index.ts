@@ -7,6 +7,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { SessionLogDownloadController } from './controller.ts'
 import type { SessionLogDownloadDialogInjected } from './Dialog.tsx'
 import { SessionLogDownloadHeaderAction } from './HeaderAction.tsx'
@@ -26,14 +27,22 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export type { SessionLogDownloadEntry, SessionLogDownloadState } from './controller.ts'
 
-export const inject = ['slots', 'locale']
+export const inject = ['slots', 'locale', 'settingsScope']
 
 /**
  * Provide the download controller and mount its modal into the Session Header.
  * @param ctx - browser context carrying slots and locale services.
  */
 export function apply(ctx: ClientContext): void {
-  const controller = new SessionLogDownloadController()
+  const privacy = ctx.settingsScope.bind<{
+    diagnosticExport: { preference: 'ask' | 'include' | 'exclude' }
+  }>({ namespace: 'custom-instructions' })
+  const controller = new SessionLogDownloadController(undefined, undefined, {
+    getPreference: () => privacy.getSnapshot().value?.diagnosticExport.preference ?? 'ask',
+    setPreference: async preference => privacy.mutate([{
+      op: 'set', path: ['diagnosticExport', 'preference'], value: preference,
+    }]),
+  })
   ctx.provide('sessionLogDownload', controller)
   ctx.effect(() => async () => { await controller.dispose() }, 'session-log-download: browser download lifecycle')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'session-log-download: browser dictionaries')
@@ -51,6 +60,11 @@ export function apply(ctx: ClientContext): void {
       hooks: { sessionLogDownload: controller.store },
       request: (sessionId: SessionId) => controller.download(sessionId),
       dismiss: (sessionId: SessionId) => { controller.dismiss(sessionId) },
+      setIncludeCustomInstructions: (sessionId, include) => {
+        controller.setIncludeCustomInstructions(sessionId, include)
+      },
+      setRemember: (sessionId, remember) => { controller.setRemember(sessionId, remember) },
+      confirm: sessionId => controller.confirm(sessionId),
     }),
   }, SessionLogDownloadHeaderAction))
 }

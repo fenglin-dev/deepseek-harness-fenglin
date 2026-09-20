@@ -291,6 +291,9 @@
       // session-log-export lives under session-query/, so the generated aliases map only its
       // bare name; the browser half needs this explicit subpath for source-mode dynamic imports.
       "@deepseek-ai/dsh-session-log-export/client": ["./packages/session-query/session-log-export/src/client"],
+      // custom-instructions has a split Host/client entry; whole-client tests import
+      // the browser half dynamically and must resolve source rather than the built Loader wrapper.
+      "@deepseek-ai/dsh-custom-instructions/client": ["./packages/context/custom-instructions/src/client"],
       "@deepseek-ai/dsh-compaction-image-offload/projection": ["./packages/compaction/compaction-image-offload/src/projection.ts"],
       "@deepseek-ai/dsh-session-format-catalog/message-projections": ["./packages/session/session-format-catalog/src/message-projections.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
@@ -330,6 +333,7 @@
       "@deepseek-ai/dsh-credentials": ["./packages/credentials/credentials/src"],
       "@deepseek-ai/dsh-credentials/invariant": ["./packages/credentials/credentials/src/invariant.ts"],
       "@deepseek-ai/dsh-credentials-local": ["./packages/credentials/credentials-local/src"],
+      "@deepseek-ai/dsh-custom-instructions": ["./packages/context/custom-instructions/src"],
       "@deepseek-ai/dsh-deepseek-llm-api-extensions": ["./packages/llm/deepseek-llm-api-extensions/src"],
       "@deepseek-ai/dsh-deque": ["./packages/util/deque/src"],
       "@deepseek-ai/dsh-file-reference": ["./packages/context/file-reference/src"],

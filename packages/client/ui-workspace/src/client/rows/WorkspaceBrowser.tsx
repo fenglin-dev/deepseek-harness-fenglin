@@ -196,6 +196,8 @@ type SessionTreeProps = Pick<
   onRenameRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
   /** Open the browser-owned delete-confirmation dialog for a real Workspace group. */
   onDeleteRequest: (workspaceId: WorkspaceId, currentTitle: string) => void
+  /** Open the optional first-party prompt editor for a real Workspace group. */
+  onCustomInstructions?: ((workspaceId: WorkspaceId) => void) | undefined
   /** Open the browser-owned session rename dialog. */
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
@@ -211,7 +213,7 @@ function SessionTree({
   list, useSessionStatus, startSession, open, forkSession, workspaces, ungroupedSessionIds,
   archivedSessionIds,
   workspaceReady, usePanelInfo,
-  onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive,
+  onRenameRequest, onDeleteRequest, onCustomInstructions, onSessionRename, onSessionArchive,
   insertWorkspaceBefore,
   nestWorkspaces, groupExpansion, setGroupExpanded,
   setSessionOrder, home, t,
@@ -469,6 +471,12 @@ function SessionTree({
               /* v8 ignore next -- narrowing guard: the actions object exists only for real-workspace groups. */
                 if (group.workspaceId !== undefined) onRenameRequest(group.workspaceId, group.label)
               },
+              ...onCustomInstructions === undefined
+                ? {}
+                : { customInstructions: () => {
+                  /* v8 ignore next -- actions exist only for real Workspace groups. */
+                  if (group.workspaceId !== undefined) onCustomInstructions(group.workspaceId)
+                } },
               delete: () => {
               /* v8 ignore next -- narrowing guard: the actions object exists only for real-workspace groups. */
                 if (group.workspaceId !== undefined) onDeleteRequest(group.workspaceId, group.label)
@@ -777,6 +785,7 @@ export function WorkspaceBrowser({
   forkSession,
   renameWorkspace,
   deleteWorkspace,
+  openWorkspaceInstructions,
   insertWorkspaceBefore,
   archiveSession,
   createWorkspace,
@@ -1315,6 +1324,9 @@ export function WorkspaceBrowser({
                   setDeleteTarget({ workspaceId, title })
                   setDeleteError(null)
                 }}
+                {...openWorkspaceInstructions === undefined
+                  ? {}
+                  : { onCustomInstructions: openWorkspaceInstructions }}
               />
             ))}
       </div>

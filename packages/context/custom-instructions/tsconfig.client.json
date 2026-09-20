@@ -6,24 +6,24 @@
     "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
   },
   "files": [
-    "src/client/Dialog.tsx",
-    "src/client/HeaderAction.tsx",
-    "src/client/controller.ts",
+    "src/client/CustomInstructionsRow.tsx",
+    "src/client/CustomInstructionsSection.tsx",
     "src/client/index.ts",
     "src/client/locales.ts",
-    "src/css-modules.d.ts"
+    "src/client/service.ts",
+    "src/css-modules.d.ts",
+    "src/types.ts"
   ],
   "references": [
     { "path": "../../../vendor/cordis" },
+    { "path": "../../api/workspace-controller/tsconfig.client.json" },
     { "path": "../../client/locale" },
     { "path": "../../client/store" },
-    { "path": "../../client/ui-commands" },
-    { "path": "../../client/ui-conversation" },
     { "path": "../../client/ui-primitives" },
     { "path": "../../client/ui-renderer" },
-    { "path": "../../client/ui-session" },
     { "path": "../../client/ui-settings" },
     { "path": "../../client/ui-slots" },
-    { "path": "../../core/session" }
+    { "path": "../../client/ui-workspace" },
+    { "path": "../../util/values" }
   ]
 }

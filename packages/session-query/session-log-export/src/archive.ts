@@ -100,6 +100,65 @@ export type SessionLogZipEntry =
 /** The current generation's canonical base filename for every exported session log. */
 export const SESSION_LOG_FILENAME = sessionFormatLogFilename(SESSION_FORMAT_VERSION)
 
+const RUNTIME_CONTEXT_PLUGIN = '@deepseek-ai/dsh-system-prompt'
+const CUSTOM_INSTRUCTION_SECTION_PREFIX = 'custom-instructions:'
+
+/**
+ * Remove custom-prompt plaintext from an exported logical log while retaining
+ * an attributed version marker. The persisted source log is never changed.
+ * @param content - canonical Session JSONL text.
+ * @returns canonical JSONL-shaped text safe for a diagnostic export.
+ */
+export function redactCustomInstructionsInSessionLog(content: string): string {
+  const lines = content.split('\n')
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (line === undefined || line === '') continue
+    let value: unknown
+    try { value = JSON.parse(line) } catch { continue }
+    if (typeof value !== 'object' || value === null) continue
+    const event = value as { type?: unknown; data?: unknown }
+    if (event.type !== 'user/message' || typeof event.data !== 'object' || event.data === null) continue
+    const message = event.data as { content?: unknown; source?: unknown }
+    if (typeof message.source !== 'object' || message.source === null) continue
+    const source = message.source as { kind?: unknown; plugin?: unknown; form?: unknown; sections?: unknown }
+    if (source.kind !== 'plugin' || source.plugin !== RUNTIME_CONTEXT_PLUGIN
+      || source.form !== 'snapshot' || !Array.isArray(source.sections)) continue
+    const sections = source.sections.filter((section): section is { name: string; text: string } => (
+      typeof section === 'object' && section !== null
+      && typeof (section as { name?: unknown }).name === 'string'
+      && typeof (section as { text?: unknown }).text === 'string'
+    ))
+    const custom = sections.filter(section => section.name.startsWith(CUSTOM_INSTRUCTION_SECTION_PREFIX))
+    if (custom.length === 0) continue
+    const retained = sections.filter(section => !section.name.startsWith(CUSTOM_INSTRUCTION_SECTION_PREFIX))
+    const versions = custom.flatMap((section) => {
+      const match = /<custom-instructions\b[^>]*\bversion="([^"]+)"/u.exec(section.text)
+      return match?.[1] === undefined ? [] : [match[1]]
+    })
+    const summary = versions.length === 0
+      ? 'Custom prompt plaintext omitted from diagnostic export.'
+      : `Custom prompt plaintext omitted from diagnostic export (versions: ${versions.join(', ')}).`
+    if (retained.length === 0) {
+      message.content = [{ type: 'text', text: summary }]
+      message.source = { kind: 'plugin', plugin: RUNTIME_CONTEXT_PLUGIN, form: 'notice', summary }
+    } else {
+      const redactedSections = [
+        ...retained,
+        { name: 'custom-instructions:redacted', text: summary },
+      ]
+      const body = redactedSections.map(section => section.text).join('\n\n')
+      message.content = [{
+        type: 'text',
+        text: `Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\n\n${body}`,
+      }]
+      message.source = { ...source, sections: redactedSections }
+    }
+    lines[index] = JSON.stringify(value)
+  }
+  return lines.join('\n')
+}
+
 /**
  * Serialize one session's logical log as canonical JSONL text: the header
  * line, then one line per event, with a trailing newline.
@@ -325,6 +384,7 @@ export function sessionLogZipFilename(sessionId: string): string {
  * @param sessionId - the root session id.
  * @param includeDescendants - whether to include every subagent descendant.
  * @param signal - optional cancellation forwarded to lineage, persistence, and attachment reads.
+ * @param includeCustomInstructions - whether runtime-context custom-prompt sections retain plaintext.
  * @returns the export entries in zip order.
  */
 export async function* sessionLogZipEntries(
@@ -333,6 +393,7 @@ export async function* sessionLogZipEntries(
   sessionId: SessionId,
   includeDescendants: boolean,
   signal?: AbortSignal,
+  includeCustomInstructions = true,
 ): AsyncGenerator<SessionLogZipEntry> {
   const media = new Map<string, ImageAttachmentRef>()
   const files = new Map<string, FileAttachmentRef>()
@@ -341,8 +402,11 @@ export async function* sessionLogZipEntries(
     for (const [id, ref] of refs.images) media.set(id, ref)
     for (const [id, ref] of refs.files) files.set(id, ref)
   }
-  rememberAttachments(rootContent)
-  yield { path: SESSION_LOG_FILENAME, content: rootContent }
+  const exportedRoot = includeCustomInstructions
+    ? rootContent
+    : redactCustomInstructionsInSessionLog(rootContent)
+  rememberAttachments(exportedRoot)
+  yield { path: SESSION_LOG_FILENAME, content: exportedRoot }
   if (includeDescendants) {
     const seen = new Set<SessionId>([sessionId])
     const collect = async function* (
@@ -359,10 +423,13 @@ export async function* sessionLogZipEntries(
         if (content === undefined) {
           throw new Error(`subagent "${id}" has no stored log`)
         }
-        rememberAttachments(content)
+        const exportedContent = includeCustomInstructions
+          ? content
+          : redactCustomInstructionsInSessionLog(content)
+        rememberAttachments(exportedContent)
         yield {
           path: `subagents/${safeSessionIdSegment(id)}/${SESSION_LOG_FILENAME}`,
-          content,
+          content: exportedContent,
         }
         yield* collect(node.descendants)
       }
@@ -523,6 +590,7 @@ async function pushArtifactChunks(
  * @param includeDescendants - whether to include every subagent descendant.
  * @param compressionLevel - validated fflate DEFLATE level for every ZIP entry.
  * @param signal - request cancellation combined with response-consumer cancellation.
+ * @param includeCustomInstructions - whether runtime-context custom-prompt sections retain plaintext.
  * @returns the zip byte stream.
  */
 export function streamSessionLogZip(
@@ -532,6 +600,7 @@ export function streamSessionLogZip(
   includeDescendants: boolean,
   compressionLevel: SessionLogCompressionLevel,
   signal: AbortSignal,
+  includeCustomInstructions = true,
 ): ReadableStream<Uint8Array> {
   const consumerAbort = new AbortController()
   const producerSignal = AbortSignal.any([signal, consumerAbort.signal])
@@ -562,7 +631,9 @@ export function streamSessionLogZip(
       zip = archive
       void (async () => {
         try {
-          for await (const entry of sessionLogZipEntries(deps, rootContent, sessionId, includeDescendants, producerSignal)) {
+          for await (const entry of sessionLogZipEntries(
+            deps, rootContent, sessionId, includeDescendants, producerSignal, includeCustomInstructions,
+          )) {
             const deflate = new ZipDeflate(entry.path, { level: compressionLevel })
             archive.add(deflate)
             if ('content' in entry) {

@@ -22,6 +22,7 @@ export {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   flushLiveSessionLog,
   readSessionLogText,
+  redactCustomInstructionsInSessionLog,
   serializeSessionLog,
   SESSION_LOG_FILENAME,
   sessionLogExportDeps,
@@ -114,8 +115,11 @@ async function sessionLogExportResponse(
   const query = Object.fromEntries(url.searchParams)
   const sessionIdValue = query['sessionId']
   const descendantsValue = query['includeDescendants']
+  const includeCustomInstructionsValue = query['includeCustomInstructions']
   if (sessionIdValue === undefined || sessionIdValue.length === 0
-    || (descendantsValue !== undefined && descendantsValue !== 'true' && descendantsValue !== 'false')) {
+    || (descendantsValue !== undefined && descendantsValue !== 'true' && descendantsValue !== 'false')
+    || (includeCustomInstructionsValue !== undefined
+      && includeCustomInstructionsValue !== 'true' && includeCustomInstructionsValue !== 'false')) {
     return new Response('missing or invalid sessionId query parameter', { status: 400 })
   }
   const sessionId = brandString<SessionId>(sessionIdValue)
@@ -157,6 +161,7 @@ async function sessionLogExportResponse(
       descendantsValue === 'true',
       compressionLevel,
       request.signal,
+      includeCustomInstructionsValue === 'true',
     ),
     {
       headers: {

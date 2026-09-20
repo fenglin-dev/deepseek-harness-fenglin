@@ -10,6 +10,9 @@ export interface SessionLogDownloadDialogInjected {
   hooks: { sessionLogDownload: ObservableSnapshot<SessionLogDownloadState> }
   request: (sessionId: SessionId) => Promise<void>
   dismiss: (sessionId: SessionId) => void
+  setIncludeCustomInstructions: (sessionId: SessionId, include: boolean) => void
+  setRemember: (sessionId: SessionId, remember: boolean) => void
+  confirm: (sessionId: SessionId) => Promise<void>
 }
 
 export type SessionLogDownloadDialogProps =
@@ -23,19 +26,23 @@ export type SessionLogDownloadDialogProps =
  * @returns the modal portal contribution.
  */
 export function SessionLogDownloadDialog({
-  sessionId, useSessionLogDownload, dismiss, t,
+  sessionId, useSessionLogDownload, dismiss, setIncludeCustomInstructions, setRemember, confirm, t,
 }: SessionLogDownloadDialogProps) {
   const entry = useSessionLogDownload(state => state.bySession[String(sessionId)])
 
   const status = entry?.status
   const open = entry?.open === true
   const error = status === 'error' ? entry?.error || t('dialog.commandFailed') : null
-  const title = status === 'downloading'
-    ? t('dialog.preparingTitle')
-    : status === 'success' ? t('dialog.successTitle') : t('dialog.errorTitle')
-  const description = status === 'downloading'
-    ? t('dialog.preparingDescription')
-    : status === 'success' ? t('dialog.successDescription') : error ?? t('dialog.commandFailed')
+  const title = status === 'confirming'
+    ? t('dialog.privacyTitle')
+    : status === 'downloading'
+      ? t('dialog.preparingTitle')
+      : status === 'success' ? t('dialog.successTitle') : t('dialog.errorTitle')
+  const description = status === 'confirming'
+    ? t('dialog.privacyDescription')
+    : status === 'downloading'
+      ? t('dialog.preparingDescription')
+      : status === 'success' ? t('dialog.successDescription') : error ?? t('dialog.commandFailed')
 
   return (
     <Modal
@@ -44,7 +51,38 @@ export function SessionLogDownloadDialog({
       title={title}
       description={description}
       closeLabel={t('dialog.close')}
-      footer={<Button variant="primary" onClick={() => { dismiss(sessionId) }}>{t('dialog.close')}</Button>}
-    />
+      footer={status === 'confirming'
+        ? (
+          <>
+            <Button variant="outline" onClick={() => { dismiss(sessionId) }}>{t('dialog.cancel')}</Button>
+            <Button variant="primary" onClick={() => { void confirm(sessionId) }}>{t('dialog.export')}</Button>
+          </>
+        )
+        : <Button variant="primary" onClick={() => { dismiss(sessionId) }}>{t('dialog.close')}</Button>}
+    >
+      {status === 'confirming' && (
+        <div>
+          <label>
+            <input
+              type="checkbox"
+              checked={entry?.includeCustomInstructions === true}
+              onChange={(event) => { setIncludeCustomInstructions(sessionId, event.currentTarget.checked) }}
+            />
+            {t('dialog.includeCustomInstructions')}
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={entry?.remember === true}
+              onChange={(event) => { setRemember(sessionId, event.currentTarget.checked) }}
+            />
+            {t('dialog.rememberChoice')}
+          </label>
+          {entry?.includeCustomInstructions === true && entry.remember === true && (
+            <p role="alert">{t('dialog.includeRememberWarning')}</p>
+          )}
+        </div>
+      )}
+    </Modal>
   )
 }
