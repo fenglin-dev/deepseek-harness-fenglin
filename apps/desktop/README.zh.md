@@ -124,7 +124,7 @@ npm run package:desktop:macos:arm64
 npm run package:desktop:macos:x64
 ```
 
-产物写入 `.artifacts/desktop-macos/`。原生安装包携带展开后的 Harness 生产依赖、Node 24.21.0、pnpm 11.7.0、小型工作运行时适配模块、内置 Office Skill 资源，以及独立的预构建 Profile 模板；不携带 Python 解释器、wheel 或可选运行时归档。复制 `.app` 时一并安装这些资源，首次启动不再解压嵌套 Harness 运行时归档。Linux deb/rpm 使用相同的展开布局，Windows 保留 NSIS 资源部署。安装程序不执行用户插件脚本，也不选择配置目录。旧布局测试包仍可读取原有运行时归档。准备阶段验证固定 Node 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
+产物写入 `.artifacts/desktop-macos/`。原生安装包携带展开后的 Harness 生产依赖、Node 24.21.0、pnpm 11.7.0、小型工作运行时适配模块、内置 Office Skill 资源，以及独立的预构建 Profile 模板；不携带 Python 解释器、wheel、LibreOffice 引擎或可选运行时归档。打包在生成 Harness 闭包后删除全部 `@deepseek-ai/libreoffice-kit-*` 引擎，残留任一引擎都会使校验失败。用户启用 Office 后，应用才从签名可选运行时下载与平台匹配的官方引擎。复制 `.app` 时一并安装核心资源，首次启动不再解压嵌套 Harness 运行时归档。Linux deb/rpm 使用相同的展开布局，Windows 保留 NSIS 资源部署。安装程序不执行用户插件脚本，也不选择配置目录。旧布局测试包仍可读取原有运行时归档。准备阶段验证固定 Node 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
 
 在 Windows 上使用下列命令构建未签名的 Windows x64 NSIS 安装程序：
 

@@ -13,14 +13,14 @@ This file is the authoritative ledger for the active desktop packaging cycle. Re
 
 ## Recorded source state
 
-Last observed: `2026-09-19 23:09:42 CST`
+Last observed: `2026-09-20 01:53:16 CST`
 
 | Item | Recorded value | State |
 | --- | --- | --- |
-| `master` | local version-lock update | pending commit; `origin/master` contains the preceding merged fixes |
-| Packaging branch | synchronized to the preceding `master` | pushed; synchronize again after the version-lock commit |
-| Release branch | older release preparation | stale; do not package until synchronized to the final source |
-| Release notes | `.artifacts/release-notes/odsh-v0.1.6-alpha.2.md` | not prepared for the current source |
+| `master` | `origin/master` | pushed |
+| Packaging branch | `origin/fix/windows-packaging-0.1.6-alpha.2` | pushed; final source for all accepted platform runs |
+| Release branch | `origin/release/0.1.6-alpha.2` | synchronized and pushed |
+| Release notes | `.artifacts/release-notes/odsh-v0.1.6-alpha.2.md` | refreshed after native qualification |
 
 ## Network preflight
 
@@ -28,8 +28,8 @@ Last observed: `2026-09-19 23:09:42 CST`
 | --- | --- |
 | Adopted route | HTTP, HTTPS, and SOCKS through `127.0.0.1:7890` |
 | Required floor | `1.0 MiB/s` |
-| Last result | failed before a valid speed measurement: `curl exit 35`, HTTP `000` |
-| Dispatch permission | blocked until the exact artifact route passes, or the user explicitly waives or changes the floor |
+| Last result | passed at `6.42 MiB/s`; sampled `desktop-linux-x64` from run `35109607670` (`33554432` bytes in `4.98s`) |
+| Dispatch permission | allowed by network preflight; no workflow dispatched during this retry-only check |
 
 ## Platform delivery matrix
 
@@ -37,23 +37,24 @@ These rows describe artifacts built from the final source for this locked versio
 
 | Platform | Workflow run | Build | Native qualification | Downloaded locally | Exact-set verified | Public on GitHub | Public on CNB |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Windows x64 | none | not started | not started | no | no | no | no |
-| macOS arm64/x64 | none | not started | not started | no | no | no | no |
-| Linux x64 | none | not started | not started | no | no | no | no |
+| Windows x64 | [35455508915](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35455508915) | succeeded | installed-package smoke succeeded, including first start, guarded upgrade, restart, and uninstall | downloaded | verified | no | no |
+| macOS arm64/x64 | [35456891164](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35456891164) | succeeded for both architectures | final DMG and ZIP smoke succeeded for arm64 and x64 | downloaded | verified | no | no |
+| Linux x64 | [35458153656](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35458153656) | succeeded | packaged resources and Linux package smoke succeeded | downloaded | verified | no | no |
 
 ## Publication state
 
 - GitHub tag: not created.
 - GitHub Release: not found when checked on `2026-09-19`; no platform assets are public there.
 - CNB anonymous update index: reachable through the recorded proxy but contains no `0.1.6-alpha.2` entry; no platform is publicly distributed through the update index.
-- Local handoff directory: not created or verified for this cycle.
+- Bundled-plugin snapshot: `fe0d9405f880cd2f0450e757f8c93d1a9328e5c3f173ac1a54fe2bed054640a8`; identical across accepted platform runs.
+- Local handoff directory: `/Users/6677h/StudioProjects/flaq-deepseek-harness/open-deepseek-harness-desktop/release/0.1.6-alpha.2`; exact seven installers plus `SHA256SUMS` verified.
 - Publication authorization: not granted by this ledger. Obtain fresh explicit authorization immediately before tag creation, asset upload, or public Release publication.
 
 ## Updating this ledger
 
 Update this file after each material transition. Record only observed facts:
 
-- final source SHA and branch synchronization;
+- final source branch, immutable workflow run, and branch synchronization;
 - network measurement and floor;
 - each platform run ID, head SHA, result, and native qualification;
 - bundled-plugin snapshot identity;

@@ -12,7 +12,7 @@ Desktop 过去把 Python 与 Office 依赖视为安装包资源。这会让每�
 
 `OptionalRuntimeManager` 是 Electron 主进程中负责可选工作运行时的深 module。只有它可以解析经过签名、与版本和目标绑定的元数据，通过应用网络路径下载、续传部分文件、校验大小与 SHA-256、执行 tar 策略、原子解压、拥有共享的 `userData/optional-runtimes` 缓存，并为规范化 Harness home 记录引用。其能力接口仍只接受闭合的 `office` 与 `ptc`。受信任的原生选择器可以选择本机解释器；渲染层绝不提供 URL、可执行文件路径、归档或包坐标。
 
-载荷针对 Windows x64、macOS arm64/x64 与 Linux x64 独立发布。版本化清单根据 Release 中不可变的字节重新生成，并由仅允许 master 的 GitHub 工作流进行证明。GitHub 与 CNB 镜像同名、相同内容的文件。安装包继续携带 Node、pnpm、小型 `@deepseek-ai/dsh-host-workspace-runtime` adapter 与 Office Skill 资源，但不包含 Python 解释器、wheel 或可选运行时归档。
+载荷针对 Windows x64、macOS arm64/x64 与 Linux x64 独立发布。版本化清单根据 Release 中不可变的字节重新生成，并由仅允许 master 的 GitHub 工作流进行证明。GitHub 与 CNB 镜像同名、相同内容的文件。安装包继续携带 Node、pnpm、小型 `@deepseek-ai/dsh-host-workspace-runtime` adapter、LibreOffice kit API 与 Office Skill 资源，但不包含 Python 解释器、wheel、LibreOffice 引擎包或可选运行时归档。打包会从 Harness 闭包删除全部 `@deepseek-ai/libreoffice-kit-*` 引擎并拒绝任何残留。经过校验的可选载荷只拥有目标平台对应的官方引擎；Desktop 只向已启用 Office 的 Profile 暴露其 `node_modules`。
 
 Python 选择、Office 与 PTC 是三种独立状态。`PythonEnvironment` 解析符号链接，接受 CPython 3.10+，校验 pip，并记录架构和 site-packages，再规划精确的 Office 分发包变更。纯新增计划可以继续；变更已安装版本必须显式确认，并通过对应解释器的 `python -m pip` 执行，继承其 pip 配置。Office 只在依赖一致后挂载 adapter 与 Office Skill。PTC 挂载所选解释器，在 Windows 上保持不可用，并要求独立风险确认。
 
@@ -30,4 +30,4 @@ Python 选择、Office 与 PTC 是三种独立状态。`PythonEnvironment` 解�
 
 ## 结果
 
-桌面安装包减少了 Python 载荷体积，但首个启用 Office 或 PTC 的用户必须下载与版本匹配的归档。桌面升级可把旧载荷标记为需要更新，而不会在新载荷通过校验前销毁它。发布完成条件现在包含四份可选归档、签名清单与 CNB 镜像刷新。原生 Office smoke 以及 macOS/Linux PTC smoke 仍属于发布平台职责；聚焦单元测试、真实组合测试、闭包门禁和打包策略测试不能替代它们。
+桌面安装包不再携带 Python 载荷和 LibreOffice 引擎；首次启用 Office 或 PTC 时会下载匹配的可选载荷。桌面升级可把旧载荷标记为需要更新，而不会在新载荷通过校验前销毁它。发布完成条件包含四份 Python 归档、四份 Office 引擎归档、签名清单与 CNB 镜像刷新。原生 Office smoke 以及 macOS/Linux PTC smoke 仍属于发布平台职责；聚焦单元测试、真实组合测试、闭包门禁和打包策略测试不能替代它们。

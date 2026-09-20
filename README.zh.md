@@ -304,7 +304,7 @@ Electron 不只是包住 Web 页面的外壳。桌面宿主负责运行时准备
 
 ### 工作运行时按需安装
 
-Python 不再随桌面安装包分发。“设置 → 工具与能力 → 工作运行时”把 Python 环境、Office 工具包和 Python PTC 分开：可以自动下载与当前完整桌面版本匹配的托管 CPython，也可以选择本机已有的 CPython 3.10+。Office 依赖直接安装到用户选择的解释器；纯新增可继续，升级、降级或替换已有包前会展示变更并再次确认。仅选择 Python 不会向模型开放工具；Office 与实验性 PTC 分别启用，PTC 仍只支持 macOS 与 Linux 并保留非沙箱风险确认。
+Python 与 LibreOffice 官方引擎不再随桌面安装包分发。“设置 → 工具与能力 → 工作运行时”把 Python 环境、Office 工具包和 Python PTC 分开：可以自动下载与当前完整桌面版本匹配的托管 CPython，也可以选择本机已有的 CPython 3.10+。启用 Office 时才下载并校验与平台匹配的官方 LibreOffice 引擎；应用不会寻找或调用用户自行安装的 LibreOffice。Office Python 依赖直接安装到用户选择的解释器；纯新增可继续，升级、降级或替换已有包前会展示变更并再次确认。仅选择 Python 不会向模型开放工具；Office 与实验性 PTC 分别启用，PTC 仍只支持 macOS 与 Linux 并保留非沙箱风险确认。
 
 经过校验的载荷在同一桌面应用中只缓存一份，Office 与 PTC 则按每个 `DSH_HOME` 独立启用。下载遵循应用的 GitHub/CNB 来源与代理设置，支持暂停、续传、停止和有界日志；完成后等待用户点击“快速重启以启用”。连接 NAS 时两张卡片都会禁用，因为当前版本没有扩展 NAS 远程安装协议。最后一个引用停用并且 Profile 变更通过正常就绪验证后，才会回收共享载荷。
 
