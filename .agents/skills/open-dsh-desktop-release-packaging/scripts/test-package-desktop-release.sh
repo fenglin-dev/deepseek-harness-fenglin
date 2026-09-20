@@ -75,7 +75,15 @@ elif [[ "$1 $2" == "workflow run" ]]; then
 elif [[ "$1 $2" == "run view" ]]; then
   id=$3
   echo "view $id" >> "$ODSH_FIXTURE_GH_LOG"
-  printf 'completed\tsuccess\t%s\thttps://github.test/actions/runs/%s\n' "$ODSH_FIXTURE_SHA" "$id"
+  count_file="$ODSH_FIXTURE_GH_LOG.view-$id"
+  count=0
+  [[ ! -f "$count_file" ]] || count=$(cat "$count_file")
+  echo $((count + 1)) > "$count_file"
+  if [[ "$count" == 0 ]]; then
+    printf 'in_progress\x1f\x1f%s\x1fhttps://github.test/actions/runs/%s\n' "$ODSH_FIXTURE_SHA" "$id"
+  else
+    printf 'completed\x1fsuccess\x1f%s\x1fhttps://github.test/actions/runs/%s\n' "$ODSH_FIXTURE_SHA" "$id"
+  fi
 else
   echo "unexpected gh invocation: $*" >&2
   exit 2
@@ -105,7 +113,7 @@ export ODSH_FIXTURE_VERIFY_LOG="$temporary/verify.log"
   "$scripts/package-desktop-release.sh" --version 9.8.7 --minimum-free-gib 0 fixture/repository
 )
 
-expected=$'dispatch windows-x64 101 refresh=true snapshot=none\nview 101\ndispatch macos 202 refresh=false snapshot=101\ndispatch linux-x64 303 refresh=false snapshot=101\nview 202\nview 303'
+expected=$'dispatch windows-x64 101 refresh=true snapshot=none\nview 101\nview 101\ndispatch macos 202 refresh=false snapshot=101\ndispatch linux-x64 303 refresh=false snapshot=101\nview 202\nview 202\nview 303\nview 303'
 [[ "$(cat "$ODSH_FIXTURE_GH_LOG")" == "$expected" ]] || {
   echo "unexpected orchestration order:" >&2
   cat "$ODSH_FIXTURE_GH_LOG" >&2

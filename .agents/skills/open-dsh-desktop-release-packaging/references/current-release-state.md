@@ -13,13 +13,13 @@ This file is the authoritative ledger for the active desktop packaging cycle. Re
 
 ## Recorded source state
 
-Last observed: `2026-09-20 16:09:03 CST`
+Last observed: `2026-09-20 16:15:45 CST`
 
 | Item | Recorded value | State |
 | --- | --- | --- |
-| `master` | `origin/master` | pushed; selected source candidate for the rebuild |
-| Packaging branch | `origin/fix/windows-packaging-0.1.6-alpha.2` | still points to the previous qualified source; synchronization not started |
-| Release branch | `origin/release/0.1.6-alpha.2` | still points to the previous qualified source; synchronization not started |
+| `master` | `origin/master` | selected source candidate; includes the release-orchestration empty-conclusion parser repair |
+| Packaging branch | `origin/fix/windows-packaging-0.1.6-alpha.2` | synchronized to the selected source candidate |
+| Release branch | `origin/release/0.1.6-alpha.2` | synchronized to the selected source candidate |
 | Release notes | `.artifacts/release-notes/odsh-v0.1.6-alpha.2.md` | early bilingual draft refreshed for `origin/master`; native qualification claims removed pending the rebuild |
 
 ## Network preflight
@@ -37,7 +37,7 @@ These rows describe artifacts built from the final source for this locked versio
 
 | Platform | Workflow run | Build | Native qualification | Downloaded locally | Exact-set verified | Public on GitHub | Public on CNB |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Windows x64 | previous run [35455508915](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35455508915) | stale after source advanced | previous installed-package smoke succeeded; rebuild not started | previous set retained | pending rebuild | no | no |
+| Windows x64 | replacement pending; run [35498891258](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35498891258) was cancelled | the cancelled run used the intended source but exposed an orchestration parser defect before qualification completed | rebuild restarts after the parser repair is pushed | previous set retained | pending rebuild | no | no |
 | macOS arm64/x64 | previous run [35456891164](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35456891164) | stale after source advanced | previous final DMG and ZIP smoke succeeded; rebuild not started | previous set retained | pending rebuild | no | no |
 | Linux x64 | previous run [35458153656](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35458153656) | stale after source advanced | previous packaged-resource and package smoke succeeded; rebuild not started | previous set retained | pending rebuild | no | no |
 

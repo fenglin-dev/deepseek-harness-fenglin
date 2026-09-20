@@ -152,8 +152,8 @@ wait_run() {
   run_id=$(state_get "stages.$stage.runId")
   [[ -n "$run_id" ]] || { echo "missing run ID for $stage" >&2; exit 1; }
   while true; do
-    result=$(gh_retry run view "$run_id" --repo "$repository" --json status,conclusion,headSha,url --jq '[.status, (.conclusion // ""), .headSha, .url] | @tsv')
-    IFS=$'\t' read -r status conclusion head_sha url <<< "$result"
+    result=$(gh_retry run view "$run_id" --repo "$repository" --json status,conclusion,headSha,url --jq '[.status, (.conclusion // ""), .headSha, .url] | join("\u001f")')
+    IFS=$'\x1f' read -r status conclusion head_sha url <<< "$result"
     [[ "$head_sha" == "$source_sha" ]] || {
       state_set "stages.$stage.status" source-mismatch "stages.$stage.url" "$url"
       echo "$stage run $run_id uses $head_sha, expected $source_sha" >&2
