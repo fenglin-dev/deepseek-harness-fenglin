@@ -1,4 +1,11 @@
-.section { display: flex; flex-direction: column; gap: 18px; width: min(720px, 100%); padding: 12px 8px 32px; }
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-sizing: border-box;
+  width: min(720px, calc(100% - 24px));
+  padding: 12px 8px 32px;
+}
 .intro h2 { margin: 0 0 8px; font-size: 20px; }
 .intro p, .scopeDescription, .meta, .rowDescription, .status { color: var(--dsh-color-text-secondary, #6b7280); }
 .intro p, .scopeDescription, .status { margin: 0; line-height: 1.55; }
@@ -18,4 +25,5 @@
 .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--dsh-color-border, #e5e7eb); }
 .rowText { min-width: 0; }
 .rowDescription { margin-top: 4px; font-size: 13px; line-height: 1.45; }
+@media (max-width: 680px) { .section { width: 100%; padding-inline: 0; } }
 @media (max-width: 640px) { .meta, .row, .diagnostic { align-items: stretch; flex-direction: column; } .row :global(button), .diagnostic :global(button) { align-self: flex-start; } }
