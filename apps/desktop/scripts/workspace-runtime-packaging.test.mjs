@@ -13,7 +13,8 @@ test('desktop installers exclude optional Python payloads while the Harness clos
     'apps/desktop/electron-builder.linux.yml',
   ].map(read))
   for (const config of builderConfigs) {
-    assert.doesNotMatch(config, /primary-runtime|workspace-runtime|\.whl|python(?:3|\.exe)/iu)
+    assert.match(config, /- scripts\/primary-runtime-lock\.json/u)
+    assert.doesNotMatch(config, /workspace-runtime-(?!lock)[^\n]*\.(?:tar|zip)|\.whl|python(?:3|\.exe)/iu)
   }
 
   const cli = JSON.parse(await read('apps/cli/package.json'))

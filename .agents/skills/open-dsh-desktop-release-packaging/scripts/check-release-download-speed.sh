@@ -31,12 +31,23 @@ done
 minimum_mibps=${ODSH_MIN_DOWNLOAD_MIBPS:-1.0}
 sample_bytes=${ODSH_SPEED_TEST_BYTES:-33554432}
 sample_seconds=${ODSH_SPEED_TEST_SECONDS:-15}
+required_samples=${ODSH_SPEED_CHECK_SAMPLES:-2}
+maximum_attempts=${ODSH_SPEED_CHECK_ATTEMPTS:-4}
+retry_delay_seconds=${ODSH_SPEED_CHECK_RETRY_DELAY_SECONDS:-2}
 awk -v value="$minimum_mibps" 'BEGIN { exit !(value >= 0) }' || {
   echo "ODSH_MIN_DOWNLOAD_MIBPS must be a non-negative number" >&2
   exit 2
 }
 [[ "$sample_bytes" =~ ^[1-9][0-9]*$ && "$sample_seconds" =~ ^[1-9][0-9]*$ ]] || {
   echo "speed-test byte and duration settings must be positive integers" >&2
+  exit 2
+}
+[[ "$required_samples" =~ ^[1-9][0-9]*$ && "$maximum_attempts" =~ ^[1-9][0-9]*$ && "$retry_delay_seconds" =~ ^[0-9]+$ ]] || {
+  echo "speed-check samples and attempts must be positive integers; retry delay must be non-negative" >&2
+  exit 2
+}
+[[ "$maximum_attempts" -ge "$required_samples" ]] || {
+  echo "ODSH_SPEED_CHECK_ATTEMPTS must be at least ODSH_SPEED_CHECK_SAMPLES" >&2
   exit 2
 }
 
@@ -88,39 +99,77 @@ if [[ -n "$artifact_name" && "$resolved_name" != "$artifact_name" ]]; then
   exit 1
 fi
 
-header_file="$temporary_directory/artifact.headers"
-curl --silent --show-error --config "$auth_config" \
-  --dump-header "$header_file" --output /dev/null \
-  "https://api.github.com/repos/$repository/actions/artifacts/$resolved_id/zip"
-signed_url=$(awk 'tolower(substr($0, 1, 9)) == "location:" { sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); value=$0 } END { print value }' "$header_file")
-[[ -n "$signed_url" ]] || { echo "GitHub did not return a signed URL for artifact $resolved_id" >&2; exit 1; }
-
 range_end=$((sample_bytes - 1))
 metrics_file="$temporary_directory/metrics"
-set +e
-curl --silent --location --range "0-$range_end" \
-  --connect-timeout 10 --max-time "$sample_seconds" --output /dev/null \
-  --write-out '%{size_download}\t%{time_total}\t%{speed_download}\t%{http_code}\n' \
-  "$signed_url" > "$metrics_file"
-curl_status=$?
-set -e
-IFS=$'\t' read -r downloaded_bytes elapsed_seconds speed_bps http_code < "$metrics_file"
+header_file="$temporary_directory/artifact.headers"
+samples_file="$temporary_directory/samples"
+: > "$samples_file"
+valid_samples=0
+attempt=1
+total_downloaded_bytes=0
+total_elapsed_seconds=0
+last_curl_status=0
+last_http_code=unknown
+while [[ "$valid_samples" -lt "$required_samples" && "$attempt" -le "$maximum_attempts" ]]; do
+  rm -f "$header_file" "$metrics_file"
+  set +e
+  curl --silent --show-error --config "$auth_config" \
+    --dump-header "$header_file" --output /dev/null \
+    "https://api.github.com/repos/$repository/actions/artifacts/$resolved_id/zip"
+  redirect_status=$?
+  set -e
+  signed_url=
+  if [[ "$redirect_status" == 0 && -f "$header_file" ]]; then
+    signed_url=$(awk 'tolower(substr($0, 1, 9)) == "location:" { sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); value=$0 } END { print value }' "$header_file")
+  fi
+  if [[ -z "$signed_url" ]]; then
+    echo "release-node speed transport attempt $attempt/$maximum_attempts could not obtain a fresh signed URL (curl exit $redirect_status)" >&2
+  else
+    set +e
+    curl --silent --location --range "0-$range_end" \
+      --connect-timeout 10 --max-time "$sample_seconds" --output /dev/null \
+      --write-out '%{size_download}\t%{time_total}\t%{speed_download}\t%{http_code}\n' \
+      "$signed_url" > "$metrics_file"
+    curl_status=$?
+    set -e
+    downloaded_bytes=0
+    elapsed_seconds=0
+    speed_bps=
+    http_code=unknown
+    [[ ! -s "$metrics_file" ]] || IFS=$'\t' read -r downloaded_bytes elapsed_seconds speed_bps http_code < "$metrics_file"
+    last_curl_status=$curl_status
+    last_http_code=$http_code
+    if [[ -n "$speed_bps" && "$downloaded_bytes" != 0 \
+      && ( "$http_code" == 200 || "$http_code" == 206 ) \
+      && ( "$curl_status" == 0 || "$curl_status" == 28 ) ]]; then
+      printf '%s\n' "$speed_bps" >> "$samples_file"
+      valid_samples=$((valid_samples + 1))
+      total_downloaded_bytes=$((total_downloaded_bytes + downloaded_bytes))
+      total_elapsed_seconds=$(awk -v total="$total_elapsed_seconds" -v value="$elapsed_seconds" 'BEGIN { printf "%.6f", total + value }')
+    else
+      echo "release-node speed transport attempt $attempt/$maximum_attempts failed for $resolved_name (curl exit $curl_status, HTTP ${http_code:-unknown}); refreshing the signed URL" >&2
+    fi
+  fi
+  attempt=$((attempt + 1))
+  if [[ "$valid_samples" -lt "$required_samples" && "$attempt" -le "$maximum_attempts" && "$retry_delay_seconds" -gt 0 ]]; then
+    sleep "$retry_delay_seconds"
+  fi
+done
 
-if [[ -z "${speed_bps:-}" || "${downloaded_bytes:-0}" == 0 ]]; then
-  echo "release-node speed check failed for $resolved_name (curl exit $curl_status, HTTP ${http_code:-unknown})" >&2
-  exit 1
-fi
-if [[ "$curl_status" -ne 0 && "$curl_status" -ne 28 ]]; then
-  echo "release-node speed check failed for $resolved_name (curl exit $curl_status, HTTP ${http_code:-unknown})" >&2
-  exit 1
+if [[ "$valid_samples" -lt "$required_samples" ]]; then
+  echo "release-node speed transport failed for $resolved_name after $maximum_attempts attempts ($valid_samples/$required_samples valid samples; last curl exit $last_curl_status, HTTP $last_http_code)" >&2
+  exit 74
 fi
 
-speed_mibps=$(awk -v value="$speed_bps" 'BEGIN { printf "%.2f", value / 1048576 }')
+minimum_speed_bps=$(LC_ALL=C sort -n "$samples_file" | sed -n '1p')
+average_speed_bps=$(awk '{ total += $1 } END { printf "%.0f", total / NR }' "$samples_file")
+speed_mibps=$(awk -v value="$minimum_speed_bps" 'BEGIN { printf "%.2f", value / 1048576 }')
+average_mibps=$(awk -v value="$average_speed_bps" 'BEGIN { printf "%.2f", value / 1048576 }')
 threshold_text=$(awk -v value="$minimum_mibps" 'BEGIN { printf "%.2f", value }')
-printf 'release-node speed: %s MiB/s (threshold %s MiB/s, artifact %s, run %s, sampled %s bytes in %.2fs)\n' \
-  "$speed_mibps" "$threshold_text" "$resolved_name" "$resolved_run_id" "$downloaded_bytes" "$elapsed_seconds"
+printf 'release-node speed: %s MiB/s minimum, %s MiB/s average across %s samples (threshold %s MiB/s, artifact %s, run %s, sampled %s bytes in %.2fs)\n' \
+  "$speed_mibps" "$average_mibps" "$valid_samples" "$threshold_text" "$resolved_name" "$resolved_run_id" "$total_downloaded_bytes" "$total_elapsed_seconds"
 
-if awk -v speed="$speed_bps" -v minimum="$minimum_mibps" 'BEGIN { exit !(speed < minimum * 1048576) }'; then
+if awk -v speed="$minimum_speed_bps" -v minimum="$minimum_mibps" 'BEGIN { exit !(speed < minimum * 1048576) }'; then
   echo "release-node speed is below the configured threshold; stop packaging or download, switch network/proxy/node, then retry" >&2
   exit 75
 fi

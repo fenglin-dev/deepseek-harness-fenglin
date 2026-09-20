@@ -42,7 +42,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 if [[ "$metrics" == 1 ]]; then
-  printf '8388608\t4.000000\t%s\t206\n' "$ODSH_FIXTURE_SPEED_BPS"
+  if [[ -n ${ODSH_FIXTURE_TLS_COUNTER_FILE:-} ]]; then
+    attempts=0
+    [[ ! -f "$ODSH_FIXTURE_TLS_COUNTER_FILE" ]] || attempts=$(cat "$ODSH_FIXTURE_TLS_COUNTER_FILE")
+    attempts=$((attempts + 1))
+    printf '%s\n' "$attempts" > "$ODSH_FIXTURE_TLS_COUNTER_FILE"
+    if [[ "$attempts" -le ${ODSH_FIXTURE_TLS_FAILURES:-0} ]]; then
+      printf '0\t0.000000\t0\t000\n'
+      exit 35
+    fi
+  fi
+  printf '8388608\t4.000000\t%s\t%s\n' "$ODSH_FIXTURE_SPEED_BPS" "${ODSH_FIXTURE_HTTP_CODE:-206}"
 else
   printf 'HTTP/1.1 302 Found\r\nLocation: https://fixture.invalid/artifact.zip\r\n\r\n' > "$header_file"
 fi
@@ -69,6 +79,52 @@ ODSH_MIN_DOWNLOAD_MIBPS=1 \
 printf '%s\n' "$high_output"
 printf '%s\n' "$high_output" | grep -q 'artifact desktop-macos-arm64, run 202' || {
   echo "automatic speed check did not select the newest artifact" >&2
+  exit 1
+}
+
+tls_counter="$fixture_root/tls-counter"
+tls_output=$(PATH="$fake_bin:$PATH" \
+ODSH_FIXTURE_SPEED_BPS=2097152 \
+ODSH_FIXTURE_TLS_COUNTER_FILE="$tls_counter" \
+ODSH_FIXTURE_TLS_FAILURES=1 \
+ODSH_SPEED_CHECK_RETRY_DELAY_SECONDS=0 \
+ODSH_MIN_DOWNLOAD_MIBPS=1 \
+  "$script_directory/check-release-download-speed.sh" fixture/repository --artifact-id 4242 --artifact-name desktop-macos-arm64)
+printf '%s\n' "$tls_output"
+[[ $(cat "$tls_counter") -ge 3 ]] || {
+  echo "speed check did not replace the failed TLS sample with two valid samples" >&2
+  exit 1
+}
+
+transport_counter="$fixture_root/transport-counter"
+set +e
+PATH="$fake_bin:$PATH" \
+ODSH_FIXTURE_SPEED_BPS=2097152 \
+ODSH_FIXTURE_TLS_COUNTER_FILE="$transport_counter" \
+ODSH_FIXTURE_TLS_FAILURES=10 \
+ODSH_SPEED_CHECK_ATTEMPTS=2 \
+ODSH_SPEED_CHECK_RETRY_DELAY_SECONDS=0 \
+ODSH_MIN_DOWNLOAD_MIBPS=1 \
+  "$script_directory/check-release-download-speed.sh" fixture/repository --artifact-id 4242 --artifact-name desktop-macos-arm64
+transport_status=$?
+set -e
+[[ "$transport_status" == 74 ]] || {
+  echo "transport-only speed failure exited $transport_status, expected 74" >&2
+  exit 1
+}
+
+set +e
+PATH="$fake_bin:$PATH" \
+ODSH_FIXTURE_SPEED_BPS=2097152 \
+ODSH_FIXTURE_HTTP_CODE=503 \
+ODSH_SPEED_CHECK_ATTEMPTS=2 \
+ODSH_SPEED_CHECK_RETRY_DELAY_SECONDS=0 \
+ODSH_MIN_DOWNLOAD_MIBPS=1 \
+  "$script_directory/check-release-download-speed.sh" fixture/repository --artifact-id 4242 --artifact-name desktop-macos-arm64
+http_error_status=$?
+set -e
+[[ "$http_error_status" == 74 ]] || {
+  echo "HTTP error body was accepted as a valid speed sample" >&2
   exit 1
 }
 

@@ -1,5 +1,6 @@
 # Build each desktop artifact on the operating system and CPU architecture it ships for.
 name: Desktop packages
+run-name: Desktop packages ${{ inputs.target }} ${{ inputs.orchestration_id || github.run_id }}
 
 on:
   workflow_dispatch:
@@ -19,6 +20,16 @@ on:
         required: true
         type: boolean
         default: true
+      bundled_plugin_run_id:
+        description: Reuse the bundled plugin snapshot from this same-commit run ID
+        required: false
+        type: string
+        default: ''
+      orchestration_id:
+        description: Stable local orchestration key used to recover an already dispatched run
+        required: false
+        type: string
+        default: ''
       windows_candidate_run_id:
         description: Reuse a Windows candidate artifact from this run ID (must have the same commit)
         required: false
@@ -30,7 +41,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.target }}
   cancel-in-progress: false
 
 env:
@@ -39,8 +50,7 @@ env:
 
 jobs:
   bundled-plugins:
-    name: Resolve bundled plugins
-    if: ${{ inputs.windows_candidate_run_id == '' }}
+    name: Prepare bundled plugins
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -56,14 +66,41 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Verify package resource contract
+        run: node --test apps/desktop/scripts/packaged-resource-contract.test.mjs
+
       - name: Verify external tool provider coordinates
         run: pnpm run verify:desktop:external-tools
 
       - name: Verify embedded Node runtime pins
         run: node --test apps/desktop/scripts/node-runtime-pins.test.mjs
 
+      - name: Verify reused bundled plugin snapshot commit
+        if: ${{ inputs.bundled_plugin_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          snapshot_sha="$(gh api "repos/${{ github.repository }}/actions/runs/${{ inputs.bundled_plugin_run_id }}" --jq .head_sha)"
+          if [ "$snapshot_sha" != "${{ github.sha }}" ]; then
+            echo "Bundled plugin snapshot run ${{ inputs.bundled_plugin_run_id }} belongs to $snapshot_sha, expected ${{ github.sha }}" >&2
+            exit 1
+          fi
+
+      - name: Clear checked-in bundled plugin snapshot
+        if: ${{ inputs.bundled_plugin_run_id != '' }}
+        run: >-
+          node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
+
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.bundled_plugin_run_id != '' }}
+        with:
+          name: bundled-plugin-snapshot
+          path: apps/desktop/bundled-plugins
+          run-id: ${{ inputs.bundled_plugin_run_id }}
+          github-token: ${{ github.token }}
+
       - name: Resolve latest stable plugin archives
-        if: ${{ inputs.refresh_plugins }}
+        if: ${{ inputs.bundled_plugin_run_id == '' && inputs.refresh_plugins }}
         run: pnpm run refresh:desktop:bundled-plugins
 
       - uses: actions/upload-artifact@v4
@@ -72,6 +109,7 @@ jobs:
           path: apps/desktop/bundled-plugins
           if-no-files-found: error
           retention-days: 14
+          compression-level: '0'
 
   macos:
     name: macOS ${{ matrix.arch }}
@@ -137,6 +175,7 @@ jobs:
             .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.zip
           if-no-files-found: error
           retention-days: 14
+          compression-level: '0'
 
       - uses: actions/upload-artifact@v4
         with:
@@ -147,6 +186,7 @@ jobs:
             .artifacts/workspace-runtime/workspace-runtime-darwin-${{ matrix.arch }}.json
           if-no-files-found: error
           retention-days: 14
+          compression-level: '0'
 
   windows:
     name: Build Windows x64 candidate
@@ -223,9 +263,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
 
       - name: Verify Windows smoke evidence interface
         shell: pwsh
@@ -301,6 +346,7 @@ jobs:
             .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
           if-no-files-found: error
           retention-days: 14
+          compression-level: '0'
 
       - uses: actions/upload-artifact@v4
         with:
@@ -311,6 +357,7 @@ jobs:
             .artifacts/workspace-runtime/workspace-runtime-win32-x64.json
           if-no-files-found: error
           retention-days: 14
+          compression-level: '0'
 
   linux:
     name: Linux x64
@@ -364,6 +411,7 @@ jobs:
             .artifacts/desktop-linux/DeepSeek-Harness-linux-x64.rpm
           if-no-files-found: error
           retention-days: 14
+          compression-level: '0'
 
       - uses: actions/upload-artifact@v4
         with:
@@ -374,6 +422,7 @@ jobs:
             .artifacts/workspace-runtime/workspace-runtime-linux-x64.json
           if-no-files-found: error
           retention-days: 14
+          compression-level: '0'
 
   checksums:
     name: SHA-256 checksums
@@ -392,13 +441,16 @@ jobs:
           persist-credentials: false
 
       - uses: pnpm/action-setup@v4
+        if: ${{ inputs.target == 'all' }}
 
       - uses: actions/setup-node@v6
+        if: ${{ inputs.target == 'all' }}
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - if: ${{ inputs.target == 'all' }}
+        run: pnpm install --frozen-lockfile
 
       - uses: actions/download-artifact@v4
         with:

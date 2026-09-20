@@ -10,7 +10,43 @@ interface WorkflowJob {
   readonly steps?: Array<{ name?: string; if?: string; uses?: string; with?: Record<string, string>; run?: string; 'continue-on-error'?: boolean }>
 }
 
+function readWorkflow() {
+  const source = readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/desktop-packages.yml'), 'utf8')
+  return {
+    source,
+    workflow: parse(source) as {
+      'run-name': string
+      on: { workflow_dispatch: { inputs: Record<string, unknown> } }
+      jobs: Record<string, WorkflowJob>
+    },
+  }
+}
+
 describe('desktop package workflow bundled plugins', () => {
+  it('runs the packaged-resource contract before native packaging starts', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/desktop-packages.yml'), 'utf8')
+    const workflow = parse(source) as { jobs: Record<string, WorkflowJob> }
+    const resolver = workflow.jobs['bundled-plugins']
+    const contractCheck = resolver?.steps?.findIndex(step => step.name === 'Verify package resource contract') ?? -1
+    const refresh = resolver?.steps?.findIndex(step => step.run === 'pnpm run refresh:desktop:bundled-plugins') ?? -1
+    expect(contractCheck).toBeGreaterThanOrEqual(0)
+    expect(contractCheck).toBeLessThan(refresh)
+    expect(resolver?.steps?.[contractCheck]?.run).toContain('packaged-resource-contract.test.mjs')
+  })
+
+  it('prepares pnpm before every job step that invokes it', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/desktop-packages.yml'), 'utf8')
+    const workflow = parse(source) as { jobs: Record<string, WorkflowJob> }
+    for (const [jobName, job] of Object.entries(workflow.jobs)) {
+      const pnpmSetup = job.steps?.findIndex(step => step.uses === 'pnpm/action-setup@v4') ?? -1
+      for (const [stepIndex, step] of (job.steps ?? []).entries()) {
+        if (!step.run?.match(/(?:^|\s)pnpm(?:\s|$)/u)) continue
+        expect(pnpmSetup, `${jobName} must set up pnpm`).toBeGreaterThanOrEqual(0)
+        expect(pnpmSetup, `${jobName} must set up pnpm before ${step.name ?? step.run}`).toBeLessThan(stepIndex)
+      }
+    }
+  })
+
   it('resolves one snapshot and reuses it in every platform package', () => {
     const source = readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/desktop-packages.yml'), 'utf8')
     const workflow = parse(source) as { jobs: Record<string, WorkflowJob> }
@@ -27,6 +63,58 @@ describe('desktop package workflow bundled plugins', () => {
         && step.with?.name === 'bundled-plugin-snapshot'
         && step.with?.path === 'apps/desktop/bundled-plugins'
       ))).toBe(true)
+    }
+  })
+
+  it('can reuse one verified bundled-plugin snapshot across platform runs', () => {
+    const { workflow } = readWorkflow()
+    expect(workflow.on.workflow_dispatch.inputs).toHaveProperty('bundled_plugin_run_id')
+    const resolver = workflow.jobs['bundled-plugins']
+    expect(resolver?.if).toBeUndefined()
+    expect(resolver?.steps?.some(step => (
+      step.name === 'Verify reused bundled plugin snapshot commit'
+      && step.if?.includes("inputs.bundled_plugin_run_id != ''")
+      && step.run?.includes('head_sha')
+    ))).toBe(true)
+    expect(resolver?.steps?.some(step => (
+      step.uses === 'actions/download-artifact@v4'
+      && step.if?.includes("inputs.bundled_plugin_run_id != ''")
+      && step.with?.name === 'bundled-plugin-snapshot'
+      && step.with?.['run-id'] === '${{ inputs.bundled_plugin_run_id }}'
+    ))).toBe(true)
+  })
+
+  it('exposes a stable orchestration key in the workflow run title', () => {
+    const { workflow } = readWorkflow()
+    expect(workflow.on.workflow_dispatch.inputs).toHaveProperty('orchestration_id')
+    expect(workflow['run-name']).toContain('inputs.orchestration_id')
+  })
+
+  it('does not install the workspace only to checksum a single platform run', () => {
+    const { workflow } = readWorkflow()
+    const checksums = workflow.jobs.checksums
+    for (const step of checksums?.steps ?? []) {
+      if (step.uses === 'pnpm/action-setup@v4' || step.uses === 'actions/setup-node@v6' || step.run === 'pnpm install --frozen-lockfile') {
+        expect(step.if).toBe("${{ inputs.target == 'all' }}")
+      }
+    }
+  })
+
+  it('disables redundant compression for already compressed release payloads', () => {
+    const { workflow } = readWorkflow()
+    const releaseArtifactNames = new Set([
+      'desktop-macos-${{ matrix.arch }}',
+      'desktop-windows-x64',
+      'desktop-linux-x64',
+      'workspace-runtime-darwin-${{ matrix.arch }}',
+      'workspace-runtime-win32-x64',
+      'workspace-runtime-linux-x64',
+    ])
+    for (const job of Object.values(workflow.jobs)) {
+      for (const step of job.steps ?? []) {
+        if (step.uses !== 'actions/upload-artifact@v4' || !releaseArtifactNames.has(step.with?.name ?? '')) continue
+        expect(step.with?.['compression-level'], step.with?.name).toBe('0')
+      }
     }
   })
 
@@ -50,6 +138,13 @@ describe('desktop package workflow bundled plugins', () => {
     expect(workflow.jobs.checksums?.if).toContain("inputs.target == 'linux-x64'")
   })
 
+  it('allows different platform targets on the same branch to run in parallel', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/desktop-packages.yml'), 'utf8')
+    const workflow = parse(source) as { concurrency: { group: string; 'cancel-in-progress': boolean } }
+    expect(workflow.concurrency.group).toContain('${{ inputs.target }}')
+    expect(workflow.concurrency['cancel-in-progress']).toBe(false)
+  })
+
   it('raises the macOS packaging file limit before electron-builder signs the expanded runtime', () => {
     const source = readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/desktop-packages.yml'), 'utf8')
     const workflow = parse(source) as { jobs: Record<string, WorkflowJob> }
@@ -66,7 +161,9 @@ describe('desktop package workflow bundled plugins', () => {
       jobs: Record<string, WorkflowJob>
     }
     expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch'])
-    expect(Object.keys(workflow.on.workflow_dispatch.inputs)).toEqual(['target', 'refresh_plugins', 'windows_candidate_run_id'])
+    expect(Object.keys(workflow.on.workflow_dispatch.inputs)).toEqual([
+      'target', 'refresh_plugins', 'bundled_plugin_run_id', 'orchestration_id', 'windows_candidate_run_id',
+    ])
     expect(workflow.on.workflow_dispatch.inputs.refresh_plugins).toEqual({
       description: 'Resolve latest stable bundled plugins (disable for a packaging-only rebuild)',
       required: true,
@@ -101,6 +198,13 @@ describe('desktop package workflow bundled plugins', () => {
     ))).toBe(true)
 
     expect(smoke?.if).toContain('inputs.windows_candidate_run_id')
+    const smokePnpm = smoke?.steps?.findIndex(step => step.uses === 'pnpm/action-setup@v4') ?? -1
+    const smokeInstall = smoke?.steps?.findIndex(step => step.run === 'pnpm install --frozen-lockfile') ?? -1
+    const runtimeBuild = smoke?.steps?.findIndex(step => step.name === 'Build optional workspace runtime') ?? -1
+    expect(smokePnpm).toBeGreaterThanOrEqual(0)
+    expect(smokeInstall).toBeGreaterThan(smokePnpm)
+    expect(runtimeBuild).toBeGreaterThan(smokeInstall)
+    expect(smoke?.steps?.some(step => step.uses === 'actions/setup-node@v6' && step.with?.cache === 'pnpm')).toBe(true)
     const reuseCheck = smoke?.steps?.find(step => step.name === 'Verify reused candidate commit')?.run
     const evidenceCheck = smoke?.steps?.find(step => step.name === 'Verify Windows smoke evidence interface')
     expect(evidenceCheck?.run).toContain('windows-smoke-journal.test.ps1')

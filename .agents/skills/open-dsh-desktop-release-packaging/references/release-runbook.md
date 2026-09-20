@@ -19,7 +19,7 @@ On macOS, packaging entry scripts first normalize explicit upper- or lower-case 
 
 Clash Verge's Global mode chooses the route for traffic that has already reached Clash. It does not make every CLI client consume the macOS System Proxy. When a browser is fast but the release-node check is slow, compare `env | grep -i proxy` with `scutil --proxy`, then rerun the same check and require its printed proxy-adoption line and measured rate. Do not lower the speed floor to hide a route mismatch.
 
-The check selects the newest non-expired desktop artifact, preferring the larger artifact when timestamps match, unless `--run-id`, `--artifact-name`, or `--artifact-id` narrows it. It downloads at most 32 MiB for up to 15 seconds and reports the Actions run, artifact, measured rate, and floor. `ODSH_MIN_DOWNLOAD_MIBPS` sets the floor and defaults to `1.0`; zero disables enforcement only after the user explicitly accepts proceeding without a minimum.
+The check selects the newest non-expired desktop artifact, preferring the larger artifact when timestamps match, unless `--run-id`, `--artifact-name`, or `--artifact-id` narrows it. It collects two valid samples by default, refreshing the signed URL for every retry, and reports the minimum and average rate. `ODSH_MIN_DOWNLOAD_MIBPS` sets the floor and defaults to `1.0`; zero disables enforcement only after the user explicitly accepts proceeding without a minimum. TLS or API transport failures are retried and exit with status 74 only after the valid-sample budget is exhausted; they are never treated as a zero-speed sample.
 
 Exit status 75 means the route is slower than the configured floor. Report the result and stop before consuming native-runner time. Ask the user to switch network, proxy, or node, or to select a different floor. A missing non-expired artifact means the exact Actions storage route is unverified, not that the network passed.
 
@@ -57,6 +57,18 @@ As soon as the version and release-bound compatibility files are prepared, deriv
 
 Use the final packaging branch. Before dispatching, inspect the workflow and require top-level `permissions: contents: read` with no release-publication step. The workflow has no `publish` input; pass only its declared inputs:
 
+The normal entry point is resumable and performs the speed, disk, remote-head, workflow, download and directory checks as one operation:
+
+```sh
+.agents/skills/open-dsh-desktop-release-packaging/scripts/package-desktop-release.sh \
+  --version <version> \
+  flaqai/open-deepseek-harness-desktop
+```
+
+Its state is stored at `<git-common-dir>/odsh-release-state/<version>.json`. Re-running resumes recorded runs and transfers; it does not dispatch duplicates. If the source revision intentionally changes, use `--restart` only after the new branch is pushed. This archives the old state with a timestamp. The orchestrator never creates tags, GitHub Releases, or CNB uploads.
+
+The manual equivalent begins with Windows:
+
 ```sh
 skill=.agents/skills/open-dsh-desktop-release-packaging
 source "$skill/scripts/configure-cli-proxy.sh"
@@ -84,8 +96,25 @@ Then monitor it:
 gh run watch <run-id> --exit-status
 ```
 
-Repeat for `macos`, then `linux-x64`. The accepted jobs are:
+After Windows qualifies, dispatch `macos` and `linux-x64` with the successful Windows run ID as `bundled_plugin_run_id`. Both platform runs then verify that the snapshot came from the exact same source commit and reuse it instead of resolving registry versions again. They may run in parallel because Windows has already acted as the first native gate:
 
+```sh
+gh workflow run desktop-packages.yml \
+  --ref <branch> \
+  -f target=macos \
+  -f refresh_plugins=false \
+  -f bundled_plugin_run_id=<windows-run-id>
+
+gh workflow run desktop-packages.yml \
+  --ref <branch> \
+  -f target=linux-x64 \
+  -f refresh_plugins=false \
+  -f bundled_plugin_run_id=<windows-run-id>
+```
+
+The accepted jobs are:
+
+- packaged-resource contract verification before bundled plugin resolution or native packaging;
 - bundled plugin resolution;
 - native package build;
 - Windows installed-package smoke test for Windows;
@@ -100,6 +129,8 @@ gh run view <run-id> --log-failed
 ```
 
 Fix the actual failure on the packaging-fix branch. After any source commit changes, previous platform artifacts are stale even if their earlier run was green.
+
+The resource contract in `apps/desktop/scripts/packaged-resource-contract.json` is the fast gate shared by all targets. When a packaged file or `extraResources` destination changes, update that contract and its test in the same commit. A native runner must not be used to discover a missing static resource that the contract can reject on Ubuntu first.
 
 ## 5. Bundled plugin consistency
 
@@ -119,7 +150,7 @@ Run `node --test apps/desktop/scripts/smoke-macos-package.test.mjs`, then `node 
 
 The native probe establishes Electron initialization, not Harness or UI readiness. Before publication, also launch the extracted application with isolated test data, inspect newly appended logs for `dsh web:`, `client ready`, and `event-dispatch is ready`, verify its client URL responds and Electron remains alive, then quit cleanly. Record the tested architecture and distinguish any untested platform; a developer Electron launch is not a packaged-app test. Do not disable SIP or Gatekeeper as a workaround for a Helper-name defect.
 
-Each workflow run resolves registry-backed entries at their current stable version and passes one offline snapshot to that run's native builders. Separate Windows, macOS, and Linux runs can resolve different snapshots if a plugin publishes between runs.
+The first workflow run resolves registry-backed entries at their current stable version and passes one offline snapshot to that run's native builders. Pass that run as `bundled_plugin_run_id` to later same-commit platform runs. A mismatched source commit is rejected before packaging. Independent runs without this input can still resolve different snapshots if a plugin publishes between them.
 
 The download helper computes one complete content digest for each run's `bundled-plugin-snapshot` artifact in temporary storage. The three digests must match. If they differ, do not combine those artifacts into one release. Re-run the stale targets close together, or use one `target=all` run when a single shared snapshot is more important than staged platform diagnosis.
 
@@ -156,7 +187,7 @@ The helper requires all three runs to name the same source commit and bundled-pl
 
 Downloads use a stable directory below the system temporary directory, keyed by repository, run IDs, and version. Before each large incomplete artifact starts or resumes, the helper measures that exact artifact's signed route against `ODSH_MIN_DOWNLOAD_MIBPS`. With `aria2c`, a monitor observes aggregate download telemetry after a 15-second warmup and exits with status 75 when it remains below the floor for 30 seconds; `ODSH_LOW_SPEED_WARMUP_SECONDS` and `ODSH_LOW_SPEED_WINDOW_SECONDS` change those windows. With `curl`, the equivalent speed floor and sustained window stop the transfer. A speed stop prints the measured condition and preserves the resumable staging directory; do not lower the floor or resume until the user chooses another network or threshold.
 
-When `aria2c` is present, each archive uses 16 parallel ranges by default and prints its transfer summary every 10 seconds; `ODSH_DOWNLOAD_SUMMARY_INTERVAL_SECONDS` changes that positive-integer interval. Otherwise `curl` resumes serially. A failed run retains the staging directory, and a retry refreshes the signed URL while continuing the same artifact ID. Completed archives are reused only when both the API-reported size and ZIP integrity match. Extraction is always non-interactive. A successful atomic handoff removes its staging directory.
+When `aria2c` is present, each archive starts with 16 parallel ranges by default and prints its transfer summary every 10 seconds; `ODSH_DOWNLOAD_SUMMARY_INTERVAL_SECONDS` changes that positive-integer interval. Transport failures refresh the signed URL and reduce concurrency through `16,4,2,1`; the final single-connection attempt uses resumable `curl`. The helper removes `ALL_PROXY` only from the aria2 child so aria2 cannot reject a `socks5h://` value, while keeping the HTTP/HTTPS proxy route used by the other CLI tools. A failed run retains the staging directory, and a retry continues the same artifact ID. Completed archives are reused only when both the API-reported size and ZIP integrity match. Extraction is always non-interactive. A successful atomic handoff removes its staging directory.
 
 Do not delete a retained staging directory just to retry, and do not introduce a one-off download script for large artifacts. Never rename unknown temporary files by process ID, file size, or download order. Never resume one artifact with another artifact's URL. If intentional cleanup is needed later, use the exact retained path printed by the helper after confirming that no retry needs it.
 
