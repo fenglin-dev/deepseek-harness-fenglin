@@ -11,6 +11,30 @@ interface WorkflowJob {
 }
 
 describe('desktop package workflow bundled plugins', () => {
+  it('runs the packaged-resource contract before native packaging starts', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/desktop-packages.yml'), 'utf8')
+    const workflow = parse(source) as { jobs: Record<string, WorkflowJob> }
+    const resolver = workflow.jobs['bundled-plugins']
+    const contractCheck = resolver?.steps?.findIndex(step => step.name === 'Verify package resource contract') ?? -1
+    const refresh = resolver?.steps?.findIndex(step => step.run === 'pnpm run refresh:desktop:bundled-plugins') ?? -1
+    expect(contractCheck).toBeGreaterThanOrEqual(0)
+    expect(contractCheck).toBeLessThan(refresh)
+    expect(resolver?.steps?.[contractCheck]?.run).toContain('packaged-resource-contract.test.mjs')
+  })
+
+  it('prepares pnpm before every job step that invokes it', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/desktop-packages.yml'), 'utf8')
+    const workflow = parse(source) as { jobs: Record<string, WorkflowJob> }
+    for (const [jobName, job] of Object.entries(workflow.jobs)) {
+      const pnpmSetup = job.steps?.findIndex(step => step.uses === 'pnpm/action-setup@v4') ?? -1
+      for (const [stepIndex, step] of (job.steps ?? []).entries()) {
+        if (!step.run?.match(/(?:^|\s)pnpm(?:\s|$)/u)) continue
+        expect(pnpmSetup, `${jobName} must set up pnpm`).toBeGreaterThanOrEqual(0)
+        expect(pnpmSetup, `${jobName} must set up pnpm before ${step.name ?? step.run}`).toBeLessThan(stepIndex)
+      }
+    }
+  })
+
   it('resolves one snapshot and reuses it in every platform package', () => {
     const source = readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/desktop-packages.yml'), 'utf8')
     const workflow = parse(source) as { jobs: Record<string, WorkflowJob> }

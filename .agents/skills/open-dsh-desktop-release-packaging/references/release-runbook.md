@@ -86,6 +86,7 @@ gh run watch <run-id> --exit-status
 
 Repeat for `macos`, then `linux-x64`. The accepted jobs are:
 
+- packaged-resource contract verification before bundled plugin resolution or native packaging;
 - bundled plugin resolution;
 - native package build;
 - Windows installed-package smoke test for Windows;
@@ -100,6 +101,8 @@ gh run view <run-id> --log-failed
 ```
 
 Fix the actual failure on the packaging-fix branch. After any source commit changes, previous platform artifacts are stale even if their earlier run was green.
+
+The resource contract in `apps/desktop/scripts/packaged-resource-contract.json` is the fast gate shared by all targets. When a packaged file or `extraResources` destination changes, update that contract and its test in the same commit. A native runner must not be used to discover a missing static resource that the contract can reject on Ubuntu first.
 
 ## 5. Bundled plugin consistency
 

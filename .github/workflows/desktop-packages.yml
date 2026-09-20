@@ -56,6 +56,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Verify package resource contract
+        run: node --test apps/desktop/scripts/packaged-resource-contract.test.mjs
+
       - name: Verify external tool provider coordinates
         run: pnpm run verify:desktop:external-tools
 

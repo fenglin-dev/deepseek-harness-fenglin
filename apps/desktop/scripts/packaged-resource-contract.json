@@ -1,0 +1,44 @@
+{
+  "schema": "open-deepseek-harness-desktop/packaged-resource-contract/v1",
+  "asarFiles": [
+    "lib/**/*",
+    "scripts/primary-runtime-lock.json",
+    "package.json"
+  ],
+  "staticSourceFiles": [
+    "apps/desktop/scripts/primary-runtime-lock.json",
+    "apps/desktop/bundled-plugins/manifest.json"
+  ],
+  "commonResourceDestinations": [
+    "bundled-plugins",
+    "prebuilt-profile.tar",
+    "prebuilt-profile.tar.sha256"
+  ],
+  "platforms": {
+    "windows": {
+      "config": "apps/desktop/electron-builder.yml",
+      "resourceDestinations": [
+        "harness",
+        "harness/node_modules",
+        "runtime",
+        "cli-bin",
+        "cli/desktop-cli.mjs"
+      ]
+    },
+    "macos": {
+      "config": "apps/desktop/electron-builder.macos.yml",
+      "resourceDestinations": [
+        "harness-runtime.tar",
+        "harness-runtime.tar.sha256",
+        "cli/desktop-cli.mjs"
+      ]
+    },
+    "linux": {
+      "config": "apps/desktop/electron-builder.linux.yml",
+      "resourceDestinations": [
+        "harness-runtime.tar",
+        "harness-runtime.tar.sha256"
+      ]
+    }
+  }
+}
