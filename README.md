@@ -517,15 +517,7 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 
 如果你遇到 Bug，或者希望客户端增加新的使用方式，欢迎提出反馈。这个项目能持续变好，离不开真实用户提供的复现信息、日志与耐心测试。
 
-### 加入交流群
 
-欢迎扫码加入 Open DeepSeek Harness Desktop 交流群，与其他用户和插件作者交流使用经验、问题排查与功能建议。
-
-<p align="center">
-  <img src="./assets/readme/wechat-group-qr-2026-09-13.jpg" width="360" alt="Open DeepSeek Harness Desktop 微信交流群二维码">
-  <br>
-  <sub>当前二维码有效期至 2026 年 9 月 13 日；过期后请关注 README 中更新的二维码</sub>
-</p>
 
 ## 致谢
 
@@ -538,23 +530,23 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 - [`dsh-market`](https://github.com/dsh-market/dsh-market)，由 [dsh-market](https://github.com/dsh-market) 社区维护：在 Harness 内浏览、搜索、安装和管理插件。
 - [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket)：提供 Pocket 扩展。
 - [`DSH Better Sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar)：提供增强侧边栏。
-- [`DSH Usage Stats`](https://github.com/Ychris12138/dsh-usage-stats)：提供 Token 用量、账户、费用估算、预算和导出能力。
-- [`DSH Smooth Stream`](https://github.com/Laplace-bit/dsh-smooth-stream)：提供更平滑的流式渲染与滚动。
-- [`DSH Mermaid`](https://github.com/MrmoLabs/dsh-mermaid)，由 [MrmoLabs](https://github.com/MrmoLabs) 维护：将 Mermaid 代码块渲染为支持源码切换、全屏查看、缩放和 SVG 导出的图表。
+- [`DSH 使用统计`](https://github.com/Ychris12138/dsh-usage-stats)提供 Token 用量、账户、费用估算、预算和导出能力。
+- [`DSH 平滑流`](https://github.com/Laplace-bit/dsh-smooth-stream)提供流畅的流式渲染与滚动。
+- [`Mermaid`](https://github.com/MrmoLabs/dsh-mermaid)，由[MrmoLabs](https://github.com/MrmoLabs)维护：将 Mermaid 代码块渲染为支持源码切换、全屏查看、缩放和 SVG 导出的图表。
 
-## 关于 FLAQ AI 团队
+##关于 FLAQ AI 团队
 
-[FLAQ.AI](https://flaq.ai/) 面向 AI Agent 和生产应用，提供图片、视频、音乐及语言模型的统一 API 接入、文档和开发者工作流。本桌面项目来自团队在模型集成、本地 Agent 环境、插件交付与跨平台应用打包中的实践；我们将它开源，是希望把这些经验整理成可检查、可复用、可继续改进的社区项目。
+[FLAQ.AI](https://flaq.ai/)面向 AI Agent 和生产应用，提供图片、视频、音乐及语言模型的统一 API 接入、文档和开发者工作流。本桌面项目来自团队在模型集成、本地 Agent 环境、插件交付与跨平台应用打包中的实践；我们将它开源，是希望把这些经验整理成可检查、可复用、可继续改进的社区项目。
 
-相关开源项目包括 [Backlink Skills](https://github.com/flaqai/backlink_skills)、[Awesome Codex Skills](https://github.com/flaqai/awesome_codex_skills) 和 [Awesome Claude Code Skills](https://github.com/flaqai/awesome_claude_code_skills)。
+相关开源项目包括[Backlink Skills](https://github.com/flaqai/backlink_skills)、[Awesome Codex Skills](https://github.com/flaqai/awesome_codex_skills)和[Awesome Claude Code Skills](https://github.com/flaqai/awesome_claude_code_skills)。
 
-FLAQ.AI 只是可选的兼容提供商或配套平台。运行本仓库不依赖 FLAQ.AI，项目也不会将其设为隐藏默认服务；提及 FLAQ.AI 不代表 DeepSeek 对其背书。提供商能力、可用性和商业条款可能变化，投入生产前请在 [FLAQ.AI 文档](https://flaq.ai/docs/)中核对最新信息。
+FLAQ.AI 只是可选的兼容提供商或配套平台。运行本仓库不依赖 FLAQ.AI，项目也不会将其设为隐藏默认服务；提及 FLAQ.AI 不代表 DeepSeek 对其背书。提供商能力、可用性和商业条款可能变化，投入生产前请在[FLAQ.AI 文档](https://flaq.ai/docs/)最新信息需要核对。
 
-## 引用
+##引用
 
 ```bibtex
 @misc{deepseek-harness2026,
-  title={DeepSeek Harness: Everything is a Plugin},
+标题={DeepSeek Harness: Everything is a Plugin}
   author={DeepSeek-AI},
   year={2026},
   publisher={GitHub},
@@ -562,10 +554,10 @@ FLAQ.AI 只是可选的兼容提供商或配套平台。运行本仓库不依赖
 }
 ```
 
-## 许可证
+##许可证
 
-Open DeepSeek Harness Desktop 采用 [MIT 许可证](LICENSE)。第三方依赖及其许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+Open DeepSeek Harness Desktop 采用[MIT 许可证](LICENSE)。第三方依赖及其许可证见[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-## Friends
+##朋友
 
-- [DSHFind](https://dshfind.com/zh) — DeepSeek Harness 中文学习与分享社区，汇集入门教程、插件生态与社区内容。
+- [DSHFind](https://dshfind.com/zh)— 深度思考助手中文学习与分享社区，汇集入门教程、插件生态与社区内容。
