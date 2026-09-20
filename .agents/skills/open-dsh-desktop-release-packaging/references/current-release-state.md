@@ -13,14 +13,14 @@ This file is the authoritative ledger for the active desktop packaging cycle. Re
 
 ## Recorded source state
 
-Last observed: `2026-09-20 01:53:16 CST`
+Last observed: `2026-09-20 16:09:03 CST`
 
 | Item | Recorded value | State |
 | --- | --- | --- |
-| `master` | `origin/master` | pushed |
-| Packaging branch | `origin/fix/windows-packaging-0.1.6-alpha.2` | pushed; final source for all accepted platform runs |
-| Release branch | `origin/release/0.1.6-alpha.2` | synchronized and pushed |
-| Release notes | `.artifacts/release-notes/odsh-v0.1.6-alpha.2.md` | refreshed after native qualification |
+| `master` | `origin/master` | pushed; selected source candidate for the rebuild |
+| Packaging branch | `origin/fix/windows-packaging-0.1.6-alpha.2` | still points to the previous qualified source; synchronization not started |
+| Release branch | `origin/release/0.1.6-alpha.2` | still points to the previous qualified source; synchronization not started |
+| Release notes | `.artifacts/release-notes/odsh-v0.1.6-alpha.2.md` | early bilingual draft refreshed for `origin/master`; native qualification claims removed pending the rebuild |
 
 ## Network preflight
 
@@ -28,8 +28,8 @@ Last observed: `2026-09-20 01:53:16 CST`
 | --- | --- |
 | Adopted route | HTTP, HTTPS, and SOCKS through `127.0.0.1:7890` |
 | Required floor | `1.0 MiB/s` |
-| Last result | passed at `6.42 MiB/s`; sampled `desktop-linux-x64` from run `35109607670` (`33554432` bytes in `4.98s`) |
-| Dispatch permission | allowed by network preflight; no workflow dispatched during this retry-only check |
+| Last result | passed at `1.18 MiB/s` minimum and `1.52 MiB/s` average; sampled `desktop-linux-x64` from run `35458153656` (`47824896` bytes in `30.00s`) |
+| Dispatch permission | allowed by the rebuild network preflight; no new workflow dispatched yet |
 
 ## Platform delivery matrix
 
@@ -37,17 +37,17 @@ These rows describe artifacts built from the final source for this locked versio
 
 | Platform | Workflow run | Build | Native qualification | Downloaded locally | Exact-set verified | Public on GitHub | Public on CNB |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Windows x64 | [35455508915](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35455508915) | succeeded | installed-package smoke succeeded, including first start, guarded upgrade, restart, and uninstall | downloaded | verified | no | no |
-| macOS arm64/x64 | [35456891164](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35456891164) | succeeded for both architectures | final DMG and ZIP smoke succeeded for arm64 and x64 | downloaded | verified | no | no |
-| Linux x64 | [35458153656](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35458153656) | succeeded | packaged resources and Linux package smoke succeeded | downloaded | verified | no | no |
+| Windows x64 | previous run [35455508915](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35455508915) | stale after source advanced | previous installed-package smoke succeeded; rebuild not started | previous set retained | pending rebuild | no | no |
+| macOS arm64/x64 | previous run [35456891164](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35456891164) | stale after source advanced | previous final DMG and ZIP smoke succeeded; rebuild not started | previous set retained | pending rebuild | no | no |
+| Linux x64 | previous run [35458153656](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35458153656) | stale after source advanced | previous packaged-resource and package smoke succeeded; rebuild not started | previous set retained | pending rebuild | no | no |
 
 ## Publication state
 
 - GitHub tag: not created.
-- GitHub Release: not found when checked on `2026-09-19`; no platform assets are public there.
+- GitHub tag and Release: `odsh-v0.1.6-alpha.2` not found when checked on `2026-09-20`; no platform assets are public there.
 - CNB anonymous update index: reachable through the recorded proxy but contains no `0.1.6-alpha.2` entry; no platform is publicly distributed through the update index.
-- Bundled-plugin snapshot: `fe0d9405f880cd2f0450e757f8c93d1a9328e5c3f173ac1a54fe2bed054640a8`; identical across accepted platform runs.
-- Local handoff directory: `/Users/6677h/StudioProjects/flaq-deepseek-harness/open-deepseek-harness-desktop/release/0.1.6-alpha.2`; exact seven installers plus `SHA256SUMS` verified.
+- Bundled-plugin snapshot: previous qualified digest `fe0d9405f880cd2f0450e757f8c93d1a9328e5c3f173ac1a54fe2bed054640a8`; the rebuild has not resolved its snapshot.
+- Local handoff directory: `/Users/6677h/StudioProjects/flaq-deepseek-harness/open-deepseek-harness-desktop/release/0.1.6-alpha.2`; it contains the previous exact set and must not be presented or published as the new `origin/master` candidate.
 - Publication authorization: not granted by this ledger. Obtain fresh explicit authorization immediately before tag creation, asset upload, or public Release publication.
 
 ## Updating this ledger
