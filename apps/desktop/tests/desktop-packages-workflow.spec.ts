@@ -131,6 +131,13 @@ describe('desktop package workflow bundled plugins', () => {
     expect(workflow.jobs.checksums?.if).toContain("inputs.target == 'linux-x64'")
   })
 
+  it('allows different platform targets on the same branch to run in parallel', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/desktop-packages.yml'), 'utf8')
+    const workflow = parse(source) as { concurrency: { group: string; 'cancel-in-progress': boolean } }
+    expect(workflow.concurrency.group).toContain('${{ inputs.target }}')
+    expect(workflow.concurrency['cancel-in-progress']).toBe(false)
+  })
+
   it('raises the macOS packaging file limit before electron-builder signs the expanded runtime', () => {
     const source = readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/desktop-packages.yml'), 'utf8')
     const workflow = parse(source) as { jobs: Record<string, WorkflowJob> }

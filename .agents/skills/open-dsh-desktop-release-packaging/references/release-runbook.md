@@ -57,6 +57,18 @@ As soon as the version and release-bound compatibility files are prepared, deriv
 
 Use the final packaging branch. Before dispatching, inspect the workflow and require top-level `permissions: contents: read` with no release-publication step. The workflow has no `publish` input; pass only its declared inputs:
 
+The normal entry point is resumable and performs the speed, disk, remote-head, workflow, download and directory checks as one operation:
+
+```sh
+.agents/skills/open-dsh-desktop-release-packaging/scripts/package-desktop-release.sh \
+  --version <version> \
+  flaqai/open-deepseek-harness-desktop
+```
+
+Its state is stored at `<git-common-dir>/odsh-release-state/<version>.json`. Re-running resumes recorded runs and transfers; it does not dispatch duplicates. If the source revision intentionally changes, use `--restart` only after the new branch is pushed. This archives the old state with a timestamp. The orchestrator never creates tags, GitHub Releases, or CNB uploads.
+
+The manual equivalent begins with Windows:
+
 ```sh
 skill=.agents/skills/open-dsh-desktop-release-packaging
 source "$skill/scripts/configure-cli-proxy.sh"
