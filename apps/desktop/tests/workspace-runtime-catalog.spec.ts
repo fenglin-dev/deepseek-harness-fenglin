@@ -15,6 +15,16 @@ function artifact(target: 'win32-x64' | 'darwin-arm64' | 'darwin-x64' | 'linux-x
     target, fileName: `DeepSeek-Harness-workspace-runtime-${target}.tar.gz`,
     size: 1024, sha256: 'a'.repeat(64), payloadDigest: 'b'.repeat(64), pythonVersion: '3.12.14',
     githubUrl: `https://github.com/example/${target}.tar.gz`, cnbUrl: `https://cnb.cool/example/${target}.tar.gz`,
+    office: {
+      fileName: `DeepSeek-Harness-office-runtime-${target}.tar.gz`,
+      size: 1024, sha256: 'c'.repeat(64), payloadDigest: 'd'.repeat(64),
+      enginePackage: target.startsWith('linux-')
+        ? '@deepseek-ai/libreoffice-kit-wasm'
+        : `@deepseek-ai/libreoffice-kit-${target}`,
+      engineVersion: '0.0.1',
+      githubUrl: `https://github.com/example/office-${target}.tar.gz`,
+      cnbUrl: `https://cnb.cool/example/office-${target}.tar.gz`,
+    },
   }
 }
 const manifest = {

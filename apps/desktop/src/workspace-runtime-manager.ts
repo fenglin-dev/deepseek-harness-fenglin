@@ -12,6 +12,7 @@ import {
   type WorkspaceRuntimeArtifact,
   type WorkspaceRuntimeCapability,
   type WorkspaceRuntimeManifest,
+  type WorkspaceRuntimeOfficeArtifact,
   type WorkspaceRuntimeTarget,
 } from './workspace-runtime-manifest.ts'
 import { PythonEnvironment, type PythonEnvironmentPort, type PythonEnvironmentProbe, type PythonPackagePlan } from './workspace-python-environment.ts'
@@ -59,6 +60,7 @@ export interface WorkspaceRuntimeOutputRead {
 
 interface RuntimeReference {
   payloadDigest: string
+  officePayloadDigest?: string
   desktopVersion: string
   state: 'pending-enable' | 'enabled' | 'pending-remove' | 'cleaning'
   source?: 'managed' | 'custom'
@@ -79,11 +81,20 @@ interface PersistedState {
 
 interface Job {
   snapshot: WorkspaceRuntimeJobSnapshot
-  artifact?: WorkspaceRuntimeArtifact
+  artifact?: DownloadArtifact
   controller?: AbortController
   output: string
   outputBase: number
   completion?: Promise<void>
+}
+
+interface DownloadArtifact {
+  readonly fileName: string
+  readonly size: number
+  readonly sha256: string
+  readonly payloadDigest: string
+  readonly githubUrl: string
+  readonly cnbUrl: string
 }
 
 export interface OptionalRuntimeManagerOptions {
@@ -123,8 +134,10 @@ function object(value: unknown): Record<string, unknown> {
 function reference(value: unknown): RuntimeReference | undefined {
   if (value === undefined) return undefined
   const record = object(value)
-  if (Object.keys(record).some(key => !['payloadDigest', 'desktopVersion', 'state', 'source', 'python'].includes(key))
+  if (Object.keys(record).some(key => !['payloadDigest', 'officePayloadDigest', 'desktopVersion', 'state', 'source', 'python'].includes(key))
     || typeof record.payloadDigest !== 'string' || !/^[a-f0-9]{64}$/u.test(record.payloadDigest)
+    || (record.officePayloadDigest !== undefined
+      && (typeof record.officePayloadDigest !== 'string' || !/^[a-f0-9]{64}$/u.test(record.officePayloadDigest)))
     || typeof record.desktopVersion !== 'string'
     || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(record.desktopVersion)
     || !['pending-enable', 'enabled', 'pending-remove', 'cleaning'].includes(String(record.state))
@@ -255,9 +268,13 @@ export class OptionalRuntimeManager {
       const reference = record[capabilityId]
       if (reference === undefined) return { capabilityId, phase: 'not-installed' }
       if (reference.state === 'cleaning') return { capabilityId, phase: 'cleaning' }
-      if (reference.state === 'pending-enable' || reference.state === 'pending-remove') {
+      if (reference.state === 'pending-remove') {
         return { capabilityId, phase: 'waiting-restart' }
       }
+      if (capabilityId === 'office' && reference.officePayloadDigest === undefined) {
+        return { capabilityId, phase: 'needs-update' }
+      }
+      if (reference.state === 'pending-enable') return { capabilityId, phase: 'waiting-restart' }
       if (reference.desktopVersion !== this.#options.desktopVersion) return { capabilityId, phase: 'needs-update' }
       return { capabilityId, phase: 'enabled' }
     }
@@ -290,6 +307,9 @@ export class OptionalRuntimeManager {
       const value = record[capability]
       if (value?.source !== 'custom' && value !== undefined && !state.pendingCleanup.includes(value.payloadDigest)) {
         state.pendingCleanup.push(value.payloadDigest)
+      }
+      if (value?.officePayloadDigest !== undefined && !state.pendingCleanup.includes(value.officePayloadDigest)) {
+        state.pendingCleanup.push(value.officePayloadDigest)
       }
       if (value !== undefined) record[capability] = { ...value, state: 'pending-remove' }
     }
@@ -394,11 +414,8 @@ export class OptionalRuntimeManager {
     const home = normalizedHome(this.#options.getHome())
     const state = await this.#readState()
     const record = state.homes[home] ??= {}
-    if (record.python !== undefined) {
+    if (record.python !== undefined && capabilityId === 'ptc') {
       const probe = await this.#python.probe(record.python.executable)
-      if (capabilityId === 'office' && this.#python.plan(probe, runtimeLock.pythonPackages).changes.length > 0) {
-        throw new Error('desktop: Office dependencies are not installed in the selected Python environment')
-      }
       record.python = probe
       record[capabilityId] = {
         payloadDigest: createHash('sha256').update(probe.executable).digest('hex'),
@@ -412,8 +429,17 @@ export class OptionalRuntimeManager {
     const target = this.#target() as WorkspaceRuntimeTarget
     const artifact = manifest.artifacts[target]
     const payloadRoot = this.payloadRoot(artifact)
-    if (!await exists(join(payloadRoot, 'runtime.json'))) throw new Error('desktop: workspace runtime must be downloaded before activation')
-    await this.#validatePayload(payloadRoot, artifact)
+    if (record.python === undefined) {
+      if (!await exists(join(payloadRoot, 'runtime.json'))) throw new Error('desktop: workspace runtime must be downloaded before activation')
+      await this.#validatePythonPayload(payloadRoot, artifact)
+    }
+    if (capabilityId === 'office') {
+      const officeRoot = this.#payloadRoot(artifact.office, target)
+      if (!await exists(join(officeRoot, 'office-runtime.json'))) {
+        throw new Error('desktop: official Office engine must be downloaded before activation')
+      }
+      await this.#validateOfficePayload(officeRoot, artifact.office, target)
+    }
     if (state.pendingCleanup.includes(artifact.payloadDigest)) {
       await this.#collectUnused()
       if (state.pendingCleanup.includes(artifact.payloadDigest)) {
@@ -423,10 +449,28 @@ export class OptionalRuntimeManager {
         throw new Error('desktop: workspace runtime must be downloaded again after cleanup')
       }
     }
+    if (record.python !== undefined) {
+      const probe = await this.#python.probe(record.python.executable)
+      if (this.#python.plan(probe, runtimeLock.pythonPackages).changes.length > 0) {
+        throw new Error('desktop: Office dependencies are not installed in the selected Python environment')
+      }
+      record.python = probe
+    }
     const previous = record[capabilityId]
     if (previous !== undefined && previous.payloadDigest !== artifact.payloadDigest
       && !state.pendingCleanup.includes(previous.payloadDigest)) state.pendingCleanup.push(previous.payloadDigest)
-    record[capabilityId] = { payloadDigest: artifact.payloadDigest, desktopVersion: manifest.desktopVersion, state: 'pending-enable', source: 'managed' }
+    if (previous?.officePayloadDigest !== undefined && previous.officePayloadDigest !== artifact.office.payloadDigest
+      && !state.pendingCleanup.includes(previous.officePayloadDigest)) state.pendingCleanup.push(previous.officePayloadDigest)
+    record[capabilityId] = {
+      payloadDigest: record.python === undefined
+        ? artifact.payloadDigest
+        : createHash('sha256').update(record.python.executable).digest('hex'),
+      ...(capabilityId === 'office' ? { officePayloadDigest: artifact.office.payloadDigest } : {}),
+      desktopVersion: manifest.desktopVersion,
+      state: 'pending-enable',
+      source: record.python === undefined ? 'managed' : 'custom',
+      ...(record.python === undefined ? {} : { python: record.python.executable }),
+    }
     await this.#writeState()
     return this.get()
   }
@@ -462,9 +506,22 @@ export class OptionalRuntimeManager {
     if (value.source === 'custom' && value.python !== undefined) {
       const probe = (await this.#readState()).homes[normalizedHome(home)]?.python
       if (probe === undefined) return undefined
-      return { payloadRoot: dirname(value.python), desktopVersion: value.desktopVersion, python: probe, custom: true }
+      return {
+        payloadRoot: dirname(value.python),
+        desktopVersion: value.desktopVersion,
+        python: probe,
+        custom: true,
+      }
     }
     return { payloadRoot: join(this.#options.cacheRoot, value.payloadDigest, target), desktopVersion: value.desktopVersion }
+  }
+
+  async officeNodeModules(home = this.#options.getHome()): Promise<string | undefined> {
+    const target = this.#target()
+    const value = (await this.#readState()).homes[normalizedHome(home)]?.office
+    if (target === undefined || value === undefined || value.state === 'pending-remove' || value.state === 'cleaning') return undefined
+    if (value.officePayloadDigest === undefined) return undefined
+    return join(this.#options.cacheRoot, value.officePayloadDigest, target, 'office', 'node_modules')
   }
 
   async commitPending(home = this.#options.getHome()): Promise<void> {
@@ -477,11 +534,17 @@ export class OptionalRuntimeManager {
       if (reference?.state === 'pending-enable') record[capability] = { ...reference, state: 'enabled' }
       else if (reference?.state === 'pending-remove') {
         if (reference.source === 'custom') {
+          if (reference.officePayloadDigest !== undefined && !state.pendingCleanup.includes(reference.officePayloadDigest)) {
+            state.pendingCleanup.push(reference.officePayloadDigest)
+          }
           if (capability === 'office') delete record.office
           else delete record.ptc
         }
         else {
           if (!state.pendingCleanup.includes(reference.payloadDigest)) state.pendingCleanup.push(reference.payloadDigest)
+          if (reference.officePayloadDigest !== undefined && !state.pendingCleanup.includes(reference.officePayloadDigest)) {
+            state.pendingCleanup.push(reference.officePayloadDigest)
+          }
           record[capability] = { ...reference, state: 'cleaning' }
         }
       }
@@ -491,7 +554,11 @@ export class OptionalRuntimeManager {
   }
 
   payloadRoot(artifact: WorkspaceRuntimeArtifact): string {
-    return join(this.#options.cacheRoot, artifact.payloadDigest, artifact.target)
+    return this.#payloadRoot(artifact, artifact.target)
+  }
+
+  #payloadRoot(artifact: DownloadArtifact, target: WorkspaceRuntimeTarget): string {
+    return join(this.#options.cacheRoot, artifact.payloadDigest, target)
   }
 
   async dispose(): Promise<void> {
@@ -515,17 +582,39 @@ export class OptionalRuntimeManager {
     this.#assertManifest(manifest)
     const target = this.#target() as WorkspaceRuntimeTarget
     const artifact = manifest.artifacts[target]
+    const record = (await this.#readState()).homes[normalizedHome(this.#options.getHome())]
+    if (record?.python === undefined || job.snapshot.capabilityId === 'ptc') {
+      await this.#ensureArtifact(job, artifact, target, 'Python workspace runtime', signal,
+        root => this.#validatePythonPayload(root, artifact))
+    }
+    if (job.snapshot.capabilityId === 'office') {
+      await this.#ensureArtifact(job, artifact.office, target, 'official Office engine', signal,
+        root => this.#validateOfficePayload(root, artifact.office, target))
+    }
+    job.snapshot = { ...job.snapshot, phase: 'succeeded', stage: 'ready', percent: 100 }
+    this.#append(job, 'Optional runtime downloads are verified. Choose activate, then quick restart.\n')
+  }
+
+  async #ensureArtifact(
+    job: Job,
+    artifact: DownloadArtifact,
+    target: WorkspaceRuntimeTarget,
+    label: string,
+    signal: AbortSignal,
+    validate: (root: string) => Promise<void>,
+  ): Promise<void> {
     job.artifact = artifact
-    const payloadRoot = this.payloadRoot(artifact)
-    if (await exists(join(payloadRoot, 'runtime.json'))) {
+    const payloadRoot = this.#payloadRoot(artifact, target)
+    const metadata = label === 'official Office engine' ? 'office-runtime.json' : 'runtime.json'
+    if (await exists(join(payloadRoot, metadata))) {
       try {
-        await this.#validatePayload(payloadRoot, artifact)
-        job.snapshot = { ...job.snapshot, phase: 'succeeded', stage: 'ready', transferredBytes: artifact.size, totalBytes: artifact.size, percent: 100 }
-        this.#append(job, 'Verified workspace runtime is already present in the shared cache.\n')
+        await validate(payloadRoot)
+        job.snapshot = { ...job.snapshot, transferredBytes: artifact.size, totalBytes: artifact.size, percent: 100 }
+        this.#append(job, `Verified ${label} is already present in the shared cache.\n`)
         return
       } catch {
         await rm(payloadRoot, { recursive: true, force: true })
-        this.#append(job, 'Discarded an incomplete shared runtime before downloading a clean payload.\n')
+        this.#append(job, `Discarded an incomplete ${label} before downloading a clean payload.\n`)
       }
     }
     await mkdir(join(this.#options.cacheRoot, '.downloads'), { recursive: true })
@@ -545,18 +634,18 @@ export class OptionalRuntimeManager {
       await this.#inspectArchive(part)
       await x({ file: part, cwd: staging, strict: true, preservePaths: false })
       const extracted = join(staging, 'workspace-runtime')
-      await this.#validatePayload(extracted, artifact)
+      await validate(extracted)
       await mkdir(dirname(payloadRoot), { recursive: true })
       if (!await exists(payloadRoot)) await rename(extracted, payloadRoot)
       await rm(part, { force: true })
     } finally {
       await rm(staging, { recursive: true, force: true })
     }
-    job.snapshot = { ...job.snapshot, phase: 'succeeded', stage: 'ready', transferredBytes: artifact.size, totalBytes: artifact.size, percent: 100 }
-    this.#append(job, 'Workspace runtime downloaded and verified. Choose activate, then quick restart.\n')
+    job.snapshot = { ...job.snapshot, transferredBytes: artifact.size, totalBytes: artifact.size, percent: 100 }
+    this.#append(job, `${label} downloaded and verified.\n`)
   }
 
-  async #download(job: Job, artifact: WorkspaceRuntimeArtifact, part: string, signal: AbortSignal): Promise<number> {
+  async #download(job: Job, artifact: DownloadArtifact, part: string, signal: AbortSignal): Promise<number> {
     let offset = 0
     try { offset = (await stat(part)).size } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     if (offset > artifact.size) { await rm(part, { force: true }); offset = 0 }
@@ -615,6 +704,7 @@ export class OptionalRuntimeManager {
     const retained = new Set<string>()
     for (const record of Object.values(state.homes)) {
       if (record.office !== undefined && record.office.state !== 'cleaning' && record.office.source !== 'custom') retained.add(record.office.payloadDigest)
+      if (record.office?.officePayloadDigest !== undefined && record.office.state !== 'cleaning') retained.add(record.office.officePayloadDigest)
       if (record.ptc !== undefined && record.ptc.state !== 'cleaning' && record.ptc.source !== 'custom') retained.add(record.ptc.payloadDigest)
     }
     for (const digest of [...state.pendingCleanup]) {
@@ -624,7 +714,8 @@ export class OptionalRuntimeManager {
       }
       state.pendingCleanup = state.pendingCleanup.filter(value => value !== digest)
       for (const record of Object.values(state.homes)) {
-        if (record.office?.state === 'cleaning' && record.office.payloadDigest === digest) delete record.office
+        if (record.office?.state === 'cleaning'
+          && (record.office.payloadDigest === digest || record.office.officePayloadDigest === digest)) delete record.office
         if (record.ptc?.state === 'cleaning' && record.ptc.payloadDigest === digest) delete record.ptc
       }
       state.homes = Object.fromEntries(Object.entries(state.homes)
@@ -633,7 +724,7 @@ export class OptionalRuntimeManager {
     await this.#writeState()
   }
 
-  async #validatePayload(root: string, artifact: WorkspaceRuntimeArtifact): Promise<void> {
+  async #validatePythonPayload(root: string, artifact: WorkspaceRuntimeArtifact): Promise<void> {
     const value: unknown = JSON.parse(await readFile(join(root, 'runtime.json'), 'utf8'))
     if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('desktop: workspace-runtime payload metadata is invalid')
     const manifest = value as Record<string, unknown>
@@ -656,7 +747,42 @@ export class OptionalRuntimeManager {
     }
   }
 
-  #partialPath(artifact: WorkspaceRuntimeArtifact, target: WorkspaceRuntimeTarget): string {
+  async #validateOfficePayload(
+    root: string,
+    artifact: WorkspaceRuntimeOfficeArtifact,
+    target: WorkspaceRuntimeTarget,
+  ): Promise<void> {
+    const value: unknown = JSON.parse(await readFile(join(root, 'office-runtime.json'), 'utf8'))
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('desktop: workspace-runtime Office engine metadata is invalid')
+    }
+    const manifest = value as Record<string, unknown>
+    const [platform, arch] = target.split('-')
+    if (manifest.schema !== 'dsh/office-runtime-payload/v1'
+      || manifest.desktopVersion !== this.#options.desktopVersion
+      || manifest.platform !== platform || manifest.arch !== arch
+      || manifest.payloadDigest !== artifact.payloadDigest) {
+      throw new Error('desktop: workspace-runtime Office engine identity does not match the signed catalog')
+    }
+    const officeEngine = manifest.officeEngine
+    if (officeEngine === null || typeof officeEngine !== 'object' || Array.isArray(officeEngine)) {
+      throw new Error('desktop: workspace-runtime Office engine metadata is invalid')
+    }
+    const engine = officeEngine as Record<string, unknown>
+    const expectedEngine = artifact.enginePackage
+    if (engine.package !== expectedEngine || engine.version !== artifact.engineVersion) {
+      throw new Error('desktop: workspace-runtime Office engine does not match this platform')
+    }
+    const engineManifest = JSON.parse(await readFile(join(root, 'office', 'node_modules', ...expectedEngine.split('/'), 'package.json'), 'utf8')) as {
+      name?: unknown
+      version?: unknown
+    }
+    if (engineManifest.name !== expectedEngine || engineManifest.version !== engine.version) {
+      throw new Error('desktop: workspace-runtime Office engine is incomplete')
+    }
+  }
+
+  #partialPath(artifact: DownloadArtifact, target: WorkspaceRuntimeTarget): string {
     return join(this.#options.cacheRoot, '.downloads', `${artifact.payloadDigest}-${target}.part`)
   }
 

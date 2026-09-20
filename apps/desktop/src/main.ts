@@ -8,7 +8,7 @@ import {
 } from './process-observer.ts'
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir, userInfo } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, Notification, safeStorage, session, shell, Tray,
@@ -2252,9 +2252,10 @@ async function startApplication(): Promise<void> {
   ipcMain.handle(DESKTOP_IPC.workspaceRuntimesGet, event => requireWorkspaceRuntimes(event.sender).get())
   ipcMain.handle(DESKTOP_IPC.workspaceRuntimesChoosePython, async (event) => {
     const manager = requireWorkspaceRuntimes(event.sender)
+    const title = shellMessages(app.getLocale()).choosePythonInterpreter
     const result = mainWindow === undefined
-      ? await dialog.showOpenDialog({ title: 'Select Python interpreter', properties: ['openFile'] })
-      : await dialog.showOpenDialog(mainWindow, { title: 'Select Python interpreter', properties: ['openFile'] })
+      ? await dialog.showOpenDialog({ title, properties: ['openFile'] })
+      : await dialog.showOpenDialog(mainWindow, { title, properties: ['openFile'] })
     const path = result.filePaths[0]
     return path === undefined ? undefined : manager.selectCustomPython(path)
   })
@@ -3348,6 +3349,11 @@ async function startApplication(): Promise<void> {
     }
     runtimePendingApplied = true
   }
+  const officeNodeModules = await workspaceRuntimeManager.officeNodeModules(dshHome)
+  if (officeNodeModules === undefined) delete harnessEnvironment.NODE_PATH
+  else harnessEnvironment.NODE_PATH = [officeNodeModules, harnessEnvironment.NODE_PATH]
+    .filter((value): value is string => typeof value === 'string' && value !== '')
+    .join(delimiter)
   const installedProfileDependencies: Record<string, string> = {}
   try {
     const profileManifest = JSON.parse(

@@ -120,7 +120,11 @@ export function WorkspaceRuntimesSection(props: Props): ReactNode {
 
   const installOffice = async (allowPackageChanges: boolean): Promise<void> => {
     setError(undefined)
-    try { setSnapshot(await props.installWorkspaceOffice(allowPackageChanges)); setPackagePlanOpen(false) }
+    try {
+      setSnapshot(await props.installWorkspaceOffice(allowPackageChanges))
+      setPackagePlanOpen(false)
+      await start('office')
+    }
     catch { setError(props.t('external.runtime.office.installError')) }
   }
 
@@ -160,8 +164,7 @@ export function WorkspaceRuntimesSection(props: Props): ReactNode {
           const job = jobs[definition.id]
           const downloaded = job?.phase === 'succeeded'
             || (snapshot?.sharedPayload !== undefined && status?.phase !== 'needs-update')
-            || (snapshot?.python?.source === 'custom' && (definition.id === 'ptc'
-              || (snapshot.python.plan?.changes.length ?? 0) === 0))
+            || (snapshot?.python?.source === 'custom' && definition.id === 'ptc')
           const waiting = status?.phase === 'waiting-restart'
           const enabled = status?.phase === 'enabled'
           const unavailable = status?.phase === 'unsupported' || status?.phase === 'nas-unavailable'
@@ -191,7 +194,7 @@ export function WorkspaceRuntimesSection(props: Props): ReactNode {
                     }}>{props.t('external.runtime.action.activate')}</Button>
                       : <Button variant="primary" disabled={unavailable || job?.phase === 'running'} onClick={() => {
                         if (definition.id === 'office' && snapshot?.python?.source === 'custom') {
-                          if ((snapshot.python.plan?.changes.length ?? 0) === 0) void activate('office')
+                          if ((snapshot.python.plan?.changes.length ?? 0) === 0) void start('office')
                           else if (snapshot.python.plan?.requiresConfirmation === true) setPackagePlanOpen(true)
                           else void installOffice(false)
                         } else void start(definition.id)

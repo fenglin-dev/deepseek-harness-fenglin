@@ -10,6 +10,16 @@ interface MutableArtifact {
   pythonVersion: string
   githubUrl: string
   cnbUrl: string
+  office: {
+    fileName: string
+    size: number
+    sha256: string
+    payloadDigest: string
+    enginePackage: string
+    engineVersion: string
+    githubUrl: string
+    cnbUrl: string
+  }
 }
 
 interface MutableManifest {
@@ -31,6 +41,18 @@ function manifest(): MutableManifest {
       sha256: 'a'.repeat(64), payloadDigest: 'b'.repeat(64), pythonVersion: '3.12.14',
       githubUrl: `https://github.com/example/release/${target}.tar.gz`,
       cnbUrl: `https://cnb.cool/example/release/${target}.tar.gz`,
+      office: {
+        fileName: `DeepSeek-Harness-office-runtime-${target}.tar.gz`,
+        size: 100,
+        sha256: 'c'.repeat(64),
+        payloadDigest: 'd'.repeat(64),
+        enginePackage: target.startsWith('linux-')
+          ? '@deepseek-ai/libreoffice-kit-wasm'
+          : `@deepseek-ai/libreoffice-kit-${target}`,
+        engineVersion: '0.0.1',
+        githubUrl: `https://github.com/example/release/office-${target}.tar.gz`,
+        cnbUrl: `https://cnb.cool/example/release/office-${target}.tar.gz`,
+      },
     }])),
   }
 }

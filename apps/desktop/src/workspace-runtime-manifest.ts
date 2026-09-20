@@ -5,6 +5,17 @@ export type WorkspaceRuntimeCapability = typeof WORKSPACE_RUNTIME_CAPABILITIES[n
 export const WORKSPACE_RUNTIME_TARGETS = ['win32-x64', 'darwin-arm64', 'darwin-x64', 'linux-x64'] as const
 export type WorkspaceRuntimeTarget = typeof WORKSPACE_RUNTIME_TARGETS[number]
 
+export interface WorkspaceRuntimeOfficeArtifact {
+  readonly fileName: string
+  readonly size: number
+  readonly sha256: string
+  readonly payloadDigest: string
+  readonly enginePackage: string
+  readonly engineVersion: string
+  readonly githubUrl: string
+  readonly cnbUrl: string
+}
+
 export interface WorkspaceRuntimeArtifact {
   readonly target: WorkspaceRuntimeTarget
   readonly fileName: string
@@ -14,6 +25,7 @@ export interface WorkspaceRuntimeArtifact {
   readonly pythonVersion: string
   readonly githubUrl: string
   readonly cnbUrl: string
+  readonly office: WorkspaceRuntimeOfficeArtifact
 }
 
 export interface WorkspaceRuntimeManifest {
@@ -27,6 +39,7 @@ export interface WorkspaceRuntimeManifest {
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u
 const DIGEST = /^[a-f0-9]{64}$/u
 const FILE_NAME = /^DeepSeek-Harness-workspace-runtime-(?:win32-x64|darwin-arm64|darwin-x64|linux-x64)\.tar\.gz$/u
+const OFFICE_FILE_NAME = /^DeepSeek-Harness-office-runtime-(?:win32-x64|darwin-arm64|darwin-x64|linux-x64)\.tar\.gz$/u
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`desktop: ${label} must be an object`)
@@ -64,6 +77,29 @@ function artifact(value: unknown, target: WorkspaceRuntimeTarget): WorkspaceRunt
     sha256: string(source, 'sha256', DIGEST),
     payloadDigest: string(source, 'payloadDigest', DIGEST),
     pythonVersion: string(source, 'pythonVersion', /^3\.12\.\d+$/u),
+    githubUrl: httpsUrl(source, 'githubUrl'),
+    cnbUrl: httpsUrl(source, 'cnbUrl'),
+    office: officeArtifact(source.office, target),
+  }
+}
+
+function officeArtifact(value: unknown, target: WorkspaceRuntimeTarget): WorkspaceRuntimeOfficeArtifact {
+  const source = record(value, `workspace-runtime ${target} Office artifact`)
+  const expectedFileName = `DeepSeek-Harness-office-runtime-${target}.tar.gz`
+  const expectedPackage = target.startsWith('linux-')
+    ? '@deepseek-ai/libreoffice-kit-wasm'
+    : `@deepseek-ai/libreoffice-kit-${target}`
+  if (source.fileName !== expectedFileName || source.enginePackage !== expectedPackage
+    || !Number.isSafeInteger(source.size) || (source.size as number) <= 0 || (source.size as number) > 2 * 1024 * 1024 * 1024) {
+    throw new TypeError(`desktop: workspace-runtime manifest has invalid ${target} Office artifact`)
+  }
+  return {
+    fileName: string(source, 'fileName', OFFICE_FILE_NAME),
+    size: source.size as number,
+    sha256: string(source, 'sha256', DIGEST),
+    payloadDigest: string(source, 'payloadDigest', DIGEST),
+    enginePackage: string(source, 'enginePackage'),
+    engineVersion: string(source, 'engineVersion', VERSION),
     githubUrl: httpsUrl(source, 'githubUrl'),
     cnbUrl: httpsUrl(source, 'cnbUrl'),
   }

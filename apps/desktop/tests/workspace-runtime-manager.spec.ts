@@ -23,6 +23,7 @@ async function fixture(options: {
   roots.push(root)
   const source = join(root, 'source', 'workspace-runtime')
   const digest = 'b'.repeat(64)
+  const officeDigest = 'c'.repeat(64)
   await mkdir(join(source, 'python', 'bin'), { recursive: true })
   await mkdir(join(source, 'python', 'lib', 'python3.12', 'site-packages'), { recursive: true })
   await writeFile(join(source, 'python', 'bin', 'python3'), '#!/bin/sh\n')
@@ -33,6 +34,19 @@ async function fixture(options: {
   const archive = join(root, 'archive.tar.gz')
   await c({ cwd: join(root, 'source'), file: archive, gzip: true }, ['workspace-runtime'])
   const bytes = await readFile(archive)
+  const officeSource = join(root, 'office-source', 'workspace-runtime')
+  await mkdir(join(officeSource, 'office', 'node_modules', '@deepseek-ai', 'libreoffice-kit-darwin-arm64'), { recursive: true })
+  await writeFile(join(officeSource, 'office', 'node_modules', '@deepseek-ai', 'libreoffice-kit-darwin-arm64', 'package.json'), JSON.stringify({
+    name: '@deepseek-ai/libreoffice-kit-darwin-arm64', version: '0.0.1',
+  }))
+  await writeFile(join(officeSource, 'office-runtime.json'), JSON.stringify({
+    schema: 'dsh/office-runtime-payload/v1', desktopVersion: '0.1.6-alpha.2',
+    platform: 'darwin', arch: 'arm64', payloadDigest: officeDigest,
+    officeEngine: { package: '@deepseek-ai/libreoffice-kit-darwin-arm64', version: '0.0.1' },
+  }))
+  const officeArchive = join(root, 'office-archive.tar.gz')
+  await c({ cwd: join(root, 'office-source'), file: officeArchive, gzip: true }, ['workspace-runtime'])
+  const officeBytes = await readFile(officeArchive)
   const artifact = {
     target: 'darwin-arm64' as const,
     fileName: 'DeepSeek-Harness-workspace-runtime-darwin-arm64.tar.gz',
@@ -40,6 +54,13 @@ async function fixture(options: {
     sha256: options.corruptDigest === true ? 'a'.repeat(64) : createHash('sha256').update(bytes).digest('hex'),
     payloadDigest: digest, pythonVersion: '3.12.14',
     githubUrl: 'https://github.com/example/archive.tar.gz', cnbUrl: 'https://cnb.cool/example/archive.tar.gz',
+    office: {
+      fileName: 'DeepSeek-Harness-office-runtime-darwin-arm64.tar.gz',
+      size: officeBytes.length, sha256: createHash('sha256').update(officeBytes).digest('hex'),
+      payloadDigest: officeDigest, enginePackage: '@deepseek-ai/libreoffice-kit-darwin-arm64', engineVersion: '0.0.1',
+      githubUrl: 'https://github.com/example/office-archive.tar.gz',
+      cnbUrl: 'https://cnb.cool/example/office-archive.tar.gz',
+    },
   }
   const manifest = {
     schema: 'dsh/desktop-workspace-runtimes/v1', desktopVersion: '0.1.6-alpha.2',
@@ -54,13 +75,14 @@ async function fixture(options: {
     desktopVersion: '0.1.6-alpha.2', platform: options.platform ?? 'darwin', arch: options.arch ?? 'arm64',
     target: 'darwin-arm64', getHome: () => home, isNas: () => options.nas === true,
     source: () => 'github', loadManifest: () => Promise.resolve(manifest),
-    fetch: (_url, init) => {
+    fetch: (url, init) => {
       fetchCount += 1
+      const selectedBytes = url.includes('office-archive') ? officeBytes : bytes
       const range = new Headers(init?.headers).get('range')
       const offset = Number(/^bytes=(\d+)-$/u.exec(range ?? '')?.[1] ?? 0)
-      const body = bytes.subarray(offset)
+      const body = selectedBytes.subarray(offset)
       const headers: Record<string, string> = { 'content-length': String(body.byteLength) }
-      if (offset > 0) headers['content-range'] = `bytes ${offset}-${bytes.byteLength - 1}/${bytes.byteLength}`
+      if (offset > 0) headers['content-range'] = `bytes ${offset}-${selectedBytes.byteLength - 1}/${selectedBytes.byteLength}`
       if (options.slowDownload !== true || offset > 0) {
         return Promise.resolve(new Response(body, { status: offset > 0 ? 206 : 200, headers }))
       }
@@ -78,7 +100,7 @@ async function fixture(options: {
     ...(options.pythonEnvironment === undefined ? {} : { pythonEnvironment: options.pythonEnvironment }),
   })
   return {
-    manager, root, digest, stateFile, fetchCount: () => fetchCount,
+    manager, root, digest, officeDigest, stateFile, fetchCount: () => fetchCount,
     setHome: (name: string) => { home = join(root, name) },
   }
 }
@@ -145,10 +167,14 @@ describe('OptionalRuntimeManager', () => {
     const { manager } = await fixture({ pythonEnvironment })
     await manager.selectCustomPython('/custom/python')
     expect((await manager.get()).python).toMatchObject({ source: 'custom', probe: { executable: '/custom/python' } })
+    await expect(manager.activate('office')).rejects.toThrow(/downloaded/u)
+    const job = await manager.start('office')
+    await expect(settle(manager, job.jobId)).resolves.toMatchObject({ phase: 'succeeded' })
     await expect(manager.activate('office')).rejects.toThrow(/Office dependencies/u)
     await manager.installCustomOffice(false)
     await manager.activate('office')
     expect(await manager.pending()).toEqual({ office: 'enable', ptc: undefined })
+    await expect(manager.officeNodeModules()).resolves.toMatch(/office[/\\]node_modules$/u)
     await manager.activate('ptc')
     expect(await manager.pending()).toEqual({ office: 'enable', ptc: 'enable' })
   })
@@ -172,7 +198,7 @@ describe('OptionalRuntimeManager', () => {
     )
     const second = await manager.start('ptc')
     await expect(settle(manager, second.jobId)).resolves.toMatchObject({ phase: 'succeeded' })
-    expect(fetchCount()).toBe(2)
+    expect(fetchCount()).toBe(3)
     await manager.dispose()
   })
 
@@ -189,6 +215,21 @@ describe('OptionalRuntimeManager', () => {
     await expect(manager.get()).rejects.toThrow(/invalid workspace-runtime state/u)
   })
 
+  it('requires an Office engine download for references written before engine payloads were split', async () => {
+    const { manager, stateFile, root, digest } = await fixture()
+    await mkdir(join(stateFile, '..'), { recursive: true })
+    await writeFile(stateFile, JSON.stringify({
+      schema: 'open-dsh-desktop/workspace-runtimes/v1',
+      homes: { [join(root, 'home-one')]: { office: {
+        payloadDigest: digest, desktopVersion: '0.1.6-alpha.2', state: 'enabled', source: 'managed',
+      } } },
+      pendingCleanup: [],
+    }))
+
+    expect((await manager.get()).capabilities.office.phase).toBe('needs-update')
+    await expect(manager.officeNodeModules()).resolves.toBeUndefined()
+  })
+
   it('pauses after retaining partial bytes and resumes the same job with an HTTP range request', async () => {
     const { manager, fetchCount } = await fixture({ slowDownload: true })
     const started = await manager.start('office')
@@ -201,6 +242,6 @@ describe('OptionalRuntimeManager', () => {
     const resumed = await manager.start('office')
     expect(resumed.jobId).toBe(started.jobId)
     await expect(settle(manager, started.jobId)).resolves.toMatchObject({ phase: 'succeeded' })
-    expect(fetchCount()).toBe(2)
+    expect(fetchCount()).toBe(3)
   })
 })
