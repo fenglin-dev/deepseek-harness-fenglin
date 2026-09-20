@@ -1,7 +1,7 @@
 /** Fenglin: merge legacy session homes into the active DSH_HOME on upgrade. */
 
 import { createHash } from 'node:crypto'
-import { copyFile, lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 
