@@ -40,7 +40,16 @@ chmod +x "$scripts"/*.sh
 cat > "$temporary/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$1 $2" == "workflow run" ]]; then
+if [[ "$1 $2" == "run list" ]]; then
+  case "$*" in
+    *"windows-x64"*) target=windows-x64; id=101 ;;
+    *"macos"*) target=macos; id=202 ;;
+    *"linux-x64"*) target=linux-x64; id=303 ;;
+    *) exit 0 ;;
+  esac
+  grep -q "^dispatch $target $id " "$ODSH_FIXTURE_GH_LOG" 2>/dev/null && printf '%s\n' "$id"
+  exit 0
+elif [[ "$1 $2" == "workflow run" ]]; then
   target=
   refresh=
   snapshot=none
@@ -63,7 +72,6 @@ if [[ "$1 $2" == "workflow run" ]]; then
     *) exit 2 ;;
   esac
   echo "dispatch $target $id refresh=$refresh snapshot=$snapshot" >> "$ODSH_FIXTURE_GH_LOG"
-  echo "https://github.test/actions/runs/$id"
 elif [[ "$1 $2" == "run view" ]]; then
   id=$3
   echo "view $id" >> "$ODSH_FIXTURE_GH_LOG"

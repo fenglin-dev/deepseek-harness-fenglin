@@ -1,5 +1,6 @@
 # Build each desktop artifact on the operating system and CPU architecture it ships for.
 name: Desktop packages
+run-name: Desktop packages ${{ inputs.target }} ${{ inputs.orchestration_id || github.run_id }}
 
 on:
   workflow_dispatch:
@@ -21,6 +22,11 @@ on:
         default: true
       bundled_plugin_run_id:
         description: Reuse the bundled plugin snapshot from this same-commit run ID
+        required: false
+        type: string
+        default: ''
+      orchestration_id:
+        description: Stable local orchestration key used to recover an already dispatched run
         required: false
         type: string
         default: ''

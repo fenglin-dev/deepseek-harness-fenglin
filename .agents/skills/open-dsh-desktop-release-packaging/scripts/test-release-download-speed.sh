@@ -52,7 +52,7 @@ if [[ "$metrics" == 1 ]]; then
       exit 35
     fi
   fi
-  printf '8388608\t4.000000\t%s\t206\n' "$ODSH_FIXTURE_SPEED_BPS"
+  printf '8388608\t4.000000\t%s\t%s\n' "$ODSH_FIXTURE_SPEED_BPS" "${ODSH_FIXTURE_HTTP_CODE:-206}"
 else
   printf 'HTTP/1.1 302 Found\r\nLocation: https://fixture.invalid/artifact.zip\r\n\r\n' > "$header_file"
 fi
@@ -110,6 +110,21 @@ transport_status=$?
 set -e
 [[ "$transport_status" == 74 ]] || {
   echo "transport-only speed failure exited $transport_status, expected 74" >&2
+  exit 1
+}
+
+set +e
+PATH="$fake_bin:$PATH" \
+ODSH_FIXTURE_SPEED_BPS=2097152 \
+ODSH_FIXTURE_HTTP_CODE=503 \
+ODSH_SPEED_CHECK_ATTEMPTS=2 \
+ODSH_SPEED_CHECK_RETRY_DELAY_SECONDS=0 \
+ODSH_MIN_DOWNLOAD_MIBPS=1 \
+  "$script_directory/check-release-download-speed.sh" fixture/repository --artifact-id 4242 --artifact-name desktop-macos-arm64
+http_error_status=$?
+set -e
+[[ "$http_error_status" == 74 ]] || {
+  echo "HTTP error body was accepted as a valid speed sample" >&2
   exit 1
 }
 

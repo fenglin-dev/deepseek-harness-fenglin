@@ -15,6 +15,7 @@ function readWorkflow() {
   return {
     source,
     workflow: parse(source) as {
+      'run-name': string
       on: { workflow_dispatch: { inputs: Record<string, unknown> } }
       jobs: Record<string, WorkflowJob>
     },
@@ -81,6 +82,12 @@ describe('desktop package workflow bundled plugins', () => {
       && step.with?.name === 'bundled-plugin-snapshot'
       && step.with?.['run-id'] === '${{ inputs.bundled_plugin_run_id }}'
     ))).toBe(true)
+  })
+
+  it('exposes a stable orchestration key in the workflow run title', () => {
+    const { workflow } = readWorkflow()
+    expect(workflow.on.workflow_dispatch.inputs).toHaveProperty('orchestration_id')
+    expect(workflow['run-name']).toContain('inputs.orchestration_id')
   })
 
   it('does not install the workspace only to checksum a single platform run', () => {
@@ -154,7 +161,9 @@ describe('desktop package workflow bundled plugins', () => {
       jobs: Record<string, WorkflowJob>
     }
     expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch'])
-    expect(Object.keys(workflow.on.workflow_dispatch.inputs)).toEqual(['target', 'refresh_plugins', 'bundled_plugin_run_id', 'windows_candidate_run_id'])
+    expect(Object.keys(workflow.on.workflow_dispatch.inputs)).toEqual([
+      'target', 'refresh_plugins', 'bundled_plugin_run_id', 'orchestration_id', 'windows_candidate_run_id',
+    ])
     expect(workflow.on.workflow_dispatch.inputs.refresh_plugins).toEqual({
       description: 'Resolve latest stable bundled plugins (disable for a packaging-only rebuild)',
       required: true,

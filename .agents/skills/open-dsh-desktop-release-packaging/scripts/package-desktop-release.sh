@@ -119,14 +119,30 @@ gh_retry() {
 }
 
 dispatch_run() {
-  local stage=$1 target=$2 refresh_plugins=$3 snapshot_run_id=${4:-} output run_id
-  local args=(workflow run desktop-packages.yml --repo "$repository" --ref "$branch" -f "target=$target" -f "refresh_plugins=$refresh_plugins")
+  local stage=$1 target=$2 refresh_plugins=$3 snapshot_run_id=${4:-} run_id lookup_attempt
+  local orchestration_id="odsh-${version}-${source_sha}-${stage}"
+  local run_title="Desktop packages $target $orchestration_id"
+  local args=(workflow run desktop-packages.yml --repo "$repository" --ref "$branch" -f "target=$target" -f "refresh_plugins=$refresh_plugins" -f "orchestration_id=$orchestration_id")
   if [[ -n "$snapshot_run_id" ]]; then
     args+=(-f "bundled_plugin_run_id=$snapshot_run_id")
   fi
-  output=$(gh_retry "${args[@]}")
-  run_id=$(printf '%s\n' "$output" | sed -nE 's#.*actions/runs/([0-9]+).*#\1#p' | tail -n 1)
-  [[ -n "$run_id" ]] || { echo "could not parse workflow run ID from: $output" >&2; exit 1; }
+  find_run() {
+    gh_retry run list --repo "$repository" --workflow desktop-packages.yml --branch "$branch" \
+      --event workflow_dispatch --limit 100 --json databaseId,headSha,displayTitle \
+      --jq ".[] | select(.headSha == \"$source_sha\" and .displayTitle == \"$run_title\") | .databaseId" \
+      | sed -n '1p'
+  }
+  run_id=$(find_run)
+  if [[ -z "$run_id" ]]; then
+    gh_retry "${args[@]}" >/dev/null
+    lookup_attempt=1
+    while [[ -z "$run_id" && "$lookup_attempt" -le 30 ]]; do
+      sleep "$poll_seconds"
+      run_id=$(find_run)
+      lookup_attempt=$((lookup_attempt + 1))
+    done
+  fi
+  [[ -n "$run_id" ]] || { echo "could not recover workflow run for orchestration key $orchestration_id" >&2; exit 1; }
   state_set "stages.$stage.runId" "$run_id" "stages.$stage.status" dispatched
   echo "release orchestration: dispatched $stage as run $run_id"
 }

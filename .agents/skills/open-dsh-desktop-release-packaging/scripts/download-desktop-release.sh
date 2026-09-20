@@ -240,12 +240,17 @@ download_archive() {
         transfer_status=$?
       fi
     else
-      curl_arguments=(--fail --location --retry 3 --retry-delay 2 --continue-at - --output "$archive")
+      # aria2 may leave a preallocated sparse file populated by non-contiguous
+      # ranges. curl can only resume a contiguous prefix, so keep an independent
+      # serial transfer and replace the aria2 payload only after curl succeeds.
+      serial_archive="$archive.curl"
+      curl_arguments=(--fail --location --retry 3 --retry-delay 2 --continue-at - --output "$serial_archive")
       if [[ "$speed_guard" == 1 ]]; then
         minimum_bytes_per_second=$(awk -v value="$minimum_mibps" 'BEGIN { printf "%.0f", value * 1048576 }')
         curl_arguments+=(--speed-limit "$minimum_bytes_per_second" --speed-time "$monitor_window_seconds")
       fi
       if curl "${curl_arguments[@]}" "$signed_url"; then
+        mv "$serial_archive" "$archive"
         rm -f "$archive.aria2"
         :
       else

@@ -9,35 +9,59 @@
     "apps/desktop/scripts/primary-runtime-lock.json",
     "apps/desktop/bundled-plugins/manifest.json"
   ],
-  "commonResourceDestinations": [
-    "bundled-plugins",
-    "prebuilt-profile.tar",
-    "prebuilt-profile.tar.sha256"
+  "commonResources": [
+    {
+      "from": "bundled-plugins",
+      "to": "bundled-plugins",
+      "filter": ["**/*"]
+    }
   ],
   "platforms": {
     "windows": {
       "config": "apps/desktop/electron-builder.yml",
-      "resourceDestinations": [
-        "harness",
-        "harness/node_modules",
-        "runtime",
-        "cli-bin",
-        "cli/desktop-cli.mjs"
+      "resources": [
+        {
+          "from": "../../.artifacts/desktop-runtime-win-x64/harness",
+          "to": "harness",
+          "filter": ["**/*", "!node_modules{,/**/*}"]
+        },
+        {
+          "from": "../../.artifacts/desktop-runtime-win-x64/harness/node_modules",
+          "to": "harness/node_modules",
+          "filter": ["**/*"]
+        },
+        {
+          "from": "../../.artifacts/desktop-runtime-win-x64/runtime",
+          "to": "runtime",
+          "filter": ["**/*"]
+        },
+        {
+          "from": "build/cli-bin",
+          "to": "cli-bin",
+          "filter": ["**/*"]
+        },
+        { "from": "lib/desktop-cli-launcher.js", "to": "cli/desktop-cli.mjs" },
+        { "from": "../../.artifacts/desktop-prebuilt-win32-x64.tar", "to": "prebuilt-profile.tar" },
+        { "from": "../../.artifacts/desktop-prebuilt-win32-x64.tar.sha256", "to": "prebuilt-profile.tar.sha256" }
       ]
     },
     "macos": {
       "config": "apps/desktop/electron-builder.macos.yml",
-      "resourceDestinations": [
-        "harness-runtime.tar",
-        "harness-runtime.tar.sha256",
-        "cli/desktop-cli.mjs"
+      "resources": [
+        { "from": "../../.artifacts/desktop-runtime-darwin-${arch}.tar", "to": "harness-runtime.tar" },
+        { "from": "../../.artifacts/desktop-runtime-darwin-${arch}.tar.sha256", "to": "harness-runtime.tar.sha256" },
+        { "from": "../../.artifacts/desktop-prebuilt-darwin-${arch}.tar", "to": "prebuilt-profile.tar" },
+        { "from": "../../.artifacts/desktop-prebuilt-darwin-${arch}.tar.sha256", "to": "prebuilt-profile.tar.sha256" },
+        { "from": "lib/desktop-cli-launcher.js", "to": "cli/desktop-cli.mjs" }
       ]
     },
     "linux": {
       "config": "apps/desktop/electron-builder.linux.yml",
-      "resourceDestinations": [
-        "harness-runtime.tar",
-        "harness-runtime.tar.sha256"
+      "resources": [
+        { "from": "../../.artifacts/desktop-runtime-linux-${arch}.tar", "to": "harness-runtime.tar" },
+        { "from": "../../.artifacts/desktop-runtime-linux-${arch}.tar.sha256", "to": "harness-runtime.tar.sha256" },
+        { "from": "../../.artifacts/desktop-prebuilt-linux-${arch}.tar", "to": "prebuilt-profile.tar" },
+        { "from": "../../.artifacts/desktop-prebuilt-linux-${arch}.tar.sha256", "to": "prebuilt-profile.tar.sha256" }
       ]
     }
   }

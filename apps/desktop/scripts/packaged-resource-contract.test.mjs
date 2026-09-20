@@ -15,13 +15,11 @@ test('every desktop builder config satisfies the packaged resource contract', as
   for (const [platform, platformContract] of Object.entries(contract.platforms)) {
     const config = parse(await readFile(join(root, platformContract.config), 'utf8'))
     assert.deepEqual(config.files, contract.asarFiles, `${platform} asar files diverged from the contract`)
-    const destinations = new Set((config.extraResources ?? []).map(resource => resource.to))
-    for (const destination of [
-      ...contract.commonResourceDestinations,
-      ...platformContract.resourceDestinations,
-    ]) {
-      assert.equal(destinations.has(destination), true, `${platform} is missing packaged resource ${destination}`)
-    }
+    assert.deepEqual(
+      config.extraResources,
+      [...contract.commonResources, ...platformContract.resources],
+      `${platform} packaged resource mappings diverged from the contract`,
+    )
   }
 })
 

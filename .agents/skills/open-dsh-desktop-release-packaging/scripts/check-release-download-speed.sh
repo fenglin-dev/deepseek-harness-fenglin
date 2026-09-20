@@ -139,7 +139,9 @@ while [[ "$valid_samples" -lt "$required_samples" && "$attempt" -le "$maximum_at
     [[ ! -s "$metrics_file" ]] || IFS=$'\t' read -r downloaded_bytes elapsed_seconds speed_bps http_code < "$metrics_file"
     last_curl_status=$curl_status
     last_http_code=$http_code
-    if [[ -n "$speed_bps" && "$downloaded_bytes" != 0 && ( "$curl_status" == 0 || "$curl_status" == 28 ) ]]; then
+    if [[ -n "$speed_bps" && "$downloaded_bytes" != 0 \
+      && ( "$http_code" == 200 || "$http_code" == 206 ) \
+      && ( "$curl_status" == 0 || "$curl_status" == 28 ) ]]; then
       printf '%s\n' "$speed_bps" >> "$samples_file"
       valid_samples=$((valid_samples + 1))
       total_downloaded_bytes=$((total_downloaded_bytes + downloaded_bytes))
