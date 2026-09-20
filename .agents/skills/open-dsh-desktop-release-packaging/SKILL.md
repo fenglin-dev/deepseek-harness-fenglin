@@ -65,6 +65,8 @@ The preflight prints `release network: adopted macOS system proxy` when it impor
 
 Exit status 75 means the measured route is below `ODSH_MIN_DOWNLOAD_MIBPS`. Tell the user the measured rate and threshold, stop the workflow, and retain any existing resumable staging directory. Do not lower the floor or resume automatically. The user may choose another network/proxy/node or explicitly set another floor. The download helper repeats this check against each large artifact and stops an active transfer after the aggregate rate remains below the floor for the configured sustained window.
 
+Exit status 74 means the route could not produce enough valid samples after refreshing the signed URL; it is a transport failure, not evidence that the route is below the speed floor. Retry the same resumable operation after checking the proxy or node. TLS and API read failures never become a synthetic zero-speed result.
+
 For an explicitly requested macOS-only repair, use `target=macos` and `refresh_plugins=false` to retain the committed plugin archives. Download with `scripts/download-desktop-release.sh --macos-only <owner/repo> <run-id>` into the primary checkout's `release/<version>/`. This partial handoff contains four macOS installers and their `SHA256SUMS`; verify it with `scripts/verify-release-directory.sh --macos-only <directory>`. Do not present this subset as a rebuilt eight-file release or overwrite the full Release checksum file with its four-entry checksum file. Retained Windows/Linux assets keep their original workflow run ID and checksum evidence.
 
 1. Confirm the version, base branch, final source commit, expected branch names, remote, and publication boundary.

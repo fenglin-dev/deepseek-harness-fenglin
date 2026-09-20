@@ -137,8 +137,26 @@ download_archive() {
     fi
   fi
 
+  connection_steps_text=${ODSH_DOWNLOAD_CONNECTION_STEPS:-16,4,2,1}
+  previous_ifs=$IFS
+  IFS=',' read -r -a connection_steps <<< "$connection_steps_text"
+  IFS=$previous_ifs
+  [[ ${#connection_steps[@]} -gt 0 ]] || {
+    echo "ODSH_DOWNLOAD_CONNECTION_STEPS must contain at least one positive integer" >&2
+    return 2
+  }
+  for connection_step in "${connection_steps[@]}"; do
+    [[ "$connection_step" =~ ^[1-9][0-9]*$ ]] || {
+      echo "ODSH_DOWNLOAD_CONNECTION_STEPS contains an invalid value: $connection_step" >&2
+      return 2
+    }
+  done
   attempt=1
-  max_attempts=${ODSH_DOWNLOAD_URL_ATTEMPTS:-3}
+  max_attempts=${ODSH_DOWNLOAD_URL_ATTEMPTS:-${#connection_steps[@]}}
+  [[ "$max_attempts" =~ ^[1-9][0-9]*$ ]] || {
+    echo "ODSH_DOWNLOAD_URL_ATTEMPTS must be a positive integer" >&2
+    return 2
+  }
   minimum_mibps=${ODSH_MIN_DOWNLOAD_MIBPS:-1.0}
   monitor_minimum_bytes=${ODSH_SPEED_MONITOR_MIN_BYTES:-67108864}
   monitor_warmup_seconds=${ODSH_LOW_SPEED_WARMUP_SECONDS:-15}
@@ -181,8 +199,16 @@ download_archive() {
     fi
     signed_url=$(signed_artifact_url "$artifact_id")
     transfer_status=0
-    if command -v aria2c >/dev/null; then
-      connections=${ODSH_DOWNLOAD_CONNECTIONS:-16}
+    connection_index=$((attempt - 1))
+    if [[ "$connection_index" -ge ${#connection_steps[@]} ]]; then
+      connection_index=$((${#connection_steps[@]} - 1))
+    fi
+    connections=${connection_steps[$connection_index]}
+    use_serial_curl=0
+    if [[ "$connections" == 1 && ${ODSH_DOWNLOAD_SERIAL_WITH_CURL:-1} != 0 ]]; then
+      use_serial_curl=1
+    fi
+    if command -v aria2c >/dev/null && [[ "$use_serial_curl" == 0 ]]; then
       aria_arguments=(
         --continue=true
         --auto-file-renaming=false
@@ -197,17 +223,18 @@ download_archive() {
         --out="$(basename "$archive")"
         "$signed_url"
       )
+      aria_command=(env -u ALL_PROXY -u all_proxy aria2c "${aria_arguments[@]}")
       if [[ "$speed_guard" == 1 ]]; then
         if node "$speed_monitor_script" \
           --minimum-mibps "$minimum_mibps" \
           --warmup-seconds "$monitor_warmup_seconds" \
           --window-seconds "$monitor_window_seconds" \
-          -- aria2c "${aria_arguments[@]}"; then
+          -- "${aria_command[@]}"; then
           :
         else
           transfer_status=$?
         fi
-      elif aria2c "${aria_arguments[@]}"; then
+      elif "${aria_command[@]}"; then
         :
       else
         transfer_status=$?
@@ -219,6 +246,7 @@ download_archive() {
         curl_arguments+=(--speed-limit "$minimum_bytes_per_second" --speed-time "$monitor_window_seconds")
       fi
       if curl "${curl_arguments[@]}" "$signed_url"; then
+        rm -f "$archive.aria2"
         :
       else
         transfer_status=$?
@@ -228,6 +256,16 @@ download_archive() {
       echo "download stopped because speed remained below $minimum_mibps MiB/s; resumable data is preserved" >&2
       echo "switch network/proxy/node and retry, or ask the user to choose a different ODSH_MIN_DOWNLOAD_MIBPS value" >&2
       return 75
+    fi
+    if [[ "$transfer_status" != 0 ]]; then
+      next_attempt=$((attempt + 1))
+      if [[ "$next_attempt" -le "$max_attempts" ]]; then
+        next_index=$((next_attempt - 1))
+        if [[ "$next_index" -ge ${#connection_steps[@]} ]]; then
+          next_index=$((${#connection_steps[@]} - 1))
+        fi
+        echo "artifact $artifact_name transport attempt $attempt/$max_attempts failed with status $transfer_status; refreshing its signed URL and retrying with ${connection_steps[$next_index]} connection(s)" >&2
+      fi
     fi
     attempt=$((attempt + 1))
   done
