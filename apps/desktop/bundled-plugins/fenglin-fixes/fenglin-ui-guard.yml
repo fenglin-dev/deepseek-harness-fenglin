@@ -1,7 +1,15 @@
 # Fenglin UI guard — applied after profile cordis.patch.yml.
 # Only re-enables rows required by desktop UI. Never mass-disables.
+# Never insert official singleton ids (file-upload, ui-attachment, liangshen,
+# web-ui-*): duplicate loader ids fail market trial validation. Override only.
 - id: plugin-manager
   name: "@deepseek-ai/dsh-plugin-manager"
+  disabled: false
+- id: file-upload
+  name: "@deepseek-ai/dsh-client-file-upload"
+  disabled: false
+- id: ui-attachment
+  name: "@deepseek-ai/dsh-client-ui-attachment"
   disabled: false
 - id: "@linxin666/dsh-web-all"
   name: "@linxin666/dsh-web-all"
@@ -64,3 +72,10 @@
 - id: mkt-music
   name: "dsh-music-huazai"
   disabled: true
+# Open-in-app: Uninstall /s registry probes need more than 10s on busy PCs.
+- id: open-in-app
+  name: "@deepseek-ai/dsh-host-open-in-app"
+  config:
+    probeTimeoutMs: 20000
+    iconTimeoutMs: 10000
+    launchWatchMs: 1000

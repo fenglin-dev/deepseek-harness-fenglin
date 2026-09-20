@@ -115,6 +115,8 @@ function AppIcon({ id, url, size }: { id: string; url: string; size: number }): 
  * are actually taking a while, instead of flashing on every click.
  */
 const BUSY_DRESS_DELAY_MS = 250
+/** Fenglin: never leave the split button stuck in-flight if the Host hangs. */
+const LAUNCH_TIMEOUT_MS = 8_000
 
 /**
  * Session-header split button: the main button opens the session's workspace
@@ -159,7 +161,13 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
     clearTimeout(errorTimer.current)
     clearTimeout(busyTimer.current)
     busyTimer.current = setTimeout(() => { setPhase('busy') }, BUSY_DRESS_DELAY_MS)
-    props.launch(appId, cwd).then(() => {
+    const timed = Promise.race([
+      props.launch(appId, cwd),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => { reject(new Error('open-in-app launch timeout')) }, LAUNCH_TIMEOUT_MS)
+      }),
+    ])
+    timed.then(() => {
       inFlight.current = false
       clearTimeout(busyTimer.current)
       setPhase('idle')
@@ -184,6 +192,8 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
       align="end"
       dense
       selection="fill"
+      // Fenglin: portal so the menu paints above chat message bubbles.
+      portal
       onClose={() => { setOpen(false) }}
       items={items}
       selectedId={current}

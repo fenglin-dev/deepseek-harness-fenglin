@@ -6,7 +6,7 @@ import {
   quarantineProcessRecoveryJournal,
   type DesktopProcessObserver,
 } from './process-observer.ts'
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile, copyFile } from 'node:fs/promises'
 import { homedir, tmpdir, userInfo } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -3163,6 +3163,31 @@ async function startApplication(): Promise<void> {
           })
         try { await prebuiltDeploymentTask } finally { prebuiltDeploymentTask = undefined }
         await mergeImportedAllowBuilds(join(candidate, 'profiles/web'), startupBuildRules)
+        // Fenglin: first-start homes must always carry fenglin-ui-guard.yml.
+        // Custom DSH_HOME paths and partial restores used to miss it; launch
+        // omits --patch when absent, but we still seed the file when possible.
+        try {
+          const guardTarget = join(candidate, 'fenglin-ui-guard.yml')
+          const guardSources = [
+            join(prebuiltDirectory, 'fenglin-ui-guard.yml'),
+            join(bundledDirectory, 'fenglin-fixes', 'fenglin-ui-guard.yml'),
+          ]
+          let guardExists = false
+          try { guardExists = (await lstat(guardTarget)).isFile() } catch { guardExists = false }
+          if (!guardExists) {
+            for (const source of guardSources) {
+              try {
+                if ((await lstat(source)).isFile()) {
+                  await copyFile(source, guardTarget)
+                  await appendDesktopStartupLog(`Seeded fenglin-ui-guard.yml into candidate home from ${source}`)
+                  break
+                }
+              } catch { /* try next source */ }
+            }
+          }
+        } catch (error) {
+          await appendDesktopStartupLog(`fenglin-ui-guard seed skipped: ${error instanceof Error ? error.message : String(error)}`)
+        }
         await appendDesktopStartupLog(`Prebuilt Profile deployment completed in ${Date.now() - startedAt}ms; fingerprint=${prebuilt.fingerprint}; no package installation invoked.`)
       } else if (firstStartPending) {
         await mergeImportedAllowBuilds(join(desktopMutations.mutationHome, 'profiles/web'), startupBuildRules)
@@ -3268,6 +3293,44 @@ async function startApplication(): Promise<void> {
   }
   publishStartupProgress({ stage: 'starting-harness', progress: 88 })
   await appendDesktopStartupLog('Starting Harness supervisor.')
+  // Fenglin: custom DSH_HOME paths and rolled-back candidate activations used
+  // to launch against a home missing fenglin-ui-guard.yml or profiles/web.
+  try {
+    const activeHome = (harnessEnvironment.DSH_HOME ?? '').trim() !== ''
+      ? harnessEnvironment.DSH_HOME
+      : desktopMutations.mutationHome
+    if (activeHome !== undefined && activeHome.trim() !== '') {
+      const profileManifest = join(activeHome, 'profiles', 'web', 'package.json')
+      let profileExists = false
+      try { profileExists = (await lstat(profileManifest)).isFile() } catch { profileExists = false }
+      if (!profileExists && prebuilt !== undefined && prebuiltDirectory !== undefined) {
+        await deployPrebuiltProfile(prebuiltDirectory, activeHome, prebuilt, prebuiltDeploymentAbort.signal, () => {})
+        await appendDesktopStartupLog(`Re-deployed prebuilt Profile into ${activeHome} after missing profiles/web`)
+      }
+      const guardTarget = join(activeHome, 'fenglin-ui-guard.yml')
+      let guardExists = false
+      try { guardExists = (await lstat(guardTarget)).isFile() } catch { guardExists = false }
+      if (!guardExists) {
+        const guardSources = [
+          join(bundledDirectory, 'fenglin-fixes', 'fenglin-ui-guard.yml'),
+          prebuiltDirectory === undefined ? '' : join(prebuiltDirectory, 'fenglin-ui-guard.yml'),
+          join(desktopMutations.mutationHome, 'fenglin-ui-guard.yml'),
+        ]
+        for (const source of guardSources) {
+          if (source === '') continue
+          try {
+            if ((await lstat(source)).isFile()) {
+              await copyFile(source, guardTarget)
+              await appendDesktopStartupLog(`Seeded missing fenglin-ui-guard.yml into ${activeHome}`)
+              break
+            }
+          } catch { /* next */ }
+        }
+      }
+    }
+  } catch (error) {
+    await appendDesktopStartupLog(`fenglin-ui-guard ensure skipped: ${error instanceof Error ? error.message : String(error)}`)
+  }
   const launch = resolveHarnessLaunch(harnessEnvironment, launchOptions)
   desktopMutations.start()
   const notificationCopy = desktopNotificationDictionary(app.getLocale())

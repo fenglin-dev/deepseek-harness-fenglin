@@ -169,10 +169,14 @@ export function resolveHarnessLaunch(
 ): HarnessLaunch {
   const dshHome = (environment.DSH_HOME ?? '').trim() !== '' ? environment.DSH_HOME : undefined
   const guard = join(dshHome ?? join(process.env.USERPROFILE ?? process.env.HOME ?? '.', '.dsh'), 'fenglin-ui-guard.yml')
+  // Fenglin: only pass --patch when the overlay exists. A missing guard must
+  // never abort first-start on user machines with custom DSH_HOME paths.
+  const webArgs = existsSync(guard)
+    ? ['web', '--patch', guard, '--host', '127.0.0.1', '--port', '0', '--no-open']
+    : ['web', '--host', '127.0.0.1', '--port', '0', '--no-open']
   return resolveHarnessInvocation(
     environment,
-    // Fenglin: launcher flags must precede web-app args; --patch outranks user cordis.patch.yml.
-    ['web', '--patch', guard, '--host', '127.0.0.1', '--port', '0', '--no-open'],
+    webArgs,
     options,
   )
 }
@@ -209,6 +213,14 @@ export function resolveHarnessInvocation(
       launchEnvironment,
       resolveRuntimePathEnvironment(environment, options.runtimeBinPath, process.platform),
     )
+  }
+  // Fenglin: open-in-app file locators expand ProgramFiles/LOCALAPPDATA. Keep
+  // those Windows roots on the Harness child even when the parent env is narrow.
+  if (process.platform === 'win32') {
+    for (const key of ['ProgramFiles', 'ProgramFiles(x86)', 'LOCALAPPDATA', 'APPDATA', 'SystemRoot', 'windir'] as const) {
+      const value = process.env[key] ?? environment[key]
+      if (value !== undefined && value !== '' && launchEnvironment[key] === undefined) launchEnvironment[key] = value
+    }
   }
   if (Object.keys(launchEnvironment).length > 0) {
     launch.environment = launchEnvironment

@@ -2,7 +2,7 @@
   <img src="./apps/desktop/src/icon.png" width="112" alt="DeepSeek Harness Desktop 枫林独立版图标">
 </p>
 
-# DeepSeek Harness Desktop 3.0.0（枫林独立版）
+# DeepSeek Harness Desktop 3.0.1（枫林独立版）
 
 <p align="center">
   <strong>开箱即用、依赖安全的 DeepSeek Harness 独立桌面发行版</strong>
@@ -12,11 +12,18 @@
 
 > [!IMPORTANT]
 >
-> **[v3.0.0 已发布，欢迎下载体验](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.0)。**
+> **[v3.0.1 已发布，欢迎下载体验](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.1)。**
 >
 > 本版本由上游 `0.1.6-alpha.2` 基线重建，保留枫林专属能力并修复近期稳定性问题。跨大版本升级，**建议干净安装**（删除旧安装目录，可选清空 `%APPDATA%\open-deepseek-harness-desktop` 后重装）。
 >
 > 语言支持：**简体中文 / English** 双语。
+
+### v3.0.1 更新内容
+
+- **市场更新可启动**：枫林 `cordis.patch.yml` 改为仅 override，不再重复 insert 官方/插件已占用的 loader id（`file-upload` / `ui-attachment` / `liangshen` / `web-ui-*`），修复插件市场试装 `duplicate loader entry id` 回滚。
+- **内置插件**：`dshmarket` 升至 **1.50.0**，`@xmanrui/dsh-im` 升至 **4.23.0**。
+- **打开方式**：右上角菜单恢复 Android Studio / Git Bash 等检测（Windows `ProgramFiles` 回退 + Git 注册表精确匹配）；菜单不再被消息气泡挡住。
+- **启动稳健性**：自定义数据目录缺失 `fenglin-ui-guard.yml` / `profiles/web` 时不再硬崩；启动前会种子 guard，必要时重部署预置包；CI 校验 prebuilt 必含 guard/profiles/settings。
 
 ### v3.0.0 更新内容
 
@@ -33,7 +40,7 @@
   <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases"><img src="https://img.shields.io/github/downloads/fenglin-dev/deepseek-harness-fenglin/total.svg?style=flat" alt="下载量"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/fenglin-dev/deepseek-harness-fenglin?style=flat" alt="MIT 许可证"></a>
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/upstream-DeepSeek%20Harness-4d6bfe?style=flat" alt="DeepSeek Harness 上游"></a>
-  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.0"><img src="https://img.shields.io/badge/release-3.0.0-4d6bfe?style=flat" alt="3.0.0"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.1"><img src="https://img.shields.io/badge/release-3.0.1-4d6bfe?style=flat" alt="3.0.1"></a>
 </p>
 
 DeepSeek Harness Desktop 枫林独立版是由枫林维护的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 桌面发行版，仓库为 [fenglin-dev/deepseek-harness-fenglin](https://github.com/fenglin-dev/deepseek-harness-fenglin)。它把上游插件化智能体运行时、Web 工作区和桌面系统能力组合为可以直接安装的应用，可用于配置模型、运行编码会话、查看执行轨迹、管理插件与 Skill，并连接外部编码工具或 IM 机器人。

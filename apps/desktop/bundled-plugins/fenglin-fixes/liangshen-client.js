@@ -752,7 +752,7 @@ window.__ModuleLoader__.load({
 						"[data-dsh-bottom-panel]:not([class*=\"Hidden\"]){visibility:visible!important;transform:none!important}",
 						"[data-dsh-plugin=\"skill-explorer\"]{display:block!important}"
 					].join("");
-					document.head.appendChild(ensure);
+					document.head.appendChild(ensure);try{if(typeof document!=="undefined"&&document.getElementById("fenglin-menu-z")===null){const z=document.createElement("style");z.id="fenglin-menu-z";z.textContent="[data-slot=\"conversation.session.header.utilities\"] [role=\"menu\"], body>[role=\"menu\"]{z-index:1200!important}";document.head.appendChild(z);}}catch{}
 				}
 			} catch {}
 			ctx.effect(() => {

@@ -80,6 +80,7 @@ export const launchDetachedApp: OpenInAppLauncher = (command, args, options) =>
       env: { ...scrubbedParentEnv(), ...options.env },
     })
     let settled = false
+    let spawned = false
     const settle = (outcome: () => void): void => {
       if (settled) return
       settled = true
@@ -89,7 +90,15 @@ export const launchDetachedApp: OpenInAppLauncher = (command, args, options) =>
     }
     const watch = setTimeout(() => { settle(resolve) }, options.watchMs)
     child.on('error', (error) => { settle(() => { reject(error) }) })
+    // Fenglin: GUI launchers (VS Code, Android Studio, Git clients) often exit
+    // non-zero when handing off to an already-running instance. A successful
+    // spawn means the OS accepted the launch — count that as launched.
+    child.on('spawn', () => {
+      spawned = true
+      settle(resolve)
+    })
     child.on('exit', (code, signalName) => {
+      if (spawned) return
       if (code === 0) settle(resolve)
       else settle(() => { reject(new Error(`launcher exited with code ${String(code)}, signal ${String(signalName)}`)) })
     })
@@ -125,6 +134,29 @@ export interface ResolvedInternals {
 }
 
 /**
+ * Fill Windows path roots when the live process env lost them. Test seams that
+ * inject `internals.env` stay sealed; production hosts that only have a narrow
+ * parent environment still resolve ProgramFiles/LOCALAPPDATA locators.
+ */
+function completeWindowsEnvDefaults(
+  env: Readonly<Record<string, string | undefined>>,
+  home: string,
+): Readonly<Record<string, string | undefined>> {
+  const next: Record<string, string | undefined> = { ...env }
+  const fill = (key: string, value: string | undefined): void => {
+    const current = next[key]
+    if ((current === undefined || current === '') && value !== undefined && value !== '') next[key] = value
+  }
+  fill('ProgramFiles', process.env['ProgramFiles'] ?? 'C:\\Program Files')
+  fill('ProgramFiles(x86)', process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)')
+  fill('SystemRoot', process.env['SystemRoot'] ?? process.env['windir'] ?? 'C:\\Windows')
+  fill('windir', process.env['windir'] ?? next['SystemRoot'])
+  fill('LOCALAPPDATA', process.env['LOCALAPPDATA'] ?? join(home, 'AppData', 'Local'))
+  fill('APPDATA', process.env['APPDATA'] ?? join(home, 'AppData', 'Roaming'))
+  return next
+}
+
+/**
  * Resolve the injectable facts against the running host. `resolveExecutable`
  * has no host default — the plugin supplies the composition's subprocess
  * capability — so a caller that omits it fails loud here rather than
@@ -138,11 +170,15 @@ export function resolveInternals(internals: OpenInAppInternals): ResolvedInterna
   if (resolveExecutable === undefined) {
     throw new Error('open-in-app: internals.resolveExecutable is required (the subprocess capability provides it)')
   }
+  const platform = internals.platform ?? osPlatform()
+  const providedEnv = internals.env
+  let env = providedEnv ?? process.env
+  if (providedEnv === undefined && platform === 'win32') env = completeWindowsEnvDefaults(env, home)
   return {
-    platform: internals.platform ?? osPlatform(),
+    platform,
     ssh: internals.ssh ?? false,
     applicationRoots: internals.applicationRoots ?? ['/Applications', join(home, 'Applications')],
-    env: internals.env ?? process.env,
+    env,
     home,
     run: internals.run ?? runNativeCommand,
     launch: internals.launch ?? launchDetachedApp,
@@ -564,8 +600,9 @@ async function locate(
       return { launch: { kind: 'argv', command: target, args: locator.args }, icon: { kind: 'executable', path: target } }
     }
     case 'install-record': {
+      const exact = locator.exactDisplayNames ?? []
       for (const record of (await registry.read()).installRecords) {
-        if (!record.displayName.startsWith(locator.displayNamePrefix)) continue
+        if (!record.displayName.startsWith(locator.displayNamePrefix) && !exact.includes(record.displayName)) continue
         const launcher = await recordLauncher(record, locator.relativeLauncher, internals)
         if (launcher !== null) {
           return { launch: { kind: 'argv', command: launcher, args: locator.args }, icon: { kind: 'executable', path: launcher } }

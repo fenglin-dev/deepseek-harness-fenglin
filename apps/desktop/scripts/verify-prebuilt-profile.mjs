@@ -25,6 +25,20 @@ try {
   const started = Date.now()
   try {
     await deployPrebuiltProfile(source, destination, manifest, new AbortController().signal, () => {})
+    // Fenglin exclusive pack: these homes files are required on every clean install.
+    for (const required of [
+      'fenglin-ui-guard.yml',
+      'settings.yaml',
+      'profile-health/web.json',
+      'profiles/web/package.json',
+      'profiles/web/cordis.patch.yml',
+    ]) {
+      try {
+        await readFile(join(destination, required))
+      } catch {
+        throw new Error(`Incomplete prebuilt Profile: missing ${required}`)
+      }
+    }
     for (const plugin of JSON.parse(pluginSource).plugins.filter(plugin => plugin.installPolicy === 'startup')) {
       const installed = JSON.parse(await readFile(join(destination, 'profiles/web/node_modules', plugin.packageName, 'package.json'), 'utf8'))
       if (installed.name !== plugin.packageName || installed.version !== plugin.version) throw new Error(`Incomplete preset: ${plugin.packageName}`)

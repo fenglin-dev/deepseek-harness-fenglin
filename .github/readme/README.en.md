@@ -2,7 +2,7 @@
   <img src="../../apps/desktop/src/icon.png" width="112" alt="DeepSeek Harness Desktop Fenglin edition icon">
 </p>
 
-# DeepSeek Harness Desktop 3.0.0 (Fenglin Edition)
+# DeepSeek Harness Desktop 3.0.1 (Fenglin Edition)
 
 <p align="center">
   <strong>A ready-to-use, dependency-safe independent desktop edition of DeepSeek Harness</strong>
@@ -12,11 +12,18 @@ Languages: [简体中文](../../README.zh.md) · English
 
 > [!IMPORTANT]
 >
-> **[v3.0.0 is now available](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.0).**
+> **[v3.0.1 is now available](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.1).**
 >
 > Rebuilt from the upstream `0.1.6-alpha.2` baseline with Fenglin exclusive features and recent stability fixes. This is a large version jump: a **clean install is recommended** (remove the old install directory; optionally clear `%APPDATA%\open-deepseek-harness-desktop` before reinstalling).
 >
 > Language support: **Simplified Chinese / English** only.
+
+### What's new in 3.0.1
+
+- **Market updates boot again**: Fenglin `cordis.patch.yml` is override-only and no longer re-inserts loader ids owned by official web-app or package cordis layers (`file-upload` / `ui-attachment` / `liangshen` / `web-ui-*`), fixing market trial `duplicate loader entry id` rollbacks.
+- **Bundled plugins**: `dshmarket` **1.50.0**, `@xmanrui/dsh-im` **4.23.0**.
+- **Open-in-app**: Android Studio / Git Bash detection restored (Windows `ProgramFiles` fallback + exact Git registry name); menu no longer blocked by chat bubbles.
+- **Startup robustness**: missing `fenglin-ui-guard.yml` / `profiles/web` on custom data homes no longer hard-crashes; guard is seeded before launch; CI asserts prebuilt contains guard/profiles/settings.
 
 ### What's new in 3.0.0
 
@@ -33,7 +40,7 @@ Languages: [简体中文](../../README.zh.md) · English
   <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases"><img src="https://img.shields.io/github/downloads/fenglin-dev/deepseek-harness-fenglin/total.svg?style=flat" alt="Downloads"></a>
   <a href="../../LICENSE"><img src="https://img.shields.io/github/license/fenglin-dev/deepseek-harness-fenglin?style=flat" alt="MIT License"></a>
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/upstream-DeepSeek%20Harness-4d6bfe?style=flat" alt="DeepSeek Harness upstream"></a>
-  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.0"><img src="https://img.shields.io/badge/release-3.0.0-4d6bfe?style=flat" alt="3.0.0"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.1"><img src="https://img.shields.io/badge/release-3.0.1-4d6bfe?style=flat" alt="3.0.1"></a>
 </p>
 
 DeepSeek Harness Desktop (Fenglin Edition) is an independent desktop distribution of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), maintained at [fenglin-dev/deepseek-harness-fenglin](https://github.com/fenglin-dev/deepseek-harness-fenglin). It combines the upstream plugin-based agent runtime, Web workspace, and native desktop integration into an installable app for configuring models, running coding sessions, inspecting execution, managing plugins and Skills, and connecting external coding tools or IM bots.

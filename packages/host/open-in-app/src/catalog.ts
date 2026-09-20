@@ -77,6 +77,8 @@ export type OpenInAppLocator =
   | {
     readonly kind: 'install-record'
     readonly displayNamePrefix: string
+    /** Exact DisplayName values that also match (modern Git for Windows is just `Git`). */
+    readonly exactDisplayNames?: readonly string[] | undefined
     /** Launcher under the record's `InstallLocation`; absent means the record's `DisplayIcon` executable. */
     readonly relativeLauncher?: string | undefined
     readonly args: readonly string[]
@@ -140,6 +142,16 @@ function appPaths(exe: string, ...args: string[]): OpenInAppLocator {
 /** Windows Uninstall-record locator verified through the executable it points at. */
 function installRecord(displayNamePrefix: string, relativeLauncher?: string, ...args: string[]): OpenInAppLocator {
   return { kind: 'install-record', displayNamePrefix, relativeLauncher, args }
+}
+
+/** Uninstall-record locator that also accepts exact DisplayName values. */
+function installRecordNames(
+  displayNamePrefix: string,
+  exactDisplayNames: readonly string[],
+  relativeLauncher?: string,
+  ...args: string[]
+): OpenInAppLocator {
+  return { kind: 'install-record', displayNamePrefix, exactDisplayNames, relativeLauncher, args }
 }
 
 /**
@@ -277,7 +289,11 @@ export const OPEN_IN_APP_CATALOG: readonly OpenInAppApp[] = [
       darwin: macApp('Android Studio.app'),
       win32: spec(
         installRecord('Android Studio', 'bin/studio64.exe'),
-        file(['${ProgramFiles}/Android/Android Studio/bin/studio64.exe']),
+        file([
+          '${ProgramFiles}/Android/Android Studio/bin/studio64.exe',
+          '${ProgramFiles}/Android/Android Studio/bin/studio.exe',
+          '${ProgramFiles(x86)}/Android/Android Studio/bin/studio64.exe',
+        ]),
       ),
       linux: spec(cli('studio'), file([
         '~/.local/share/JetBrains/Toolbox/scripts/studio',
@@ -363,10 +379,13 @@ export const OPEN_IN_APP_CATALOG: readonly OpenInAppApp[] = [
     id: 'gitbash',
     platforms: {
       win32: spec(
-        // Git for Windows registers as "Git version <x.y.z>"; the bare "Git"
-        // prefix would also match "GitHub Desktop".
-        installRecord('Git version', 'git-bash.exe', `--cd=${PATH_TOKEN}`),
-        file(['${ProgramFiles}/Git/git-bash.exe'], `--cd=${PATH_TOKEN}`),
+        // Git for Windows registers as "Git version <x.y.z>" or bare "Git".
+        // Bare "Git" must be exact so it never swallows "GitHub Desktop".
+        installRecordNames('Git version', ['Git'], 'git-bash.exe', `--cd=${PATH_TOKEN}`),
+        file([
+          '${ProgramFiles}/Git/git-bash.exe',
+          '${ProgramFiles(x86)}/Git/git-bash.exe',
+        ], `--cd=${PATH_TOKEN}`),
       ),
     },
   },

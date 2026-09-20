@@ -142,26 +142,18 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
   // Fenglin: enable LiangShen lever + SSH row. Pet UI stays available;
   // default OFF is settings.yaml `pet.enabled`, not a Loader disable.
   await writeFile(join(destination, 'profiles', 'web', 'cordis.patch.yml'), `# Fenglin exclusive defaults on clean upstream.
-- insert:
-    - id: ui-attachment
-      name: "@deepseek-ai/dsh-client-ui-attachment"
-    - id: file-upload
-      name: "@deepseek-ai/dsh-client-file-upload"
-    - id: liangshen
-      name: "@linxin666/dsh-liangshen"
-    - id: web-ui-liangshen
-      name: "@linxin666/dsh-web-all/liangshen"
-      config:
-        plugin: "@linxin666/dsh-liangshen"
+# Override-only. Never insert loader ids owned by official web-app or by a
+# package's own cordis.patch.yml — market trial validation fails on duplicates.
+# Owned elsewhere: file-upload / ui-attachment (web-app), liangshen (standalone
+# @linxin666/dsh-liangshen), web-ui-* family rows (@linxin666/dsh-web-all).
+- id: liangshen
+  name: "@linxin666/dsh-liangshen"
+  disabled: false
 
 - id: web-ui-liangshen
   name: "@linxin666/dsh-web-all/liangshen"
   config:
     plugin: "@linxin666/dsh-liangshen"
-  disabled: false
-
-- id: liangshen
-  name: "@linxin666/dsh-liangshen"
   disabled: false
 
 - id: web-ui-ssh
@@ -207,6 +199,14 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
 - id: web-ui-better-sidebar
   name: "dsh-better-sidebar"
   disabled: true
+
+- id: file-upload
+  name: "@deepseek-ai/dsh-client-file-upload"
+  disabled: false
+
+- id: ui-attachment
+  name: "@deepseek-ai/dsh-client-ui-attachment"
+  disabled: false
 
 - id: mkt-music
   disabled: true
@@ -264,6 +264,8 @@ dsh-better-sidebar:
     ['dsh-better-sidebar/lib/index.js', 'dsh-better-sidebar/lib/index.js'],
     ['dshmarket/lib/hot.js', 'dshmarket/lib/hot.js'],
     ['@linxin666/dsh-web-all/lib/client.js', 'dsh-web-all/lib/client.js'],
+    ['dsh-host-open-in-app/lib/index.js', '@deepseek-ai/dsh-host-open-in-app/lib/index.js'],
+    ['dsh-client-ui-open-in-app/lib/client.js', '@deepseek-ai/dsh-client-ui-open-in-app/lib/client.js'],
   ]
   for (const [from, to] of runtimeCopies) {
     const src = join(runtimeLibs, from)

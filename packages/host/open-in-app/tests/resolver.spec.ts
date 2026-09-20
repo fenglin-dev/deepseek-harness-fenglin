@@ -338,6 +338,9 @@ describe('resolveLaunch locators', () => {
         `${key}\\Git_is1`,
         '    DisplayName    REG_SZ    Git version 2.44.0',
         `    InstallLocation    REG_SZ    "${git}"`,
+        `${key}\\GitHubDesktopTrap`,
+        '    DisplayName    REG_SZ    GitHub Desktop',
+        `    InstallLocation    REG_SZ    "${root}"`,
         `${key}\\ForkUnexpandable`,
         '    DisplayName    REG_SZ    Fork Beta',
         '    DisplayIcon    REG_SZ    %UNSET_ICON%/Fork.exe',
@@ -356,6 +359,29 @@ describe('resolveLaunch locators', () => {
     expect(gitBash?.launch).toEqual({ kind: 'argv', command: join(git, 'git-bash.exe'), args: ['--cd={path}'] })
     const forkFound = await resolveLaunch(byId('fork'), TIMEOUT_MS, internals)
     expect(forkFound?.launch).toMatchObject({ kind: 'argv', command: fork })
+  })
+
+  it('resolves modern bare-Git DisplayName without matching GitHub Desktop', async () => {
+    const root = await tempRoot()
+    const git = join(root, 'Git')
+    await mkdir(git, { recursive: true })
+    await writeFile(join(git, 'git-bash.exe'), 'exe')
+    const run = runner((command, args) => {
+      if (command !== 'reg.exe') return null
+      const key = String(args[1])
+      if (key.includes('App Paths')) return ''
+      return [
+        `${key}\\GitHubDesktopTrap`,
+        '    DisplayName    REG_SZ    GitHub Desktop',
+        `    InstallLocation    REG_SZ    ${root}`,
+        `${key}\\Git`,
+        '    DisplayName    REG_SZ    Git',
+        `    InstallLocation    REG_SZ    ${git}`,
+        '',
+      ].join('\r\n')
+    })
+    const found = await resolveLaunch(byId('gitbash'), TIMEOUT_MS, bare({ platform: 'win32', env: {}, run }))
+    expect(found?.launch).toEqual({ kind: 'argv', command: join(git, 'git-bash.exe'), args: ['--cd={path}'] })
   })
 
   it('resolves GitHub Desktop through its packaged CLI, skipping incomplete newer installs', async () => {
