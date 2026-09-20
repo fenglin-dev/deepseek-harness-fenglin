@@ -97,6 +97,7 @@ import {
 } from './diagnostic-lab.ts'
 import { parseStartupBuildApproval } from './startup-build-approval.ts'
 import { ensureLegacySessionCompatibility } from './session-legacy-compatibility.ts'
+import { ensureFenglinLiangShenPreset } from './liangshen-preset-ensure.ts'
 import {
   readDesktopDataHomeSetup,
   resolveDesktopApplicationDataRoot,
@@ -1412,6 +1413,12 @@ async function startApplication(): Promise<void> {
       await appendDesktopStartupLog(summary)
     } catch (error) {
       await appendDesktopStartupLog(`legacy session compatibility skipped: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    try {
+      const presetSummary = await ensureFenglinLiangShenPreset(dshHome)
+      await appendDesktopStartupLog(presetSummary)
+    } catch (error) {
+      await appendDesktopStartupLog(`liangshen preset ensure skipped: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
   // Releases before the portable community import copied the complete Profile and did not write a

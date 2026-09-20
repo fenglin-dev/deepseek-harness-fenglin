@@ -2,7 +2,7 @@
   <img src="./apps/desktop/src/icon.png" width="112" alt="DeepSeek Harness Desktop Fenglin edition icon">
 </p>
 
-# DeepSeek Harness Desktop 3.0.2 (Fenglin Edition)
+# DeepSeek Harness Desktop 3.0.3 (Fenglin Edition)
 
 <p align="center">
   <strong>A ready-to-use, dependency-safe independent desktop edition of DeepSeek Harness</strong>
@@ -12,11 +12,15 @@ Languages: Simplified Chinese（见 [README.zh.md](./README.zh.md)） · [Englis
 
 > [!IMPORTANT]
 >
-> **[v3.0.2 is now available](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.2).**
+> **[v3.0.3 is now available](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.3).**
 >
 > Rebuilt from upstream `0.1.6-alpha.2` with Fenglin exclusive features and stability fixes. Large version jump: **clean install recommended**.
 >
 > Official languages: **Simplified Chinese / English** only. Other locale files under `.github/readme/` are not maintained for this fork.
+
+### What's new in 3.0.3
+
+- **LiangShen preset**: clean-install “load failed” fixed. Package `presets/liangshen` and `$DSH_HOME/.agent-presets/liangshen` both ship the Fenglin-verified composition so host sync cannot drop `./minimal-prompt.mjs` resolution; startup restores missing preset files.
 
 ### What's new in 3.0.2
 
@@ -26,27 +30,26 @@ Languages: Simplified Chinese（见 [README.zh.md](./README.zh.md)） · [Englis
 
 ### What's new in 3.0.1
 
-- **Market updates boot again**: Fenglin `cordis.patch.yml` is override-only and no longer re-inserts loader ids owned by official web-app or package cordis layers (`file-upload` / `ui-attachment` / `liangshen` / `web-ui-*`), fixing market trial `duplicate loader entry id` rollbacks.
+- **Market updates boot again**: Fenglin `cordis.patch.yml` is override-only and no longer re-inserts loader ids owned by official web-app or package cordis layers.
 - **Bundled plugins**: `dshmarket` **1.50.0**, `@xmanrui/dsh-im` **4.23.0**.
-- **Open-in-app**: Android Studio / Git Bash detection restored (Windows `ProgramFiles` fallback + exact Git registry name); menu no longer blocked by chat bubbles.
-- **Startup robustness**: missing `fenglin-ui-guard.yml` / `profiles/web` on custom data homes no longer hard-crashes; guard is seeded before launch; CI asserts prebuilt contains guard/profiles/settings.
+- **Open-in-app**: Android Studio / Git Bash detection restored; menu no longer blocked by chat bubbles.
+- **Startup robustness**: missing `fenglin-ui-guard.yml` / `profiles/web` no longer hard-crashes on custom data homes.
 
 ### What's new in 3.0.0
 
-- **Branding**: 3.0.0, Fenglin independent edition, whale-girl icon, updates pointed at this repo, `Ctrl+R`, composer attachment entry.
+- **Branding**: Fenglin independent edition, whale-girl icon, updates pointed at this repo, `Ctrl+R`, composer attachment entry.
 - **Plugins**: Skill Center default-on; LiangShen idle-switchable; Better Sidebar bottom workbench; bundled music default-on.
-- **Stability**: LiangShen session-id / dual-mount / burst; terminal sessionId; React #130; mkt-music diagnostics; Windows packaging allowlists.
 - **CI**: `dsh-v*` tags auto-build Linux + Windows installers onto GitHub Release.
 
 > [!NOTE]
 >
-> Project: [fenglin-dev/deepseek-harness-fenglin](https://github.com/fenglin-dev/deepseek-harness-fenglin). Upstream community desktop [flaqai/open-deepseek-harness-desktop](https://github.com/flaqai/open-deepseek-harness-desktop) also ships phone/small-window work; a mobile build may be evaluated in a later version. **This edition currently prioritizes desktop.**
+> Project: [fenglin-dev/deepseek-harness-fenglin](https://github.com/fenglin-dev/deepseek-harness-fenglin). Upstream [Open DeepSeek Harness Desktop](https://github.com/flaqai/open-deepseek-harness-desktop) also ships phone/small-window work; a mobile build may be evaluated later. **This edition currently prioritizes desktop.**
 
 <p align="center">
   <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases"><img src="https://img.shields.io/github/downloads/fenglin-dev/deepseek-harness-fenglin/total.svg?style=flat" alt="Downloads"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/github/license/fenglin-dev/deepseek-harness-fenglin?style=flat" alt="MIT License"></a>
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/upstream-DeepSeek%20Harness-4d6bfe?style=flat" alt="DeepSeek Harness upstream"></a>
-  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.2"><img src="https://img.shields.io/badge/release-3.0.2-4d6bfe?style=flat" alt="3.0.2"></a>
+  <a href="https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.3"><img src="https://img.shields.io/badge/release-3.0.3-4d6bfe?style=flat" alt="3.0.3"></a>
 </p>
 
 DeepSeek Harness Desktop (Fenglin Edition) is an independent desktop distribution of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) maintained at [fenglin-dev/deepseek-harness-fenglin](https://github.com/fenglin-dev/deepseek-harness-fenglin). Installers bundle Node.js, pnpm, and the Harness runtime. Electron is only a desktop host: configuration, credentials, sessions, plugins, and Skills stay owned by the local Harness service.

@@ -2,7 +2,7 @@
   <img src="../../apps/desktop/src/icon.png" width="112" alt="DeepSeek Harness Desktop Fenglin edition icon">
 </p>
 
-# DeepSeek Harness Desktop 3.0.2 (Fenglin Edition)
+# DeepSeek Harness Desktop 3.0.3 (Fenglin Edition)
 
 <p align="center">
   <strong>A ready-to-use, dependency-safe independent desktop edition of DeepSeek Harness</strong>
@@ -12,11 +12,15 @@ Languages: [简体中文](../../README.zh.md) · English
 
 > [!IMPORTANT]
 >
-> **[v3.0.2 is now available](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.2).**
+> **[v3.0.3 is now available](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.3).**
 >
 > Rebuilt from the upstream `0.1.6-alpha.2` baseline with Fenglin exclusive features and recent stability fixes. This is a large version jump: a **clean install is recommended** (remove the old install directory; optionally clear `%APPDATA%\open-deepseek-harness-desktop` before reinstalling).
 >
 > Language support: **Simplified Chinese / English** only.
+
+### What's new in 3.0.3
+
+- **LiangShen preset**: clean-install “load failed” fixed. Package `presets/liangshen` and `$DSH_HOME/.agent-presets/liangshen` both ship the Fenglin-verified composition so host sync cannot drop `./minimal-prompt.mjs` resolution; startup restores missing preset files.
 
 ### What's new in 3.0.2
 

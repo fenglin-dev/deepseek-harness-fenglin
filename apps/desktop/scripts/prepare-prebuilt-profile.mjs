@@ -248,7 +248,23 @@ dsh-better-sidebar:
         await cp(join(pluginPreset, name), join(presetDir, name), { recursive: true, force: true })
       }
     }
-    await cp(presetSource, join(presetDir, 'agent.cordis.yml'), { force: true })
+    // Fenglin-owned preset files win in BOTH places: the plugin host syncs
+    // package presets into `$DSH_HOME/.agent-presets` on every boot, so a
+    // mismatched package copy would overwrite the verified composition.
+    const fenglinPresetFiles = {
+      'agent.cordis.yml': 'liangshen-agent.cordis.yml',
+      'preset.yml': 'liangshen-preset.yml',
+      'minimal-prompt.mjs': 'minimal-prompt.mjs',
+      'tool-catalog.mjs': 'tool-catalog.mjs',
+      'custom-bash.mjs': 'custom-bash.mjs',
+      'NOTICE': 'NOTICE',
+    }
+    for (const [targetName, sourceName] of Object.entries(fenglinPresetFiles)) {
+      const source = join(fenglinFixes, sourceName)
+      if (!existsSync(source)) continue
+      await cp(source, join(presetDir, targetName), { force: true })
+      if (existsSync(pluginPreset)) await cp(source, join(pluginPreset, targetName), { force: true })
+    }
   }
   const leverClient = join(fenglinFixes, 'liangshen-client.js')
   const leverTarget = join(destination, 'profiles', 'web', 'node_modules', '@linxin666', 'dsh-liangshen', 'lib', 'client.js')
