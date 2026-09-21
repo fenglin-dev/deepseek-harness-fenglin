@@ -20,6 +20,35 @@
   gap: 16px;
 }
 
+.localImages {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.localImageStatus {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.localImageRetry {
+  justify-self: start;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 10px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.localImageRetry:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
 /* Wide markdown tables (the renderer's ≥4-column md-table-wide hook) span
    the whole transcript width instead of clipping at the 748px message
    column, while the table content keeps starting at its normal x (the lead

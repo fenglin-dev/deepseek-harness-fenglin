@@ -217,7 +217,8 @@ const ChatNodeList = memo(function ChatNodeList({ order, ...seatProps }: ChatNod
  */
 export function ChatView({
   useSession, useChat, useChatNode, useChatNodeProcess, useSessions, useStore, actions, renderSlot,
-  sessionId, openFile, openSkill, openExternalLink, loadOlder, loadThrough, loadImage, openView, chatScroll, forkAt, fileMentions,
+  sessionId, openFile, revealFile, openSkill, openExternalLink, loadOlder, loadThrough, loadImage, openView,
+  chatScroll, forkAt, fileMentions,
   useTranscriptView, useProjection, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
@@ -246,7 +247,11 @@ export function ChatView({
   const inspectCall = useCallback((callId: string) => {
     openView('trajectory', callId)
   }, [openView])
-  const [fileOpenError, setFileOpenError] = useState<{ path: string; message: string } | null>(null)
+  const [fileOpenError, setFileOpenError] = useState<{
+    path: string
+    action: 'open' | 'reveal'
+    message: string
+  } | null>(null)
   const [fileOpenBusy, setFileOpenBusy] = useState(false)
   // Close/retry must ignore a settlement that started before the latest
   // gesture; otherwise a cancelled in-flight refusal reopens the dialog.
@@ -265,6 +270,7 @@ export function ChatView({
         if (id !== fileOpenRequest.current) return
         setFileOpenError({
           path,
+          action: 'open',
           message: openFailureMessage(
             error,
             t('fileOpen.unknown'),
@@ -274,6 +280,28 @@ export function ChatView({
       },
     )
   }, [openFile, t])
+
+  const requestRevealFile = useCallback((path: string) => {
+    if (revealFile === undefined) return
+    const id = ++fileOpenRequest.current
+    setFileOpenBusy(true)
+    void revealFile(path).then(
+      () => {
+        if (id !== fileOpenRequest.current) return
+        setFileOpenError(null)
+        setFileOpenBusy(false)
+      },
+      (error: unknown) => {
+        if (id !== fileOpenRequest.current) return
+        setFileOpenError({
+          path,
+          action: 'reveal',
+          message: openFailureMessage(error, t('fileOpen.unknown')),
+        })
+        setFileOpenBusy(false)
+      },
+    )
+  }, [revealFile, t])
 
   const closeFileOpenError = useCallback(() => {
     fileOpenRequest.current += 1
@@ -793,6 +821,7 @@ export function ChatView({
               actions={actions}
               cwd={cwd}
               openFile={requestOpenFile}
+              revealFile={revealFile === undefined ? undefined : requestRevealFile}
               openSkill={openSkill}
               inspectCall={inspectCall}
               forkAt={forkAt}
@@ -848,7 +877,10 @@ export function ChatView({
           message={fileOpenError.message}
           busy={fileOpenBusy}
           onClose={closeFileOpenError}
-          onRetry={() => { requestOpenFile(fileOpenError.path) }}
+          onRetry={() => {
+            if (fileOpenError.action === 'reveal') requestRevealFile(fileOpenError.path)
+            else requestOpenFile(fileOpenError.path)
+          }}
           t={t}
         />
       )}

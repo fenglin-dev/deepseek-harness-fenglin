@@ -82,6 +82,8 @@ export interface ChatNodeOwnerProps {
   /** Open the current source file of a skill referenced by a sent message. */
   openSkill: (name: string) => void
   openFile: (path: string, options?: OpenFileOptions) => void
+  /** Reveal a Host-local file in the native file manager when available. */
+  revealFile?: ((path: string) => void) | undefined
   inspectCall: (callId: ToolCallId) => void
   forkAt: (seq: number) => void
   /**
@@ -145,6 +147,8 @@ export interface ChatViewInjected {
   /** Open one HTTP(S) message link in a Sidebar Browser tab. */
   openExternalLink: (url: string) => void
   openFile: (path: string, options?: OpenFileOptions) => Promise<void>
+  /** Reveal a Host-local file in the native file manager when available. */
+  revealFile?: ((path: string) => Promise<void>) | undefined
   loadOlder: () => void
   /** Jump loader: page history back through seq; resolves when the window covers it. */
   loadThrough: (seq: SessionSeq) => Promise<void>
