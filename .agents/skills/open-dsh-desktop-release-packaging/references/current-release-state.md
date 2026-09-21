@@ -13,23 +13,23 @@ This file is the authoritative ledger for the active desktop packaging cycle. Re
 
 ## Recorded source state
 
-Last observed: `2026-09-20 16:15:45 CST`
+Last observed: `2026-09-20 19:41:04 CST`
 
 | Item | Recorded value | State |
 | --- | --- | --- |
 | `master` | `origin/master` | selected source candidate; includes the release-orchestration empty-conclusion parser repair |
 | Packaging branch | `origin/fix/windows-packaging-0.1.6-alpha.2` | synchronized to the selected source candidate |
 | Release branch | `origin/release/0.1.6-alpha.2` | synchronized to the selected source candidate |
-| Release notes | `.artifacts/release-notes/odsh-v0.1.6-alpha.2.md` | early bilingual draft refreshed for `origin/master`; native qualification claims removed pending the rebuild |
+| Release notes | `.artifacts/release-notes/odsh-v0.1.6-alpha.2.md` | regenerated from the previous public `odsh-v0.1.5-rc.2.3` Release to tag `odsh-v0.1.6-alpha.2`; Python and Office are described as newly added on-demand capabilities |
 
 ## Network preflight
 
 | Item | Recorded value |
 | --- | --- |
-| Adopted route | HTTP, HTTPS, and SOCKS through `127.0.0.1:7890` |
+| Adopted route | direct CLI route through the selected system network node; the extra `127.0.0.1:7890` HTTP layer was removed after it produced intermittent GitHub API EOF responses |
 | Required floor | `1.0 MiB/s` |
-| Last result | passed at `1.18 MiB/s` minimum and `1.52 MiB/s` average; sampled `desktop-linux-x64` from run `35458153656` (`47824896` bytes in `30.00s`) |
-| Dispatch permission | allowed by the rebuild network preflight; no new workflow dispatched yet |
+| Last result | passed at `2.91 MiB/s` minimum and `3.05 MiB/s` average; sampled `desktop-linux-x64` from run `35500438762` (`67108864` bytes in `21.05s`) |
+| Dispatch permission | all native builds, downloads, and exact-set verification completed |
 
 ## Platform delivery matrix
 
@@ -37,18 +37,22 @@ These rows describe artifacts built from the final source for this locked versio
 
 | Platform | Workflow run | Build | Native qualification | Downloaded locally | Exact-set verified | Public on GitHub | Public on CNB |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Windows x64 | replacement pending; run [35498891258](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35498891258) was cancelled | the cancelled run used the intended source but exposed an orchestration parser defect before qualification completed | rebuild restarts after the parser repair is pushed | previous set retained | pending rebuild | no | no |
-| macOS arm64/x64 | previous run [35456891164](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35456891164) | stale after source advanced | previous final DMG and ZIP smoke succeeded; rebuild not started | previous set retained | pending rebuild | no | no |
-| Linux x64 | previous run [35458153656](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35458153656) | stale after source advanced | previous packaged-resource and package smoke succeeded; rebuild not started | previous set retained | pending rebuild | no | no |
+| Windows x64 | [35499287110](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35499287110) | succeeded | candidate build, installed-package smoke and checksum jobs succeeded | downloaded | verified in complete set | yes | yes |
+| macOS arm64/x64 | [35500405004](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35500405004) | succeeded for both architectures | final DMG and ZIP native smoke succeeded for arm64 and x64 | downloaded | verified in complete set | yes | yes |
+| Linux x64 | [35500438762](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35500438762) | succeeded | packaged resources, deb/rpm build and checksum jobs succeeded | downloaded | verified in complete set | yes | yes |
 
 ## Publication state
 
-- GitHub tag: not created.
-- GitHub tag and Release: `odsh-v0.1.6-alpha.2` not found when checked on `2026-09-20`; no platform assets are public there.
-- CNB anonymous update index: reachable through the recorded proxy but contains no `0.1.6-alpha.2` entry; no platform is publicly distributed through the update index.
-- Bundled-plugin snapshot: previous qualified digest `fe0d9405f880cd2f0450e757f8c93d1a9328e5c3f173ac1a54fe2bed054640a8`; the rebuild has not resolved its snapshot.
-- Local handoff directory: `/Users/6677h/StudioProjects/flaq-deepseek-harness/open-deepseek-harness-desktop/release/0.1.6-alpha.2`; it contains the previous exact set and must not be presented or published as the new `origin/master` candidate.
-- Publication authorization: not granted by this ledger. Obtain fresh explicit authorization immediately before tag creation, asset upload, or public Release publication.
+- GitHub tag: `odsh-v0.1.6-alpha.2` identifies the published source revision.
+- GitHub Release: public, stable/latest, and not a prerelease at `https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.6-alpha.2`; published at `2026-09-20T11:03:43Z`.
+- GitHub assets: 18 public assets: seven desktop installers, eight optional runtime archives, `SHA256SUMS`, the signed runtime catalog, and its Sigstore bundle. All 15 distributable files match their recorded SHA-256 values.
+- Optional runtime delivery: the eight managed-Python and official-Office-engine archives are public for Windows x64, macOS arm64/x64, and Linux x64. Signed runtime metadata was generated by successful run [35508066786](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35508066786).
+- CNB synchronization: exact-tag run [35508142613](https://github.com/flaqai/open-deepseek-harness-desktop/actions/runs/35508142613) succeeded for `odsh-v0.1.6-alpha.2` after the signed metadata was available.
+- CNB anonymous update index: revision `53`, generated `2026-09-20T11:36:50.551Z`, expires `2026-09-20T17:36:50.551Z`, and contains one active `odsh-v0.1.6-alpha.2` entry with all 15 distributable assets. Anonymous HEAD checks returned the indexed byte size for every asset. Release URL: `https://cnb.cool/hecoococ/open-deepseek-harness-desktop/-/releases/tag/odsh-v0.1.6-alpha.2`.
+- CNB signed metadata: both `workspace-runtimes-0.1.6-alpha.2.v1.json` and `workspace-runtimes.v1.sigstore.json` are anonymously downloadable from the CNB Release with the same byte sizes as GitHub.
+- Bundled-plugin snapshot: all three accepted runs match digest `f433923408bfe057247aa6a9362cfb502d7be34092c6e2b589a0eba177a60fd8`.
+- Local handoff directory: `/Users/6677h/StudioProjects/flaq-deepseek-harness/open-deepseek-harness-desktop/release/0.1.6-alpha.2`; its seven installers remain unchanged and verified against the accepted workflow checksums. `SHA256SUMS` now also records the eight optional runtime archives used by GitHub and CNB.
+- Publication authorization: complete. The user manually confirmed the GitHub publication, and the GitHub-to-CNB synchronization plus anonymous verification succeeded.
 
 ## Updating this ledger
 

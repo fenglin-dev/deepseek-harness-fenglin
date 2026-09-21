@@ -28,6 +28,8 @@ Select the previous published, non-draft Release that was eligible for normal cl
 - platform qualification actually completed for the seven installers;
 - confirmed upgrade limitations, unsigned-package instructions, data migration boundaries, and known issues.
 
+Repeat this derivation whenever the user asks to rebuild or repackage, including another build of the same version. Resolve the latest release-branch commit again and regenerate the notes from the previous published Release to that commit. An unpublished Draft, an earlier workflow run, and an earlier notes draft for the same version are preparation state, not the comparison baseline.
+
 Group commits by user-visible outcome. Omit refactors, test-only work, generated-file churn, reverted changes, and implementation details unless they materially affect compatibility or recovery. Do not infer a fix from an issue title alone.
 
 Prepare the first complete bilingual draft as part of release-version preparation, before the packaging branch is pushed. Use repository and previous-Release evidence available at that point. If native workflows or the bundled-plugin snapshot have not completed, omit those outcome claims and conditional sections rather than inserting placeholders, guessed versions, or unverified platform statements. After all accepted workflows finish, update the same file with the exact plugin delta and qualification evidence and show the refreshed body to the user.
@@ -115,6 +117,7 @@ Choose two to six update themes that describe user outcomes, such as startup and
 
 - Produce one coherent final document. Do not preserve upload diaries, numbered retry notes, `原部分`, emergency headings, or statements such as “third upload” and “please reinstall” that describe the maintainer's publishing process rather than the software.
 - Describe the delta once. Do not paste the previous Release body beneath new changes or repeat an older feature merely because it remains available.
+- Describe delivery from the user's previous published version. When a capability first appears as an optional download, call it a newly added on-demand capability. Say that something was removed from installers only when the previous published installers actually contained it.
 - Put urgent confirmed warnings in a concise blockquote after the summaries or in the compatibility section. Do not turn a temporary diagnosis, speculation, or future promise into a heading.
 - State the upstream baseline exactly when it changed. Separate upstream changes from community desktop changes without implying that FLAQ authored upstream work.
 - List bundled plugin versions only from accepted workflow snapshots. Do not say “latest” or copy registry state observed outside the package run.
