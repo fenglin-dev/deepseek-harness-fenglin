@@ -37,7 +37,7 @@ test('desktop installers exclude optional Python payloads while the Harness clos
   assert.doesNotMatch(optionalRuntime, /DeepSeek-Harness-office-runtime/u)
 })
 
-test('the optional runtime lock and package workflow cover the exact supported targets and Office set', async () => {
+test('optional runtimes use separate sources instead of the desktop package workflow', async () => {
   const lock = JSON.parse(await read('apps/desktop/scripts/primary-runtime-lock.json'))
   assert.equal(lock.pythonVersion.startsWith('3.12.'), true)
   assert.deepEqual(Object.keys(lock.targets).sort(), ['linux-x64', 'mac-arm64', 'mac-x64', 'win-x64'])
@@ -46,15 +46,12 @@ test('the optional runtime lock and package workflow cover the exact supported t
   ]) assert.equal(typeof lock.pythonPackages[name], 'string', `${name} must be locked`)
 
   const workflow = await read('.github/workflows/desktop-packages.yml')
-  assert.match(workflow, /workspace-runtime-win32-x64/u)
-  assert.match(workflow, /workspace-runtime-linux-x64/u)
-  assert.match(workflow, /workspace-runtime-darwin-\$\{\{ matrix\.arch \}\}/u)
+  assert.doesNotMatch(workflow, /prepare-workspace-runtime|workspace-runtime-|assemble-workspace-runtime-manifest/u)
   assert.doesNotMatch(workflow, /DeepSeek-Harness-office-runtime/u)
   assert.match(await read('apps/desktop/scripts/official-office-runtime.ts'), /registry\.npmjs\.org/u)
   const metadataWorkflow = await read('.github/workflows/workspace-runtime-release.yml')
   assert.match(metadataWorkflow, /hecoococ\/open-dsh-runtime-assets/u)
   assert.doesNotMatch(metadataWorkflow, /DeepSeek-Harness-office-runtime/u)
   assert.match(metadataWorkflow, /workspace-runtimes-\*\.v2\.json/u)
-  assert.match(workflow, /arch: arm64/u)
-  assert.match(workflow, /arch: x64/u)
+  assert.match(metadataWorkflow, /DeepSeek-Harness-workspace-runtime-\*\.tar\.gz/u)
 })

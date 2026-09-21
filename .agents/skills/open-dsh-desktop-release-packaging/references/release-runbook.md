@@ -124,6 +124,8 @@ The accepted jobs are:
 - SHA-256 checksum generation;
 - artifact upload.
 
+Optional workspace runtimes are deliberately outside this workflow. Python archives are built and published by the dedicated runtime-assets repository, and the official Office engine is resolved from its official npm package when requested. The desktop checksum artifact therefore describes desktop installers only; do not reintroduce runtime archives or a runtime catalog assembly step here.
+
 If a run fails:
 
 ```sh

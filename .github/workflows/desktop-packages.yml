@@ -155,9 +155,6 @@ jobs:
           echo "macOS packaging open-file limit: $(ulimit -n)"
           pnpm run package:desktop:macos:${{ matrix.arch }}
 
-      - name: Build optional workspace runtime
-        run: pnpm exec tsx apps/desktop/scripts/prepare-workspace-runtime.ts mac-${{ matrix.arch }}
-
       - name: Verify macOS Helper lookup regression
         run: node --test apps/desktop/scripts/smoke-macos-package.test.mjs
 
@@ -173,16 +170,6 @@ jobs:
           path: |
             .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.dmg
             .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.zip
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: '0'
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: workspace-runtime-darwin-${{ matrix.arch }}
-          path: |
-            .artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-darwin-${{ matrix.arch }}.tar.gz
-            .artifacts/workspace-runtime/workspace-runtime-darwin-${{ matrix.arch }}.json
           if-no-files-found: error
           retention-days: 14
           compression-level: '0'
@@ -262,14 +249,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
 
       - name: Verify Windows smoke evidence interface
         shell: pwsh
@@ -316,9 +298,6 @@ jobs:
           run-id: ${{ inputs.windows_candidate_run_id || github.run_id }}
           github-token: ${{ github.token }}
 
-      - name: Build optional workspace runtime
-        run: pnpm exec tsx apps/desktop/scripts/prepare-workspace-runtime.ts win-x64
-
       - name: Smoke test installed Windows package
         shell: pwsh
         run: apps/desktop/scripts/smoke-windows-package.ps1
@@ -343,16 +322,6 @@ jobs:
           name: desktop-windows-x64
           path: |
             .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: '0'
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: workspace-runtime-win32-x64
-          path: |
-            .artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz
-            .artifacts/workspace-runtime/workspace-runtime-win32-x64.json
           if-no-files-found: error
           retention-days: 14
           compression-level: '0'
@@ -395,9 +364,6 @@ jobs:
       - name: Build Linux packages
         run: pnpm run package:desktop:linux:x64
 
-      - name: Build optional workspace runtime
-        run: pnpm exec tsx apps/desktop/scripts/prepare-workspace-runtime.ts linux-x64
-
       - name: Verify packaged preset resources
         run: node apps/desktop/scripts/verify-prebuilt-profile.mjs .artifacts/desktop-linux/linux-unpacked/resources
 
@@ -407,16 +373,6 @@ jobs:
           path: |
             .artifacts/desktop-linux/DeepSeek-Harness-linux-x64.deb
             .artifacts/desktop-linux/DeepSeek-Harness-linux-x64.rpm
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: '0'
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: workspace-runtime-linux-x64
-          path: |
-            .artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-linux-x64.tar.gz
-            .artifacts/workspace-runtime/workspace-runtime-linux-x64.json
           if-no-files-found: error
           retention-days: 14
           compression-level: '0'
@@ -433,31 +389,9 @@ jobs:
       ) }}
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@v4
-        if: ${{ inputs.target == 'all' }}
-
-      - uses: actions/setup-node@v6
-        if: ${{ inputs.target == 'all' }}
-        with:
-          node-version: ${{ env.PRIMARY_NODE_VERSION }}
-          cache: pnpm
-
-      - if: ${{ inputs.target == 'all' }}
-        run: pnpm install --frozen-lockfile
-
       - uses: actions/download-artifact@v4
         with:
           pattern: desktop-*
-          path: dist
-          merge-multiple: true
-
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: workspace-runtime-*
           path: dist
           merge-multiple: true
 
@@ -468,15 +402,9 @@ jobs:
           \( -name 'DeepSeek-Harness-macos-*' -o -name 'DeepSeek-Harness-windows-*' -o -name 'DeepSeek-Harness-linux-*' \)
           -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
 
-      - name: Assemble workspace-runtime catalog
-        if: ${{ inputs.target == 'all' }}
-        run: pnpm exec tsx apps/desktop/scripts/assemble-workspace-runtime-manifest.ts dist dist
-
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-checksums
-          path: |
-            dist/SHA256SUMS
-            dist/workspace-runtimes-*.v2.json
+          path: dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 14

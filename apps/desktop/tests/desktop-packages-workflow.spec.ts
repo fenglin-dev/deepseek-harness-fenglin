@@ -90,14 +90,19 @@ describe('desktop package workflow bundled plugins', () => {
     expect(workflow['run-name']).toContain('inputs.orchestration_id')
   })
 
-  it('does not install the workspace only to checksum a single platform run', () => {
+  it('does not build or assemble optional runtimes in the desktop workflow', () => {
     const { workflow } = readWorkflow()
-    const checksums = workflow.jobs.checksums
-    for (const step of checksums?.steps ?? []) {
-      if (step.uses === 'pnpm/action-setup@v4' || step.uses === 'actions/setup-node@v6' || step.run === 'pnpm install --frozen-lockfile') {
-        expect(step.if).toBe("${{ inputs.target == 'all' }}")
+    for (const job of Object.values(workflow.jobs)) {
+      for (const step of job.steps ?? []) {
+        expect(step.name).not.toBe('Build optional workspace runtime')
+        expect(step.run ?? '').not.toContain('prepare-workspace-runtime.ts')
+        expect(step.run ?? '').not.toContain('assemble-workspace-runtime-manifest.ts')
+        expect(step.with?.name ?? '').not.toMatch(/^workspace-runtime-/u)
+        expect(step.with?.pattern ?? '').not.toMatch(/^workspace-runtime-/u)
       }
     }
+    expect(workflow.jobs.checksums?.steps?.some(step => step.uses === 'pnpm/action-setup@v4')).toBe(false)
+    expect(workflow.jobs.checksums?.steps?.some(step => step.uses === 'actions/setup-node@v6')).toBe(false)
   })
 
   it('disables redundant compression for already compressed release payloads', () => {
@@ -106,9 +111,6 @@ describe('desktop package workflow bundled plugins', () => {
       'desktop-macos-${{ matrix.arch }}',
       'desktop-windows-x64',
       'desktop-linux-x64',
-      'workspace-runtime-darwin-${{ matrix.arch }}',
-      'workspace-runtime-win32-x64',
-      'workspace-runtime-linux-x64',
     ])
     for (const job of Object.values(workflow.jobs)) {
       for (const step of job.steps ?? []) {
@@ -198,13 +200,9 @@ describe('desktop package workflow bundled plugins', () => {
     ))).toBe(true)
 
     expect(smoke?.if).toContain('inputs.windows_candidate_run_id')
-    const smokePnpm = smoke?.steps?.findIndex(step => step.uses === 'pnpm/action-setup@v4') ?? -1
-    const smokeInstall = smoke?.steps?.findIndex(step => step.run === 'pnpm install --frozen-lockfile') ?? -1
-    const runtimeBuild = smoke?.steps?.findIndex(step => step.name === 'Build optional workspace runtime') ?? -1
-    expect(smokePnpm).toBeGreaterThanOrEqual(0)
-    expect(smokeInstall).toBeGreaterThan(smokePnpm)
-    expect(runtimeBuild).toBeGreaterThan(smokeInstall)
-    expect(smoke?.steps?.some(step => step.uses === 'actions/setup-node@v6' && step.with?.cache === 'pnpm')).toBe(true)
+    expect(smoke?.steps?.some(step => step.uses === 'pnpm/action-setup@v4')).toBe(false)
+    expect(smoke?.steps?.some(step => step.run === 'pnpm install --frozen-lockfile')).toBe(false)
+    expect(smoke?.steps?.some(step => step.uses === 'actions/setup-node@v6' && step.with?.cache === undefined)).toBe(true)
     const reuseCheck = smoke?.steps?.find(step => step.name === 'Verify reused candidate commit')?.run
     const evidenceCheck = smoke?.steps?.find(step => step.name === 'Verify Windows smoke evidence interface')
     expect(evidenceCheck?.run).toContain('windows-smoke-journal.test.ps1')
