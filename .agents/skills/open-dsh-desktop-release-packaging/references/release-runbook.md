@@ -136,6 +136,8 @@ Fix the actual failure on the packaging-fix branch. After any source commit chan
 
 The resource contract in `apps/desktop/scripts/packaged-resource-contract.json` is the fast gate shared by all targets. When a packaged file or `extraResources` destination changes, update that contract and its test in the same commit. A native runner must not be used to discover a missing static resource that the contract can reject on Ubuntu first.
 
+Windows adds a short native preflight before the expensive installer build. The reusable candidate artifact contains only the EXE and `windows-package-candidate.json`, not the unpacked application or dependency tree. Reuse is decided by the manifest's packaged-input digest, bundled-plugin digest and installer identity; do not restore a hand-maintained changed-file allowlist. Installed-package failure evidence remains a bounded metadata-only JSON artifact with three-day retention.
+
 ## 5. Bundled plugin consistency
 
 ### Prebuilt resource qualification

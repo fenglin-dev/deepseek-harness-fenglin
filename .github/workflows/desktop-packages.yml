@@ -111,6 +111,34 @@ jobs:
           retention-days: 14
           compression-level: '0'
 
+  windows-preflight:
+    name: Windows x64 fast preflight
+    if: ${{ inputs.windows_candidate_run_id == '' && (inputs.target == 'all' || inputs.target == 'windows-x64') }}
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify Windows packaging and candidate contracts
+        run: >-
+          node --test
+          apps/desktop/scripts/runtime-deploy-config.test.mjs
+          apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs
+          apps/desktop/scripts/windows-package-candidate.test.mjs
+
+      - name: Verify Windows runner protocol
+        run: pnpm exec vitest run packages/subprocess/subprocess-local/tests/spawn-runner.spec.ts packages/subprocess/subprocess-local/tests/windows-job.spec.ts
+
   macos:
     name: macOS ${{ matrix.arch }}
     if: ${{ inputs.windows_candidate_run_id == '' && (inputs.target == 'all' || inputs.target == 'macos') }}
@@ -177,7 +205,7 @@ jobs:
   windows:
     name: Build Windows x64 candidate
     if: ${{ inputs.windows_candidate_run_id == '' && (inputs.target == 'all' || inputs.target == 'windows-x64') }}
-    needs: bundled-plugins
+    needs: [bundled-plugins, windows-preflight]
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
     runs-on: windows-2025
@@ -204,12 +232,6 @@ jobs:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
 
-      - name: Verify Windows packaging contracts
-        run: node --test apps/desktop/scripts/runtime-deploy-config.test.mjs apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs
-
-      - name: Verify Windows runner protocol
-        run: pnpm exec vitest run packages/subprocess/subprocess-local/tests/spawn-runner.spec.ts packages/subprocess/subprocess-local/tests/windows-job.spec.ts
-
       - name: Prepare bundled plugins
         run: pnpm run prepare:desktop:bundled-plugins
 
@@ -226,12 +248,21 @@ jobs:
       - name: Probe unpacked app.asar and Electron entries
         run: node apps/desktop/scripts/smoke-windows-unpacked.mjs
 
+      - name: Record Windows candidate identity
+        run: >-
+          node apps/desktop/scripts/windows-package-candidate.mjs create .
+          .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
+          apps/desktop/bundled-plugins
+          .artifacts/desktop-windows/windows-package-candidate.json
+
       - name: Preserve Windows candidate
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: qualification-windows-x64-candidate
-          path: .artifacts/desktop-windows
+          path: |
+            .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
+            .artifacts/desktop-windows/windows-package-candidate.json
           if-no-files-found: warn
           retention-days: 3
 
@@ -259,37 +290,10 @@ jobs:
           & apps/desktop/scripts/windows-smoke-journal.test.ps1
           node --test apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs
 
-      - name: Verify reused candidate commit
-        if: ${{ inputs.windows_candidate_run_id != '' }}
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $run = gh api "repos/${{ github.repository }}/actions/runs/${{ inputs.windows_candidate_run_id }}" | ConvertFrom-Json
-          if ($run.head_sha -ne '${{ github.sha }}') {
-            $allowed = @(
-              '.github/workflows/desktop-packages.yml',
-              'CONTEXT.md',
-              'apps/desktop/scripts/collect-windows-smoke-diagnostics.ps1',
-              'apps/desktop/scripts/collect-windows-smoke-evidence.mjs',
-              'apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs',
-              'apps/desktop/scripts/runtime-deploy-config.test.mjs',
-              'apps/desktop/scripts/smoke-windows-package.ps1',
-              'apps/desktop/scripts/windows-smoke-journal.ps1',
-              'apps/desktop/scripts/windows-smoke-journal.test.ps1',
-              'apps/desktop/tests/desktop-cli-package.spec.ts',
-              'apps/desktop/tests/desktop-packages-workflow.spec.ts'
-            )
-            git fetch --no-tags --depth=1 origin $run.head_sha
-            if ($LASTEXITCODE -ne 0) { throw "Could not fetch candidate commit $($run.head_sha)" }
-            $changed = @(git diff --name-only $run.head_sha '${{ github.sha }}')
-            if ($LASTEXITCODE -ne 0) { throw "Could not compare candidate commit $($run.head_sha)" }
-            $unsafe = @($changed | Where-Object { $_ -notin $allowed })
-            if ($unsafe.Count -gt 0) {
-              throw "Candidate run commit $($run.head_sha) differs in packaged inputs: $($unsafe -join ', ')"
-            }
-            Write-Host "Reusing candidate from $($run.head_sha); intervening changes are smoke-only: $($changed -join ', ')"
-          }
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundled-plugin-snapshot
+          path: .artifacts/bundled-plugin-snapshot
 
       - uses: actions/download-artifact@v4
         with:
@@ -297,6 +301,13 @@ jobs:
           path: .artifacts/desktop-windows
           run-id: ${{ inputs.windows_candidate_run_id || github.run_id }}
           github-token: ${{ github.token }}
+
+      - name: Verify Windows candidate identity
+        run: >-
+          node apps/desktop/scripts/windows-package-candidate.mjs verify .
+          .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
+          .artifacts/bundled-plugin-snapshot
+          .artifacts/desktop-windows/windows-package-candidate.json
 
       - name: Smoke test installed Windows package
         shell: pwsh

@@ -87,7 +87,7 @@ function workflowContract() {
   if (/\bgh\s+release\b|softprops\/action-gh-release|\brelease\s+(?:create|upload|edit)\b/iu.test(source)) {
     throw new Error('desktop package qualification must not publish Releases')
   }
-  for (const input of ['target', 'refresh_plugins', 'bundled_plugin_run_id', 'orchestration_id']) {
+  for (const input of ['target', 'refresh_plugins', 'bundled_plugin_run_id', 'orchestration_id', 'windows_candidate_run_id']) {
     if (!new RegExp(`^ {6}${input}:`, 'mu').test(source)) throw new Error(`desktop-packages.yml is missing workflow input ${input}`)
   }
   return 'qualification-only workflow contract'

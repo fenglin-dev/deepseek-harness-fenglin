@@ -25,6 +25,7 @@ on:
       refresh_plugins:
       bundled_plugin_run_id:
       orchestration_id:
+      windows_candidate_run_id:
 permissions:
   contents: read
 jobs: {}

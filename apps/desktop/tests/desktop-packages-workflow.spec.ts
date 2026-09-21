@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 interface WorkflowJob {
   readonly if?: string
-  readonly needs?: string
+  readonly needs?: string | string[]
   readonly env?: Record<string, string>
   readonly steps?: Array<{ name?: string; if?: string; uses?: string; with?: Record<string, string>; run?: string; 'continue-on-error'?: boolean }>
 }
@@ -56,7 +56,7 @@ describe('desktop package workflow bundled plugins', () => {
 
     for (const name of ['macos', 'windows', 'linux']) {
       const job = workflow.jobs[name]
-      expect(job?.needs).toBe('bundled-plugins')
+      expect(Array.isArray(job?.needs) ? job.needs : [job?.needs]).toContain('bundled-plugins')
       expect(job?.env?.DSH_BUNDLED_PLUGINS_REFRESH).toBe('0')
       expect(job?.steps?.some(step => (
         step.uses === 'actions/download-artifact@v4'
@@ -181,21 +181,32 @@ describe('desktop package workflow bundled plugins', () => {
     const source = readFileSync(resolve(import.meta.dirname, '../../../.github/workflows/desktop-packages.yml'), 'utf8')
     const workflow = parse(source) as { jobs: Record<string, WorkflowJob> }
     const build = workflow.jobs.windows
+    const preflight = workflow.jobs['windows-preflight']
     const smoke = workflow.jobs['windows-smoke']
 
-    expect(build?.steps?.some(step => step.run === 'node --test apps/desktop/scripts/runtime-deploy-config.test.mjs apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs')).toBe(true)
-    const protocolCheck = build?.steps?.findIndex(step => step.name === 'Verify Windows runner protocol') ?? -1
-    const hostBuild = build?.steps?.findIndex(step => step.name === 'Build clean-checkout Host and Desktop') ?? -1
-    expect(protocolCheck).toBeGreaterThanOrEqual(0)
-    expect(protocolCheck).toBeLessThan(hostBuild)
-    expect(build?.steps?.[protocolCheck]?.run).toContain('packages/subprocess/subprocess-local/tests/spawn-runner.spec.ts')
+    expect(build?.needs).toEqual(['bundled-plugins', 'windows-preflight'])
+    expect(preflight?.if).toContain("inputs.target == 'windows-x64'")
+    expect(preflight?.steps?.some(step => (
+      step.name === 'Verify Windows packaging and candidate contracts'
+      && step.run?.includes('windows-package-candidate.test.mjs')
+      && step.run?.includes('runtime-deploy-config.test.mjs')
+    ))).toBe(true)
+    expect(preflight?.steps?.find(step => step.name === 'Verify Windows runner protocol')?.run)
+      .toContain('packages/subprocess/subprocess-local/tests/spawn-runner.spec.ts')
+    expect(build?.steps?.some(step => step.name === 'Verify Windows runner protocol')).toBe(false)
     expect(build?.steps?.some(step => step.run === 'pnpm run build:community-desktop')).toBe(true)
     expect(build?.steps?.some(step => step.run === 'node apps/desktop/scripts/prepare-windows-runtime.mjs')).toBe(true)
     expect(build?.steps?.some(step => step.run === 'node apps/desktop/scripts/smoke-windows-unpacked.mjs')).toBe(true)
     expect(build?.steps?.some(step => (
+      step.name === 'Record Windows candidate identity'
+      && step.run?.includes('windows-package-candidate.mjs create')
+    ))).toBe(true)
+    expect(build?.steps?.some(step => (
       step.name === 'Preserve Windows candidate'
       && step.if === '${{ always() }}'
       && step.with?.name === 'qualification-windows-x64-candidate'
+      && step.with?.path?.includes('DeepSeek-Harness-windows-x64.exe')
+      && step.with?.path?.includes('windows-package-candidate.json')
       && step.with?.['if-no-files-found'] === 'warn'
     ))).toBe(true)
 
@@ -203,19 +214,19 @@ describe('desktop package workflow bundled plugins', () => {
     expect(smoke?.steps?.some(step => step.uses === 'pnpm/action-setup@v4')).toBe(false)
     expect(smoke?.steps?.some(step => step.run === 'pnpm install --frozen-lockfile')).toBe(false)
     expect(smoke?.steps?.some(step => step.uses === 'actions/setup-node@v6' && step.with?.cache === undefined)).toBe(true)
-    const reuseCheck = smoke?.steps?.find(step => step.name === 'Verify reused candidate commit')?.run
     const evidenceCheck = smoke?.steps?.find(step => step.name === 'Verify Windows smoke evidence interface')
     expect(evidenceCheck?.run).toContain('windows-smoke-journal.test.ps1')
     expect(evidenceCheck?.run).toContain('node --test apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs')
-    expect(reuseCheck).toContain('git fetch --no-tags --depth=1')
-    expect(reuseCheck).toContain('git diff --name-only')
-    expect(reuseCheck).toContain('CONTEXT.md')
-    expect(reuseCheck).toContain('apps/desktop/scripts/collect-windows-smoke-evidence.mjs')
-    expect(reuseCheck).toContain('apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs')
-    expect(reuseCheck).toContain('apps/desktop/scripts/windows-smoke-journal.ps1')
-    expect(reuseCheck).toContain('apps/desktop/scripts/windows-smoke-journal.test.ps1')
-    expect(reuseCheck).toContain('apps/desktop/scripts/smoke-windows-package.ps1')
-    expect(reuseCheck).toContain('apps/desktop/tests/desktop-cli-package.spec.ts')
+    expect(smoke?.steps?.some(step => (
+      step.uses === 'actions/download-artifact@v4'
+      && step.with?.name === 'bundled-plugin-snapshot'
+      && step.with?.path === '.artifacts/bundled-plugin-snapshot'
+    ))).toBe(true)
+    expect(smoke?.steps?.some(step => (
+      step.name === 'Verify Windows candidate identity'
+      && step.run?.includes('windows-package-candidate.mjs verify')
+    ))).toBe(true)
+    expect(smoke?.steps?.some(step => step.name === 'Verify reused candidate commit')).toBe(false)
     expect(smoke?.steps?.some(step => step.with?.['run-id'] === '${{ inputs.windows_candidate_run_id || github.run_id }}')).toBe(true)
     expect(smoke?.steps?.some(step => (
       step.name === 'Collect Windows smoke evidence'
