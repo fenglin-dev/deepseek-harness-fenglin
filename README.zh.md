@@ -12,9 +12,9 @@
 
 > [!IMPORTANT]
 >
-> **[v0.1.5-rc.2.3 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3)。** 本版本继续以官方 DeepSeek Harness `0.1.5-rc.2` 为核心基线，重点改进手机端和小窗口布局、模型搜索及长回答性能、社区配置导入、预设插件升级恢复、插件市场重启确认和持久化诊断日志。
+> **[v0.1.6-alpha.2 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.6-alpha.2)。** 本版本同步官方 [DeepSeek Harness `dsh-v0.1.6-alpha.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.2)，加入插件管理、回合文件改动审阅、Office 与网页侧栏预览、Subagent 会话和计划预览，并保留社区桌面的独立数据目录、诊断恢复、预置插件与更新渠道。
 >
-> 虽然版本名保留 `rc`，本次在 GitHub 上按正式 Release 发布。升级前仍建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈给我们。
+> 虽然版本名包含 `alpha`，社区构建已在 GitHub 上按正式 Release 发布。升级前仍建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈给我们。
 
 <p align="center">
   <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="下载量"></a>
@@ -34,7 +34,10 @@ Open DeepSeek Harness Desktop 是由社区独立维护的 [DeepSeek Harness](htt
 
 - [AI 会话工作台](#ai-会话工作台)：可调正文、回合导航、精确 Token、发送队列，以及更完整的图片与文件体验。
 - [首次启动与独立配置环境](#首次启动与独立配置环境)：导入官方配置、复用社区桌面版配置或全新开始。
+- [NAS 运行端（预览）](#nas-运行端预览)：社区提供的 Linux NAS 运行端，让多台桌面客户端连接同一套 Profile、会话和 Workspace。
 - [插件发现、安装与更新](#插件发现安装与更新)：真实市场目录、分类推荐、本机状态、立即安装和联网更新。
+- [0.1.6 实验能力](#官方-016-实验能力)：从设置页按需安装 Browser Use、Computer Use 与 Auto review。
+- [工作运行时按需安装](#工作运行时按需安装)：选择托管或本机 Python，按需启用 Office 工具包与实验性 Python PTC。
 - [超级强化的诊断检查](#超级强化的诊断检查)：启动前检查 pnpm、Cordis 和 Loader，并提供演练、隔离与恢复。
 - [设置界面自定义](#设置界面自定义)：设置类型可以滚动、拖动排序并保存用户自己的排列。
 - [桌面客户端体验](#桌面客户端体验)：原生安装、托盘、快速重启、通知、日志、应用内更新和系统集成。
@@ -115,9 +118,33 @@ Open DeepSeek Harness Desktop 是由社区独立维护的 [DeepSeek Harness](htt
 
 ### NAS 运行端（预览）
 
-多台电脑需要共享插件、模型设置、历史会话与工作区时，可以在 Linux x64/arm64 NAS 上运行官方 Compose 方案，再从“设置 → 运行端与 NAS”配对。NAS 直接拥有 `/config` 与 `/workspaces`，桌面端只作为客户端连接，不会把本地 Profile 放到 SMB/NFS，也不会在 NAS 断线时静默切回本机。
+多台电脑需要共享插件、模型设置、历史会话与工作区时，可以在 Linux x64/arm64 NAS 上运行社区提供的 Compose 方案，再从“设置 → 运行端与 NAS”配对。这是 Open DeepSeek Harness Desktop 增加的实验功能，不属于官方 DeepSeek Harness 桌面发行。NAS 直接拥有 `/config` 与 `/workspaces`，桌面端只作为客户端连接，不会把本地 Profile 放到 SMB/NFS，也不会在 NAS 断线时静默切回本机。
 
-首次连接使用十分钟有效的一次性八位码与逐设备凭据；自签名 HTTPS 必须通过 NAS 管理终端核对 SHA-256 指纹。凭据由系统安全存储保护，可以查看和撤销已配对设备。mDNS 仅用于发现并预填地址，不建立信任；手动 HTTPS 地址始终可用。部署、备份、反向代理与限制见 [`deploy/nas/README.zh.md`](deploy/nas/README.zh.md)。
+NAS 模式共享插件、模型配置、会话和 Workspace；窗口、主题、通知与下载偏好仍保存在每台电脑上。第一次使用前请备份计划挂载为 `/config` 和 `/workspaces` 的目录，不要把重要数据的唯一副本放在该预览功能中。
+
+#### 准备并启动 NAS
+
+1. 在支持 Docker Compose 的 Linux x64/arm64 NAS 上取得本仓库，进入 [`deploy/nas`](deploy/nas/README.zh.md)，将 `.env.example` 复制为 `.env`。
+2. 设置一个 NAS 专用的根 HTTPS 主机名，例如 `harness.local`；v1 不支持 `https://host/path` 形式的子路径。确保每台桌面电脑都能把该主机名解析到 NAS。
+3. 把 `CONFIG_PATH` 和 `WORKSPACES_PATH` 指向 NAS 上需要长期保存、可备份的目录，并把 `PUID`、`PGID` 设置为能够写入这两个目录的用户和用户组。需要改用其他 HTTPS 端口时再设置 `HTTPS_PORT`。
+4. 按 [NAS 部署指南](deploy/nas/README.zh.md) 启动 Compose。Harness 容器不会直接向局域网公开 HTTP 端口；默认只有 Caddy HTTPS 对外提供连接。
+5. 从 Harness 容器日志取得八位配对码，并在 NAS 管理终端单独取得站点证书的 TLS SHA-256 指纹。配对码十分钟内有效；连续输入错误十次后，需要等待下一个十分钟窗口并读取新码。
+
+#### 在桌面端配对并连接
+
+1. 打开“设置 → 运行端与 NAS”，可以先选择“搜索局域网 NAS”，也可以直接输入 `https://<NAS_HOSTNAME>`。mDNS 搜索结果只负责预填地址，不代表该设备已经可信。
+2. 填写一个便于辨认的本机设备名称和八位配对码，然后选择“读取证书”。
+3. 将桌面端显示的 SHA-256 指纹与 NAS 管理终端取得的值逐字核对。完全一致后，勾选信任确认并选择“信任并配对”；不要只根据局域网搜索结果确认身份。
+4. 配对成功后，先在已保存的 NAS 卡片上选择“测试连接”。显示连接正常后，再选择“连接并重启”。客户端完整重启后，任务、插件、模型设置、会话和 Workspace 都由该 NAS 提供。
+
+每台电脑都会取得自己的设备凭据，默认有效 90 天，并由系统安全存储保护。需要停止某台电脑访问时，在任一仍可连接的桌面端打开对应 NAS 卡片的“设备管理”，撤销该设备；撤销不会删除 NAS 中的会话或 Workspace。
+
+#### 切回本机、备份与故障处理
+
+- 选择“使用本机”会重启客户端并重新使用当前电脑的数据目录，不会搬移或删除 NAS 数据。必须先切回本机，才能从此电脑的已保存列表中移除正在使用的 NAS。
+- NAS 离线或证书发生变化时，桌面端不会自动回退本机。先使用“测试连接”检查服务；证书指纹意外变化时不要继续信任，应先确认 Caddy 的 `caddy_data` 是否被删除或 HTTPS 代理是否更换。
+- `/config` 包含会话、插件和模型设置，`/workspaces` 包含共享工作目录；升级 NAS 容器前应同时备份两者。桌面文件不会自动迁移到 NAS，需要由用户明确复制。
+- 使用已有 HTTPS 反向代理时，只把代理连接到同一 Docker 网络内的 `harness:3080`，不要直接把 3080 端口发布到局域网。完整命令、反向代理方式及当前限制见 [NAS 部署指南](deploy/nas/README.zh.md)。
 
 ## 插件发现、安装与更新
 
@@ -141,7 +168,7 @@ Open DeepSeek Harness Desktop 是由社区独立维护的 [DeepSeek Harness](htt
 
 在线来源不可用时，用户可以主动选择本地源码目录或 `.tgz` 文件。客户端会验证包名、归档路径、清单大小和文件体积；源码目录会先在禁用生命周期脚本的条件下重新打包，再交给现有插件安装流程。版本与原声明不一致时会再次提示确认。
 
-无论在线还是本地恢复，插件都要继续经过构建许可、共享依赖诊断和必要的隔离流程。客户端不会自动扫描、复制或采用原目录的 `node_modules`，也不会直接执行带凭据、本地路径或无法识别的原始依赖地址。Codex、Claude Code 等外部工具不接受本地插件替换，仍从“设置 → 外部工具”安装官方对应包。
+无论在线还是本地恢复，插件都要继续经过构建许可、共享依赖诊断和必要的隔离流程。客户端不会自动扫描、复制或采用原目录的 `node_modules`，也不会直接执行带凭据、本地路径或无法识别的原始依赖地址。Codex、Claude Code 等外部工具不接受本地插件替换，仍从“设置 → 工具与能力”安装官方对应包。
 
 <p align="center">
   <img src="./assets/readme/imported-plugin-restore-zh.png" width="900" alt="导入后检查插件在线来源并选择本地恢复方式">
@@ -287,7 +314,7 @@ Electron 不只是包住 Web 页面的外壳。桌面宿主负责运行时准备
   <sub>按住三横线自由拖动设置类型，其他项目平滑让位并自动保存最终顺序</sub>
 </p>
 
-## 初始化、外部工具与预设插件
+## 初始化、0.1.6 实验能力与外部工具
 
 ### 初始化配置引导
 
@@ -308,9 +335,17 @@ Python 与 LibreOffice 官方引擎不再随桌面安装包分发。“设置 �
 
 经过校验的载荷在同一桌面应用中只缓存一份，Office 与 PTC 则按每个 `DSH_HOME` 独立启用。托管 Python 使用独立 GitHub 资产仓库，Office 使用 npm 官方源；两者都复用应用代理，支持暂停、续传、停止和有界日志，完成后等待用户点击“快速重启以启用”。连接 NAS 时两张卡片都会禁用，因为当前版本没有扩展 NAS 远程安装协议。最后一个引用停用并且 Profile 变更通过正常就绪验证后，才会回收共享载荷。
 
+### 官方 0.1.6 实验能力
+
+官方 DeepSeek Harness 在 [`dsh-v0.1.6-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.1) 中加入实验性 Browser Use、Computer Use 与 Auto review。社区桌面版在“设置 → 工具与能力”的“0.1.6 新增功能”分组中为三项能力提供独立安装与配置入口；下载过程可查看终端输出、暂停或停止，完成后可以使用快速重启应用配置。这些功能仍是实验性质，接口、依赖和权限要求可能变化。
+
+- **[Browser Use](packages/browser-use/README.zh.md)**：可选择 Playwright MCP、Chrome DevTools MCP 或 Stagehand。Playwright 与 Chrome DevTools 适合常规网页操作和调试，Stagehand 适合需要模型辅助观察、操作或提取网页数据的任务；隔离模式会复用本机已安装的 Chrome 或 Chromium，并使用独立配置目录，不会再下载一个浏览器应用。
+- **[Computer Use](packages/computer-use/README.zh.md)**：可选择 Cua Driver MCP 或原生驱动。MCP 适合让独立的 Cua Driver 应用持有系统权限和执行环境，原生驱动适合减少外部进程、直接由 Harness 操作本机；两者都可能读取截图并操作窗口，启用前应确认操作系统的屏幕录制与辅助功能权限。
+- **[Auto review](packages/experimental/auto-review/README.zh.md)**：在每次受支持的工具调用执行前，使用当前 Agent 的模型评估操作；允许后的调用以完整权限执行。安装完成后会尝试把当前活动会话切换到 Auto review，没有活动会话时可稍后从会话权限选择器手动启用。它会增加模型调用和 Token 消耗，也不能替代用户对高风险操作的判断。
+
 ### 外部工具按需安装
 
-Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免携带用户不需要的平台依赖。用户在“设置 → 外部工具”点击安装后，客户端才会联网下载经过审核的官方包；同一页面还可以按需安装社区维护的 `dsh-workbuddy-connect@0.5.0`，复用本机已登录的 WorkBuddy 或 WorkBuddy AI。Node 与 pnpm 由安装包提供，无需系统另行安装。打包/发布门禁会验证精确 Provider、原生运行时、平台包和 SHA-512 坐标；官方 Provider 的远程兼容清单还需通过 GitHub OIDC/Sigstore 身份、摘要和有效期校验，不会回退到可变的 `latest`。
+Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免携带用户不需要的平台依赖。用户在“设置 → 工具与能力”的外部工具分组点击安装后，客户端才会联网下载经过审核的官方包；同一页面还可以按需安装社区维护的 `dsh-workbuddy-connect@0.5.0`，复用本机已登录的 WorkBuddy 或 WorkBuddy AI。Node 与 pnpm 由安装包提供，无需系统另行安装。打包/发布门禁会验证精确 Provider、原生运行时、平台包和 SHA-512 坐标；官方 Provider 的远程兼容清单还需通过 GitHub OIDC/Sigstore 身份、摘要和有效期校验，不会回退到可变的 `latest`。
 
 安装过程会展示解析、下载和导入进度，并可查看脱敏后的实时输出。暂停会安全结束当前包管理事务，继续时复用 pnpm 缓存；停止则保留明确的终止状态供重新下载。关闭进度窗口本身不会取消后台安装。桌面管理的公开 npm 下载默认使用 npmmirror，后续操作仍遵守用户明确配置的 registry、代理、构建授权和 Profile 事务边界。
 
@@ -369,23 +404,23 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
   </tr>
 </table>
 
-## 同步 DeepSeek Harness 0.1.6-alpha.1
+## 同步 DeepSeek Harness 0.1.6-alpha.2
 
-当前开发基线已合入上游 `dsh-v0.1.6-alpha.1`。PTC、Workflow、MCP v2、异步 Agent 创建、官方终端和新版会话事件均由同一套 Harness Runtime 提供，桌面客户端继续负责环境选择、候选插件事务、诊断恢复、安装器和系统集成。普通启动会容忍可选插件激活失败并列出失败项目；核心服务、根配置、事务恢复或 Profile 锁失败仍进入诊断模式。该基线尚未作为新的社区桌面安装版发布，下载安装部分继续指向最近已发布版本。
+当前社区 Release 以官方 [`dsh-v0.1.6-alpha.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.2) 为核心基线。上游提供插件管理页、回合结束文件改动卡片、Office 与网页侧栏预览、Subagent 会话和计划预览、目录层级 Workspace、持久化侧栏布局，以及启动、视觉模型、Inbox、Messages API 与 Windows 命令执行修复；社区桌面继续负责环境选择、NAS 运行端、按需工作运行时、候选插件事务、诊断恢复、预置插件、安装器和 GitHub/CNB 更新渠道。
 
 ## 下载安装
 
-请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) 页面下载安装包。[`v0.1.5-rc.2.3`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) 已提供以下发行产物：
+请只从本项目的 [`v0.1.6-alpha.2` Release](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.6-alpha.2) 页面下载安装包：
 
 | 平台 | 架构 | 发行包 | 状态 |
 | --- | --- | --- | --- |
-| macOS | Apple Silicon（`arm64`） | `DeepSeek-Harness-macos-arm64.dmg` / `.zip` | 已提供 |
-| macOS | Intel（`x64`） | `DeepSeek-Harness-macos-x64.dmg` / `.zip` | 已提供 |
-| Windows | `x64` | `DeepSeek-Harness-windows-x64.exe` | 已提供 |
-| Linux | Debian / Ubuntu（`x64`） | `DeepSeek-Harness-linux-x64.deb` | 已提供 |
-| Linux | Fedora / RHEL（`x64`） | `DeepSeek-Harness-linux-x64.rpm` | 已提供 |
+| macOS | Apple Silicon（`arm64`） | [`DeepSeek-Harness-macos-arm64.dmg`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-macos-arm64.dmg) / [`.zip`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-macos-arm64.zip) | 已提供 |
+| macOS | Intel（`x64`） | [`DeepSeek-Harness-macos-x64.dmg`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-macos-x64.dmg) / [`.zip`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-macos-x64.zip) | 已提供 |
+| Windows | `x64` | [`DeepSeek-Harness-windows-x64.exe`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-windows-x64.exe) | 已提供 |
+| Linux | Debian / Ubuntu（`x64`） | [`DeepSeek-Harness-linux-x64.deb`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-linux-x64.deb) | 已提供 |
+| Linux | Fedora / RHEL（`x64`） | [`DeepSeek-Harness-linux-x64.rpm`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-linux-x64.rpm) | 已提供 |
 
-Release 同时提供 `SHA256SUMS`。安装前建议校验下载文件；只有实际出现在本项目 Releases 页面中的文件才属于公开发行产物。
+Release 同时提供 [`SHA256SUMS`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/SHA256SUMS)。安装前建议校验下载文件；只有实际出现在本项目 Releases 页面中的文件才属于公开发行产物。
 
 ### macOS
 

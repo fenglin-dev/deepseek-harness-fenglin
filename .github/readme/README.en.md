@@ -12,9 +12,9 @@ Languages: [简体中文](../../README.md) · English · [日本語](README.ja.m
 
 > [!IMPORTANT]
 >
-> **[v0.1.5-rc.2.3 is now available](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3).** This release remains based on the official DeepSeek Harness `0.1.5-rc.2` core baseline and focuses on phone and small-window layouts, model search and long-response performance, community-profile import, bundled-plugin upgrades and recovery, Marketplace restart confirmation, and persistent diagnostic logs.
+> **[v0.1.6-alpha.2 is now available](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.6-alpha.2).** This release synchronizes the official [DeepSeek Harness `dsh-v0.1.6-alpha.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.2), adding plugin management, end-of-turn file review, Office and Web sidebar previews, Subagent conversations, and plan previews while retaining the community desktop's independent data directories, diagnostic recovery, bundled plugins, and update channels.
 >
-> Although the version name retains `rc`, it is published as a regular GitHub Release. Back up important configuration before upgrading, and include relevant logs or diagnostic reports when reporting problems.
+> Although the version contains `alpha`, the community build is published as a regular GitHub Release. Back up important configuration before upgrading, and include relevant logs or diagnostic reports when reporting problems.
 
 <p align="center">
   <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="Downloads"></a>
@@ -34,7 +34,10 @@ Installers include Node.js, pnpm, and the Harness runtime, so users do not need 
 
 - [AI conversation workspace](#ai-conversation-workspace): adjustable content, turn navigation, exact token usage, queued messages, and richer image and file handling.
 - [First launch and independent data environments](#first-launch-and-independent-data-environments): import an official configuration, share a directory directly, or start fresh.
+- [NAS runtime (preview)](#nas-runtime-preview): a community-provided Linux runtime that lets multiple desktop clients use one Profile, conversation store, and Workspace set.
 - [Plugin discovery, installation, and updates](#plugin-discovery-installation-and-updates): live market data, categories, local status, direct installation, and online updates.
+- [Official 0.1.6 experiments](#official-016-experiments): install Browser Use, Computer Use, and Auto review on demand from Settings.
+- [Work runtimes on demand](#work-runtimes-on-demand): choose managed or local Python, then enable the Office toolkit or experimental Python PTC separately.
 - [Supercharged diagnostics](#supercharged-diagnostics): inspect pnpm, Cordis, and Loader state before startup, then exercise, quarantine, or recover plugins.
 - [Customizable Settings navigation](#customizable-settings-navigation): scroll, reorder, and preserve the user's Settings layout.
 - [Desktop enhancements](#desktop-enhancements-to-the-upstream-web-experience): native installers, tray operation, quick restart, notifications, logs, updates, and system integration.
@@ -113,6 +116,36 @@ After initial setup, the data directory can still be changed from **Settings →
 
 After entry, the setup wizard can configure a model API key, connect phone access, set up WeChat or Feishu and other IM bots, and optionally connect Codex. Every task can be skipped and completed later from Settings.
 
+### NAS runtime (preview)
+
+When several computers need the same plugins, model settings, conversation history, and workspaces, run the community-provided Compose deployment on a Linux x64/arm64 NAS and pair it from **Settings → Runtime & NAS**. This is an experimental Open DeepSeek Harness Desktop capability, not an official DeepSeek Harness desktop distribution. The NAS owns `/config` and `/workspaces`; Desktop acts only as its client, never places a local Profile on SMB/NFS, and never silently falls back to the local runtime after a connection failure.
+
+NAS mode shares plugins, model settings, sessions, and Workspaces. Window, theme, notification, and download preferences remain on each computer. Before first use, back up the directories that will be mounted as `/config` and `/workspaces`; do not keep the only copy of important data in this preview capability.
+
+#### Prepare and start the NAS
+
+1. Obtain this repository on a Linux x64/arm64 NAS with Docker Compose, open [`deploy/nas`](../../deploy/nas/README.md), and copy `.env.example` to `.env`.
+2. Configure a dedicated root HTTPS hostname such as `harness.local`; v1 does not accept a subpath such as `https://host/path`. Make the hostname resolve to the NAS from every desktop computer.
+3. Point `CONFIG_PATH` and `WORKSPACES_PATH` at durable, backed-up NAS directories, then set `PUID` and `PGID` to a user and group that can write both directories. Set `HTTPS_PORT` only when another external HTTPS port is required.
+4. Start Compose by following the [NAS deployment guide](../../deploy/nas/README.md). The Harness container does not publish its HTTP port to the LAN; by default, only Caddy HTTPS accepts client connections.
+5. Read the eight-digit pairing code from the Harness container log and obtain the site certificate's TLS SHA-256 fingerprint separately from the NAS administration terminal. The code is valid for ten minutes. Ten consecutive incorrect attempts require waiting for the next ten-minute window and reading the new code.
+
+#### Pair and connect Desktop
+
+1. Open **Settings → Runtime & NAS**. Select **Search for NAS on the network**, or enter `https://<NAS_HOSTNAME>` directly. An mDNS result only fills the address and does not establish trust.
+2. Enter a recognizable name for the current computer and the eight-digit pairing code, then select **Inspect certificate**.
+3. Compare the displayed SHA-256 fingerprint character by character with the value from the NAS administration terminal. Only after an exact match, select the trust confirmation and then **Trust and pair**. Do not establish identity from the LAN discovery result alone.
+4. After pairing, select **Test connection** on the saved NAS card. When the connection is healthy, select **Connect and restart**. After Desktop fully restarts, the NAS supplies tasks, plugins, model settings, sessions, and Workspaces.
+
+Each computer receives its own device credential, which is valid for 90 days by default and stored through protected system storage. To stop one computer from connecting, open **Manage devices** on the NAS card from another connected Desktop and revoke that device. Revocation does not delete sessions or Workspaces on the NAS.
+
+#### Return to local, back up, and recover
+
+- **Use local** restarts Desktop with the current computer's data directory. It neither moves nor deletes NAS data. Switch to local before removing the active NAS from this computer's saved list.
+- Desktop does not silently fall back to local when the NAS is offline or its certificate changes. Use **Test connection** first. If the fingerprint changes unexpectedly, do not trust it until confirming whether Caddy's `caddy_data` was deleted or the HTTPS proxy was replaced.
+- `/config` contains sessions, plugins, and model settings; `/workspaces` contains shared work directories. Back up both before upgrading NAS containers. Desktop files are not migrated automatically and must be copied through an explicit user operation.
+- With an existing HTTPS reverse proxy, connect the proxy only to `harness:3080` on the same Docker network. Do not publish port 3080 directly to the LAN. See the [NAS deployment guide](../../deploy/nas/README.md) for complete commands, reverse-proxy guidance, and current limitations.
+
 ## Plugin discovery, installation, and updates
 
 **Explore plugins** reads the live Plugin Marketplace catalog instead of a fixed recommendation list. The dialog provides popular and category views with Stars, 30-day downloads, and local installation state. An uninstalled plugin can enter the guarded installation flow directly or open in the complete marketplace; an installed plugin opens in market management.
@@ -135,7 +168,7 @@ Each entry receives a source status:
 
 If an online source is unavailable, users may select a local source directory or `.tgz` archive. The client validates the package name, archive paths, manifest size, and total size. Source directories are repacked with lifecycle scripts disabled before entering the existing plugin installation flow, and a version mismatch requires a second confirmation.
 
-Online and local restoration both continue through build approval, shared-dependency diagnostics, and quarantine when necessary. The client never scans, copies, or adopts the old `node_modules`, and it does not directly execute credential-bearing, local-path, or unrecognized dependency specifications. External tools such as Codex and Claude Code cannot be replaced with local plugin packages and remain available through **Settings → External tools**.
+Online and local restoration both continue through build approval, shared-dependency diagnostics, and quarantine when necessary. The client never scans, copies, or adopts the old `node_modules`, and it does not directly execute credential-bearing, local-path, or unrecognized dependency specifications. External tools such as Codex and Claude Code cannot be replaced with local plugin packages and remain available through **Settings → Tools & capabilities**.
 
 <p align="center">
   <img src="../../assets/readme/imported-plugin-restore-zh.png" width="900" alt="Plugin source status and safe local restoration after importing a DSH configuration">
@@ -249,6 +282,22 @@ When the current session is waiting for a choice, confirmation, or answer, or wh
   <img src="../../assets/readme/selection-context-menu-zh.png" width="900" alt="Vertical rounded menu shown after right-clicking selected text">
 </p>
 
+## On-demand work runtimes and official 0.1.6 experiments
+
+### Work runtimes on demand
+
+Python and the official LibreOffice engine are not embedded in the desktop installer. **Settings → Tools & capabilities → Work runtimes** separates Python selection, the Office toolkit, and Python PTC. Users can download a release-matched managed CPython from [Open DSH Runtime Assets](https://github.com/hecoococ/open-dsh-runtime-assets) or select an existing CPython 3.10+ installation. Office downloads and verifies the official platform-specific `@deepseek-ai/libreoffice-kit-*` package, then prepares its Python dependencies; selecting Python alone exposes no model tool. Office and experimental PTC are activated independently, and PTC remains available only on macOS and Linux with a separate non-sandbox execution warning.
+
+Verified payloads are cached once per desktop installation while Office and PTC are enabled independently for each `DSH_HOME`. Downloads use the application's network and proxy settings and support progress, pause, resume, stop, and bounded terminal output. Activation waits for **Quick Restart**; both cards remain unavailable in NAS mode because this release does not implement remote runtime installation.
+
+### Official 0.1.6 experiments
+
+Official DeepSeek Harness introduced experimental Browser Use, Computer Use, and Auto review in [`dsh-v0.1.6-alpha.1`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.1). The community desktop exposes independent installation and configuration cards under **Settings → Tools & capabilities → New in 0.1.6**. Downloads show terminal output and support pause or stop; **Quick Restart** applies completed Profile configuration. These capabilities remain experimental, and their interfaces, dependencies, and permission requirements can change.
+
+- **[Browser Use](../../packages/browser-use/README.md):** choose Playwright MCP, Chrome DevTools MCP, or Stagehand. Playwright and Chrome DevTools suit ordinary browser automation and debugging, while Stagehand suits model-assisted observation, actions, and extraction. Isolated mode reuses an installed Chrome or Chromium executable with a separate profile and does not download another browser application.
+- **[Computer Use](../../packages/computer-use/README.md):** choose Cua Driver MCP or the native driver. MCP is appropriate when a separate Cua Driver application should own system permissions and execution; native mode avoids that external process and lets Harness operate the host directly. Both modes can capture screenshots and control windows, so screen-recording and accessibility permissions must be reviewed before use.
+- **[Auto review](../../packages/experimental/auto-review/README.md):** use the current Agent's model to assess each supported tool call before it runs; an allowed call executes with Full access. Installation attempts to switch the active session to Auto review, while users without an active session can enable it later from the session permission picker. It adds model calls and token usage and does not replace user judgment for high-risk actions.
+
 ## Desktop enhancements to the upstream Web experience
 
 This distribution preserves the upstream DeepSeek Harness Web client while adding desktop-specific integration and ready-to-use features.
@@ -279,11 +328,11 @@ The Electron host grants sanitized clipboard-write permission to the supervised 
 
 ### Preset plugins
 
-The installer carries integrity-checked archives for seven startup presets and a complete platform-specific prebuilt Profile: Plugin Marketplace, IM connections, Skill picker, Better Sidebar, Pocket, `@ychris12138/dsh-usage-stats`, and `dsh-smooth-stream`. First setup deploys the verified template transactionally, rewrites paths, and checks every preset before opening the main UI; it neither downloads nor installs each preset separately. The archives remain available for repair and bounded compatibility fallback. They remain ordinary Harness dependencies that users can uninstall.
+The installer carries integrity-checked archives for eight startup presets and a complete platform-specific prebuilt Profile: Plugin Marketplace, IM connections, Skill picker, Better Sidebar, Pocket, `@ychris12138/dsh-usage-stats`, `dsh-smooth-stream`, and `dsh-mermaid`. First setup deploys the verified template transactionally, rewrites paths, and checks every preset before opening the main UI; it neither downloads nor installs each preset separately. The archives remain available for repair and bounded compatibility fallback. They remain ordinary Harness dependencies that users can uninstall.
 
 #### Preset plugin acknowledgements
 
-Thank you to the authors and maintainers of [`dshmarket`](https://github.com/dsh-market/dsh-market), [`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im), [`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker), [`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar), [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket), [`@ychris12138/dsh-usage-stats`](https://github.com/Ychris12138/dsh-usage-stats), and [`dsh-smooth-stream`](https://github.com/Laplace-bit/dsh-smooth-stream). This project provides desktop integration and integrity-checked archive distribution; copyright, licensing, and ongoing maintenance remain with each plugin project.
+Thank you to the authors and maintainers of [`dshmarket`](https://github.com/dsh-market/dsh-market), [`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im), [`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker), [`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar), [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket), [`@ychris12138/dsh-usage-stats`](https://github.com/Ychris12138/dsh-usage-stats), [`dsh-smooth-stream`](https://github.com/Laplace-bit/dsh-smooth-stream), and [`dsh-mermaid`](https://github.com/MrmoLabs/dsh-mermaid). This project provides desktop integration and integrity-checked archive distribution; copyright, licensing, and ongoing maintenance remain with each plugin project.
 
 <p align="center">
   <img src="../../assets/readme/preset-mobile-access-zh.png" width="900" alt="Connect a phone through the Pocket QR code or LAN address">
@@ -322,7 +371,7 @@ This capability must belong to the desktop client's boot layer rather than anoth
 
 ### User-triggered official Codex and Claude Code connections
 
-Platform installers carry neither the official DeepSeek Harness [`@deepseek-ai/dsh-subagent-codex`](../../packages/subagent/subagent-codex/README.md) nor [`@deepseek-ai/dsh-subagent-claude-code`](../../packages/subagent/subagent-claude-code/README.md) Bundle. Onboarding and **Settings → External tools** expose explicit install actions; only after the user clicks one does the desktop client download the reviewed package and platform dependencies from npm. The same page can install the community-maintained `dsh-workbuddy-connect@0.5.0` connector for an already signed-in WorkBuddy or WorkBuddy AI desktop app. None of these packages is silently restored after removal.
+Platform installers carry neither the official DeepSeek Harness [`@deepseek-ai/dsh-subagent-codex`](../../packages/subagent/subagent-codex/README.md) nor [`@deepseek-ai/dsh-subagent-claude-code`](../../packages/subagent/subagent-claude-code/README.md) Bundle. Onboarding and the external-tools group under **Settings → Tools & capabilities** expose explicit install actions; only after the user clicks one does the desktop client download the reviewed package and platform dependencies from npm. The same page can install the community-maintained `dsh-workbuddy-connect@0.5.0` connector for an already signed-in WorkBuddy or WorkBuddy AI desktop app. None of these packages is silently restored after removal.
 
 The installer view reports resolution, download, and import progress and can show sanitized live output. Pause ends the current package-manager transaction safely and Resume reuses pnpm's cache; Stop leaves an explicit stopped state for a fresh retry. Closing the progress view does not cancel the operation. Desktop-managed public npm downloads default to npmmirror while explicit registry, proxy, build-approval, and Profile transaction settings remain authoritative.
 
@@ -336,7 +385,7 @@ The official connector currently treats every delegation as an independent, ephe
 
 ### External coding tools connection center
 
-**Settings → External tools** brings Codex, Claude Code, WorkBuddy, and placeholders for future Hermes and Trae Providers into one discoverable surface. After a supported Provider is connected, existing and new full-mode sessions receive its tool at the next safe turn boundary; an already running turn is never rewritten, and minimal mode stays intentionally lean. Disconnecting withdraws the tool without deleting Harness sessions or data owned by the external product.
+The external-tools group under **Settings → Tools & capabilities** brings Codex, Claude Code, WorkBuddy, and placeholders for future Hermes and Trae Providers into one discoverable surface. After a supported Provider is connected, existing and new full-mode sessions receive its tool at the next safe turn boundary; an already running turn is never rewritten, and minimal mode stays intentionally lean. Disconnecting withdraws the tool without deleting Harness sessions or data owned by the external product.
 
 <p align="center">
   <img src="../../assets/readme/codex-connection-center-zh.png" width="760" alt="Codex connection state in the external coding tools center">
@@ -374,9 +423,9 @@ Switch between system, light, dark, and eight product themes; pair them with eig
   </tr>
 </table>
 
-### Synchronized with DeepSeek Harness 0.1.5-rc.2
+### Synchronized with DeepSeek Harness 0.1.6-alpha.2
 
-The desktop baseline uses upstream `dsh-v0.1.5-rc.2`. Conversation, model, subagent, image, and file capabilities come from the same Harness runtime, while the desktop distribution adds environment selection, plugin management, diagnostic protection, and system integration. Session V3, the right sidebar and file preview, external-tool lifecycle, and the newer plugin loader are integrated. Electron passes `--no-open` to `dsh web`, so starting the desktop app does not also open a system browser. Packaged macOS and Windows clients can open their active Harness in the browser and reveal the same desktop window through Return to Desktop.
+The community Release uses official [`dsh-v0.1.6-alpha.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.2) as its core baseline. Upstream supplies the Plugins page, end-of-turn file-change cards, Office and Web sidebar previews, Subagent and plan previews, directory-grouped Workspaces, persistent sidebar layouts, and fixes for startup, vision inputs, Inbox recovery, Messages API requests, and Windows command execution. The community desktop continues to own environment selection, the NAS runtime, on-demand work runtimes, candidate plugin transactions, diagnostic recovery, bundled plugins, installers, and GitHub/CNB update channels.
 
 ## What you can do
 
@@ -389,17 +438,17 @@ The desktop baseline uses upstream `dsh-v0.1.5-rc.2`. Conversation, model, subag
 
 ## Installation
 
-Download builds only from this project's [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) page. [`v0.1.5-rc.2.3`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.5-rc.2.3) provides the following artifacts:
+Download builds only from this project's [`v0.1.6-alpha.2` Release](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.6-alpha.2):
 
 | Platform | Architecture | Release package | Status |
 | --- | --- | --- | --- |
-| macOS | Apple Silicon (`arm64`) | `DeepSeek-Harness-macos-arm64.dmg` / `.zip` | Available |
-| macOS | Intel (`x64`) | `DeepSeek-Harness-macos-x64.dmg` / `.zip` | Available |
-| Windows | `x64` | `DeepSeek-Harness-windows-x64.exe` | Available |
-| Linux | Debian / Ubuntu (`x64`) | `DeepSeek-Harness-linux-x64.deb` | Available |
-| Linux | Fedora / RHEL (`x64`) | `DeepSeek-Harness-linux-x64.rpm` | Available |
+| macOS | Apple Silicon (`arm64`) | [`DeepSeek-Harness-macos-arm64.dmg`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-macos-arm64.dmg) / [`.zip`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-macos-arm64.zip) | Available |
+| macOS | Intel (`x64`) | [`DeepSeek-Harness-macos-x64.dmg`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-macos-x64.dmg) / [`.zip`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-macos-x64.zip) | Available |
+| Windows | `x64` | [`DeepSeek-Harness-windows-x64.exe`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-windows-x64.exe) | Available |
+| Linux | Debian / Ubuntu (`x64`) | [`DeepSeek-Harness-linux-x64.deb`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-linux-x64.deb) | Available |
+| Linux | Fedora / RHEL (`x64`) | [`DeepSeek-Harness-linux-x64.rpm`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/DeepSeek-Harness-linux-x64.rpm) | Available |
 
-The Release also includes `SHA256SUMS`. Verify downloads before installation; only files actually present on this project's Releases page are public release artifacts.
+The Release also includes [`SHA256SUMS`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/odsh-v0.1.6-alpha.2/SHA256SUMS). Verify downloads before installation; only files actually present on this project's Releases page are public release artifacts.
 
 ### macOS
 
