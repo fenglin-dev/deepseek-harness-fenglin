@@ -2,7 +2,7 @@
 
 ## Scope
 
-This runbook qualifies native desktop installers. The source of truth is the manually dispatched `.github/workflows/desktop-packages.yml`. Read `release-publication.md` only when the requested endpoint includes notes or a public Release.
+This runbook qualifies native desktop installers. The active release source of truth is the machine-readable Doctor plan under the Git common directory; `.github/workflows/desktop-packages.yml` supplies native qualification evidence. Read `release-publication.md` only when the requested endpoint includes notes or a public Release.
 
 ## 1. Check the release download route
 
@@ -38,6 +38,8 @@ For every worktree with changes, determine whether the change is already merged,
 
 Fetch the remote when current remote state matters. Confirm the exact commit intended for the release. If the user requests the latest `master`, do not silently use a local branch that is behind or has unrelated commits.
 
+After the version and bilingual notes exist and the intended source branch is pushed, run `scripts/release-doctor.mjs`. It creates `<git-common-dir>/odsh-release-state/<version>.plan.json` only when all release identity, worktree, workflow, disk, publication-configuration and network checks pass. Do not hand-edit the plan or use the generated Markdown snapshot as an independent ledger.
+
 ## 3. Prepare branches and version
 
 The established names are:
@@ -65,7 +67,7 @@ The normal entry point is resumable and performs the speed, disk, remote-head, w
   flaqai/open-deepseek-harness-desktop
 ```
 
-Its state is stored at `<git-common-dir>/odsh-release-state/<version>.json`. Re-running resumes recorded runs and transfers; it does not dispatch duplicates. If the source revision intentionally changes, use `--restart` only after the new branch is pushed. This archives the old state with a timestamp. The orchestrator never creates tags, GitHub Releases, or CNB uploads.
+Its release plan is stored at `<git-common-dir>/odsh-release-state/<version>.plan.json`; its low-level resumable journal is `<version>.json`. Re-running resumes recorded runs and transfers; it does not dispatch duplicates. If the source revision intentionally changes, create a new Doctor plan for that source and use `--restart` only after the new branch is pushed. This archives the old journal with a timestamp. The orchestrator never creates tags, GitHub Releases, or CNB uploads.
 
 The manual equivalent begins with Windows:
 

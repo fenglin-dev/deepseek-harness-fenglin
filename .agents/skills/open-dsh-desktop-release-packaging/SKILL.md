@@ -9,7 +9,7 @@ Package one source revision into Windows x64, macOS arm64/x64, and Linux x64 ins
 
 ## Before changing Git state
 
-Read [references/current-release-state.md](references/current-release-state.md) first. It is the release ledger and version lock for the active packaging cycle. Preserve its target version unless the user explicitly asks to change that version in the current conversation; requests to retry, rebuild, synchronize, package, upload, or publish do not authorize a version change. Update the ledger after every material state transition with observed commits, run IDs, verification results, local handoff state, and GitHub/CNB publication state.
+Read [references/current-release-state.md](references/current-release-state.md) for the most recently completed release, then run the release Doctor. The machine-readable plan under `<git-common-dir>/odsh-release-state/<version>.plan.json` is the active release ledger and version lock. Preserve its target version unless the user explicitly asks to change that version in the current conversation; requests to retry, rebuild, synchronize, package, upload, or publish do not authorize a version change. The generated sibling Markdown file is a human-readable snapshot, not a second source of truth.
 
 Read [references/release-runbook.md](references/release-runbook.md). Inspect the main checkout and every worktree before choosing the release base. Preserve unrelated dirty changes and identify unmerged work rather than assuming that every worktree belongs in the release.
 
@@ -54,7 +54,16 @@ An earlier permission to push a packaging-fix branch does not authorize a tag or
 
 ## Execution
 
-Run the network preflight before step 1:
+Run the release Doctor before step 1. It validates every worktree, the remote source SHA, notes, release identity, workflow permissions, disk space, publication configuration, and the real Actions artifact route before it creates the plan:
+
+```sh
+.agents/skills/open-dsh-desktop-release-packaging/scripts/release-doctor.mjs \
+  --release-state <stable-or-prerelease> \
+  --previous-tag <previous-public-tag> \
+  flaqai/open-deepseek-harness-desktop
+```
+
+The Doctor performs the network preflight below as its final expensive check. For a route-only recheck, run:
 
 ```sh
 .agents/skills/open-dsh-desktop-release-packaging/scripts/check-release-download-speed.sh \
@@ -72,7 +81,7 @@ For an explicitly requested macOS-only repair, use `target=macos` and `refresh_p
 1. Confirm the version, base branch, final source commit, expected branch names, remote, and publication boundary.
 2. Create `release/<version>` from the confirmed base. Change the desktop version and every release-bound compatibility document required by repository gates, then run proportionate checks. Immediately derive the tag, title, and a complete bilingual notes draft from the source delta, write `.artifacts/release-notes/<tag>.md`, and show the draft to the user. Omit claims that still require native workflow or bundled-plugin snapshot evidence; do not leave placeholders for the user to fill. Committing and pushing remain separate authorizations.
 3. Create or update the packaging-fix branch from that release revision. Reuse old Windows fixes only after proving whether they are already ancestors of the release.
-4. Push only the authorized branch, then run [scripts/package-desktop-release.sh](scripts/package-desktop-release.sh) with the repository. It checks the remote branch, free space and network route; dispatches Windows first; dispatches macOS and Linux together only after Windows succeeds; then downloads and verifies the result. The orchestration JSON under the Git common directory records each run and can resume without duplicate dispatches. `--restart` archives the old JSON instead of overwriting it.
+4. Push only the authorized branch, run the release Doctor, then run [scripts/package-desktop-release.sh](scripts/package-desktop-release.sh) with the repository. It refuses a missing or mismatched Doctor plan, checks the remote branch, free space and network route; dispatches Windows first; dispatches macOS and Linux together only after Windows succeeds; then downloads and verifies the result. The plan records release-level truth; the adjacent orchestration JSON is a low-level resumable journal that prevents duplicate dispatches. `--restart` archives only that journal, never the release plan.
 5. On failure, inspect the recorded run and failed logs, implement the narrow fix on the packaging-fix branch, push, and retry or explicitly restart the orchestration after the source SHA changes. Do not accept skipped smoke tests or checksum jobs as success.
 6. The orchestrator calls [scripts/download-desktop-release.sh](scripts/download-desktop-release.sh) after all three targets succeed. The helper uses a stable system-temporary staging directory, resumes verified artifact IDs, compares the three source SHAs and bundled-plugin snapshots, resolves the primary checkout through Git's common directory, then atomically creates the flat `<primary-checkout>/release/<version>/` directory. Do not replace it with an ad-hoc downloader or place the final handoff under the active release worktree.
 7. Re-run [scripts/verify-release-directory.sh](scripts/verify-release-directory.sh) before handoff. It rejects a missing installer, an extra file, a nested directory, an incorrect checksum, or a malformed ZIP.

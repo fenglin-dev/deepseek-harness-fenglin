@@ -10,6 +10,7 @@ scripts="$fixture/.agents/skills/open-dsh-desktop-release-packaging/scripts"
 mkdir -p "$scripts" "$fixture/apps/desktop" "$temporary/bin"
 cp "$source_directory/package-desktop-release.sh" "$scripts/"
 cp "$source_directory/release-package-state.mjs" "$scripts/"
+cp "$source_directory/release-plan.mjs" "$scripts/"
 
 printf '{"version":"9.8.7"}\n' > "$fixture/apps/desktop/package.json"
 printf 'name: fixture\n' > "$fixture/.github-workflow-placeholder"
@@ -98,6 +99,10 @@ git -C "$fixture" add .
 git -C "$fixture" commit -qm fixture
 git -C "$fixture" branch -M release/9.8.7
 sha=$(git -C "$fixture" rev-parse HEAD)
+plan="$fixture/.git/odsh-release-state/9.8.7.plan.json"
+node "$scripts/release-plan.mjs" init "$plan" 9.8.7 fixture/repository fixture/cnb fixture/runtime \
+  release/9.8.7 "$sha" odsh-v9.8.6 stable 1
+node "$scripts/release-plan.mjs" set "$plan" notes.status verified network.status verified
 
 export PATH="$temporary/bin:$PATH"
 export ODSH_RELEASE_TEST_OVERRIDES=1
@@ -122,6 +127,8 @@ expected=$'dispatch windows-x64 101 refresh=true snapshot=none\nview 101\nview 1
 grep -q '^fixture/repository 101 202 303$' "$ODSH_FIXTURE_DOWNLOAD_LOG"
 state="$fixture/.git/odsh-release-state/9.8.7.json"
 node "$scripts/release-package-state.mjs" show "$state" | grep -q '"status": "verified"'
+node "$scripts/release-plan.mjs" show "$plan" | grep -q '"status": "verified"'
+[[ "$(node "$scripts/release-plan.mjs" get "$plan" platforms.windows.runId)" == 101 ]]
 
 before=$(grep -c '^dispatch ' "$ODSH_FIXTURE_GH_LOG")
 (

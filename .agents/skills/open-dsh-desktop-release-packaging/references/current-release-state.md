@@ -1,6 +1,6 @@
 # Current desktop release state
 
-This file is the authoritative ledger for the active desktop packaging cycle. Read it before changing release Git state, dispatching package workflows, downloading artifacts, or publishing.
+This file records the most recently completed desktop release. It is historical evidence, not the ledger for a new packaging cycle. New cycles use the release Doctor's machine-readable plan under `<git-common-dir>/odsh-release-state/<version>.plan.json`; its generated Markdown sibling is the readable view.
 
 ## Version lock
 
@@ -54,9 +54,9 @@ These rows describe artifacts built from the final source for this locked versio
 - Local handoff directory: `/Users/6677h/StudioProjects/flaq-deepseek-harness/open-deepseek-harness-desktop/release/0.1.6-alpha.2`; its seven installers remain unchanged and verified against the accepted workflow checksums. `SHA256SUMS` now also records the eight optional runtime archives used by GitHub and CNB.
 - Publication authorization: complete. The user manually confirmed the GitHub publication, and the GitHub-to-CNB synchronization plus anonymous verification succeeded.
 
-## Updating this ledger
+## Recording a completed release
 
-Update this file after each material transition. Record only observed facts:
+After a release is fully verified and published, replace this historical record with observed final facts:
 
 - final source branch, immutable workflow run, and branch synchronization;
 - network measurement and floor;

@@ -2,11 +2,12 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 [--version <version>] [--minimum-free-gib <gib>] [--restart] <owner/repo>" >&2
+  echo "usage: $0 [--version <version>] [--plan <path>] [--minimum-free-gib <gib>] [--restart] <owner/repo>" >&2
   exit 2
 }
 
 version=
+plan_file=
 minimum_free_gib=10
 restart=0
 while [[ $# -gt 0 ]]; do
@@ -14,6 +15,11 @@ while [[ $# -gt 0 ]]; do
     --version)
       [[ $# -ge 2 ]] || usage
       version=$2
+      shift 2
+      ;;
+    --plan)
+      [[ $# -ge 2 ]] || usage
+      plan_file=$2
       shift 2
       ;;
     --minimum-free-gib)
@@ -51,6 +57,27 @@ if [[ -z "$version" ]]; then version=$package_version; fi
 state_directory="$common_git_directory/odsh-release-state"
 state_file="$state_directory/$version.json"
 state_tool="$script_directory/release-package-state.mjs"
+plan_tool="$script_directory/release-plan.mjs"
+if [[ -z "$plan_file" ]]; then
+  plan_file="$state_directory/$version.plan.json"
+fi
+[[ -f "$plan_file" ]] || {
+  echo "release packaging requires a release Doctor plan at $plan_file" >&2
+  exit 1
+}
+node "$plan_tool" validate "$plan_file"
+plan_get() {
+  node "$plan_tool" get "$plan_file" "$1"
+}
+plan_set() {
+  node "$plan_tool" set "$plan_file" "$@"
+}
+[[ "$(plan_get identity.version)" == "$version" ]] || { echo "release plan version does not match $version" >&2; exit 1; }
+[[ "$(plan_get repositories.github)" == "$repository" ]] || { echo "release plan GitHub repository does not match $repository" >&2; exit 1; }
+[[ "$(plan_get source.branch)" == "$branch" ]] || { echo "release plan source branch does not match $branch" >&2; exit 1; }
+[[ "$(plan_get source.sha)" == "$source_sha" ]] || { echo "release plan source SHA does not match $source_sha" >&2; exit 1; }
+[[ "$(plan_get notes.status)" == verified ]] || { echo "release plan requires verified bilingual notes" >&2; exit 1; }
+[[ "$(plan_get network.status)" == verified ]] || { echo "release plan requires a verified network route" >&2; exit 1; }
 if [[ "$restart" == 1 && -f "$state_file" ]]; then
   mkdir -p "$state_directory"
   archived_state="$state_file.bak-$(date -u +%Y%m%dT%H%M%SZ)-$$"
@@ -144,6 +171,7 @@ dispatch_run() {
   fi
   [[ -n "$run_id" ]] || { echo "could not recover workflow run for orchestration key $orchestration_id" >&2; exit 1; }
   state_set "stages.$stage.runId" "$run_id" "stages.$stage.status" dispatched
+  plan_set "platforms.$stage.runId" "$run_id" "platforms.$stage.sourceSha" "$source_sha" "platforms.$stage.status" running
   echo "release orchestration: dispatched $stage as run $run_id"
 }
 
@@ -161,7 +189,13 @@ wait_run() {
     }
     state_set "stages.$stage.status" "$status" "stages.$stage.conclusion" "$conclusion" "stages.$stage.url" "$url"
     if [[ "$status" == completed ]]; then
-      [[ "$conclusion" == success ]] || { echo "$stage run $run_id concluded $conclusion: $url" >&2; exit 1; }
+      if [[ "$conclusion" != success ]]; then
+        plan_set "platforms.$stage.status" failed "platforms.$stage.runId" "$run_id" "platforms.$stage.url" "$url"
+        echo "$stage run $run_id concluded $conclusion: $url" >&2
+        exit 1
+      fi
+      plan_set "platforms.$stage.status" succeeded "platforms.$stage.runId" "$run_id" \
+        "platforms.$stage.sourceSha" "$source_sha" "platforms.$stage.url" "$url"
       echo "release orchestration: $stage run $run_id succeeded"
       return 0
     fi
@@ -213,8 +247,11 @@ else
   "$script_directory/verify-release-directory.sh" "$release_directory"
 fi
 state_set stages.download.status verified stages.download.directory "$release_directory"
+plan_set artifacts.status verified artifacts.directory "$release_directory"
+node "$plan_tool" render "$plan_file" "$state_directory/$version.md"
 
 echo "release orchestration complete (not published)"
 echo "  state: $state_file"
+echo "  plan: $plan_file"
 echo "  artifacts: $release_directory"
 echo "  runs: windows=$windows_run_id macos=$macos_run_id linux=$linux_run_id"
