@@ -66,8 +66,8 @@ export class FsSandboxController {
       },
       justification: {
         type: 'string',
-        description: 'Required with sandbox_permissions and shown to the user before approval: explain in plain language '
-          + 'what this exact file operation will do, which files or data it may affect, its main risk, and whether its changes are reversible.',
+        description: 'Required with sandbox_permissions and shown to the user before approval: use the language '
+          + 'of the user\'s latest request unless the user explicitly asks for another language, and explain in plain language what this exact file operation will do, which files or data it may affect, its main risk, and whether its changes are reversible.',
       },
     }
   }

@@ -248,7 +248,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         type: 'string',
         required: true,
         description: 'Clear, concise description of what this command does in active voice, '
-          + '5-10 words (shown in the UI). Examples: "ls" → "List files in current directory"; '
+          + '5-10 words (shown in the UI). Use the language of the user\'s latest request unless the user explicitly asks for another language. Examples: "ls" → "List files in current directory"; '
           + '"git status" → "Show working tree status"; "npm install" → "Install package dependencies".',
       },
       timeoutMs: { type: 'number', description: 'Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry.' },
@@ -264,7 +264,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         },
         justification: {
           type: 'string' as const,
-          description: 'Required with sandbox_permissions and shown to the user before approval: explain in plain language what this exact command will do, what files, data, or services it may affect, its main risk, and whether its changes are reversible.',
+          description: 'Required with sandbox_permissions and shown to the user before approval: use the language of the user\'s latest request unless the user explicitly asks for another language, and explain in plain language what this exact command will do, what files, data, or services it may affect, its main risk, and whether its changes are reversible.',
         },
       } : {},
     },

@@ -95,13 +95,13 @@ const RUN_CODE_FLAVORS: Record<string, RunCodeFlavor> = {
  */
 const RUN_CODE_DESCRIPTION_PARAM_DESCRIPTION
   = 'Clear, concise description of what this program does in active voice, '
-    + '5-10 words (shown in the UI). Examples: "Count TODO markers across packages"; '
+    + '5-10 words (shown in the UI). Use the language of the user\'s latest request unless the user explicitly asks for another language. Examples: "Count TODO markers across packages"; '
     + '"Read failing test and its fixture"; "Rename config key in every cordis.yml".'
 
 const RUN_CODE_CONTROLS = {
   timeoutMs: { type: 'number', description: 'Positive elapsed-time budget in milliseconds, capped by the deployment maximum.' },
   sandbox_permissions: { type: 'string', enum: [...ESCALATION_TARGETS], description: 'Wider sandbox mode for this complete program execution; requires justification and approval.' },
-  justification: { type: 'string', description: 'Shown to the user before approval: explain in plain language what this complete program will do, what files, data, or services it may affect, its main risk, and whether its changes are reversible.' },
+  justification: { type: 'string', description: 'Shown to the user before approval: use the language of the user\'s latest request unless the user explicitly asks for another language, and explain in plain language what this complete program will do, what files, data, or services it may affect, its main risk, and whether its changes are reversible.' },
 } as const
 
 function controlParameters(runtime: PtcRuntime | undefined) {

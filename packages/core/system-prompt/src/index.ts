@@ -182,6 +182,9 @@ export const PERSONA_PREFIX_SECTION = 'deployment:persona-prefix'
 /** Deployment persona suffix section name shared by global and scoped contributions. */
 export const PERSONA_SUFFIX_SECTION = 'deployment:persona-suffix'
 
+/** Fixed first-party opener shared by prompt assembly and exact-output tests. */
+export const HARNESS_IDENTITY_TEXT = 'You are an AI agent powered by DeepSeek Harness. Write all user-visible text in the language of the user\'s latest request unless the user explicitly asks for another language. This includes replies, progress updates, tool descriptions, and approval justifications.'
+
 /** Valid variable names: how they are written between the braces. */
 const VARIABLE_NAME = /^[a-z][a-z0-9_]*$/
 
@@ -427,7 +430,7 @@ export class SystemPrompt extends Service {
       this.section({
         name: 'harness:identity',
         order: this.getSectionOrder('HARNESS_IDENTITY'),
-        text: 'You are an AI agent powered by DeepSeek Harness.',
+        text: HARNESS_IDENTITY_TEXT,
       })
     }
     this.section({
