@@ -10,6 +10,7 @@ import extractZip from 'extract-zip'
 import { c, x } from 'tar'
 import lock from './primary-runtime-lock.json' with { type: 'json' }
 import { officialOfficeArtifact } from './official-office-runtime.ts'
+import { curlProxyArguments } from './release-download-route.ts'
 
 type LockTarget = keyof typeof lock.targets
 type ReleaseTarget = 'win32-x64' | 'darwin-arm64' | 'darwin-x64' | 'linux-x64'
@@ -23,29 +24,23 @@ const TARGETS = {
 
 function sha256(value: Buffer | string): string { return createHash('sha256').update(value).digest('hex') }
 
-function proxyCandidates(): readonly (string | undefined)[] {
-  return [process.env.HTTPS_PROXY, process.env.https_proxy, 'http://127.0.0.1:7890', undefined]
-}
-
 async function download(url: string, expected: string, cache: string): Promise<string> {
   const destination = join(cache, expected)
   try {
     const bytes = readFileSync(destination)
     if (sha256(bytes) === expected) return destination
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-  let failure: unknown
-  for (const proxy of proxyCandidates()) {
-    try {
-      const args = ['--fail', '--silent', '--show-error', '--location', '--output', destination]
-      if (proxy !== undefined) args.push('--proxy', proxy)
-      args.push(url)
-      execFileSync('curl', args, { stdio: 'inherit', timeout: 10 * 60_000 })
-      const bytes = readFileSync(destination)
-      if (sha256(bytes) !== expected) throw new Error(`workspace runtime: checksum mismatch for ${url}`)
-      return destination
-    } catch (error) { failure = error; rmSync(destination, { force: true }) }
+  try {
+    const args = ['--fail', '--silent', '--show-error', '--location', '--output', destination,
+      ...curlProxyArguments(), url]
+    execFileSync('curl', args, { stdio: 'inherit', timeout: 10 * 60_000 })
+    const bytes = readFileSync(destination)
+    if (sha256(bytes) !== expected) throw new Error(`workspace runtime: checksum mismatch for ${url}`)
+    return destination
+  } catch (error) {
+    rmSync(destination, { force: true })
+    throw new Error(`workspace runtime: download failed for ${url}`, { cause: error })
   }
-  throw new Error(`workspace runtime: download failed for ${url}`, { cause: failure })
 }
 
 function pythonArchive(target: LockTarget, cache: string): Promise<string> {

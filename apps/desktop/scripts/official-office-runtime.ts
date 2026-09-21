@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { selectOfficeEngine } from '../../../scripts/libreoffice-engine.ts'
+import { curlProxyArguments } from './release-download-route.ts'
 
 export interface OfficialOfficeTarget {
   readonly release: 'win32-x64' | 'darwin-arm64' | 'darwin-x64' | 'linux-x64'
@@ -25,38 +26,33 @@ export interface OfficialOfficeArtifact {
 }
 
 function download(url: string, destination: string): void {
-  let failure: unknown
-  for (const proxy of [process.env.HTTPS_PROXY, process.env.https_proxy, 'http://127.0.0.1:7890', undefined]) {
-    try {
-      const args = ['--fail', '--silent', '--show-error', '--location', '--output', destination]
-      if (proxy !== undefined) args.push('--proxy', proxy)
-      args.push(url)
-      execFileSync('curl', args, { stdio: 'inherit', timeout: 15 * 60_000 })
-      return
-    } catch (error) {
-      failure = error
-      rmSync(destination, { force: true })
-    }
+  try {
+    execFileSync('curl', [
+      '--fail', '--silent', '--show-error', '--location', '--output', destination,
+      ...curlProxyArguments(), url,
+    ], { stdio: 'inherit', timeout: 15 * 60_000 })
+  } catch (error) {
+    rmSync(destination, { force: true })
+    throw new Error(`workspace runtime: official Office engine download failed for ${url}`, { cause: error })
   }
-  throw new Error(`workspace runtime: official Office engine download failed for ${url}`, { cause: failure })
 }
 
 function contentLength(url: string, cache: string): number {
-  let failure: unknown
   const probe = join(cache, `.size-probe-${process.pid}`)
-  for (const proxy of [process.env.HTTPS_PROXY, process.env.https_proxy, 'http://127.0.0.1:7890', undefined]) {
-    try {
-      const args = ['--fail', '--silent', '--show-error', '--location', '--range', '0-0', '--dump-header', '-', '--output', probe]
-      if (proxy !== undefined) args.push('--proxy', proxy)
-      args.push(url)
-      const output = execFileSync('curl', args, { encoding: 'utf8', timeout: 60_000 })
-      const values = [...output.matchAll(/^content-range:\s*bytes\s+0-0\/(\d+)\s*$/gimu)]
-      const size = Number(values.at(-1)?.[1])
-      if (!Number.isSafeInteger(size) || size <= 0) throw new Error('response has no valid Content-Range')
-      return size
-    } catch (error) { failure = error } finally { rmSync(probe, { force: true }) }
+  try {
+    const output = execFileSync('curl', [
+      '--fail', '--silent', '--show-error', '--location', '--range', '0-0', '--dump-header', '-', '--output', probe,
+      ...curlProxyArguments(), url,
+    ], { encoding: 'utf8', timeout: 60_000 })
+    const values = [...output.matchAll(/^content-range:\s*bytes\s+0-0\/(\d+)\s*$/gimu)]
+    const size = Number(values.at(-1)?.[1])
+    if (!Number.isSafeInteger(size) || size <= 0) throw new Error('response has no valid Content-Range')
+    return size
+  } catch (error) {
+    throw new Error(`workspace runtime: Office engine size probe failed for ${url}`, { cause: error })
+  } finally {
+    rmSync(probe, { force: true })
   }
-  throw new Error(`workspace runtime: Office engine size probe failed for ${url}`, { cause: failure })
 }
 
 /** Return signed-catalog metadata for the official npm tarball without repackaging it. */

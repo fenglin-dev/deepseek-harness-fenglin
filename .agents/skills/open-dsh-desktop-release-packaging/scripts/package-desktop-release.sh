@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 [--version <version>] [--plan <path>] [--minimum-free-gib <gib>] [--restart] <owner/repo>" >&2
+  echo "usage: $0 [--version <version>] [--plan <path>] [--minimum-free-gib <gib>] [--retry-stage windows|macos|linux|download] [--restart] <owner/repo>" >&2
   exit 2
 }
 
@@ -10,6 +10,7 @@ version=
 plan_file=
 minimum_free_gib=10
 restart=0
+retry_stage=
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version)
@@ -31,6 +32,11 @@ while [[ $# -gt 0 ]]; do
       restart=1
       shift
       ;;
+    --retry-stage)
+      [[ $# -ge 2 ]] || usage
+      retry_stage=$2
+      shift 2
+      ;;
     --*) usage ;;
     *) break ;;
   esac
@@ -38,6 +44,8 @@ done
 [[ $# -eq 1 ]] || usage
 repository=$1
 [[ "$minimum_free_gib" =~ ^[0-9]+$ ]] || usage
+[[ -z "$retry_stage" || "$retry_stage" =~ ^(windows|macos|linux|download)$ ]] || usage
+[[ "$restart" != 1 || -z "$retry_stage" ]] || { echo "--restart and --retry-stage are mutually exclusive" >&2; exit 2; }
 
 script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repository_root=$(git rev-parse --show-toplevel)
@@ -85,6 +93,23 @@ if [[ "$restart" == 1 && -f "$state_file" ]]; then
   echo "release orchestration: archived previous state at $archived_state"
 fi
 node "$state_tool" init "$state_file" "$version" "$repository" "$branch" "$source_sha"
+if [[ -n "$retry_stage" ]]; then
+  case "$retry_stage" in
+    windows) retry_stages=(windows macos linux download) ;;
+    macos) retry_stages=(macos download) ;;
+    linux) retry_stages=(linux download) ;;
+    download) retry_stages=(download) ;;
+  esac
+  node "$state_tool" retry "$state_file" "${retry_stages[@]}"
+  for stage in "${retry_stages[@]}"; do
+    if [[ "$stage" == download ]]; then
+      plan_set artifacts.status pending
+    else
+      plan_set "platforms.$stage.status" pending
+    fi
+  done
+  echo "release orchestration: retrying $retry_stage and its downstream stages"
+fi
 
 if [[ "${ODSH_RELEASE_TEST_OVERRIDES:-0}" == 1 ]]; then
   skip_remote_head_check=${ODSH_SKIP_REMOTE_HEAD_CHECK:-0}
@@ -146,8 +171,10 @@ gh_retry() {
 }
 
 dispatch_run() {
-  local stage=$1 target=$2 refresh_plugins=$3 snapshot_run_id=${4:-} run_id lookup_attempt
-  local orchestration_id="odsh-${version}-${source_sha}-${stage}"
+  local stage=$1 target=$2 refresh_plugins=$3 snapshot_run_id=${4:-} run_id lookup_attempt retry_count
+  retry_count=$(state_get "retries.$stage")
+  retry_count=${retry_count:-0}
+  local orchestration_id="odsh-${version}-${source_sha}-${stage}-r${retry_count}"
   local run_title="Desktop packages $target $orchestration_id"
   local args=(workflow run desktop-packages.yml --repo "$repository" --ref "$branch" -f "target=$target" -f "refresh_plugins=$refresh_plugins" -f "orchestration_id=$orchestration_id")
   if [[ -n "$snapshot_run_id" ]]; then

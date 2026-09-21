@@ -15,7 +15,7 @@ skill=.agents/skills/open-dsh-desktop-release-packaging
   flaqai/open-deepseek-harness-desktop
 ```
 
-On macOS, packaging entry scripts first normalize explicit upper- or lower-case proxy variables. When none are present, they import enabled fixed HTTP, HTTPS, and SOCKS proxies from `scutil --proxy`; their `gh`, `curl`, and `aria2c` children then follow a Clash Verge System Proxy without requiring TUN mode. Explicit environment variables remain authoritative. Source `scripts/configure-cli-proxy.sh` before standalone `gh`, npm, or pnpm commands in the same release shell. `ODSH_USE_SYSTEM_PROXY=0` disables the import for an intentionally direct route.
+On macOS, packaging entry scripts first normalize explicit upper- or lower-case proxy variables. When none are present, they import enabled fixed HTTP, HTTPS, and SOCKS proxies from `scutil --proxy`; their `gh`, `curl`, and `aria2c` children then follow a Clash Verge System Proxy without requiring TUN mode. Explicit environment variables remain authoritative, and runtime download helpers use that one route rather than probing a hard-coded local port and then falling back direct. Source `scripts/configure-cli-proxy.sh` before standalone `gh`, npm, or pnpm commands in the same release shell. `ODSH_USE_SYSTEM_PROXY=0` disables the import for an intentionally direct route.
 
 Clash Verge's Global mode chooses the route for traffic that has already reached Clash. It does not make every CLI client consume the macOS System Proxy. When a browser is fast but the release-node check is slow, compare `env | grep -i proxy` with `scutil --proxy`, then rerun the same check and require its printed proxy-adoption line and measured rate. Do not lower the speed floor to hide a route mismatch.
 
@@ -67,7 +67,7 @@ The normal entry point is resumable and performs the speed, disk, remote-head, w
   flaqai/open-deepseek-harness-desktop
 ```
 
-Its release plan is stored at `<git-common-dir>/odsh-release-state/<version>.plan.json`; its low-level resumable journal is `<version>.json`. Re-running resumes recorded runs and transfers; it does not dispatch duplicates. If the source revision intentionally changes, create a new Doctor plan for that source and use `--restart` only after the new branch is pushed. This archives the old journal with a timestamp. The orchestrator never creates tags, GitHub Releases, or CNB uploads.
+Its release plan is stored at `<git-common-dir>/odsh-release-state/<version>.plan.json`; its v2 low-level resumable journal is `<version>.json`. Re-running resumes recorded runs and transfers; it does not dispatch duplicates. `--retry-stage windows` clears Windows and all downstream stages, while macOS, Linux and download retries clear only their affected dependents and retain prior evidence in bounded history. If the source revision intentionally changes, create a new Doctor plan for that source and use `--restart` only after the new branch is pushed. This archives the old journal with a timestamp. The orchestrator never creates tags, GitHub Releases, or CNB uploads.
 
 The manual equivalent begins with Windows:
 

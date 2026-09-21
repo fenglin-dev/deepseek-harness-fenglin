@@ -139,4 +139,13 @@ after=$(grep -c '^dispatch ' "$ODSH_FIXTURE_GH_LOG")
 [[ "$before" == "$after" ]] || { echo "resume dispatched duplicate workflows" >&2; exit 1; }
 [[ $(wc -l < "$ODSH_FIXTURE_DOWNLOAD_LOG" | tr -d ' ') == 1 ]] || { echo "resume repeated the completed download" >&2; exit 1; }
 
+# An explicit stage retry creates a new orchestration identity and clears downstream state.
+rm -rf "$fixture/release/9.8.7"
+(
+  cd "$fixture"
+  "$scripts/package-desktop-release.sh" --version 9.8.7 --minimum-free-gib 0 --retry-stage download fixture/repository
+)
+[[ $(wc -l < "$ODSH_FIXTURE_DOWNLOAD_LOG" | tr -d ' ') == 2 ]] || { echo "download retry did not repeat the transfer" >&2; exit 1; }
+[[ "$(node "$scripts/release-package-state.mjs" get "$state" retries.download)" == 1 ]]
+
 echo "package-desktop-release fixture test passed"

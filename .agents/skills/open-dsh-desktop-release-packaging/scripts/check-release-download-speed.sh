@@ -3,6 +3,7 @@ set -euo pipefail
 
 script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$script_directory/configure-cli-proxy.sh"
+echo "release route: ${ODSH_RELEASE_ROUTE_NAME:-unknown}"
 
 usage() {
   echo "usage: $0 <owner/repo> [--run-id <id>] [--artifact-name <name>] [--artifact-id <id>]" >&2

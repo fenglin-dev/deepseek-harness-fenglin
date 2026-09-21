@@ -9,8 +9,13 @@ scripts="$fixture/.agents/skills/open-dsh-desktop-release-packaging/scripts"
 mkdir -p "$scripts" "$fixture/apps/desktop" "$fixture/.github/workflows" \
   "$fixture/.artifacts/release-notes" "$temporary/bin"
 cp "$source_directory/release-doctor.mjs" "$source_directory/release-plan.mjs" "$scripts/"
+cat > "$scripts/check-release-endpoints.sh" <<'EOF'
+#!/usr/bin/env bash
+echo 'release endpoints: fixture routes are reachable'
+EOF
 cat > "$scripts/check-release-download-speed.sh" <<'EOF'
 #!/usr/bin/env bash
+echo 'release route: fixture-direct'
 echo 'release speed: artifact desktop-windows-x64, run 101, minimum 2.00 MiB/s, average 2.25 MiB/s, floor 1.00 MiB/s'
 EOF
 chmod +x "$scripts"/*.mjs "$scripts"/*.sh
@@ -59,7 +64,8 @@ output=$(cd "$fixture" && PATH="$temporary/bin:$PATH" ODSH_RELEASE_ROUTE_NAME=fi
   node "$scripts/release-doctor.mjs" --minimum-free-gib 0 --minimum-mibps 1 fixture/desktop)
 printf '%s\n' "$output"
 printf '%s\n' "$output" | grep -q '| source:all-worktrees-reviewed | PASS | 1 clean worktree(s) |'
-printf '%s\n' "$output" | grep -q '| network:actions-artifact | PASS | release speed:'
+printf '%s\n' "$output" | grep -q '| network:release-endpoints | PASS | release endpoints:'
+printf '%s\n' "$output" | grep -q '| network:actions-artifact | PASS | release route: fixture-direct<br>release speed:'
 plan="$fixture/.git/odsh-release-state/9.8.7.plan.json"
 node "$scripts/release-plan.mjs" validate "$plan"
 [[ $(node "$scripts/release-plan.mjs" get "$plan" network.route) == fixture-direct ]]
