@@ -187,7 +187,7 @@ DeepSeek-Harness-windows-x64.exe
 SHA256SUMS
 ```
 
-GitHub displays ten Release assets because it adds `Source code (zip)` and `Source code (tar.gz)` automatically. Those generated archives are not files in the local handoff directory and are not uploaded by this workflow.
+GitHub displays twelve Release entries: ten project-uploaded assets (the eight-file desktop handoff plus two signed runtime-metadata files) and the automatically generated `Source code (zip)` and `Source code (tar.gz)` archives. The generated source archives and runtime metadata are not files in the local desktop handoff directory.
 
 The helper requires all three runs to name the same source commit and bundled-plugin snapshot. It validates each run conclusion, exact artifact ID, expected filename, and workflow checksum; validates ZIP payloads and optionally DMGs on macOS; and combines the seven checksum entries. It refuses to replace an existing release directory by default. For an intentional same-version rebuild, pass `--replace-existing` (or use an explicit orchestrator stage retry); the old exact set is moved to `release/.archive/` before the new verified directory is activated. The active directory is made read-only so Finder cannot add `.DS_Store` after verification.
 
