@@ -11,8 +11,11 @@ cat > "$temporary/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ $1 == api ]]; then echo master; exit 0; fi
-if [[ $1 == workflow && $2 == run ]]; then exit 0; fi
-if [[ $1 == run && $2 == list ]]; then echo 12345; exit 0; fi
+if [[ $1 == workflow && $2 == run ]]; then touch "$FAKE_METADATA_DISPATCHED"; exit 0; fi
+if [[ $1 == run && $2 == list ]]; then
+  if [[ -f "$FAKE_METADATA_DISPATCHED" ]]; then printf '12345\n'; else printf '11111\n'; fi
+  exit 0
+fi
 if [[ $1 == run && $2 == watch ]]; then exit 0; fi
 if [[ $1 == run && $2 == download ]]; then
   while [[ $# -gt 0 ]]; do
@@ -29,6 +32,7 @@ EOF
 chmod +x "$temporary/bin/gh"
 export PATH="$temporary/bin:$PATH"
 export FAKE_METADATA_ARTIFACT="$temporary/artifact"
+export FAKE_METADATA_DISPATCHED="$temporary/dispatched"
 export ODSH_USE_SYSTEM_PROXY=0
 
 output="$temporary/output"

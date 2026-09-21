@@ -51,12 +51,19 @@ trap cleanup EXIT
 
 if [[ -z "$run_id" ]]; then
   default_branch=$(gh api "repos/$repository" --jq .default_branch)
+  previous_run_ids=$(gh run list --repo "$repository" --workflow workspace-runtime-release.yml --event workflow_dispatch \
+    --limit 100 --json databaseId,displayTitle \
+    --jq ".[] | select(.displayTitle == \"Workspace runtime metadata $tag\") | .databaseId")
   echo "dispatching signed workspace runtime metadata for $tag from $default_branch"
   gh workflow run workspace-runtime-release.yml --repo "$repository" --ref "$default_branch" -f "tag=$tag"
   for _ in {1..30}; do
-    run_id=$(gh run list --repo "$repository" --workflow workspace-runtime-release.yml --event workflow_dispatch \
+    candidate_ids=$(gh run list --repo "$repository" --workflow workspace-runtime-release.yml --event workflow_dispatch \
       --limit 20 --json databaseId,displayTitle,status \
-      --jq ".[] | select(.displayTitle == \"Workspace runtime metadata $tag\") | .databaseId" | head -n 1)
+      --jq ".[] | select(.displayTitle == \"Workspace runtime metadata $tag\") | .databaseId")
+    while IFS= read -r candidate_id; do
+      [[ -n "$candidate_id" ]] || continue
+      if ! grep -Fqx "$candidate_id" <<< "$previous_run_ids"; then run_id=$candidate_id; break; fi
+    done <<< "$candidate_ids"
     [[ -n "$run_id" ]] && break
     sleep 2
   done
