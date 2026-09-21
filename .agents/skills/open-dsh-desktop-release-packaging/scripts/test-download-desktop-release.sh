@@ -4,7 +4,7 @@ set -euo pipefail
 script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repository_root=$(cd "$script_directory/../../../.." && pwd)
 fixture_root=$(mktemp -d "${TMPDIR:-/tmp}/odsh-download-test.XXXXXX")
-cleanup() { rm -rf "$fixture_root"; }
+cleanup() { chmod -R u+w "$fixture_root" 2>/dev/null || true; rm -rf "$fixture_root"; }
 trap cleanup EXIT
 
 for command_name in node shasum unzip zip; do
@@ -295,6 +295,29 @@ grep -q -- '--summary-interval=10' "$aria_arguments_log"
   exit 1
 }
 echo "download-desktop-release fixture test passed"
+
+chmod u+w "$release_directory"
+touch "$release_directory/.DS_Store"
+if ODSH_VERIFY_DMG=0 "$script_directory/verify-release-directory.sh" "$release_directory" >/dev/null 2>&1; then
+  echo "exact handoff verification accepted .DS_Store" >&2
+  exit 1
+fi
+rm "$release_directory/.DS_Store"
+chmod a-w "$release_directory"
+
+PATH="$fake_bin:$PATH" \
+ODSH_FIXTURE_ARTIFACT_STORE="$artifact_store" \
+ODSH_RELEASE_DOWNLOAD_STAGING_ROOT="$fixture_root/replacement-staging" \
+ODSH_RELEASE_OUTPUT_DIRECTORY="$release_directory" \
+ODSH_ALLOW_RELEASE_OUTPUT_OVERRIDE=1 \
+ODSH_VERIFY_DMG=0 \
+  "$script_directory/download-desktop-release.sh" --replace-existing fixture/repository 101 202 303
+ODSH_VERIFY_DMG=0 "$script_directory/verify-release-directory.sh" "$release_directory"
+[[ $(find "$(dirname "$release_directory")/.archive" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ') == 1 ]] || {
+  echo "same-version replacement did not archive the previous handoff" >&2
+  exit 1
+}
+echo "same-version replacement archived the previous exact handoff"
 
 PATH="$fake_bin:$PATH" \
 ODSH_FIXTURE_ARTIFACT_STORE="$artifact_store" \

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 [--version <version>] [--plan <path>] [--minimum-free-gib <gib>] [--retry-stage windows|macos|linux|download] [--restart] <owner/repo>" >&2
+  echo "usage: $0 [--version <version>] [--plan <path>] [--minimum-free-gib <gib>] [--retry-stage windows|macos|linux|download] [--replace-existing] [--restart] <owner/repo>" >&2
   exit 2
 }
 
@@ -11,6 +11,7 @@ plan_file=
 minimum_free_gib=10
 restart=0
 retry_stage=
+replace_existing=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version)
@@ -36,6 +37,10 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || usage
       retry_stage=$2
       shift 2
+      ;;
+    --replace-existing)
+      replace_existing=1
+      shift
       ;;
     --*) usage ;;
     *) break ;;
@@ -270,7 +275,11 @@ elif [[ "$download_status" == running && -d "$release_directory" ]]; then
   echo "release orchestration: recovered completed local artifacts"
 else
   state_set stages.download.status running
-  "$script_directory/download-desktop-release.sh" "$repository" "$windows_run_id" "$macos_run_id" "$linux_run_id"
+  if [[ "$replace_existing" == 1 || -n "$retry_stage" ]]; then
+    "$script_directory/download-desktop-release.sh" --replace-existing "$repository" "$windows_run_id" "$macos_run_id" "$linux_run_id"
+  else
+    "$script_directory/download-desktop-release.sh" "$repository" "$windows_run_id" "$macos_run_id" "$linux_run_id"
+  fi
   "$script_directory/verify-release-directory.sh" "$release_directory"
 fi
 state_set stages.download.status verified stages.download.directory "$release_directory"

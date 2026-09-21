@@ -2,11 +2,16 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 <owner/repo> <windows-run-id> <macos-run-id> <linux-run-id> | --macos-only <owner/repo> <macos-run-id>" >&2
+  echo "usage: $0 [--replace-existing] <owner/repo> <windows-run-id> <macos-run-id> <linux-run-id> | [--replace-existing] --macos-only <owner/repo> <macos-run-id>" >&2
   exit 2
 }
 
 verify_args=()
+replace_existing=0
+if [[ ${1:-} == --replace-existing ]]; then
+  replace_existing=1
+  shift
+fi
 if [[ $# -eq 3 && $1 == --macos-only ]]; then
   repository=$2
   run_ids=("$3")
@@ -44,7 +49,7 @@ else
   primary_checkout=$(dirname "$git_common_directory")
   output_directory="$primary_checkout/release/$version"
 fi
-[[ ! -e "$output_directory" ]] || {
+[[ ! -e "$output_directory" || "$replace_existing" == 1 ]] || {
   echo "refusing to replace existing release directory: $output_directory" >&2
   exit 1
 }
@@ -396,7 +401,16 @@ LC_ALL=C sort -k2,2 "$combined_checksums" > "$final_directory/SHA256SUMS"
 ODSH_VERIFY_DMG=${ODSH_VERIFY_DMG:-1} "$script_directory/verify-release-directory.sh" ${verify_args[@]+"${verify_args[@]}"} "$final_directory"
 
 mkdir -p "$(dirname "$output_directory")"
+if [[ -e "$output_directory" ]]; then
+  chmod u+w "$output_directory"
+  archive_root="$(dirname "$output_directory")/.archive"
+  mkdir -p "$archive_root"
+  archived_output="$archive_root/$version-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  mv "$output_directory" "$archived_output"
+  echo "archived previous release handoff at $archived_output"
+fi
 mv "$final_directory" "$output_directory"
+chmod a-w "$output_directory"
 completed=1
 printf 'source SHA: %s\n' "$common_head_sha"
 printf 'bundled-plugin snapshot: %s\n' "$common_snapshot_digest"
