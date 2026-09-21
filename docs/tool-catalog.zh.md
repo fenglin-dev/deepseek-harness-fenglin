@@ -540,7 +540,7 @@ ask_user_question 会暂停工具调用，直到当前 UI 提供方返回人类�
     },
     "justification": {
       "type": "string",
-      "description": "Reason this complete program needs wider access, shown to the user for approval."
+      "description": "Shown to the user before approval: explain in plain language what this complete program will do, what files, data, or services it may affect, its main risk, and whether its changes are reversible."
     }
   },
   "required": [

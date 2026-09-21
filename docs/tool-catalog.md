@@ -536,7 +536,7 @@ Execute a TypeScript program against the available tools. Takes two required arg
     },
     "justification": {
       "type": "string",
-      "description": "Reason this complete program needs wider access, shown to the user for approval."
+      "description": "Shown to the user before approval: explain in plain language what this complete program will do, what files, data, or services it may affect, its main risk, and whether its changes are reversible."
     }
   },
   "required": [
