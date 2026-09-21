@@ -39,14 +39,27 @@ After the notes and local assets are ready, show the user:
 
 - GitHub repository, CNB repository, exact source SHA, tag, title, and intended prerelease/latest state;
 - absolute notes path and the complete notes or a reviewable rendering;
-- all eight upload paths and their SHA-256 values;
+- all ten project upload paths and their SHA-256 values: the exact eight-file desktop handoff plus the signed catalog and Sigstore bundle from the metadata artifact;
 - confirmation that the GitHub Tag and Release do not already exist, and that CNB has no conflicting Release with the same tag;
 - confirmation that repository variable `CNB_SYNC_ENABLED` is `true`, the `CNB_TOKEN` secret name exists, and `sync-cnb-desktop-releases.yml` is available on the GitHub default branch;
 - the CNB asset model: seven installers are mirrored to the CNB Release, while `SHA256SUMS` is converted into the checksum-bearing `desktop-update-v1.json` anonymous index rather than uploaded as an eighth CNB asset.
 
 Stop for explicit authorization immediately before publication. Do not treat the earlier selection of the publish endpoint as that final authorization.
 
-## 4. Publish the verified set to GitHub
+## 4. Prepare signed metadata, then publish the verified set to GitHub
+
+Before requesting the final publication authorization, create the signed metadata artifact without changing a Release:
+
+```sh
+"$skill/scripts/prepare-release-metadata.sh" \
+  flaqai/open-deepseek-harness-desktop \
+  odsh-v<version> \
+  "$PWD/.artifacts/release-metadata/odsh-v<version>"
+```
+
+This dispatches `workspace-runtime-release.yml` on the default branch, waits for its successful run, downloads exactly the versioned catalog and Sigstore bundle, and makes the local result read-only. A known successful run can be recovered with `--run-id <id>`. Replacing an existing local metadata set requires `--replace-existing` and archives the previous directory. The workflow neither uploads to a GitHub Release nor starts CNB synchronization.
+
+Run the publication helper once without `--publish` first:
 
 Run the helper once without `--publish` first:
 
@@ -55,6 +68,7 @@ skill=.agents/skills/open-dsh-desktop-release-packaging
 
 "$skill/scripts/publish-desktop-release.sh" \
   --release-state <stable|prerelease> \
+  --metadata-directory "$PWD/.artifacts/release-metadata/odsh-v<version>" \
   flaqai/open-deepseek-harness-desktop \
   <source-sha> \
   odsh-v<version> \
@@ -63,7 +77,7 @@ skill=.agents/skills/open-dsh-desktop-release-packaging
   "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/release/<version>"
 ```
 
-Only after the final dual-target authorization, repeat the same invocation with `--publish` in addition to the explicit `--release-state`. The helper creates a Draft and lightweight tag at the exact SHA, uploads the seven installers and `SHA256SUMS` one at a time, verifies every uploaded size and SHA-256, and publishes only after all eight assets match. Each filename and elapsed upload time is visible while the operation runs. Use `stable` for a dual GitHub and CNB publication. Use `prerelease` only for an explicitly GitHub-only prerelease, because the CNB synchronization intentionally excludes it.
+Only after the final dual-target authorization, repeat the same invocation with `--publish`. The helper creates a Draft and lightweight tag at the exact SHA, uploads the seven installers, `SHA256SUMS`, signed catalog and Sigstore bundle one at a time, verifies every uploaded size and SHA-256, and publishes only after all ten assets match. Each filename and elapsed upload time is visible while the operation runs. Use `stable` for a dual GitHub and CNB publication. Use `prerelease` only for an explicitly GitHub-only prerelease, because the CNB synchronization intentionally excludes it.
 
 The helper refuses to update a published Release, move a mismatched tag, clobber an asset, or delete a partial Draft. If GitHub leaves a Draft after an interrupted upload, report its URL. After confirming the same reviewed tag, SHA, title, state, notes and local asset set, validate the recovery plan without mutation by adding `--resume-draft` to the dry run, then repeat it with both `--publish` and `--resume-draft`. Recovery skips only same-name assets whose remote size and SHA-256 already match; an unexpected, duplicate or mismatched asset stops recovery without replacement.
 
@@ -93,4 +107,4 @@ GitHub and CNB cannot be committed atomically. If GitHub succeeds and CNB fails,
 
 ## 6. Publication completion
 
-Report both public Release URLs, the GitHub tag target, title, prerelease/latest state, eight verified GitHub assets, seven verified CNB installers, CNB sync run, anonymous index revision and expiry, and the local notes and installer directories. GitHub's generated source ZIP and TAR are additional page entries, not uploaded project assets. Do not describe the release as fully published until both providers pass their verification.
+Report both public Release URLs, the GitHub tag target, title, prerelease/latest state, ten verified project-uploaded GitHub assets, seven verified CNB installers, CNB sync run, anonymous index revision and expiry, and the local notes, metadata and installer directories. GitHub's generated source ZIP and TAR are additional page entries, so the page shows twelve entries. Do not describe the release as fully published until both providers pass their verification.

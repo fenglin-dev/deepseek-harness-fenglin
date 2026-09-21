@@ -8,7 +8,8 @@ fixture="$temporary/repository"
 scripts="$fixture/.agents/skills/open-dsh-desktop-release-packaging/scripts"
 mkdir -p "$scripts" "$fixture/apps/desktop" "$fixture/.github/workflows" \
   "$fixture/.artifacts/release-notes" "$temporary/bin"
-cp "$source_directory/release-doctor.mjs" "$source_directory/release-plan.mjs" "$scripts/"
+cp "$source_directory/release-doctor.mjs" "$source_directory/release-plan.mjs" \
+  "$source_directory/validate-release-notes.mjs" "$scripts/"
 cat > "$scripts/check-release-endpoints.sh" <<'EOF'
 #!/usr/bin/env bash
 echo 'release endpoints: fixture routes are reachable'
@@ -20,7 +21,7 @@ echo 'release speed: artifact desktop-windows-x64, run 101, minimum 2.00 MiB/s, 
 EOF
 chmod +x "$scripts"/*.mjs "$scripts"/*.sh
 printf '{"version":"9.8.7"}\n' > "$fixture/apps/desktop/package.json"
-printf '# bilingual notes\n\n## 中文\n完成。\n\n## English\nDone.\n' > "$fixture/.artifacts/release-notes/odsh-v9.8.7.md"
+printf '# Open DeepSeek Harness Desktop v9.8.7\n\n## 中文\n本版本完成了经过验证的桌面发行流程改进。\n\n## English\nThis release completes verified desktop delivery improvements.\n' > "$fixture/.artifacts/release-notes/odsh-v9.8.7.md"
 cat > "$fixture/.github/workflows/desktop-packages.yml" <<'EOF'
 name: fixture
 on:
@@ -54,6 +55,10 @@ git -C "$fixture" init -q
 git -C "$fixture" config user.name fixture
 git -C "$fixture" config user.email fixture@example.invalid
 git -C "$fixture" add .
+git -C "$fixture" commit -qm baseline
+git -C "$fixture" tag odsh-v9.8.6
+printf 'release delta\n' > "$fixture/release-delta.txt"
+git -C "$fixture" add release-delta.txt
 git -C "$fixture" commit -qm fixture
 git -C "$fixture" branch -M release/9.8.7
 git -C "$temporary" init -q --bare remote.git

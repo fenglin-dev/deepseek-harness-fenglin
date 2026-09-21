@@ -19,7 +19,7 @@ Release state is a separate reviewed field. An `alpha`, `beta`, or `rc` version 
 
 ## Establish the release delta
 
-Select the previous published, non-draft Release that was eligible for normal client updates; do not compare only with an upstream tag or an earlier build attempt of the same version. Collect:
+Select the immediately previous published, non-draft desktop Release by publication time, including a prerelease when it was genuinely public; do not compare only with an upstream tag, skip a public alpha/RC, or use an earlier build attempt of the same version. Collect:
 
 - commits and changed files from the previous Release tag to the final source SHA;
 - merged upstream tag and upstream notes, when an upstream synchronization is present;
@@ -29,6 +29,16 @@ Select the previous published, non-draft Release that was eligible for normal cl
 - confirmed upgrade limitations, unsigned-package instructions, data migration boundaries, and known issues.
 
 Repeat this derivation whenever the user asks to rebuild or repackage, including another build of the same version. Resolve the latest release-branch commit again and regenerate the notes from the previous published Release to that commit. An unpublished Draft, an earlier workflow run, and an earlier notes draft for the same version are preparation state, not the comparison baseline.
+
+Before the Doctor accepts the notes, run:
+
+```sh
+node .agents/skills/open-dsh-desktop-release-packaging/scripts/validate-release-notes.mjs \
+  <version> <previous-public-tag> <full-source-sha> \
+  .artifacts/release-notes/odsh-v<version>.md
+```
+
+The validator proves that the previous public tag exists and is an ancestor of the exact source SHA, the range contains committed changes, both language sections are substantive and uniquely present, the heading matches the version, and no fill-in placeholders remain. It validates provenance and document completeness; the maintainer must still review that each user-visible claim is supported and faithfully translated.
 
 Group commits by user-visible outcome. Omit refactors, test-only work, generated-file churn, reverted changes, and implementation details unless they materially affect compatibility or recovery. Do not infer a fix from an issue title alone.
 

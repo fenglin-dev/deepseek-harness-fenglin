@@ -123,14 +123,14 @@ check('release:tag-available', () => {
 })
 let previousTag = options.previousTag
 check('release:previous-public', () => {
-  previousTag ??= run('gh', ['release', 'list', '--repo', repository, '--exclude-drafts', '--exclude-pre-releases', '--limit', '1', '--json', 'tagName', '--jq', '.[0].tagName']).trim()
+  previousTag ??= run('gh', ['release', 'list', '--repo', repository, '--exclude-drafts', '--limit', '20', '--json', 'tagName,publishedAt', '--jq', 'sort_by(.publishedAt) | reverse | .[0].tagName']).trim()
   if (!/^odsh-v[0-9A-Za-z][0-9A-Za-z._-]*$/u.test(previousTag)) throw new Error('could not identify the previous public desktop Release')
   return previousTag
 })
 check('release:notes', () => {
   const stat = statSync(notesPath)
   if (!stat.isFile() || stat.size === 0) throw new Error(`missing filled bilingual notes: ${notesPath}`)
-  return notesPath
+  return run(process.execPath, [join(scriptDirectory, 'validate-release-notes.mjs'), version, previousTag, sourceSha, notesPath]).trim()
 })
 check('release:workflow-contract', workflowContract)
 check('release:free-space', () => {
