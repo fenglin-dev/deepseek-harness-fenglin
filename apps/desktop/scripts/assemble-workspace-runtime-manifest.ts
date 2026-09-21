@@ -14,11 +14,11 @@ const artifacts = Object.fromEntries(await Promise.all(WORKSPACE_RUNTIME_TARGETS
 ])))
 const issuedAt = new Date().toISOString()
 const manifest = parseWorkspaceRuntimeManifest({
-  schema: 'dsh/desktop-workspace-runtimes/v1',
+  schema: 'dsh/desktop-workspace-runtimes/v2',
   desktopVersion: desktop.version,
   issuedAt,
   expiresAt: new Date(Date.parse(issuedAt) + 180 * 24 * 60 * 60_000).toISOString(),
   artifacts,
 })
 await mkdir(output, { recursive: true })
-await writeFile(join(output, `workspace-runtimes-${desktop.version}.v1.json`), `${JSON.stringify(manifest, undefined, 2)}\n`)
+await writeFile(join(output, `workspace-runtimes-${desktop.version}.v2.json`), `${JSON.stringify(manifest, undefined, 2)}\n`)

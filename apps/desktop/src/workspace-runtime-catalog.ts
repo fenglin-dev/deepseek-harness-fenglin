@@ -19,6 +19,12 @@ interface Bundle {
   readonly dsseEnvelope?: { readonly payload?: unknown; readonly payloadType?: unknown }
 }
 
+class CatalogHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`desktop: workspace-runtime catalog returned HTTP ${status}`)
+  }
+}
+
 export interface WorkspaceRuntimeCatalogOptions {
   readonly cacheDirectory: string
   readonly desktopVersion: string
@@ -30,17 +36,17 @@ export interface WorkspaceRuntimeCatalogOptions {
   readonly verifyBundle?: (bundle: unknown, cacheDirectory: string) => Promise<void>
 }
 
-function documentName(version: string): string {
+function documentName(version: string, generation: 1 | 2): string {
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u.test(version)) {
     throw new TypeError('desktop: invalid Desktop version for workspace-runtime catalog')
   }
-  return `workspace-runtimes-${version}.v1.json`
+  return `workspace-runtimes-${version}.v${generation}.json`
 }
 
-function bundleName(_version: string): string { return 'workspace-runtimes.v1.sigstore.json' }
+function bundleName(generation: 1 | 2): string { return `workspace-runtimes.v${generation}.sigstore.json` }
 
 async function limited(response: Response): Promise<Uint8Array> {
-  if (!response.ok) throw new Error(`desktop: workspace-runtime catalog returned HTTP ${response.status}`)
+  if (!response.ok) throw new CatalogHttpError(response.status)
   const declared = Number(response.headers.get('content-length'))
   if (Number.isFinite(declared) && declared > MAX_DOCUMENT_BYTES) throw new Error('desktop: workspace-runtime catalog exceeds its size limit')
   const bytes = new Uint8Array(await response.arrayBuffer())
@@ -90,8 +96,6 @@ export class WorkspaceRuntimeCatalog {
   }
 
   async #load(): Promise<WorkspaceRuntimeManifest> {
-    const name = documentName(this.#options.desktopVersion)
-    const signatureName = bundleName(this.#options.desktopVersion)
     if (this.#options.metadataBaseUrl !== undefined && this.#options.development !== true) {
       throw new Error('desktop: workspace-runtime catalog override is allowed only in development mode')
     }
@@ -100,43 +104,53 @@ export class WorkspaceRuntimeCatalog {
       : [this.#options.metadataBaseUrl]
     if (bases.length === 0) throw new Error('desktop: workspace-runtime catalog has no download source')
     let cached: WorkspaceRuntimeManifest | undefined
-    try {
+    for (const generation of [2, 1] as const) try {
+      const name = documentName(this.#options.desktopVersion, generation)
       cached = await this.#verify(
         await readFile(join(this.#options.cacheDirectory, name)),
-        await readFile(join(this.#options.cacheDirectory, signatureName)),
+        await readFile(join(this.#options.cacheDirectory, bundleName(generation))),
+        name,
       )
+      break
     } catch (error) {
-      console.warn('desktop: signed workspace-runtime cache is unavailable', error)
+      console.warn(`desktop: signed workspace-runtime v${generation} cache is unavailable`, error)
     }
     let remoteError: unknown
-    for (const rawBase of bases) try {
-      const base = rawBase.replace(/\/+$/u, '')
-      const controller = new AbortController()
-      const timeout = setTimeout(() => { controller.abort() }, 10_000)
-      try {
-        const [manifestResponse, bundleResponse] = await Promise.all([
-          this.#options.fetch(`${base}/${encodeURIComponent(name)}`, { signal: controller.signal, redirect: 'follow' }),
-          this.#options.fetch(`${base}/${encodeURIComponent(signatureName)}`, { signal: controller.signal, redirect: 'follow' }),
-        ])
-        const [manifestBytes, bundleBytes] = await Promise.all([limited(manifestResponse), limited(bundleResponse)])
-        const manifest = await this.#verify(manifestBytes, bundleBytes)
-        await Promise.all([
-          atomicWrite(join(this.#options.cacheDirectory, name), manifestBytes),
-          atomicWrite(join(this.#options.cacheDirectory, signatureName), bundleBytes),
-        ])
-        return manifest
-      } finally { clearTimeout(timeout) }
-    } catch (error) {
-      remoteError = error
+    for (const generation of [2, 1] as const) {
+      let generationMissing = true
+      const name = documentName(this.#options.desktopVersion, generation)
+      const signatureName = bundleName(generation)
+      for (const rawBase of bases) try {
+        const base = rawBase.replace(/\/+$/u, '')
+        const controller = new AbortController()
+        const timeout = setTimeout(() => { controller.abort() }, 10_000)
+        try {
+          const [manifestResponse, bundleResponse] = await Promise.all([
+            this.#options.fetch(`${base}/${encodeURIComponent(name)}`, { signal: controller.signal, redirect: 'follow' }),
+            this.#options.fetch(`${base}/${encodeURIComponent(signatureName)}`, { signal: controller.signal, redirect: 'follow' }),
+          ])
+          const [manifestBytes, bundleBytes] = await Promise.all([limited(manifestResponse), limited(bundleResponse)])
+          const manifest = await this.#verify(manifestBytes, bundleBytes, name)
+          await Promise.all([
+            atomicWrite(join(this.#options.cacheDirectory, name), manifestBytes),
+            atomicWrite(join(this.#options.cacheDirectory, signatureName), bundleBytes),
+          ])
+          return manifest
+        } finally { clearTimeout(timeout) }
+      } catch (error) {
+        remoteError = error
+        if (!(error instanceof CatalogHttpError) || error.status !== 404) generationMissing = false
+      }
+      if (!generationMissing) break
     }
     if (cached !== undefined) return cached
     throw remoteError
   }
 
-  async #verify(manifestBytes: Uint8Array, bundleBytes: Uint8Array): Promise<WorkspaceRuntimeManifest> {
+  async #verify(manifestBytes: Uint8Array, bundleBytes: Uint8Array, name: string): Promise<WorkspaceRuntimeManifest> {
     const bundle: unknown = JSON.parse(Buffer.from(bundleBytes).toString('utf8'))
     await (this.#options.verifyBundle ?? verifyBundle)(bundle, this.#options.cacheDirectory)
-    attested(bundle, documentName(this.#options.desktopVersion), manifestBytes)
+    attested(bundle, name, manifestBytes)
     const manifest = parseWorkspaceRuntimeManifest(JSON.parse(Buffer.from(manifestBytes).toString('utf8')) as unknown)
     const now = (this.#options.now ?? (() => new Date()))().getTime()
     if (manifest.desktopVersion !== this.#options.desktopVersion

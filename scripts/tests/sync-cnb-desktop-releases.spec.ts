@@ -48,9 +48,9 @@ describe('CNB desktop Release sync', () => {
         { name: 'SHA256SUMS', size: Buffer.byteLength(checksumText), url: 'https://api.github.com/assets/checksums' },
         ...installerNames.map((name, index) => ({ name, size: installer.byteLength,
           url: `https://api.github.com/assets/installer-${index}` })),
-        { name: 'workspace-runtimes-1.0.0.v1.json', size: installer.byteLength,
+        { name: 'workspace-runtimes-1.0.0.v2.json', size: installer.byteLength,
           url: 'https://api.github.com/assets/runtime-catalog' },
-        { name: 'workspace-runtimes.v1.sigstore.json', size: installer.byteLength,
+        { name: 'workspace-runtimes.v2.sigstore.json', size: installer.byteLength,
           url: 'https://api.github.com/assets/runtime-signature' },
       ],
     }

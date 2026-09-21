@@ -91,10 +91,12 @@ interface Job {
 interface DownloadArtifact {
   readonly fileName: string
   readonly size: number
-  readonly sha256: string
+  readonly sha256?: string
   readonly payloadDigest: string
-  readonly githubUrl: string
-  readonly cnbUrl: string
+  readonly githubUrl?: string
+  readonly cnbUrl?: string
+  readonly url?: string
+  readonly integrity?: string
 }
 
 export interface OptionalRuntimeManagerOptions {
@@ -605,7 +607,8 @@ export class OptionalRuntimeManager {
   ): Promise<void> {
     job.artifact = artifact
     const payloadRoot = this.#payloadRoot(artifact, target)
-    const metadata = label === 'official Office engine' ? 'office-runtime.json' : 'runtime.json'
+    const office = label === 'official Office engine' ? artifact as WorkspaceRuntimeOfficeArtifact : undefined
+    const metadata = office === undefined ? 'runtime.json' : 'office-runtime.json'
     if (await exists(join(payloadRoot, metadata))) {
       try {
         await validate(payloadRoot)
@@ -622,18 +625,29 @@ export class OptionalRuntimeManager {
     const transferred = await this.#download(job, artifact, part, signal)
     signal.throwIfAborted()
     job.snapshot = { ...job.snapshot, stage: 'verifying', transferredBytes: transferred, totalBytes: artifact.size, percent: 100 }
-    this.#append(job, 'Verifying SHA-256 and archive policy.\n')
+    this.#append(job, `Verifying ${artifact.integrity === undefined ? 'SHA-256' : 'npm integrity'} and archive policy.\n`)
     if (transferred !== artifact.size) throw new Error(`desktop: workspace-runtime archive size mismatch (${transferred}/${artifact.size})`)
-    if (await sha256File(part) !== artifact.sha256) {
+    if (artifact.sha256 !== undefined && await sha256File(part) !== artifact.sha256) {
       await rm(part, { force: true })
       throw new Error('desktop: workspace-runtime archive SHA-256 mismatch')
+    }
+    if (artifact.integrity !== undefined) {
+      const hash = createHash('sha512')
+      for await (const chunk of createReadStream(part)) hash.update(chunk as Buffer)
+      if (`sha512-${hash.digest('base64')}` !== artifact.integrity) {
+        await rm(part, { force: true })
+        throw new Error('desktop: official Office engine npm integrity mismatch')
+      }
     }
     const staging = await mkdtemp(join(this.#options.cacheRoot, '.extract-'))
     try {
       job.snapshot = { ...job.snapshot, stage: 'extracting' }
-      await this.#inspectArchive(part)
+      const npm = office?.source === 'npm'
+      await this.#inspectArchive(part, npm ? 'package' : 'workspace-runtime')
       await x({ file: part, cwd: staging, strict: true, preservePaths: false })
-      const extracted = join(staging, 'workspace-runtime')
+      const extracted = npm
+        ? await this.#stageNpmOffice(staging, office, target)
+        : join(staging, 'workspace-runtime')
       await validate(extracted)
       await mkdir(dirname(payloadRoot), { recursive: true })
       if (!await exists(payloadRoot)) await rename(extracted, payloadRoot)
@@ -649,7 +663,8 @@ export class OptionalRuntimeManager {
     let offset = 0
     try { offset = (await stat(part)).size } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     if (offset > artifact.size) { await rm(part, { force: true }); offset = 0 }
-    const url = this.#options.source() === 'cnb' ? artifact.cnbUrl : artifact.githubUrl
+    const url = artifact.url ?? (this.#options.source() === 'cnb' ? artifact.cnbUrl : artifact.githubUrl)
+    if (url === undefined) throw new Error('desktop: workspace-runtime artifact has no download URL')
     this.#append(job, `${offset > 0 ? 'Resuming' : 'Downloading'} ${artifact.fileName}.\n`)
     const response = await this.#options.fetch(url, {
       signal,
@@ -678,7 +693,7 @@ export class OptionalRuntimeManager {
     return offset
   }
 
-  async #inspectArchive(path: string): Promise<void> {
+  async #inspectArchive(path: string, root: 'workspace-runtime' | 'package'): Promise<void> {
     let entries = 0
     let bytes = 0
     await t({
@@ -688,7 +703,7 @@ export class OptionalRuntimeManager {
         entries += 1
         bytes += entry.size
         const normalized = entry.path.replace(/\\/gu, '/')
-        const relativePath = posix.relative('workspace-runtime', normalized)
+        const relativePath = posix.relative(root, normalized)
         if (entries > MAX_ARCHIVE_ENTRIES || bytes > MAX_EXTRACTED_BYTES
           || normalized.startsWith('/') || normalized.includes('\0')
           || relativePath === '..' || relativePath.startsWith('../')
@@ -697,6 +712,35 @@ export class OptionalRuntimeManager {
         }
       },
     })
+  }
+
+  async #stageNpmOffice(
+    staging: string,
+    artifact: WorkspaceRuntimeOfficeArtifact & { readonly source: 'npm' },
+    target: WorkspaceRuntimeTarget,
+  ): Promise<string> {
+    const packageRoot = join(staging, 'package')
+    const packageManifest = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8')) as {
+      name?: unknown
+      version?: unknown
+    }
+    if (packageManifest.name !== artifact.enginePackage || packageManifest.version !== artifact.engineVersion) {
+      throw new Error('desktop: official Office engine npm package identity does not match the signed catalog')
+    }
+    const root = join(staging, 'workspace-runtime')
+    const destination = join(root, 'office', 'node_modules', ...artifact.enginePackage.split('/'))
+    await mkdir(dirname(destination), { recursive: true })
+    await rename(packageRoot, destination)
+    const [platform, arch] = target.split('-')
+    await writeFile(join(root, 'office-runtime.json'), `${JSON.stringify({
+      schema: 'dsh/office-runtime-payload/v1',
+      desktopVersion: this.#options.desktopVersion,
+      platform,
+      arch,
+      payloadDigest: artifact.payloadDigest,
+      officeEngine: { package: artifact.enginePackage, version: artifact.engineVersion },
+    }, undefined, 2)}\n`, { mode: 0o600 })
+    return root
   }
 
   async #collectUnused(): Promise<void> {

@@ -182,7 +182,6 @@ jobs:
           name: workspace-runtime-darwin-${{ matrix.arch }}
           path: |
             .artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-darwin-${{ matrix.arch }}.tar.gz
-            .artifacts/workspace-runtime/DeepSeek-Harness-office-runtime-darwin-${{ matrix.arch }}.tar.gz
             .artifacts/workspace-runtime/workspace-runtime-darwin-${{ matrix.arch }}.json
           if-no-files-found: error
           retention-days: 14
@@ -353,7 +352,6 @@ jobs:
           name: workspace-runtime-win32-x64
           path: |
             .artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz
-            .artifacts/workspace-runtime/DeepSeek-Harness-office-runtime-win32-x64.tar.gz
             .artifacts/workspace-runtime/workspace-runtime-win32-x64.json
           if-no-files-found: error
           retention-days: 14
@@ -418,7 +416,6 @@ jobs:
           name: workspace-runtime-linux-x64
           path: |
             .artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-linux-x64.tar.gz
-            .artifacts/workspace-runtime/DeepSeek-Harness-office-runtime-linux-x64.tar.gz
             .artifacts/workspace-runtime/workspace-runtime-linux-x64.json
           if-no-files-found: error
           retention-days: 14
@@ -466,7 +463,10 @@ jobs:
 
       - name: Write checksums
         working-directory: dist
-        run: sha256sum DeepSeek-Harness-* > SHA256SUMS
+        run: >-
+          find . -maxdepth 1 -type f
+          \( -name 'DeepSeek-Harness-macos-*' -o -name 'DeepSeek-Harness-windows-*' -o -name 'DeepSeek-Harness-linux-*' \)
+          -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
 
       - name: Assemble workspace-runtime catalog
         if: ${{ inputs.target == 'all' }}
@@ -477,6 +477,6 @@ jobs:
           name: desktop-checksums
           path: |
             dist/SHA256SUMS
-            dist/workspace-runtimes-*.v1.json
+            dist/workspace-runtimes-*.v2.json
           if-no-files-found: error
           retention-days: 14

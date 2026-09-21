@@ -2,15 +2,14 @@
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import extractZip from 'extract-zip'
 import { c, x } from 'tar'
 import lock from './primary-runtime-lock.json' with { type: 'json' }
-import { selectOfficeEngine } from '../../../scripts/libreoffice-engine.ts'
+import { officialOfficeArtifact } from './official-office-runtime.ts'
 
 type LockTarget = keyof typeof lock.targets
 type ReleaseTarget = 'win32-x64' | 'darwin-arm64' | 'darwin-x64' | 'linux-x64'
@@ -71,28 +70,6 @@ function payloadDigest(target: LockTarget): string {
   }))
 }
 
-function officePayloadDigest(target: LockTarget, engine: { package: string; version: string }): string {
-  return sha256(JSON.stringify({ format: 1, target, officeEngine: engine }))
-}
-
-function stageOfficeEngine(target: LockTarget, payload: string, root: string): { package: string; version: string } {
-  const require = createRequire(join(root, 'package.json'))
-  const kit = JSON.parse(readFileSync(require.resolve('@deepseek-ai/libreoffice-kit/package.json'), 'utf8')) as {
-    version: string
-    optionalDependencies?: Record<string, string>
-  }
-  const packageName = `@deepseek-ai/libreoffice-kit-${selectOfficeEngine(kit, TARGETS[target])}`
-  const manifest = require.resolve(`${packageName}/package.json`)
-  const destination = join(payload, 'office', 'node_modules', ...packageName.split('/'))
-  mkdirSync(dirname(destination), { recursive: true })
-  cpSync(dirname(manifest), destination, { recursive: true, dereference: true })
-  const staged = JSON.parse(readFileSync(join(destination, 'package.json'), 'utf8')) as { name?: string; version?: string }
-  if (staged.name !== packageName || staged.version !== kit.version) {
-    throw new Error(`workspace runtime: Office engine identity mismatch for ${packageName}`)
-  }
-  return { package: packageName, version: kit.version }
-}
-
 async function unpackWheel(archive: string, destination: string): Promise<void> {
   await extractZip(archive, {
     dir: destination,
@@ -122,7 +99,6 @@ export async function prepareWorkspaceRuntime(target = selectedTarget()): Promis
   const cache = join(root, '.artifacts', 'workspace-runtime-downloads')
   await Promise.all([mkdir(output, { recursive: true }), mkdir(cache, { recursive: true })])
   const staging = mkdtempSync(join(tmpdir(), 'dsh-workspace-runtime-'))
-  const officeStaging = mkdtempSync(join(tmpdir(), 'dsh-office-runtime-'))
   try {
     const payload = join(staging, 'workspace-runtime')
     mkdirSync(payload)
@@ -156,23 +132,9 @@ export async function prepareWorkspaceRuntime(target = selectedTarget()): Promis
     const archive = join(output, fileName)
     await c({ cwd: staging, file: archive, gzip: true, portable: true }, ['workspace-runtime'])
     const bytes = readFileSync(archive)
-    const officePayload = join(officeStaging, 'workspace-runtime')
-    mkdirSync(officePayload)
-    const officeEngine = stageOfficeEngine(target, officePayload, root)
-    const officeDigest = officePayloadDigest(target, officeEngine)
-    writeFileSync(join(officePayload, 'office-runtime.json'), `${JSON.stringify({
-      schema: 'dsh/office-runtime-payload/v1',
-      desktopVersion: desktop.version,
-      platform: identity.platform,
-      arch: identity.arch,
-      payloadDigest: officeDigest,
-      officeEngine,
-    }, undefined, 2)}\n`)
-    const officeFileName = `DeepSeek-Harness-office-runtime-${identity.release}.tar.gz`
-    const officeArchive = join(output, officeFileName)
-    await c({ cwd: officeStaging, file: officeArchive, gzip: true, portable: true }, ['workspace-runtime'])
-    const officeBytes = readFileSync(officeArchive)
-    const tag = `odsh-v${desktop.version}`
+    const office = officialOfficeArtifact(identity, root, cache)
+    const tag = `python-v${desktop.version}`
+    const runtimeUrl = `https://github.com/hecoococ/open-dsh-runtime-assets/releases/download/${tag}/${fileName}`
     const fragment = {
       target: identity.release,
       fileName,
@@ -180,23 +142,13 @@ export async function prepareWorkspaceRuntime(target = selectedTarget()): Promis
       sha256: sha256(bytes),
       payloadDigest: digest,
       pythonVersion: lock.pythonVersion,
-      githubUrl: `https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/${tag}/${fileName}`,
-      cnbUrl: `https://cnb.cool/hecoococ/open-deepseek-harness-desktop/-/releases/download/${tag}/${fileName}`,
-      office: {
-        fileName: officeFileName,
-        size: statSync(officeArchive).size,
-        sha256: sha256(officeBytes),
-        payloadDigest: officeDigest,
-        enginePackage: officeEngine.package,
-        engineVersion: officeEngine.version,
-        githubUrl: `https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/${tag}/${officeFileName}`,
-        cnbUrl: `https://cnb.cool/hecoococ/open-deepseek-harness-desktop/-/releases/download/${tag}/${officeFileName}`,
-      },
+      githubUrl: runtimeUrl,
+      cnbUrl: runtimeUrl,
+      office,
     }
     writeFileSync(join(output, `workspace-runtime-${identity.release}.json`), `${JSON.stringify(fragment, undefined, 2)}\n`)
   } finally {
     rmSync(staging, { recursive: true, force: true })
-    rmSync(officeStaging, { recursive: true, force: true })
   }
 }
 

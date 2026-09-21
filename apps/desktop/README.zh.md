@@ -86,7 +86,7 @@ Windows 辅助卸载向导默认保留本地配置和数据。用户可以主动
 
 工作区 Python 是独立的可选 Release 载荷，不属于外部工具插件，也不属于安装包资源。打包工作流从 Python 3.12 锁定文件分别生成 `win32-x64`、`darwin-arm64`、`darwin-x64` 与 `linux-x64` 归档，包含 NumPy、pandas、Pillow、lxml、python-docx、python-pptx、openpyxl、XlsxWriter 及锁定的传递依赖。仅允许 master 的工作流会根据 Release 中四份不可变归档重新生成版本化清单，通过 GitHub OIDC/Sigstore 为其摘要签名，把清单和证明附加到同一 Release，并请求刷新 CNB 镜像。已发布客户端只接受与完整桌面版本、原生目标、预期文件名、大小上限、SHA-256、载荷摘要和签名身份全部匹配的内容。只有未打包的开发版可以指定测试元数据 URL；正式构建不接受任意 URL 覆盖。
 
-`OptionalRuntimeManager` 统一拥有断点续传、有界输出、归档策略、原子解压、共享的 `userData/optional-runtimes` 缓存，以及按规范化 `DSH_HOME` 保存的独立引用。渲染层 IPC 只能提交 `office` 或 `ptc`，不能提交 URL、路径或包坐标。启用操作通过现有启动 Profile 事务写入受管块；只有普通客户端与事件分发都正常就绪并提交事务后，状态才会从等待重启变为已启用。Office 加载 `@deepseek-ai/dsh-host-workspace-runtime`，由它发布 `load_workspace_dependencies` 和内置 Office Skill，并显式指向经过校验的载荷以及安装包 Node/pnpm。PTC 使用独立受管块，Windows 不支持。停用一项不会影响另一项；无人引用的载荷只会在停用事务提交后回收。NAS 模式中的两张卡片仅展示不可用状态。
+`OptionalRuntimeManager` 统一拥有断点续传、有界输出、归档策略、原子解压、共享的 `userData/optional-runtimes` 缓存，以及按规范化 `DSH_HOME` 保存的独立引用。渲染层 IPC 只能提交 `office` 或 `ptc`，不能提交 URL、路径或包坐标。它的签名 v2 清单把托管 Python 指向版本化的 [Open DSH Runtime Assets](https://github.com/hecoococ/open-dsh-runtime-assets) Release，并用压缩包大小、npm SHA-512 integrity、包名和版本把每个平台的 Office 引擎固定到官方 `@deepseek-ai/libreoffice-kit-*` npm 归档。启用操作通过现有启动 Profile 事务写入受管块；只有普通客户端与事件分发都正常就绪并提交事务后，状态才会从等待重启变为已启用。Office 加载 `@deepseek-ai/dsh-host-workspace-runtime`，由它发布 `load_workspace_dependencies` 和内置 Office Skill，并显式指向经过校验的载荷以及安装包 Node/pnpm。PTC 使用独立受管块，Windows 不支持。停用一项不会影响另一项；无人引用的载荷只会在停用事务提交后回收。NAS 模式中的两张卡片仅展示不可用状态。
 
 桌面端只为官方 Codex Provider 解析系统代理，显式代理设置优先。插件下载保留 pnpm 与 Git 自身配置，不继承面向 ChatGPT 的专用路由。网络失败会附带有长度边界的分类与耗时提示；不会仅凭环境变量推断实际路由。详见[代理作用范围与验证限制](../../.agents/notes/implemented/bug-fix/2026-09-03-desktop-codex-proxy-scope.zh.md)。
 
@@ -124,7 +124,7 @@ npm run package:desktop:macos:arm64
 npm run package:desktop:macos:x64
 ```
 
-产物写入 `.artifacts/desktop-macos/`。原生安装包携带展开后的 Harness 生产依赖、Node 24.21.0、pnpm 11.7.0、小型工作运行时适配模块、内置 Office Skill 资源，以及独立的预构建 Profile 模板；不携带 Python 解释器、wheel、LibreOffice 引擎或可选运行时归档。打包在生成 Harness 闭包后删除全部 `@deepseek-ai/libreoffice-kit-*` 引擎，残留任一引擎都会使校验失败。用户启用 Office 后，应用才从签名可选运行时下载与平台匹配的官方引擎。复制 `.app` 时一并安装核心资源，首次启动不再解压嵌套 Harness 运行时归档。Linux deb/rpm 使用相同的展开布局，Windows 保留 NSIS 资源部署。安装程序不执行用户插件脚本，也不选择配置目录。旧布局测试包仍可读取原有运行时归档。准备阶段验证固定 Node 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
+产物写入 `.artifacts/desktop-macos/`。原生安装包携带展开后的 Harness 生产依赖、Node 24.21.0、pnpm 11.7.0、小型工作运行时适配模块、内置 Office Skill 资源，以及独立的预构建 Profile 模板；不携带 Python 解释器、wheel、LibreOffice 引擎或可选运行时归档。打包在生成 Harness 闭包后删除全部 `@deepseek-ai/libreoffice-kit-*` 引擎，残留任一引擎都会使校验失败。Python 归档发布在独立运行时仓库，Office 引擎保持为官方 npm 归档，Desktop Release 不再重新打包它们。复制 `.app` 时一并安装核心资源，首次启动不再解压嵌套 Harness 运行时归档。Linux deb/rpm 使用相同的展开布局，Windows 保留 NSIS 资源部署。安装程序不执行用户插件脚本，也不选择配置目录。旧布局测试包仍可读取原有运行时归档。准备阶段验证固定 Node 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
 
 在 Windows 上使用下列命令构建未签名的 Windows x64 NSIS 安装程序：
 

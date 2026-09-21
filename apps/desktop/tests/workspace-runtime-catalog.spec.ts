@@ -9,26 +9,26 @@ const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 
 const version = '0.1.6-alpha.2'
-const documentName = `workspace-runtimes-${version}.v1.json`
+const documentName = `workspace-runtimes-${version}.v2.json`
 function artifact(target: 'win32-x64' | 'darwin-arm64' | 'darwin-x64' | 'linux-x64') {
   return {
     target, fileName: `DeepSeek-Harness-workspace-runtime-${target}.tar.gz`,
     size: 1024, sha256: 'a'.repeat(64), payloadDigest: 'b'.repeat(64), pythonVersion: '3.12.14',
     githubUrl: `https://github.com/example/${target}.tar.gz`, cnbUrl: `https://cnb.cool/example/${target}.tar.gz`,
     office: {
-      fileName: `DeepSeek-Harness-office-runtime-${target}.tar.gz`,
-      size: 1024, sha256: 'c'.repeat(64), payloadDigest: 'd'.repeat(64),
+      source: 'npm', fileName: `libreoffice-kit-${target.startsWith('linux-') ? 'wasm' : target}-0.0.1.tgz`,
+      size: 1024, payloadDigest: 'd'.repeat(64),
       enginePackage: target.startsWith('linux-')
         ? '@deepseek-ai/libreoffice-kit-wasm'
         : `@deepseek-ai/libreoffice-kit-${target}`,
       engineVersion: '0.0.1',
-      githubUrl: `https://github.com/example/office-${target}.tar.gz`,
-      cnbUrl: `https://cnb.cool/example/office-${target}.tar.gz`,
+      integrity: `sha512-${Buffer.alloc(64).toString('base64')}`,
+      url: `https://registry.npmjs.org/@deepseek-ai/libreoffice-kit-${target}/-/office-${target}.tgz`,
     },
   }
 }
 const manifest = {
-  schema: 'dsh/desktop-workspace-runtimes/v1', desktopVersion: version,
+  schema: 'dsh/desktop-workspace-runtimes/v2', desktopVersion: version,
   issuedAt: '2026-09-19T00:00:00.000Z', expiresAt: '2026-09-20T00:00:00.000Z',
   artifacts: {
     'win32-x64': artifact('win32-x64'), 'darwin-arm64': artifact('darwin-arm64'),

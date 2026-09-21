@@ -16,6 +16,7 @@ async function fixture(options: {
   platform?: NodeJS.Platform
   arch?: string
   corruptDigest?: boolean
+  corruptOfficeIntegrity?: boolean
   slowDownload?: boolean
   pythonEnvironment?: PythonEnvironmentPort
 } = {}) {
@@ -34,18 +35,13 @@ async function fixture(options: {
   const archive = join(root, 'archive.tar.gz')
   await c({ cwd: join(root, 'source'), file: archive, gzip: true }, ['workspace-runtime'])
   const bytes = await readFile(archive)
-  const officeSource = join(root, 'office-source', 'workspace-runtime')
-  await mkdir(join(officeSource, 'office', 'node_modules', '@deepseek-ai', 'libreoffice-kit-darwin-arm64'), { recursive: true })
-  await writeFile(join(officeSource, 'office', 'node_modules', '@deepseek-ai', 'libreoffice-kit-darwin-arm64', 'package.json'), JSON.stringify({
+  const officeSource = join(root, 'office-source', 'package')
+  await mkdir(officeSource, { recursive: true })
+  await writeFile(join(officeSource, 'package.json'), JSON.stringify({
     name: '@deepseek-ai/libreoffice-kit-darwin-arm64', version: '0.0.1',
   }))
-  await writeFile(join(officeSource, 'office-runtime.json'), JSON.stringify({
-    schema: 'dsh/office-runtime-payload/v1', desktopVersion: '0.1.6-alpha.2',
-    platform: 'darwin', arch: 'arm64', payloadDigest: officeDigest,
-    officeEngine: { package: '@deepseek-ai/libreoffice-kit-darwin-arm64', version: '0.0.1' },
-  }))
   const officeArchive = join(root, 'office-archive.tar.gz')
-  await c({ cwd: join(root, 'office-source'), file: officeArchive, gzip: true }, ['workspace-runtime'])
+  await c({ cwd: join(root, 'office-source'), file: officeArchive, gzip: true }, ['package'])
   const officeBytes = await readFile(officeArchive)
   const artifact = {
     target: 'darwin-arm64' as const,
@@ -55,15 +51,17 @@ async function fixture(options: {
     payloadDigest: digest, pythonVersion: '3.12.14',
     githubUrl: 'https://github.com/example/archive.tar.gz', cnbUrl: 'https://cnb.cool/example/archive.tar.gz',
     office: {
-      fileName: 'DeepSeek-Harness-office-runtime-darwin-arm64.tar.gz',
-      size: officeBytes.length, sha256: createHash('sha256').update(officeBytes).digest('hex'),
+      source: 'npm' as const, fileName: 'libreoffice-kit-darwin-arm64-0.0.1.tgz',
+      size: officeBytes.length,
+      integrity: options.corruptOfficeIntegrity === true
+        ? `sha512-${Buffer.alloc(64).toString('base64')}`
+        : `sha512-${createHash('sha512').update(officeBytes).digest('base64')}`,
       payloadDigest: officeDigest, enginePackage: '@deepseek-ai/libreoffice-kit-darwin-arm64', engineVersion: '0.0.1',
-      githubUrl: 'https://github.com/example/office-archive.tar.gz',
-      cnbUrl: 'https://cnb.cool/example/office-archive.tar.gz',
+      url: 'https://registry.npmjs.org/@deepseek-ai/libreoffice-kit-darwin-arm64/-/libreoffice-kit-darwin-arm64-0.0.1.tgz',
     },
   }
   const manifest = {
-    schema: 'dsh/desktop-workspace-runtimes/v1', desktopVersion: '0.1.6-alpha.2',
+    schema: 'dsh/desktop-workspace-runtimes/v2', desktopVersion: '0.1.6-alpha.2',
     issuedAt: new Date(Date.now() - 1_000).toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
     artifacts: { 'darwin-arm64': artifact },
   } as unknown as WorkspaceRuntimeManifest
@@ -77,7 +75,7 @@ async function fixture(options: {
     source: () => 'github', loadManifest: () => Promise.resolve(manifest),
     fetch: (url, init) => {
       fetchCount += 1
-      const selectedBytes = url.includes('office-archive') ? officeBytes : bytes
+      const selectedBytes = url.includes('registry.npmjs.org') ? officeBytes : bytes
       const range = new Headers(init?.headers).get('range')
       const offset = Number(/^bytes=(\d+)-$/u.exec(range ?? '')?.[1] ?? 0)
       const body = selectedBytes.subarray(offset)
@@ -118,7 +116,8 @@ describe('OptionalRuntimeManager', () => {
   it('downloads one verified shared payload and keeps Office/PTC references independent', async () => {
     const { manager, root, digest, setHome } = await fixture()
     const job = await manager.start('office')
-    await expect(settle(manager, job.jobId)).resolves.toMatchObject({ phase: 'succeeded', stage: 'ready' })
+    const result = await settle(manager, job.jobId)
+    expect(result, result.message).toMatchObject({ phase: 'succeeded', stage: 'ready' })
     await manager.activate('office')
     expect(await manager.pending()).toEqual({ office: 'enable', ptc: undefined })
     await manager.commitPending()
@@ -185,6 +184,15 @@ describe('OptionalRuntimeManager', () => {
     const result = await settle(manager, state.jobId)
     expect(result.phase).toBe('failed')
     expect(result.message).toMatch(/SHA-256 mismatch/u)
+    await manager.dispose()
+  })
+
+  it('rejects an official Office archive whose npm integrity does not match', async () => {
+    const { manager } = await fixture({ corruptOfficeIntegrity: true })
+    const state = await manager.start('office')
+    const result = await settle(manager, state.jobId)
+    expect(result.phase).toBe('failed')
+    expect(result.message).toMatch(/npm integrity mismatch/u)
     await manager.dispose()
   })
 

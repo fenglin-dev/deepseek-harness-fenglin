@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing Desktop release tag containing all eight optional runtime archives
+        description: Existing Desktop release tag that will receive the signed runtime catalog
         required: true
         type: string
 
@@ -39,13 +39,15 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Download immutable runtime archives
+      - name: Download immutable Python runtime archives
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p dist
-          gh release download '${{ inputs.tag }}' --dir dist --pattern 'DeepSeek-Harness-workspace-runtime-*.tar.gz' --pattern 'DeepSeek-Harness-office-runtime-*.tar.gz'
-          test "$(find dist -name 'DeepSeek-Harness-*-runtime-*.tar.gz' -type f | wc -l)" -eq 8
+          version="${{ inputs.tag }}"
+          version="${version#odsh-v}"
+          gh release download "python-v${version}" --repo hecoococ/open-dsh-runtime-assets --dir dist --pattern 'DeepSeek-Harness-workspace-runtime-*.tar.gz'
+          test "$(find dist -name 'DeepSeek-Harness-workspace-runtime-*.tar.gz' -type f | wc -l)" -eq 4
 
       - name: Build catalog subject from release bytes
         run: pnpm exec tsx apps/desktop/scripts/workspace-runtime-manifest-from-release.ts dist '${{ inputs.tag }}'
@@ -54,14 +56,14 @@ jobs:
         name: Sign runtime catalog with GitHub OIDC
         uses: actions/attest@v4
         with:
-          subject-path: dist/workspace-runtimes-*.v1.json
+          subject-path: dist/workspace-runtimes-*.v2.json
 
       - name: Upload signed catalog to the same release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp '${{ steps.attest.outputs.bundle-path }}' dist/workspace-runtimes.v1.sigstore.json
-          gh release upload '${{ inputs.tag }}' dist/workspace-runtimes-*.v1.json dist/workspace-runtimes.v1.sigstore.json --clobber
+          cp '${{ steps.attest.outputs.bundle-path }}' dist/workspace-runtimes.v2.sigstore.json
+          gh release upload '${{ inputs.tag }}' dist/workspace-runtimes-*.v2.json dist/workspace-runtimes.v2.sigstore.json --clobber
 
       - name: Refresh the CNB mirror after metadata is present
         env:

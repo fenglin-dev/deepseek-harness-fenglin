@@ -5,7 +5,8 @@ export type WorkspaceRuntimeCapability = typeof WORKSPACE_RUNTIME_CAPABILITIES[n
 export const WORKSPACE_RUNTIME_TARGETS = ['win32-x64', 'darwin-arm64', 'darwin-x64', 'linux-x64'] as const
 export type WorkspaceRuntimeTarget = typeof WORKSPACE_RUNTIME_TARGETS[number]
 
-export interface WorkspaceRuntimeOfficeArtifact {
+export interface WorkspaceRuntimeBundledOfficeArtifact {
+  readonly source: 'desktop-release'
   readonly fileName: string
   readonly size: number
   readonly sha256: string
@@ -15,6 +16,19 @@ export interface WorkspaceRuntimeOfficeArtifact {
   readonly githubUrl: string
   readonly cnbUrl: string
 }
+
+export interface WorkspaceRuntimeNpmOfficeArtifact {
+  readonly source: 'npm'
+  readonly fileName: string
+  readonly size: number
+  readonly integrity: string
+  readonly payloadDigest: string
+  readonly enginePackage: string
+  readonly engineVersion: string
+  readonly url: string
+}
+
+export type WorkspaceRuntimeOfficeArtifact = WorkspaceRuntimeBundledOfficeArtifact | WorkspaceRuntimeNpmOfficeArtifact
 
 export interface WorkspaceRuntimeArtifact {
   readonly target: WorkspaceRuntimeTarget
@@ -29,7 +43,7 @@ export interface WorkspaceRuntimeArtifact {
 }
 
 export interface WorkspaceRuntimeManifest {
-  readonly schema: 'dsh/desktop-workspace-runtimes/v1'
+  readonly schema: 'dsh/desktop-workspace-runtimes/v1' | 'dsh/desktop-workspace-runtimes/v2'
   readonly desktopVersion: string
   readonly issuedAt: string
   readonly expiresAt: string
@@ -40,6 +54,8 @@ const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u
 const DIGEST = /^[a-f0-9]{64}$/u
 const FILE_NAME = /^DeepSeek-Harness-workspace-runtime-(?:win32-x64|darwin-arm64|darwin-x64|linux-x64)\.tar\.gz$/u
 const OFFICE_FILE_NAME = /^DeepSeek-Harness-office-runtime-(?:win32-x64|darwin-arm64|darwin-x64|linux-x64)\.tar\.gz$/u
+const NPM_FILE_NAME = /^libreoffice-kit-(?:win32-x64|darwin-arm64|darwin-x64|wasm)-\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\.tgz$/u
+const INTEGRITY = /^sha512-[A-Za-z0-9+/]+={0,2}$/u
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`desktop: ${label} must be an object`)
@@ -63,7 +79,7 @@ function httpsUrl(source: Record<string, unknown>, key: string): string {
   return parsed.href
 }
 
-function artifact(value: unknown, target: WorkspaceRuntimeTarget): WorkspaceRuntimeArtifact {
+function artifact(value: unknown, target: WorkspaceRuntimeTarget, schema: WorkspaceRuntimeManifest['schema']): WorkspaceRuntimeArtifact {
   const source = record(value, `workspace-runtime ${target} artifact`)
   const expectedFileName = `DeepSeek-Harness-workspace-runtime-${target}.tar.gz`
   if (source.target !== target || !Number.isSafeInteger(source.size) || (source.size as number) <= 0
@@ -79,21 +95,46 @@ function artifact(value: unknown, target: WorkspaceRuntimeTarget): WorkspaceRunt
     pythonVersion: string(source, 'pythonVersion', /^3\.12\.\d+$/u),
     githubUrl: httpsUrl(source, 'githubUrl'),
     cnbUrl: httpsUrl(source, 'cnbUrl'),
-    office: officeArtifact(source.office, target),
+    office: officeArtifact(source.office, target, schema),
   }
 }
 
-function officeArtifact(value: unknown, target: WorkspaceRuntimeTarget): WorkspaceRuntimeOfficeArtifact {
+function officeArtifact(
+  value: unknown,
+  target: WorkspaceRuntimeTarget,
+  schema: WorkspaceRuntimeManifest['schema'],
+): WorkspaceRuntimeOfficeArtifact {
   const source = record(value, `workspace-runtime ${target} Office artifact`)
-  const expectedFileName = `DeepSeek-Harness-office-runtime-${target}.tar.gz`
   const expectedPackage = target.startsWith('linux-')
     ? '@deepseek-ai/libreoffice-kit-wasm'
     : `@deepseek-ai/libreoffice-kit-${target}`
-  if (source.fileName !== expectedFileName || source.enginePackage !== expectedPackage
+  if (source.enginePackage !== expectedPackage
     || !Number.isSafeInteger(source.size) || (source.size as number) <= 0 || (source.size as number) > 2 * 1024 * 1024 * 1024) {
     throw new TypeError(`desktop: workspace-runtime manifest has invalid ${target} Office artifact`)
   }
+  if (schema === 'dsh/desktop-workspace-runtimes/v2') {
+    if (source.source !== 'npm') throw new TypeError(`desktop: workspace-runtime manifest has invalid ${target} Office source`)
+    const url = httpsUrl(source, 'url')
+    if (new URL(url).hostname !== 'registry.npmjs.org') {
+      throw new TypeError(`desktop: workspace-runtime manifest has invalid ${target} Office registry`)
+    }
+    return {
+      source: 'npm',
+      fileName: string(source, 'fileName', NPM_FILE_NAME),
+      size: source.size as number,
+      integrity: string(source, 'integrity', INTEGRITY),
+      payloadDigest: string(source, 'payloadDigest', DIGEST),
+      enginePackage: string(source, 'enginePackage'),
+      engineVersion: string(source, 'engineVersion', VERSION),
+      url,
+    }
+  }
+  const expectedFileName = `DeepSeek-Harness-office-runtime-${target}.tar.gz`
+  if (source.fileName !== expectedFileName || (source.source !== undefined && source.source !== 'desktop-release')) {
+    throw new TypeError(`desktop: workspace-runtime manifest has invalid ${target} Office artifact`)
+  }
   return {
+    source: 'desktop-release',
     fileName: string(source, 'fileName', OFFICE_FILE_NAME),
     size: source.size as number,
     sha256: string(source, 'sha256', DIGEST),
@@ -108,7 +149,10 @@ function officeArtifact(value: unknown, target: WorkspaceRuntimeTarget): Workspa
 /** Parse the signed document without accepting unknown targets or arbitrary capability identifiers. */
 export function parseWorkspaceRuntimeManifest(value: unknown): WorkspaceRuntimeManifest {
   const source = record(value, 'workspace-runtime manifest')
-  if (source.schema !== 'dsh/desktop-workspace-runtimes/v1') throw new TypeError('desktop: unsupported workspace-runtime manifest schema')
+  if (source.schema !== 'dsh/desktop-workspace-runtimes/v1' && source.schema !== 'dsh/desktop-workspace-runtimes/v2') {
+    throw new TypeError('desktop: unsupported workspace-runtime manifest schema')
+  }
+  const schema = source.schema
   const issuedAt = string(source, 'issuedAt')
   const expiresAt = string(source, 'expiresAt')
   if (!Number.isFinite(Date.parse(issuedAt)) || !Number.isFinite(Date.parse(expiresAt))) {
@@ -120,12 +164,12 @@ export function parseWorkspaceRuntimeManifest(value: unknown): WorkspaceRuntimeM
     throw new TypeError('desktop: workspace-runtime manifest target set is invalid')
   }
   return {
-    schema: source.schema,
+    schema,
     desktopVersion: string(source, 'desktopVersion', VERSION),
     issuedAt,
     expiresAt,
     artifacts: Object.fromEntries(
-      WORKSPACE_RUNTIME_TARGETS.map(target => [target, artifact(artifacts[target], target)]),
+      WORKSPACE_RUNTIME_TARGETS.map(target => [target, artifact(artifacts[target], target, schema)]),
     ) as unknown as Readonly<Record<WorkspaceRuntimeTarget, WorkspaceRuntimeArtifact>>,
   }
 }
