@@ -54,4 +54,6 @@ test('optional runtimes use separate sources instead of the desktop package work
   assert.doesNotMatch(metadataWorkflow, /DeepSeek-Harness-office-runtime/u)
   assert.match(metadataWorkflow, /workspace-runtimes-\*\.v2\.json/u)
   assert.match(metadataWorkflow, /DeepSeek-Harness-workspace-runtime-\*\.tar\.gz/u)
+  assert.match(metadataWorkflow, /workspace-runtime-release-metadata/u)
+  assert.doesNotMatch(metadataWorkflow, /gh release upload|sync-cnb-desktop-releases/u)
 })

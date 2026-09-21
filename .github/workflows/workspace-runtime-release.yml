@@ -1,10 +1,11 @@
 name: Workspace runtime release metadata
+run-name: Workspace runtime metadata ${{ inputs.tag }}
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing Desktop release tag that will receive the signed runtime catalog
+        description: Planned Desktop release tag used to build signed runtime metadata
         required: true
         type: string
 
@@ -20,8 +21,7 @@ jobs:
     if: github.repository == 'flaqai/open-deepseek-harness-desktop' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
-      actions: write
+      contents: read
       id-token: write
       attestations: write
       artifact-metadata: write
@@ -58,14 +58,16 @@ jobs:
         with:
           subject-path: dist/workspace-runtimes-*.v2.json
 
-      - name: Upload signed catalog to the same release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Prepare signed metadata artifact
         run: |
           cp '${{ steps.attest.outputs.bundle-path }}' dist/workspace-runtimes.v2.sigstore.json
-          gh release upload '${{ inputs.tag }}' dist/workspace-runtimes-*.v2.json dist/workspace-runtimes.v2.sigstore.json --clobber
 
-      - name: Refresh the CNB mirror after metadata is present
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run sync-cnb-desktop-releases.yml --ref master -f target_tag='${{ inputs.tag }}'
+      - name: Preserve signed metadata before publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-runtime-release-metadata
+          path: |
+            dist/workspace-runtimes-*.v2.json
+            dist/workspace-runtimes.v2.sigstore.json
+          if-no-files-found: error
+          retention-days: 14
