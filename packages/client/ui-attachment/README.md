@@ -35,6 +35,8 @@ Images and generic files retain pick order in one non-wrapping horizontal rail. 
 
 In Chat, one user message presents files and images in a right-aligned wrapping flow that preserves source order. A lone image without another attachment renders at 240px on its longer edge (aspect clamped to [0.25, 4], never upscaled); when the message has more than one attachment, each image is a fixed 64px square beside 240×64px file cards. A loaded image opens the document-level lightbox on click; a failed load shows a retry control instead. The lightbox closes on Escape, a mask press, or its close control, and restores focus to its opener. In a desktop custom frame, the lightbox, its close control, and the drag overlay reserve the title-bar safe area even though they are portaled to the document body.
 
+An owner may request an expanded result gallery for Assistant-authored local images. One image fills one bounded column, while two or more images use a responsive two-column grid that collapses to one column on narrow windows. The lightbox can receive owner-authorized actions such as opening the file in the product or revealing it in the Host file manager; the attachment package never derives file authority from the preview URL itself.
+
 Trajectory attachment rows request 48px square thumbnails that contain the complete image without cropping. Loading and retry icons keep the same box, with localized tooltips and accessible names; the image opens the same lightbox. A slot owner may supply a presentation-only image label for the thumbnail and lightbox without changing the durable reference or the cache lookup.
 
 ### Drop overlay

@@ -7,23 +7,10 @@ import type { AssistantBlock } from '../contract/snapshot.ts'
 import { markdownLabels } from '../markdown-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
 import { useSearchableHidden } from './searchable-hidden.ts'
+import { collectLocalPathImages, LocalPathImages, localPathMediaUrl } from './local-path-images.tsx'
 import css from './AssistantMarkdown.module.css'
 
-/**
- * Map one authored media destination to the same-origin workspace-file URL.
- * @param protocol - `window.location.protocol` at render time.
- * @param origin - `window.location.origin` at render time.
- * @param value - The authored markdown destination, exactly as written.
- * @returns The API URL for an absolute POSIX path on an HTTP(S) page, or
- * undefined when the destination cannot be a Host-served local file
- * (non-HTTP transport such as Electron `file://`, protocol-relative or
- * relative destinations).
- */
-export function localPathMediaUrl(protocol: string, origin: string, value: string): string | undefined {
-  if (protocol !== 'http:' && protocol !== 'https:') return undefined
-  if (value.length === 0 || !value.startsWith('/') || value.startsWith('//')) return undefined
-  return `${origin}/api/file?path=${encodeURIComponent(value)}`
-}
+export { localPathMediaUrl } from './local-path-images.tsx'
 
 export interface AssistantMarkdownProps {
   blocks: readonly AssistantBlock[]
@@ -40,12 +27,18 @@ export interface AssistantMarkdownProps {
   mentions?: MarkdownFileMentions | undefined
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
+  /** Session workspace root for resolving Assistant-authored relative paths. */
+  cwd?: string | undefined
+  /** Open one validated local image in the product's file preview. */
+  openFile?: ChatNodeOwnerProps['openFile'] | undefined
+  /** Reveal one validated local image in the Host file manager. */
+  revealFile?: ChatNodeOwnerProps['revealFile'] | undefined
 }
 
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, renderMessageImages,
-  reasoningHidden = false, revealProcess, mentions, t,
+  reasoningHidden = false, revealProcess, mentions, cwd, openFile, revealFile, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
@@ -55,8 +48,13 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
   // stable per page load because MarkdownText memoizes on it.
   const pathImages = useMemo<MarkdownPathImages>(() => {
     const { protocol, origin } = window.location
-    return { resolve: value => localPathMediaUrl(protocol, origin, value) }
-  }, [])
+    return { resolve: value => localPathMediaUrl(protocol, origin, value, cwd) }
+  }, [cwd])
+  const localImages = useMemo(() => {
+    if (streaming || openFile === undefined) return []
+    const { protocol, origin } = window.location
+    return collectLocalPathImages(blocks, cwd, protocol, origin)
+  }, [blocks, cwd, openFile, streaming])
   const last = blocks.length - 1
   // Tool-call heads render as tool rows in the chat view's grouping pass, so
   // a node that is only those heads (or empty) would paint an empty root
@@ -135,6 +133,15 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     <div className={css.root} data-streaming={streaming || undefined}>
       <div className={css.body}>
         {rendered}
+        {openFile !== undefined && localImages.length > 0 && (
+          <LocalPathImages
+            images={localImages}
+            renderMessageImages={renderMessageImages}
+            openFile={openFile}
+            revealFile={revealFile}
+            t={t}
+          />
+        )}
         {interrupted && <span className={css.stopped}>{t('message.stopped')}</span>}
       </div>
     </div>

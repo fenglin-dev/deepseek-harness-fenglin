@@ -92,6 +92,11 @@ export type MessageImageSource =
       readonly width?: number
       /** Intrinsic pixel height, when the intake probe has resolved it. */
       readonly height?: number
+      /** Optional lightbox actions owned by the feature that authorized this preview. */
+      readonly actions?: readonly {
+        readonly label: string
+        onSelect(): void
+      }[]
     }
   }
 
@@ -112,6 +117,8 @@ export interface MessageImagesOwnerProps {
   compact?: boolean
   /** Fixed, uncropped thumbnail for an attachment list row. */
   thumbnail?: boolean
+  /** Fill the message column with a responsive one/two-column result gallery. */
+  expanded?: boolean
 }
 
 /** Slot-backed renderer used by Conversation targets without importing an attachment implementation. */
