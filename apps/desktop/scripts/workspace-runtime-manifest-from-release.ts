@@ -10,7 +10,9 @@ import { officialOfficeArtifact, type OfficialOfficeTarget } from './official-of
 
 const directory = resolve(process.argv[2] ?? '')
 const tag = process.argv[3] ?? ''
+const sourceSha = process.argv[4] ?? ''
 if (!/^odsh-v[0-9A-Za-z.+-]+$/u.test(tag)) throw new Error('workspace runtime: expected an odsh-v* release tag')
+if (!/^[0-9a-f]{40}$/u.test(sourceSha)) throw new Error('workspace runtime: expected a full release source SHA')
 const version = tag.slice('odsh-v'.length)
 const root = resolve(import.meta.dirname, '../../..')
 const cache = join(directory, '.office-downloads')
@@ -54,4 +56,4 @@ const manifest = parseWorkspaceRuntimeManifest({
   schema: 'dsh/desktop-workspace-runtimes/v2', desktopVersion: version, issuedAt,
   expiresAt: new Date(Date.parse(issuedAt) + 180 * 24 * 60 * 60_000).toISOString(), artifacts,
 })
-await writeFile(join(directory, `workspace-runtimes-${version}.v2.json`), `${JSON.stringify(manifest, undefined, 2)}\n`)
+await writeFile(join(directory, `workspace-runtimes-${version}.v2.json`), `${JSON.stringify({ ...manifest, sourceSha }, undefined, 2)}\n`)

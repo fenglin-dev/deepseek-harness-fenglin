@@ -55,5 +55,8 @@ test('optional runtimes use separate sources instead of the desktop package work
   assert.match(metadataWorkflow, /workspace-runtimes-\*\.v2\.json/u)
   assert.match(metadataWorkflow, /DeepSeek-Harness-workspace-runtime-\*\.tar\.gz/u)
   assert.match(metadataWorkflow, /workspace-runtime-release-metadata/u)
+  assert.match(metadataWorkflow, /ref: \$\{\{ inputs\.source_sha \}\}/u)
+  assert.match(metadataWorkflow, /git rev-parse HEAD/u)
+  assert.match(metadataWorkflow, /workspace-runtime-manifest-from-release\.ts dist '\$\{\{ inputs\.tag \}\}' '\$\{\{ inputs\.source_sha \}\}'/u)
   assert.doesNotMatch(metadataWorkflow, /gh release upload|sync-cnb-desktop-releases/u)
 })

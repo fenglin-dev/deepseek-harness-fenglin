@@ -8,6 +8,10 @@ on:
         description: Planned Desktop release tag used to build signed runtime metadata
         required: true
         type: string
+      source_sha:
+        description: Exact Desktop release source commit used for catalog generation
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -28,7 +32,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.source_sha }}
           persist-credentials: false
+
+      - name: Verify exact release source
+        shell: bash
+        run: |
+          [[ '${{ inputs.source_sha }}' =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = '${{ inputs.source_sha }}'
 
       - uses: pnpm/action-setup@v4
 
@@ -50,7 +61,7 @@ jobs:
           test "$(find dist -name 'DeepSeek-Harness-workspace-runtime-*.tar.gz' -type f | wc -l)" -eq 4
 
       - name: Build catalog subject from release bytes
-        run: pnpm exec tsx apps/desktop/scripts/workspace-runtime-manifest-from-release.ts dist '${{ inputs.tag }}'
+        run: pnpm exec tsx apps/desktop/scripts/workspace-runtime-manifest-from-release.ts dist '${{ inputs.tag }}' '${{ inputs.source_sha }}'
 
       - id: attest
         name: Sign runtime catalog with GitHub OIDC

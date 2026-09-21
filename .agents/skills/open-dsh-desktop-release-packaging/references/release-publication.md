@@ -53,11 +53,12 @@ Before requesting the final publication authorization, create the signed metadat
 ```sh
 "$skill/scripts/prepare-release-metadata.sh" \
   flaqai/open-deepseek-harness-desktop \
+  <source-sha> \
   odsh-v<version> \
   "$PWD/.artifacts/release-metadata/odsh-v<version>"
 ```
 
-This dispatches `workspace-runtime-release.yml` on the default branch, waits for its successful run, downloads exactly the versioned catalog and Sigstore bundle, and makes the local result read-only. A known successful run can be recovered with `--run-id <id>`. Replacing an existing local metadata set requires `--replace-existing` and archives the previous directory. The workflow neither uploads to a GitHub Release nor starts CNB synchronization.
+This dispatches `workspace-runtime-release.yml` from the default branch while checking out the exact reviewed source SHA, waits for its successful run, downloads exactly the versioned catalog and Sigstore bundle, verifies the catalog's recorded source SHA, and makes the local result read-only. A known successful run can be recovered with `--run-id <id>` only when its catalog records the same source SHA. Replacing an existing local metadata set requires `--replace-existing` and archives the previous directory. The workflow neither uploads to a GitHub Release nor starts CNB synchronization.
 
 Run the publication helper once without `--publish` first:
 

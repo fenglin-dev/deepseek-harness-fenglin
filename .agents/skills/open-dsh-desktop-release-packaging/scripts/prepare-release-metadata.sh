@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 [--run-id <id>] [--replace-existing] <owner/repo> <tag> <output-directory>" >&2
+  echo "usage: $0 [--run-id <id>] [--replace-existing] <owner/repo> <source-sha> <tag> <output-directory>" >&2
   exit 2
 }
 
@@ -23,11 +23,12 @@ while [[ $# -gt 0 ]]; do
     *) break ;;
   esac
 done
-[[ $# -eq 3 ]] || usage
+[[ $# -eq 4 ]] || usage
 
 repository=$1
-tag=$2
-output_directory=$3
+source_sha=$2
+tag=$3
+output_directory=$4
 script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$script_directory/configure-cli-proxy.sh"
 
@@ -35,6 +36,7 @@ for command_name in gh find mktemp; do
   command -v "$command_name" >/dev/null || { echo "missing command: $command_name" >&2; exit 1; }
 done
 [[ "$repository" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]] || { echo "invalid repository: $repository" >&2; exit 1; }
+[[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "source SHA must be a full lowercase 40-character commit" >&2; exit 1; }
 [[ "$tag" =~ ^odsh-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]] || { echo "invalid desktop tag: $tag" >&2; exit 1; }
 version=${BASH_REMATCH[1]}
 expected_catalog="workspace-runtimes-$version.v2.json"
@@ -55,7 +57,10 @@ if [[ -z "$run_id" ]]; then
     --limit 100 --json databaseId,displayTitle \
     --jq ".[] | select(.displayTitle == \"Workspace runtime metadata $tag\") | .databaseId")
   echo "dispatching signed workspace runtime metadata for $tag from $default_branch"
-  gh workflow run workspace-runtime-release.yml --repo "$repository" --ref "$default_branch" -f "tag=$tag"
+  remote_sha=$(gh api "repos/$repository/commits/$source_sha" --jq .sha)
+  [[ "$remote_sha" == "$source_sha" ]] || { echo "remote commit does not match $source_sha" >&2; exit 1; }
+  gh workflow run workspace-runtime-release.yml --repo "$repository" --ref "$default_branch" \
+    -f "tag=$tag" -f "source_sha=$source_sha"
   for _ in {1..30}; do
     candidate_ids=$(gh run list --repo "$repository" --workflow workspace-runtime-release.yml --event workflow_dispatch \
       --limit 20 --json databaseId,displayTitle,status \
@@ -81,6 +86,12 @@ for filename in "$expected_catalog" "$expected_bundle"; do
   path="$temporary/download/$filename"
   [[ -f "$path" && -s "$path" && ! -L "$path" ]] || { echo "metadata artifact is missing $filename" >&2; exit 1; }
 done
+catalog_source_sha=$(node -e "const fs=require('node:fs'); const value=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(typeof value.sourceSha === 'string' ? value.sourceSha : '')" \
+  "$temporary/download/$expected_catalog")
+[[ "$catalog_source_sha" == "$source_sha" ]] || {
+  echo "metadata catalog source is ${catalog_source_sha:-missing}, expected $source_sha" >&2
+  exit 1
+}
 
 candidate="${output_directory}.candidate.$$"
 rm -rf "$candidate"
