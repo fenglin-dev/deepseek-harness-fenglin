@@ -10,6 +10,8 @@ English | [中文](README.zh.md)
 
 Browser approval presentation over the Agent-scoped Remote Event waterfall. The plugin publishes each pending request through `ctx.uiSession`, takes over the Conversation composer, optionally renders correlated Tool detail, and returns the user's decision to the waiting Host request. Use it when a browser must collect approval for a waiting Host operation.
 
+The decision card leads with the requester's plain-language action and risk explanation. Correlated command detail is collapsed by default and remains available through an explicit disclosure control, so long shell text does not displace the information needed for the decision.
+
 ## Table of Contents
 
 - [Model Experience](#model-experience)

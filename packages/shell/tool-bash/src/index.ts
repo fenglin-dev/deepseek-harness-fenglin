@@ -82,7 +82,8 @@ function bashDescription(backgroundEnabled: boolean, escalationModes: readonly S
     + 'marker rather than assuming the denial. When a command is denied and a wider mode would let it '
     + 'succeed, escalate immediately in the same turn — the one sanctioned exception to a denial: retry '
     + 'the exact same command once with `sandbox_permissions` (the narrowest wider mode that suffices) '
-    + 'plus a one-sentence `justification`. Do not detour through chat to ask permission first — the '
+    + 'plus a plain-language `justification` that states what the command does, what files/data/services '
+    + 'it may affect, the main risk, and whether its changes are reversible. Do not detour through chat to ask permission first — the '
     + 'approval prompt raised by that retry is how the user consents. If the session states approval '
     + 'prompts are disabled, there is no exception: a denial is final — do not set `sandbox_permissions`. '
     + 'Never escalate speculatively: ground the request in a real denial — normally the one this command '
@@ -263,7 +264,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         },
         justification: {
           type: 'string' as const,
-          description: 'Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access.',
+          description: 'Required with sandbox_permissions and shown to the user before approval: explain in plain language what this exact command will do, what files, data, or services it may affect, its main risk, and whether its changes are reversible.',
         },
       } : {},
     },

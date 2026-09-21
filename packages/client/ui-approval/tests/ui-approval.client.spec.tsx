@@ -311,6 +311,8 @@ function panelProps(
   const messages: Record<string, string> = {
     waiting: 'Waiting',
     'detail.aria': 'Approval details',
+    explanation: 'Action and risk',
+    'command.show': 'Show command details',
     escalation: `Tool ${pending.toolName} asks`,
     reject: 'Reject',
     allowOnce: 'Allow once',
@@ -342,13 +344,19 @@ describe('ApprovalPanel', () => {
     const pending = new PendingApproval(id('s1'), {
       toolName: 'bash',
       callId: 'call-1' as ToolCallId,
-      reason: 'Run this exact command',
+      reason: 'escalate sandbox to danger-full-access: Run this exact command',
     })
     const renderSlot = vi.fn(() => <code>pnpm test</code>)
     render(<ApprovalPanel {...panelProps(pending, renderSlot)} />)
 
     expect(screen.getByText('Run this exact command')).toBeTruthy()
+    expect(screen.queryByText(/escalate sandbox/u)).toBeNull()
+    expect(screen.getByText('Action and risk')).toBeTruthy()
     expect(screen.getByText('pnpm test')).toBeTruthy()
+    const disclosure = screen.getByText('Show command details').closest('details')
+    expect(disclosure?.open).toBe(false)
+    fireEvent.click(screen.getByText('Show command details'))
+    expect(disclosure?.open).toBe(true)
     expect(renderSlot).toHaveBeenCalledWith('conversation.approval.detail', {
       callId: 'call-1',
     })

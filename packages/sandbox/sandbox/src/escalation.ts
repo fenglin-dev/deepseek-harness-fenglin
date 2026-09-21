@@ -132,7 +132,7 @@ export interface EscalationApproval<A = object, C = string> {
 export interface EscalationRequest {
   /** The requested target mode (schema-pinned to {@link ESCALATION_TARGETS} when advertised). */
   requestedMode: string
-  /** The model's one-sentence reason, shown verbatim to the user inside the audit reason. */
+  /** The model's plain-language action and risk explanation, shown verbatim inside the audit reason. */
   justification: string
   /** The call's effective mode (session override ?? composition default); repeating it needs no approval. */
   effectiveMode: SandboxMode
