@@ -120,6 +120,12 @@ describe('desktop package workflow bundled plugins', () => {
     }
   })
 
+  it('writes canonical installer names into the checksum artifact', () => {
+    const { workflow } = readWorkflow()
+    const writeChecksums = workflow.jobs.checksums?.steps?.find(step => step.name === 'Write checksums')
+    expect(writeChecksums?.run).toContain("sed 's#  \\./#  #'")
+  })
+
   it('keeps the internal snapshot out of release artifact globs', () => {
     expect('bundled-plugin-snapshot').not.toMatch(/^desktop-/u)
   })

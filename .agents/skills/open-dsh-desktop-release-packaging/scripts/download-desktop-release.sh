@@ -380,7 +380,7 @@ for index in "${!run_ids[@]}"; do
 $(find "$release_directory" -type f -name "$filename" -print)
 EOF
     [[ -n "$source_path" && -f "$source_path" ]] || { echo "workflow run $run_id is missing $filename" >&2; exit 1; }
-    expected_hash=$(awk -v name="$filename" '$2 == name || $2 == "*" name { print $1 }' "$checksum_file")
+    expected_hash=$(awk -v name="$filename" '$2 == name || $2 == "*" name || $2 == "./" name || $2 == "*./" name { print $1 }' "$checksum_file")
     [[ $(printf '%s\n' "$expected_hash" | sed '/^$/d' | wc -l | tr -d ' ') == 1 ]] || {
       echo "workflow checksum entry is missing or ambiguous for $filename" >&2
       exit 1
