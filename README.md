@@ -372,9 +372,9 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 </p>
 
 <p align="center">
-  <img src="./assets/readme/preset-im-robot-zh.png" width="900" alt="通过 dsh-im 连接微信等九种 IM 机器人">
+  <img src="./assets/readme/preset-im-robot-zh.png" width="900" alt="通过 dsh-im 连接微信等十二种 IM 机器人">
   <br>
-  <sub>IM 机器人：连接微信、飞书、钉钉、企业微信、QQ、Slack、Telegram、Discord 和 WhatsApp</sub>
+  <sub>IM 机器人：连接微信、飞书、钉钉、企业微信、企业微信应用、QQ、Slack、Telegram、Discord、WhatsApp、iMessage 和 Matrix</sub>
 </p>
 
 > [!TIP]
@@ -549,7 +549,7 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 
 感谢以下九个预设社区插件的作者与维护者：
 
-- [`dsh-im`](https://github.com/xmanrui/dsh-im)，由 [xmanrui](https://github.com/xmanrui) 维护：连接微信、飞书等九种 IM 机器人。
+- [`dsh-im`](https://github.com/xmanrui/dsh-im)，由 [xmanrui](https://github.com/xmanrui) 维护：连接微信、飞书等十二种 IM 机器人。
 - [`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker)，由 [a735624258](https://github.com/a735624258) 维护：在输入区选择 Skill，并插入 Harness 的 Skill 调用指令。
 - [`dsh-market`](https://github.com/dsh-market/dsh-market)，由 [dsh-market](https://github.com/dsh-market) 社区维护：在 Harness 内浏览、搜索、安装和管理插件。
 - [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket)：提供 Pocket 扩展。
