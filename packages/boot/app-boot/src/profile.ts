@@ -577,6 +577,9 @@ function moduleFallbackCurrent(modulesDir: string, entries: readonly ModuleFallb
   return entries.every(entry => moduleFallbackEntryCurrent(modulesDir, entry))
 }
 
+/** Let an earlier launcher finish publishing the shared fallback generation. */
+const PROFILE_MODULE_FALLBACK_LOCK_WAIT_MS = 10_000
+
 /** Inputs for {@link healProfilesModuleFallback}. */
 export interface ProfileModuleFallbackOptions {
   /** Absolute package.json path of the running dsh installation. */
@@ -597,7 +600,9 @@ export interface ProfileModuleFallbackOptions {
  * enter pkg's virtual filesystem. Missing packages carried only by selected
  * bundles are linked through a profile-owned directory into that profile's
  * `node_modules`; pnpm-managed entries remain authoritative, and another
- * profile's links cannot change its resolution.
+ * profile's links cannot change its resolution. A competing launcher may still
+ * be finishing the same shared generation, so startup waits through bounded
+ * transient contention before reporting the lock for explicit recovery.
  * @param options - installation anchor, optional loaded profile, and Harness home.
  * @returns the computed fallback generation after optional materialization.
  */
@@ -613,7 +618,7 @@ export async function healProfilesModuleFallback(
     await withFileLock(modulesDir, () => {
       if (!moduleFallbackCurrent(modulesDir, entries)) healProfilesModuleFallbackLocked(entries, modulesDir)
       return Promise.resolve()
-    })
+    }, { waitMs: PROFILE_MODULE_FALLBACK_LOCK_WAIT_MS })
   }
   const profileDeclarers = new Map<string, string>()
   const profileVersions = new Map<string, string | undefined>()

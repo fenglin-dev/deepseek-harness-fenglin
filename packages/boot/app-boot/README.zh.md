@@ -58,7 +58,7 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 插入条目的插件名可以是绝对文件系统路径、文件 URL 或包标识符。patch 加载会把 `insert` 条目及其嵌套分组中的绝对路径以及相对于 patch 文件的 `./` 或 `../` 路径转换为文件 URL；对已有条目名称的断言及替换用的 `config` 值保持原样。
 
-挂载 profile 条目前，`dsh` launcher 会从安装依赖图与有序 bundle 依赖图计算一份不可变的 package resolution generation。默认使用 runtime 模式，将 generation 安装到 Node 的 ESM 与 CommonJS 解析器中，不创建 fallback 链接。普通 Node 中的 `runProfile` 调用方可以显式选择 link 模式以物化 generation，选择 dual 模式以物化并校验它，或选择 runtime 模式。打包可执行文件和 Electron Host 始终使用 runtime 模式。
+挂载 profile 条目前，`dsh` launcher 会从安装依赖图与有序 bundle 依赖图计算一份不可变的 package resolution generation。默认使用 runtime 模式，将 generation 安装到 Node 的 ESM 与 CommonJS 解析器中，而不依赖 fallback 链接完成运行时导入。普通 Node 中的 `runProfile` 调用方可以显式选择 link 模式以物化 generation，选择 dual 模式以物化并校验它，或选择 runtime 模式。在所有模式下，同时作为 npm 项目的 profile 仍会在依赖健康检查前维护共享 fallback 锚点。该维护会等待最多十秒，让较早启动的 launcher 完成共享 generation 发布；超时后才会报告其写锁并进入恢复。打包可执行文件和 Electron Host 始终使用 runtime 模式。
 
 `sanitizeProfile(binName, profileDir, bundles)` 提供文件恢复，无需加载插件或解析 patch。Desktop 在原生致命错误恢复中调用它。调用前必须停止 profile 并排除并发 profile 写入。它将 profile 的 `cordis.patch.yml` 重命名为带唯一 `.bak-<timestamp>` 后缀的同目录备份，并恢复调用方指定的 bundle 列表，保留已安装包和其他 manifest 字段。时间戳为 Unix 毫秒数；同名备份已存在时追加序号（`-1`、`-2`、……），时间戳保持不变。返回值为备份路径；patch 不存在时返回 `undefined`，缺失的 profile 不会被创建。下次启动的 profile 初始化会重新创建空 patch。home 级 patch 不变。无效 profile JSON 在修改前报错；后续错误向调用方抛出，保留已完成的修改供重试。
 

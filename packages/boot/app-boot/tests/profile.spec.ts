@@ -750,6 +750,34 @@ describe('healProfilesModuleFallback', () => {
     expect(lstatSync(join(modules, 'dsh-app')).isSymbolicLink()).toBe(true)
   })
 
+  it('waits through a previous launch finishing module-fallback publication', async () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const modules = join(home, 'profiles', 'node_modules')
+    mkdirSync(modules, { recursive: true })
+    let releaseLock: (() => void) | undefined
+    let reportLock: (() => void) | undefined
+    const lockHeld = new Promise<void>((resolve) => { reportLock = resolve })
+    const release = new Promise<void>((resolve) => { releaseLock = resolve })
+    const holder = withFileLock(modules, async () => {
+      reportLock?.()
+      await release
+    })
+    await lockHeld
+
+    const healer = healProfilesModuleFallback({ installAnchor: anchor, home })
+    const delayedRelease = setTimeout(() => { releaseLock?.() }, 2_200)
+    try {
+      await expect(healer).resolves.toMatchObject({ profilesDir: join(home, 'profiles') })
+      await holder
+    } finally {
+      clearTimeout(delayedRelease)
+      releaseLock?.()
+      await holder
+    }
+    expect(lstatSync(join(modules, 'dsh-app')).isSymbolicLink()).toBe(true)
+  })
+
   it('writes real ESM proxies for a packaged executable', async () => {
     const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
     const bundleDir = join(anchor, '..', 'node_modules', 'bundle-a')
