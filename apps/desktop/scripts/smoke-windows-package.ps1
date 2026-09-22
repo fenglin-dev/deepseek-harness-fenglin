@@ -324,7 +324,7 @@ $bundledManifest = Get-Content $bundledManifestPath -Raw | ConvertFrom-Json
 $bundledPlugins = @($bundledManifest.plugins)
 foreach ($packageName in @(
   'dshmarket', '@xmanrui/dsh-im', 'dsh-skill-picker',
-  'dsh-pocket', 'dsh-better-sidebar'
+  'dsh-pocket', 'dsh-better-sidebar', 'dsh-whale-widget'
 )) {
   if ($bundledPlugins.PackageName -notcontains $packageName) {
     throw "Bundled plugin manifest is missing required preset $packageName"

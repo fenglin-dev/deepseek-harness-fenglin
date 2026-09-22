@@ -97,6 +97,16 @@
       "integrity": "sha512-SVXmo3MdINyAf097eEF7A4D41wb+bZr5pX8uoHVbD+ZnMOdfW80AXcHMlMPkcrAHFPzkOeC9cL91zjDEqteTIg=="
     },
     {
+      "seedId": "dsh-whale-widget",
+      "packageName": "dsh-whale-widget",
+      "version": "0.3.9",
+      "profile": "web",
+      "installPolicy": "startup",
+      "registrySpec": "dsh-whale-widget@0.3.9",
+      "archive": "dsh-whale-widget-0.3.9.tgz",
+      "integrity": "sha512-j5Hb8HzFAYUSP8I+iK6xSwCzlZ8hmzHX2TXee0wBYa7uXzp9vFCVNggDrfLsQL8tYFY2jInh+0t/Xo+U6ZZkYQ=="
+    },
+    {
       "seedId": "diagnostic-dsh-font",
       "packageName": "dsh-font",
       "version": "1.1.0",

@@ -168,6 +168,7 @@ describe('bundled plugin seed', () => {
       ['@ychris12138/dsh-usage-stats', 'startup'],
       ['dsh-smooth-stream', 'startup'],
       ['dsh-mermaid', 'startup'],
+      ['dsh-whale-widget', 'startup'],
       ['dsh-font', 'diagnostic'],
       ['@dsh-diagnostic-lab/scoped-loader-mismatch', 'diagnostic'],
       ['@dsh-diagnostic-lab/loader-dependency-unavailable', 'diagnostic'],
@@ -199,6 +200,8 @@ describe('bundled plugin seed', () => {
       .toMatchObject({ version: '0.6.1', installPolicy: 'startup' })
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-mermaid'))
       .toMatchObject({ version: '0.4.0', installPolicy: 'startup' })
+    expect(manifest.plugins.find(entry => entry.packageName === 'dsh-whale-widget'))
+      .toMatchObject({ version: '0.3.9', installPolicy: 'startup' })
     expect(new Set(manifest.plugins.map(entry => entry.seedId)).size).toBe(manifest.plugins.length)
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-better-sidebar')?.approvedBuilds)
       .toEqual(['node-pty'])
