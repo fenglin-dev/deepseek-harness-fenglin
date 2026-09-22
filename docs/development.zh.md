@@ -28,8 +28,10 @@
 在仓库根目录安装依赖：
 
 ```sh
-pnpm install
+node scripts/install-dependencies.mjs
 ```
+
+公开 npm 包可以通过 `registry.npmjs.org` 或 `registry.npmmirror.com` 解析。安装器先尝试当前配置的公共 registry；该次失败后，会切换到另一个公共 registry 重试一次。自定义 registry 可能承载私有包或认证，因此不会被自动替换。锁文件保留精确包版本和 SHA-512 integrity，但省略来自两个公共 registry 的普通 tarball URL，使任一公共 registry 都可以提供通过同一内容校验的文件。非标准 tarball 主机仍需显式记录并固定 integrity；内容不一致时，pnpm 会在运行生命周期脚本前失败。`pnpm run verify-lockfile-registry-portability` 负责检查这项规则。
 
 安装过程还会通过 `scripts/install-lefthook.mjs` 配置 worktree 本地的 Lefthook 钩子和 `dsh-translation-pairing` Git 合并驱动。[worktree 本地钩子 Agent Note](../.agents/notes/implemented/process/2026-07-27-worktree-local-lefthook.zh.md) 负责钩子路径的安全约定；[自动配对合并 Agent Note](../.agents/notes/implemented/process/2026-08-08-automatic-translation-pairing-merges.zh.md) 负责合并驱动。
 
@@ -49,7 +51,7 @@ Git 链接 worktree 拥有独立且被忽略的 `node_modules` 布局，但 pnpm
 node scripts/setup-worktree.mjs
 ```
 
-默认的 worktree 搭建会优先使用本地 store，缺少内容或元数据时可能访问已配置的 registry。无法访问 registry 时可使用严格离线模式；它会把 pnpm 的所有 registry 与代理请求指向已关闭的本机回环端点，并关闭重试。pnpm 11 的锁文件策略复核原本仍需要 registry 元数据，因此这个显式模式会信任仓库已提交且冻结的锁文件，并仅从本地 store 物化依赖；默认搭建模式的安全策略不会因此降低。只有全部所需依赖包都已存在于本地 store 中时，离线搭建才会成功：
+默认的 worktree 搭建会优先使用本地 store，并在需要获取内容或元数据时使用相同的公共 registry 回退。无法访问 registry 时可使用严格离线模式；它会把 pnpm 的所有 registry 与代理请求指向已关闭的本机回环端点，并关闭重试。pnpm 11 的锁文件策略复核原本仍需要 registry 元数据，因此这个显式模式会信任仓库已提交且冻结的锁文件，并仅从本地 store 物化依赖；默认搭建模式的安全策略不会因此降低。只有全部所需依赖包都已存在于本地 store 中时，离线搭建才会成功：
 
 ```sh
 node scripts/setup-worktree.mjs --offline

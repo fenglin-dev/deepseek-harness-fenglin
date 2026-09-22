@@ -26,8 +26,10 @@ Install dependencies separately in each environment because native binaries and 
 Install dependencies from the repo root:
 
 ```sh
-pnpm install
+node scripts/install-dependencies.mjs
 ```
+
+Public npm packages may resolve through `registry.npmjs.org` or `registry.npmmirror.com`. The installer tries the configured one first and, if that attempt fails, retries once through the other public registry. A custom registry remains the only candidate because it may own private packages or authentication. The lockfile keeps the exact package version and SHA-512 integrity but omits ordinary tarball URLs from either public registry, so either can supply the same verified bytes. Nonstandard tarball hosts stay explicit and integrity-pinned; a content mismatch fails before lifecycle scripts run. `pnpm run verify-lockfile-registry-portability` enforces this rule.
 
 The install also configures worktree-local Lefthook hooks and the `dsh-translation-pairing` Git merge driver through `scripts/install-lefthook.mjs`. The [worktree-local hooks Agent Note](../.agents/notes/implemented/process/2026-07-27-worktree-local-lefthook.md) owns the hook-path safety contract; the [automatic pairing merges Agent Note](../.agents/notes/implemented/process/2026-08-08-automatic-translation-pairing-merges.md) owns the merge driver.
 
@@ -47,7 +49,7 @@ A linked Git worktree has its own ignored `node_modules` layout even though pnpm
 node scripts/setup-worktree.mjs
 ```
 
-The default worktree setup prefers the local store and may contact configured registries for missing content or metadata. When registry access is unavailable, strict offline mode directs every pnpm registry and proxy request to a closed loopback endpoint and disables retries. Because pnpm 11 lockfile policy verification otherwise requires registry metadata, this explicit mode trusts the committed frozen lockfile while materializing it from the local store; it does not weaken the default setup mode. It succeeds only when every required package already exists in the local store:
+The default worktree setup prefers the local store and uses the same public-registry fallback for missing content or metadata. When registry access is unavailable, strict offline mode directs every pnpm registry and proxy request to a closed loopback endpoint and disables retries. Because pnpm 11 lockfile policy verification otherwise requires registry metadata, this explicit mode trusts the committed frozen lockfile while materializing it from the local store; it does not weaken the default setup mode. It succeeds only when every required package already exists in the local store:
 
 ```sh
 node scripts/setup-worktree.mjs --offline

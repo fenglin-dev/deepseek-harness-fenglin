@@ -3,6 +3,8 @@ import { relative, resolve, sep } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const WORKSPACE_STATE = 'node_modules/.pnpm-workspace-state-v1.json'
+const NPM_REGISTRY = 'https://registry.npmjs.org'
+const NPMMIRROR_REGISTRY = 'https://registry.npmmirror.com'
 
 function normalizeRelative(path) {
   const normalized = path.split(sep).join('/')
@@ -88,12 +90,18 @@ export function pnpmInstallArgs({ offline }) {
 
 /**
  * Build the process environment for a pnpm setup operation.
- * @param {{ offline: boolean }} options - selected setup mode.
+ * @param {{ offline: boolean; registry?: string }} options - selected setup mode and optional public registry override.
  * @param {NodeJS.ProcessEnv} [base] - inherited process environment.
  * @returns {NodeJS.ProcessEnv} child-process environment.
  */
-export function pnpmInstallEnvironment({ offline }, base = process.env) {
-  if (!offline) return { ...base, NO_UPDATE_NOTIFIER: '1' }
+export function pnpmInstallEnvironment({ offline, registry }, base = process.env) {
+  if (!offline) {
+    return {
+      ...base,
+      NO_UPDATE_NOTIFIER: '1',
+      ...(registry === undefined ? {} : { npm_config_registry: registry }),
+    }
+  }
   const blockedProxy = 'http://127.0.0.1:9'
   return {
     ...base,
@@ -115,6 +123,46 @@ export function pnpmInstallEnvironment({ offline }, base = process.env) {
     PNPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: '1',
     PNPM_CONFIG_FETCH_RETRY_MINTIMEOUT: '1',
   }
+}
+
+function normalizeRegistry(registry) {
+  try {
+    const url = new URL(registry)
+    if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') return registry
+    url.pathname = url.pathname.replace(/\/+$/u, '')
+    return url.toString().replace(/\/$/u, '')
+  } catch {
+    return registry
+  }
+}
+
+/**
+ * Order the configured public npm registry and its one supported fallback.
+ * Custom registries remain the sole candidate because they may own private packages or credentials.
+ * @param {string} configured - registry selected by pnpm configuration.
+ * @returns {string[]} registry URLs in attempt order.
+ */
+export function pnpmRegistryCandidates(configured) {
+  const normalized = normalizeRegistry(configured)
+  if (normalized === NPM_REGISTRY) return [NPM_REGISTRY, NPMMIRROR_REGISTRY]
+  if (normalized === NPMMIRROR_REGISTRY) return [NPMMIRROR_REGISTRY, NPM_REGISTRY]
+  return [configured]
+}
+
+/**
+ * Run one install attempt per eligible registry until one succeeds.
+ * @param {{ configuredRegistry: string; offline: boolean; run: (registry: string | undefined) => number }} options - install inputs.
+ * @returns {{ status: number; attempts: Array<{ registry: string | undefined; status: number }> }} attempt results.
+ */
+export function installWithRegistryFallback({ configuredRegistry, offline, run }) {
+  const registries = offline ? [undefined] : pnpmRegistryCandidates(configuredRegistry)
+  const attempts = []
+  for (const registry of registries) {
+    const status = run(registry)
+    attempts.push({ registry, status })
+    if (status === 0) return { status, attempts }
+  }
+  return { status: attempts.at(-1)?.status ?? 1, attempts }
 }
 
 function packageUsesLockfile(manifest) {

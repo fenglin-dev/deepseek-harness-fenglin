@@ -6,11 +6,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   formatWorktreeReport,
   inspectWorktree,
+  installWithRegistryFallback,
   nodeVersionSatisfies,
   parseLockfileImporters,
   parseWorkspacePatterns,
   pnpmInstallArgs,
   pnpmInstallEnvironment,
+  pnpmRegistryCandidates,
 } from '../worktree-dependencies.mjs'
 
 const roots: string[] = []
@@ -77,11 +79,74 @@ describe('worktree dependency tools', () => {
     const online = pnpmInstallEnvironment({ offline: false }, { SENTINEL: 'yes' })
     expect(online.SENTINEL).toBe('yes')
     expect(online.HTTPS_PROXY).toBeUndefined()
+    expect(pnpmInstallEnvironment({ offline: false, registry: 'https://registry.npmjs.org' }, {})
+      .npm_config_registry).toBe('https://registry.npmjs.org')
     const offline = pnpmInstallEnvironment({ offline: true }, { SENTINEL: 'yes' })
     expect(offline.SENTINEL).toBe('yes')
     expect(offline.HTTPS_PROXY).toBe('http://127.0.0.1:9')
     expect(offline.PNPM_CONFIG_FETCH_RETRIES).toBe('0')
     expect(offline.COREPACK_ENABLE_NETWORK).toBe('0')
+  })
+
+  it('falls back once between the two public registries in configured order', () => {
+    expect(pnpmRegistryCandidates('https://registry.npmjs.org/')).toEqual([
+      'https://registry.npmjs.org', 'https://registry.npmmirror.com',
+    ])
+    expect(pnpmRegistryCandidates('https://registry.npmmirror.com')).toEqual([
+      'https://registry.npmmirror.com', 'https://registry.npmjs.org',
+    ])
+    expect(pnpmRegistryCandidates('https://packages.example.test/npm')).toEqual([
+      'https://packages.example.test/npm',
+    ])
+
+    const seen: Array<string | undefined> = []
+    const result = installWithRegistryFallback({
+      configuredRegistry: 'https://registry.npmmirror.com',
+      offline: false,
+      run(registry) {
+        seen.push(registry)
+        return seen.length === 1 ? 1 : 0
+      },
+    })
+    expect(seen).toEqual(['https://registry.npmmirror.com', 'https://registry.npmjs.org'])
+    expect(result).toEqual({
+      status: 0,
+      attempts: [
+        { registry: 'https://registry.npmmirror.com', status: 1 },
+        { registry: 'https://registry.npmjs.org', status: 0 },
+      ],
+    })
+
+    const failed = installWithRegistryFallback({
+      configuredRegistry: 'https://registry.npmjs.org',
+      offline: false,
+      run: () => 9,
+    })
+    expect(failed).toEqual({
+      status: 9,
+      attempts: [
+        { registry: 'https://registry.npmjs.org', status: 9 },
+        { registry: 'https://registry.npmmirror.com', status: 9 },
+      ],
+    })
+  })
+
+  it('does not change custom registries or retry strict offline installs', () => {
+    for (const input of [
+      { configuredRegistry: 'https://packages.example.test/npm', offline: false },
+      { configuredRegistry: 'https://registry.npmjs.org', offline: true },
+    ]) {
+      const seen: Array<string | undefined> = []
+      const result = installWithRegistryFallback({
+        ...input,
+        run(registry) {
+          seen.push(registry)
+          return 7
+        },
+      })
+      expect(seen).toEqual([input.offline ? undefined : input.configuredRegistry])
+      expect(result.status).toBe(7)
+    }
   })
 
   it('evaluates the Node engine declared by the fixture rather than a hard-coded release line', () => {
