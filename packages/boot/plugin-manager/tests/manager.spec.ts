@@ -698,6 +698,28 @@ it('offers the launcher\'s optional bundles switched off and never removable', a
   expect(await manager.removeBundle(offered)).toMatchObject({ changed: false, application: 'failed' })
 })
 
+it('keeps launcher optional bundles in their declared order when selected in reverse', async () => {
+  const { manager, profile, dir } = await fixture()
+  for (const name of OPTIONAL_BUNDLES) {
+    const supplied = join(profile.home, 'node_modules', name)
+    mkdirSync(supplied, { recursive: true })
+    writeFileSync(join(supplied, 'package.json'), JSON.stringify({
+      name, version: '3.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } },
+    }))
+    writeFileSync(join(supplied, 'cordis.patch.yml'), '[]\n')
+  }
+  writeFileSync(profile.installAnchor, JSON.stringify({
+    name: 'installation', dependencies: Object.fromEntries(OPTIONAL_BUNDLES.map(name => [name, '3.0.0'])),
+  }))
+
+  for (const name of [...OPTIONAL_BUNDLES].reverse()) {
+    expect(await manager.setBundleEnabled(name, true)).toMatchObject({ application: 'applied' })
+  }
+  expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual([
+    'core', 'extra', ...OPTIONAL_BUNDLES,
+  ])
+})
+
 it('omits installation-owned plain packages from the bundle inventory', async () => {
   const { manager, dir, profile, bundle } = await fixture()
   bundle('installation-plain', [])

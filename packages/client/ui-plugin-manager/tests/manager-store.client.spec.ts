@@ -11,6 +11,8 @@ import type { ConfigLedger } from '../src/client/config-ledger.ts'
 import { packageView, PluginManagerController, rowKey, sortPackages } from '../src/client/manager-store.ts'
 
 const ROW_ENTRY = 'include:sidebar' as PluginEntryId
+const AGENT_TEAM = '@deepseek-ai/dsh-experimental-agent-team-profile'
+const AGENT_TEAM_WEB = '@deepseek-ai/dsh-experimental-agent-team-web-profile'
 
 const BUNDLE: BundleInfo = {
   name: 'dsh-better-sidebar',
@@ -197,6 +199,59 @@ describe('PluginManagerController', () => {
     await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'restart', packageName: BUNDLE.name, seq: 1 }) })
     face.setEnabled(BUNDLE.name, false)
     await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'overridden', packageName: BUNDLE.name, seq: 2 }) })
+  })
+
+  it('keeps the Agent Teams Host and panel layers in a usable dependency state', async () => {
+    const optional = (name: string, enabled: boolean): BundleInfo => ({
+      name, enabled, installed: false, optional: true, removable: false, rows: [], overrides: [],
+    })
+    const { plugins, face, state, controller } = bench({
+      listBundles: vi.fn(() => Promise.resolve(ok([
+        optional(AGENT_TEAM, false), optional(AGENT_TEAM_WEB, false),
+      ]))),
+    })
+    await controller.load()
+
+    face.setEnabled(AGENT_TEAM_WEB, true)
+    await vi.waitFor(() => {
+      expect(plugins.setBundleEnabled.mock.calls).toEqual([
+        [AGENT_TEAM, true],
+        [AGENT_TEAM_WEB, true],
+      ])
+    })
+    expect(state().busy).toEqual([])
+
+    plugins.listBundles.mockResolvedValue(ok([
+      optional(AGENT_TEAM, true), optional(AGENT_TEAM_WEB, true),
+    ]))
+    await controller.load()
+    plugins.setBundleEnabled.mockClear()
+    face.setEnabled(AGENT_TEAM, false)
+    await vi.waitFor(() => {
+      expect(plugins.setBundleEnabled.mock.calls).toEqual([
+        [AGENT_TEAM_WEB, false],
+        [AGENT_TEAM, false],
+      ])
+    })
+    expect(state().busy).toEqual([])
+  })
+
+  it('stops a dependent Agent Teams change before it can create an invalid combination', async () => {
+    const optional = (name: string, enabled: boolean): BundleInfo => ({
+      name, enabled, installed: false, optional: true, removable: false, rows: [], overrides: [],
+    })
+    const { plugins, face, state, controller } = bench({
+      listBundles: vi.fn(() => Promise.resolve(ok([
+        optional(AGENT_TEAM, false), optional(AGENT_TEAM_WEB, false),
+      ]))),
+      setBundleEnabled: vi.fn().mockResolvedValueOnce(ok(failed({ code: 'operation-error', diagnostic: 'host failed' }))),
+    })
+    await controller.load()
+    face.setEnabled(AGENT_TEAM_WEB, true)
+    await vi.waitFor(() => {
+      expect(state().notice).toMatchObject({ kind: 'failed', packageName: AGENT_TEAM_WEB, reason: 'host failed' })
+    })
+    expect(plugins.setBundleEnabled).toHaveBeenCalledExactlyOnceWith(AGENT_TEAM, true)
   })
 
   it('turns a change the Host could not apply, or a refused answer, into a notice carrying its code and words', async () => {

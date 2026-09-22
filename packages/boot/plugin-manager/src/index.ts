@@ -526,7 +526,23 @@ export class PluginManager extends TypertRemoteService {
     if (!enabled && previous.includes(name)) {
       if (this.protectsManager(name)) throw new ManagementFailure('management-required')
     }
-    const bundles = enabled ? [...previous, ...previous.includes(name) ? [] : [name]] : previous.filter(item => item !== name)
+    let bundles: string[]
+    if (!enabled) {
+      bundles = previous.filter(item => item !== name)
+    } else if (previous.includes(name)) {
+      bundles = [...previous]
+    } else {
+      const optionalOrder = OPTIONAL_BUNDLES.indexOf(name)
+      const before = optionalOrder < 0
+        ? -1
+        : previous.findIndex((item) => {
+          const itemOrder = OPTIONAL_BUNDLES.indexOf(item)
+          return itemOrder >= 0 && itemOrder > optionalOrder
+        })
+      bundles = before < 0
+        ? [...previous, name]
+        : [...previous.slice(0, before), name, ...previous.slice(before)]
+    }
     if (JSON.stringify(previous) === JSON.stringify(bundles)) return
     manifest.dsh = { ...manifest.dsh, profile: { ...manifest.dsh?.profile, bundles } }
     await saveManifest(this.profile.dir, manifest)

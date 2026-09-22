@@ -13,8 +13,9 @@ import {
   IconCheckOutline14, IconCloseOutline16, IconEditOutline16, IconPlusOutline16,
   IconRefreshOutline14, IconTrashOutline16, IconUserOutline16, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { AgentTeamOnboardingInjected } from './AgentTeamOnboarding.tsx'
 import { NS, type TeamKey } from './locales.ts'
 import css from './TeamAction.module.css'
 
@@ -25,7 +26,7 @@ export type TeamActionResult<T> = RemoteResult<T>
 export type TeamTaskActionResult = RemoteResult<TeamTaskMutationResult>
 
 /** Business actions injected by the browser plugin. */
-export interface TeamActionInjected {
+export interface TeamActionInjected extends Pick<AgentTeamOnboardingInjected, 'hooks' | 'offerOnboarding' | 'dismissOnboarding'> {
   load: (sessionId: SessionId) => Promise<TeamActionResult<TeamView>>
   createTask: (sessionId: SessionId, input: {
     subject: string
@@ -48,7 +49,7 @@ export interface TeamActionInjected {
 
 /** Full props of the Team conversation-header action. */
 export type TeamActionProps =
-  PropsRuntime<'conversation.session.header.actions'> & TeamActionInjected & PropsLocale<typeof NS>
+  PropsRuntime<'conversation.session.header.actions'> & InjectFace<TeamActionInjected> & PropsLocale<typeof NS>
 
 interface Draft {
   subject: string
@@ -97,7 +98,8 @@ function memberStatusKey(status: TeamRosterMember['status']): TeamKey {
 
 /** Render the live Team roster and compare-and-set task board. */
 export function TeamAction({
-  sessionId, load, createTask, updateTask, openTeammate, t,
+  sessionId, useSessions, useAgentTeamOnboarding, load, createTask, updateTask, openTeammate,
+  offerOnboarding, dismissOnboarding, t,
 }: TeamActionProps) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -110,7 +112,16 @@ export function TeamAction({
   const [pendingTasks, setPendingTasks] = useState<ReadonlySet<string>>(() => new Set())
   const sessionRef = useRef(sessionId)
   const refreshGeneration = useRef(0)
+  const onboardingEligible = useSessions((state) => {
+    const session = state.byId[sessionId]
+    return session !== undefined && !session.blank && session.origin !== 'subagent'
+  })
+  const onboarding = useAgentTeamOnboarding(state => state.targetSessionId === sessionId)
   sessionRef.current = sessionId
+
+  useEffect(() => {
+    offerOnboarding(sessionId, !onboardingEligible)
+  }, [onboardingEligible, offerOnboarding, sessionId])
 
   useEffect(() => {
     refreshGeneration.current += 1
@@ -247,9 +258,11 @@ export function TeamAction({
     <div className={css.root} data-team-action>
       <button
         type="button"
-        className={css.trigger}
+        className={`${css.trigger} ${onboarding ? css.triggerOnboarding : ''}`}
         aria-expanded={open}
+        {...onboarding ? { 'data-agent-team-onboarding': '' } : {}}
         onClick={() => {
+          dismissOnboarding(sessionId)
           const next = !open
           setOpen(next)
           if (next) void refresh()
@@ -259,6 +272,20 @@ export function TeamAction({
         <span>{t('trigger')}</span>
         {teammates.length > 0 && <span className={css.count}>{teammates.length}</span>}
       </button>
+      {onboarding
+        ? (
+          <div className={css.coachmark} role="status" data-agent-team-coachmark>
+            <span>{t('onboardingLocation')}</span>
+            <button
+              type="button"
+              aria-label={t('onboardingDismiss')}
+              onClick={() => { dismissOnboarding(sessionId) }}
+            >
+              <IconCloseOutline16 size={12} aria-hidden="true" />
+            </button>
+          </div>
+        )
+        : null}
       {open && (
         <div className={css.panel} role="dialog" aria-label={t('trigger')}>
           <div className={css.toolbar}>

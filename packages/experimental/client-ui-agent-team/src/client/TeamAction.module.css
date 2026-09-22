@@ -23,12 +23,87 @@
   font-size: 12px;
 }
 
+.triggerOnboarding {
+  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary);
+  animation: dsh-agent-team-location 1200ms ease-in-out 3;
+}
+
+@keyframes dsh-agent-team-location {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 82%, transparent);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 2px var(--dsw-alias-state-business-primary),
+      0 0 0 7px color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent);
+  }
+}
+
+.coachmark {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 111;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: min(300px, calc(100vw - 32px));
+  padding: 7px 8px 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 38%, transparent);
+  border-radius: 9px;
+  background: var(--dsw-specific-menu);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--dsw-elevation-prominent);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.coachmark button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.coachmark button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.coachmark button:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
 .trigger:hover,
 .iconButton:hover,
 .smallButton:hover,
 .taskActions button:hover,
 .formActions button:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .triggerOnboarding {
+    animation: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .trigger,
+  .coachmark button {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 .count {

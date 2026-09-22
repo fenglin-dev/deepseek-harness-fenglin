@@ -31,6 +31,8 @@ Install the package through [`@deepseek-ai/dsh-experimental-agent-team-web-profi
 
 Opening the panel calls `agentTeams/view`. Roster rows show durable names, runtime status, model, and diagnostics. Selecting a healthy teammate refreshes the existing direct-child catalog and opens the ordinary `{ parentSessionId, childSessionId, mode: 'continuable' }` address. History and later human prompts continue through the stable addressed-subagent conversation path; this package adds no Team-specific address field.
 
+The first time the optional UI is enabled, its action in the first non-empty ordinary conversation receives a finite edge pulse and a location note. The same cue appears beside the composer with an example request. The acknowledgement is browser-local, honors reduced-motion preferences, and does not appear in a blank or teammate conversation. The Plugins page also exposes **Go use** while the UI bundle is enabled; it opens the most recently updated non-empty ordinary conversation and replays the cue. Selecting the example fills `Please use Agent Team to complete ...` only when the existing draft is empty, so discovery never replaces text the user has already written.
+
 ### Manage the task board
 
 The task board shows task identity, owner, blockers, readiness, advisory write scopes, and overlap warnings. A user can create, edit, assign or unassign, complete, reopen, and delete tasks through `agentTeams/createTask` and `agentTeams/updateTask`. Every update sends the displayed revision, and create or update rejections remain explicit business results.

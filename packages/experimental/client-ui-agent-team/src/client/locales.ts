@@ -6,6 +6,12 @@ export const NS = 'agent-team'
 /** Simplified Chinese dictionary and key source. */
 export const zh = {
   trigger: 'Agent Team',
+  onboardingLocation: 'Agent Team 入口在这里，点击可查看成员和共享任务。',
+  onboardingDismiss: '关闭 Agent Team 引导',
+  useNow: '去使用',
+  useUnavailable: '暂无可打开的非空对话',
+  composerHint: '试试输入：请使用 Agent Team 完成……',
+  promptDraft: '请使用 Agent Team 完成……',
   refresh: '刷新 Team',
   close: '关闭',
   loading: '正在加载 Team…',
@@ -48,6 +54,12 @@ export type TeamKey = keyof typeof zh
 /** English dictionary checked against the Chinese key set. */
 export const en = {
   trigger: 'Agent Team',
+  onboardingLocation: 'Agent Team is here. Open it to view members and shared tasks.',
+  onboardingDismiss: 'Dismiss Agent Team guide',
+  useNow: 'Use now',
+  useUnavailable: 'No non-empty conversation is available',
+  composerHint: 'Try: Use Agent Team to complete…',
+  promptDraft: 'Use Agent Team to complete…',
   refresh: 'Refresh Team',
   close: 'Close',
   loading: 'Loading Team…',
