@@ -328,11 +328,11 @@ The Electron host grants sanitized clipboard-write permission to the supervised 
 
 ### Preset plugins
 
-The installer carries integrity-checked archives for eight startup presets and a complete platform-specific prebuilt Profile: Plugin Marketplace, IM connections, Skill picker, Better Sidebar, Pocket, `@ychris12138/dsh-usage-stats`, `dsh-smooth-stream`, and `dsh-mermaid`. First setup deploys the verified template transactionally, rewrites paths, and checks every preset before opening the main UI; it neither downloads nor installs each preset separately. The archives remain available for repair and bounded compatibility fallback. They remain ordinary Harness dependencies that users can uninstall.
+The installer carries integrity-checked archives for nine startup presets and a complete platform-specific prebuilt Profile: Plugin Marketplace, IM connections, Skill picker, Better Sidebar, Pocket, `@ychris12138/dsh-usage-stats`, `dsh-smooth-stream`, `dsh-mermaid`, and `dsh-whale-widget`. First setup deploys the verified template transactionally, rewrites paths, and checks every preset before opening the main UI; it neither downloads nor installs each preset separately. The archives remain available for repair and bounded compatibility fallback. They remain ordinary Harness dependencies that users can uninstall.
 
 #### Preset plugin acknowledgements
 
-Thank you to the authors and maintainers of [`dshmarket`](https://github.com/dsh-market/dsh-market), [`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im), [`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker), [`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar), [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket), [`@ychris12138/dsh-usage-stats`](https://github.com/Ychris12138/dsh-usage-stats), [`dsh-smooth-stream`](https://github.com/Laplace-bit/dsh-smooth-stream), and [`dsh-mermaid`](https://github.com/MrmoLabs/dsh-mermaid). This project provides desktop integration and integrity-checked archive distribution; copyright, licensing, and ongoing maintenance remain with each plugin project.
+Thank you to the authors and maintainers of [`dshmarket`](https://github.com/dsh-market/dsh-market), [`@xmanrui/dsh-im`](https://github.com/xmanrui/dsh-im), [`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker), [`dsh-better-sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar), [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket), [`@ychris12138/dsh-usage-stats`](https://github.com/Ychris12138/dsh-usage-stats), [`dsh-smooth-stream`](https://github.com/Laplace-bit/dsh-smooth-stream), [`dsh-mermaid`](https://github.com/MrmoLabs/dsh-mermaid), and [`dsh-whale-widget`](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget). This project provides desktop integration and integrity-checked unmodified archive distribution; code, assets, licensing, and ongoing maintenance remain with each plugin project.
 
 <p align="center">
   <img src="../../assets/readme/preset-mobile-access-zh.png" width="900" alt="Connect a phone through the Pocket QR code or LAN address">
@@ -563,7 +563,7 @@ These items describe direction, not completed support. See the [desktop release 
 
 Thank you to the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) maintainers for the official Codex and Claude Code Providers, and to [OpenAI Codex](https://github.com/openai/codex) and [Anthropic Claude Code](https://github.com/anthropics/claude-code) for their product runtimes. This project integrates user-triggered npm installation of those official connectors with the desktop connection center.
 
-Thank you to the authors and maintainers of the seven removable community plugin presets:
+Thank you to the authors and maintainers of the nine removable community plugin presets:
 
 - [`dsh-im`](https://github.com/xmanrui/dsh-im), maintained by [xmanrui](https://github.com/xmanrui): connects nine IM bot channels, including WeChat and Feishu.
 - [`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker), maintained by [a735624258](https://github.com/a735624258): selects a Skill from the composer and inserts the Harness Skill invocation.
@@ -572,6 +572,8 @@ Thank you to the authors and maintainers of the seven removable community plugin
 - [`DSH Better Sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar): provides the enhanced sidebar.
 - [`DSH Usage Stats`](https://github.com/Ychris12138/dsh-usage-stats): provides token usage, account, cost-estimate, budget, and export views.
 - [`DSH Smooth Stream`](https://github.com/Laplace-bit/dsh-smooth-stream): provides smoother streaming rendering and scrolling.
+- [`DSH Mermaid`](https://github.com/MrmoLabs/dsh-mermaid), maintained by [MrmoLabs](https://github.com/MrmoLabs): renders Mermaid blocks as source-switchable, zoomable, exportable SVG diagrams.
+- [`DeepSeek Balance Whale Widget`](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget), maintained by [MeteorNOX](https://github.com/MeteorNOX): adds a customizable whale widget for balances, daily usage, and per-turn costs.
 
 ## About the FLAQ AI team
 
