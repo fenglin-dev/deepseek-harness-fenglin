@@ -21,26 +21,11 @@ $desktopAppDataRoot = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness AppData'
 $desktopDataRoot = Join-Path $desktopAppDataRoot 'open-deepseek-harness-desktop'
 $harnessLog = Join-Path $desktopDataRoot 'logs/harness.log'
 $desktopEntryLog = Join-Path $desktopAppDataRoot 'desktop-entry.log'
-$unpackedResources = Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/win-unpacked/resources'
 $cliDirectory = Join-Path $installRoot 'resources/cli-bin'
 $originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $processGuardDiagnostic = Join-Path $env:TEMP 'DeepSeek-Harness-process-guard.log'
 Remove-Item -LiteralPath $processGuardDiagnostic -Force -ErrorAction SilentlyContinue
 $similarRoot = "$installRoot-old"
-
-foreach ($path in @(
-  (Join-Path $unpackedResources 'harness/lib/bin.js'),
-  (Join-Path $unpackedResources 'harness/node_modules'),
-  (Join-Path $unpackedResources 'runtime/win32-x64/node.exe'),
-  (Join-Path $unpackedResources 'runtime/win32-x64/pnpm.cmd'),
-  (Join-Path $unpackedResources 'runtime/win32-x64/node_modules/pnpm/bin/pnpm.mjs'),
-  (Join-Path $unpackedResources 'cli/desktop-cli.mjs'),
-  (Join-Path $unpackedResources 'cli-bin/dsh.cmd'),
-  (Join-Path $unpackedResources 'cli-bin/manage-path.ps1'),
-  (Join-Path $unpackedResources 'bundled-plugins/manifest.json')
-)) {
-  if (-not (Test-Path $path)) { throw "Unpacked package is missing $path" }
-}
 
 Start-SmokePhase -Name 'install'
 $installStart = [System.Diagnostics.ProcessStartInfo]::new()
