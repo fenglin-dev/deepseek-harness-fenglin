@@ -1,38 +1,24 @@
-/** Host loader entry for the browser implementation exported from `./client`. */
+/** Welcome acknowledgement stored in the plugin configuration. */
+import type {} from '@deepseek-ai/dsh-settings'
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { Volatile, Context } from '@deepseek-ai/cordis'
+
 import z from '@deepseek-ai/schemastery'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import {
-  SETTINGS_NAVIGATION_NAMESPACE, type SettingsNavigationSettings,
-} from './settings-navigation-order.ts'
 
-/** Durable settings namespace for product-wide GUI onboarding facts. */
-const ONBOARDING_SETTINGS_NAMESPACE = 'ui-onboarding'
-
-interface OnboardingSettings {
-  /** Last version acknowledged by the current product welcome step. */
-  welcomeNoticeVersion?: string
+/** Runtime preferences projected to the browser. */
+export interface Config {
+  /** Last acknowledged welcome notice version. */
+  welcomeNoticeVersion: Volatile<string | undefined>
 }
 
-const OnboardingSettingsSchema: z<OnboardingSettings> = z.object({
-  welcomeNoticeVersion: z.string(),
+/** Live welcome preference. */
+export const Config = z.object({
+  welcomeNoticeVersion: z.string().volatile(),
 })
 
-const SettingsNavigationSchema: z<SettingsNavigationSettings> = z.object({
-  sectionOrder: z.array(z.string()).default([]),
-})
-
-/** Register the durable onboarding and settings-navigation sections. */
+/** The browser consumes the configuration form projection.
+ * @param ctx Plugin context used for optional settings presentation.
+ */
 export function apply(ctx: Context): void {
-  ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.register(
-      ONBOARDING_SETTINGS_NAMESPACE,
-      OnboardingSettingsSchema,
-    )
-    settingsCtx.settings.register(
-      settingsNamespace(SETTINGS_NAVIGATION_NAMESPACE),
-      SettingsNavigationSchema,
-    )
-  })
+  ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
 }

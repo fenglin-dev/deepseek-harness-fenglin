@@ -2,8 +2,7 @@
  * Shared profile boot for every `dsh` surface: resolve the profile, stack its
  * patch layers (bundle layers in `dsh.profile.bundles` order, the profile's
  * own `cordis.patch.yml`, `--patch` overlays, the telemetry switch), mount the
- * tree over the profile's empty root config, apply its selected patch-reload
- * lifecycle, and wire fail-loud plus bounded shutdown.
+ * tree over the profile's empty root config, and wire fail-loud plus bounded shutdown.
  *
  * App flags are not the launcher's business: the invocation's inner arguments
  * are provided to the tree through `ctx.cmdlineArgs`, where any injected app
@@ -12,60 +11,31 @@
  */
 
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import {
   boot,
-  acquireProfilePluginMutationLock,
-  createProfilePluginSnapshot,
-  finalizeProfilePluginSnapshot,
-  composeEntries,
-  createProfileResolutionGeneration,
-  DEFAULT_PROFILE_BUNDLES,
-  healProfilesModuleFallback,
-  healIsolatedProfileModuleFallback,
+  readProfilePatches,
+  createRuntimeResolution,
   initProfile,
   installFailLoud,
-  loadDiagnosticProfile,
-  loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
   PluginPackages,
-  classifyProfileDiagnostic,
-  createProfileDiagnosticReport,
-  readProfileDiagnosticReport,
-  readProfilePatches,
-  readProfileManifest,
-  inspectProfileBundleEntryOwnership,
-  inspectUnresolvableProfileBundleEntries,
-  quarantineProfilePluginAfterLoadFailure,
-  repairProfileDependencies,
-  resolveProfileDir,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
-  writeProfileDiagnosticReport,
-  type Profile,
+  resolveProfileDir,
   type ProfileContext,
-  type ProfileBundleEntryOwnership,
-  type ProfileDiagnostic,
-  type ProfileResolutionGeneration,
-  type ProfileResolutionMode,
-  type UnresolvableProfileBundleEntry,
-  prepareDiagnosticRuntimeDirectories,
-  prepareDiagnosticSettingsDocument,
+  type Profile,
+  type RuntimeResolution,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { provideCmdline, type AppReady } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
-import { INSTALL_ANCHOR } from './install-anchor.ts'
-import { runProfilePackageManager } from './profile-package-manager.ts'
-import { withDesktopCodexProxy } from './desktop-codex-proxy.ts'
 
 const NAME = 'dsh'
 
@@ -103,6 +73,8 @@ export function homePatchPath(): string {
   return join(resolveDshHome(), PROFILE_PATCH_FILENAME)
 }
 
+/** Absolute path of this dsh installation's package.json (both anchors: src/ and lib/ sit one level under apps/cli). */
+export const INSTALL_ANCHOR = fileURLToPath(new URL('../package.json', import.meta.url))
 
 /** The empty root entry list every profile tree patches over. */
 const PROFILE_ROOT_CONFIG = `# dsh profile root — an empty entry list. The tree is composed as patches:
@@ -115,19 +87,8 @@ const PROFILE_ROOT_CONFIG = `# dsh profile root — an empty entry list. The tre
 export const PROFILE_ROOT_FILENAME = 'cordis.yml'
 
 /**
- * Return the installation-maintained shared module fallback anchor used by a
- * diagnostic Profile. It intentionally sits above the active Profile so bare
- * imports cannot see that Profile's third-party node_modules.
- * @param profileDir - Absolute active Profile directory.
- * @returns File URL whose parent lookup begins at `$DSH_HOME/profiles/node_modules`.
- */
-export function diagnosticProfileModuleBaseUrl(profileDir: string): string {
-  return pathToFileURL(join(profileDir, '..', 'package.json')).href
-}
-
-/**
  * Initialize a missing profile from one shipped template. This copies only
- * the template's bundle list and patch-reload policy; local state from the
+ * the template's bundle list; local state from the
  * same-named shipped profile is not read, and no inheritance metadata is
  * persisted. Shipped profile names are reserved, and the target directory is
  * claimed exclusively so existing or concurrent state is never reused.
@@ -187,96 +148,6 @@ export function initializeProfileFromDefault(
     throw error
   }
 }
-
-/** A package name reserved for modules supplied by the running Harness installation. */
-const IN_BOX_PACKAGE_PREFIX = '@deepseek-ai/dsh-'
-
-/** Third-party modules that own process-global routes/services and cannot be mounted twice. */
-const SINGLETON_PLUGIN_MODULES = new Set(['dsh-better-sidebar'])
-
-/**
- * Temporarily disable later duplicate rows for known third-party singleton plugins.
- *
- * Better Sidebar was historically mounted from a hand-written profile patch and is
- * now also available as a bundle. Keeping both rows active makes both instances
- * register `/sidebar/api`, which aborts the entire profile before diagnostics can
- * render. The first enabled row remains authoritative; only later duplicates are
- * disabled in memory, so user configuration is preserved and can still be edited.
- *
- * @param patchLayers - effective patch layers in application order.
- * @returns id-targeted disable overlays for later singleton duplicates.
- */
-export function quarantineDuplicateSingletonLoaderEntries(
-  patchLayers: readonly (readonly PatchOptions[])[],
-): PatchOptions[] {
-  const firstByModule = new Map<string, string>()
-  const recovered: PatchOptions[] = []
-  for (const row of composeEntries(patchLayers.map(layer => [...layer]))) {
-    if (typeof row.id !== 'string' || typeof row.name !== 'string'
-      || !SINGLETON_PLUGIN_MODULES.has(row.name) || row.disabled === true) continue
-    const first = firstByModule.get(row.name)
-    if (first === undefined) {
-      firstByModule.set(row.name, row.id)
-      continue
-    }
-    if (first === row.id) continue
-    recovered.push({ id: row.id, disabled: true })
-    process.stderr.write(
-      `${NAME}: temporarily disabled duplicate singleton loader entry ${JSON.stringify(row.id)} (${row.name}); `
-      + `entry ${JSON.stringify(first)} already owns this plugin. Remove the legacy duplicate from cordis.patch.yml.\n`,
-    )
-  }
-  return recovered
-}
-
-/**
- * Return temporary disable patches for stale user loader rows that name an
- * in-box package no longer supplied by this Harness installation.
- *
- * A development checkout can be upgraded while its private profile survives
- * between runs.  In that case an old user `cordis.patch.yml` can insert a
- * removed client module (for example a retired UI package).  Letting that one
- * row reach Loader makes the complete Host fail to boot.  We deliberately
- * constrain this recovery to user-introduced `@deepseek-ai/dsh-*` rows:
- * third-party packages and shipped bundle rows retain their ordinary
- * fail-loud behaviour, and fixing or restoring the package re-enables the
- * row on the next launch without rewriting user configuration.
- *
- * @param bundlePatches - patches owned by the current installation.
- * @param userPatches - profile and home patches owned by the user.
- * @param profileDir - module-resolution anchor for the active profile.
- * @param resolveModule - injectable resolver for focused tests.
- * @returns id-targeted disable patches safe to append as the highest layer.
- */
-export function quarantineStaleInBoxLoaderEntries(
-  bundlePatches: readonly PatchOptions[],
-  userPatches: readonly PatchOptions[],
-  profileDir: string,
-  resolveModule: (name: string) => void = (name) => { createRequire(join(profileDir, 'package.json')).resolve(name) },
-): PatchOptions[] {
-  const bundleRows = new Map<string, EntryOptions>()
-  for (const row of composeEntries([[...bundlePatches]])) {
-    if (typeof row.id === 'string') bundleRows.set(row.id, row)
-  }
-  const recovered: PatchOptions[] = []
-  for (const row of composeEntries([[...bundlePatches], [...userPatches]])) {
-    if (typeof row.id !== 'string' || typeof row.name !== 'string' || !row.name.startsWith(IN_BOX_PACKAGE_PREFIX)) continue
-    // A bundle row with the same module name belongs to the running app. Do
-    // not hide an incomplete/corrupt installation behind profile recovery.
-    if (bundleRows.get(row.id)?.name === row.name) continue
-    try {
-      resolveModule(row.name)
-    } catch {
-      recovered.push({ id: row.id, disabled: true })
-      process.stderr.write(
-        `${NAME}: temporarily disabled stale user loader entry ${JSON.stringify(row.id)} (${row.name}); `
-        + 'the running Harness no longer provides that in-box module. Restore or update the user patch to re-enable it.\n',
-      )
-    }
-  }
-  return recovered
-}
-
 /**
  * Load a resolved profile for `name` and (re)write the empty root config. The
  * root is always rewritten: the whole composition is patch layers, and the
@@ -299,36 +170,13 @@ export function prepareProfile(name: string, userLayer = true, fromDefaultProfil
   return profile
 }
 
-/** Load the installation-owned diagnostic composition without parsing user-owned Profile files. */
-function prepareDiagnosticProfile(name: string): Profile {
-  const profile = loadDiagnosticProfile(NAME, name, INSTALL_ANCHOR)
-  writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
-  return profile
-}
-
 /** One profile's patch layers, in application order. */
 interface ComposedProfile {
   profile: Profile
-  /** Immutable package lookup generation used by this invocation. */
-  resolution: ProfileResolutionGeneration
-  /** Bundle layers concatenated — the part below the user layers on a live reload. */
-  bundlePatches: PatchOptions[]
-  /** The home-level user layer (`$DSH_HOME/cordis.patch.yml`), applied after the profile's own. */
-  homePatches: PatchOptions[]
-  /** Layers above the user layers on a live reload: `--patch` overlays and the telemetry switch. */
+  /** Immutable runtime resolution computed before any plugin imports. */
+  resolution: RuntimeResolution
+  /** Command-line overlay contents, frozen for this invocation. */
   overlays: PatchOptions[]
-  /** Invocation-owned data root removed when diagnostic mode settles. */
-  diagnosticRuntimeRoot?: string
-}
-
-/** The full patch stack of one composed profile, in application order. */
-function allPatches(composed: ComposedProfile): PatchOptions[] {
-  return withDesktopCodexProxy([
-    ...composed.bundlePatches,
-    ...composed.profile.patches,
-    ...composed.homePatches,
-    ...composed.overlays,
-  ], process.env)
 }
 
 /**
@@ -340,61 +188,25 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
  * then the telemetry switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
+ * @param fromDefaultProfile - shipped template for a missing named profile.
+ * @param resolvedProfile - application-owned profile and installation.
  * @returns the profile and its patch layers.
  */
 async function composeProfile(
   name: string,
   patchFiles: readonly string[],
-  diagnosticMode: boolean,
-  resolutionMode: ProfileResolutionMode,
   fromDefaultProfile?: string,
   resolvedProfile?: ResolvedProfileRuntime,
 ): Promise<ComposedProfile> {
-  const profile = diagnosticMode
-    ? prepareDiagnosticProfile(name)
-    : resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile)
+  const profile = resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile)
   if (resolvedProfile !== undefined) writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   const resolutionOptions = { installAnchor: resolvedProfile?.installAnchor ?? INSTALL_ANCHOR, profile }
-  if (resolvedProfile !== undefined && resolutionMode !== 'runtime') healIsolatedProfileModuleFallback(resolvedProfile)
-  const resolution = resolutionMode === 'runtime' || resolvedProfile !== undefined
-    ? await createProfileResolutionGeneration(resolutionOptions)
-    : await healProfilesModuleFallback(resolutionOptions)
-  const homePatches = diagnosticMode ? [] : loadOptionalPatches(NAME, homePatchPath()) ?? []
-  const diagnosticSettings = diagnosticMode ? prepareDiagnosticSettingsDocument() : undefined
-  const diagnosticRuntime = diagnosticMode ? prepareDiagnosticRuntimeDirectories() : undefined
-  const overlays: PatchOptions[] = diagnosticRuntime === undefined
-    ? patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
-    : [
-      { id: 'settings', config: { path: diagnosticSettings, watch: false } },
-      { id: 'session-persistence-jsonl', config: { root: diagnosticRuntime.sessions } },
-      { id: 'storage-json', config: { root: diagnosticRuntime.storages } },
-      { id: 'attachment-local', config: { dshHome: diagnosticRuntime.root } },
-    ]
-  const bundlePatches = profile.layers.flatMap(layer => layer.patches)
-  const staleLoaderQuarantine = diagnosticMode
-    ? []
-    : quarantineStaleInBoxLoaderEntries(bundlePatches, [...profile.patches, ...homePatches], profile.dir)
-  const duplicateSingletonQuarantine = diagnosticMode
-    ? []
-    : quarantineDuplicateSingletonLoaderEntries([
-      bundlePatches,
-      profile.patches,
-      homePatches,
-      overlays,
-      staleLoaderQuarantine,
-    ])
-  const composedOverlays = [...overlays, ...staleLoaderQuarantine, ...duplicateSingletonQuarantine]
-  return {
-    profile,
-    resolution,
-    bundlePatches,
-    homePatches,
-    overlays: composedOverlays,
-    ...(diagnosticRuntime === undefined ? {} : { diagnosticRuntimeRoot: diagnosticRuntime.root }),
-  }
+  const resolution = await createRuntimeResolution(resolutionOptions)
+  const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
+  return { profile, resolution, overlays }
 }
 
-/** A profile already resolved from an application's own installation. */
+/** An application-owned profile and its independent installation fallback. */
 export interface ResolvedProfileRuntime {
   /** Profile already loaded from the application's own directory. */
   profile: Profile
@@ -408,174 +220,16 @@ export interface RunProfileOptions {
   environment: LaunchEnvironmentSnapshot
   /** The profile name to boot. */
   profile: string
-  /** Shipped template used once to initialize a missing profile. */
-  fromDefaultProfile?: string | undefined
   /** Loaded application profile; bypasses named profile initialization when supplied. */
   resolvedProfile?: ResolvedProfileRuntime | undefined
+  /** Shipped template used once to initialize a missing profile. */
+  fromDefaultProfile?: string | undefined
   /** `--patch` overlay paths, in argv order. */
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
-  /** Start only installation-owned bundles and omit every user-owned layer. */
-  diagnosticMode?: boolean
-  /** Emit a stable desktop-supervisor marker when ordinary startup fails. */
-  diagnosticModeOnFailure?: boolean
   /** Application-owned package runtime, scoped to plugin package operations. */
   packageManager?: ProfileContext['packageManager']
-  /** Module fallback backend; pkg executables always use runtime resolution. */
-  resolutionMode?: ProfileResolutionMode
-}
-
-function startupFailurePhase(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error)
-  if (/pnpm|dependency|lockfile|node_modules|profile manifest/iu.test(message)) return 'preflight' as const
-  // The outer boot wrapper says "plugin tree failed to load" for every
-  // composition failure. Preserve the more specific Loader lifecycle stage
-  // before considering that generic import wording.
-  if (/failed to apply|apply loader entry/iu.test(message)) return 'apply' as const
-  if (/cannot resolve|ERR_MODULE_NOT_FOUND|failed to (?:load|import)|missed the module table/iu.test(message)) {
-    return 'import' as const
-  }
-  if (/did not activate|pending \(waiting|activation/iu.test(message)) return 'activate' as const
-  return 'compose' as const
-}
-
-const LOADER_IMPORT_FAILURE = /failed to import loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/giu
-const LOADER_ENTRY_FAILURE = /failed to (import|apply) loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/giu
-const CLIENT_MODULE_UNAVAILABLE = new RegExp(
-  String.raw`client-modules:\s*require\([^\r\n]+\).*?`
-  + String.raw`(?:missed the module table|not a materialized module|no registered package factory)`,
-  'isu',
-)
-const MISSING_IMPORTED_MODULE = /(?:require\(|Cannot find (?:package|module)\s+)["']([^"']+)["']/giu
-const MISSING_IMPORTED_EXPORT = /The requested module\s+["']([^"']+)["']\s+does not provide an export named\s+["']([^"']+)["']/iu
-
-function boundedLoaderToken(value: string | undefined, maxLength: number): string | undefined {
-  return value === undefined || value === '' || /[\0\r\n]/u.test(value)
-    ? undefined
-    : value.slice(0, maxLength)
-}
-
-function startupErrorChain(error: unknown): string {
-  const messages: string[] = []
-  const seen = new Set<unknown>()
-  const visit = (current: unknown): void => {
-    if (current === undefined || seen.has(current)) return
-    seen.add(current)
-    if (current instanceof Error) {
-      messages.push(current.message)
-      if (current instanceof AggregateError) {
-        for (const nested of current.errors) visit(nested)
-      }
-      visit(current.cause)
-      return
-    }
-    if (typeof current === 'string') messages.push(current)
-  }
-  visit(error)
-  return messages.join('\n')
-}
-
-function loaderEntryFailures(error: unknown): readonly {
-  stage: 'import' | 'apply'
-  entryId: string
-  moduleName: string
-}[] {
-  const found = new Map<string, { stage: 'import' | 'apply'; entryId: string; moduleName: string }>()
-  for (const match of startupErrorChain(error).matchAll(LOADER_ENTRY_FAILURE)) {
-    const stage = match[1]
-    const entryId = boundedLoaderToken(match[2], 512)
-    const moduleName = boundedLoaderToken(match[3], 512)
-    if ((stage !== 'import' && stage !== 'apply') || entryId === undefined || moduleName === undefined) continue
-    found.set(`${stage}\0${entryId}\0${moduleName}`, { stage, entryId, moduleName })
-  }
-  return [...found.values()]
-}
-
-/**
- * Attribute the deepest Loader import or apply wrapper in a startup failure.
- * The recorded patch owner must still prove the owning bundle before recovery mutates
- * the Profile; the plugin's own exception text is never trusted for identity.
- * @param error - startup exception and optional cause chain.
- * @returns Stable Loader identity and lifecycle stage, when present.
- */
-export function loaderEntryFailure(
-  error: unknown,
-): {
-  readonly stage: 'import' | 'apply'
-  readonly entryId: string
-  readonly moduleName: string
-} | undefined {
-  return loaderEntryFailures(error).at(-1)
-}
-
-/**
- * Attribute the deepest synchronous Loader module-resolution failure.
- * @param error - startup exception and optional cause chain.
- * @returns the Loader identity only when the cause chain proves a missing module.
- */
-export function loaderClientModuleFailure(
-  error: unknown,
-): {
-  readonly entryId: string
-  readonly moduleName: string
-  readonly dependencyModule?: string
-  readonly missingExport?: string
-} | undefined {
-  const diagnostic = startupErrorChain(error)
-  if (!CLIENT_MODULE_UNAVAILABLE.test(diagnostic)
-    && !/ERR_MODULE_NOT_FOUND|Cannot find (?:package|module)/iu.test(diagnostic)
-    && !MISSING_IMPORTED_EXPORT.test(diagnostic)) return undefined
-  const match = [...diagnostic.matchAll(LOADER_IMPORT_FAILURE)].at(-1)
-  if (match?.[1] === undefined || match[2] === undefined) return undefined
-  const missingExport = diagnostic.match(MISSING_IMPORTED_EXPORT)
-  const dependencyModule = boundedLoaderToken(missingExport?.[1], 512)
-  const missingExportName = boundedLoaderToken(missingExport?.[2], 256)
-  if (missingExport !== null && (dependencyModule === undefined || missingExportName === undefined)) return undefined
-  return {
-    entryId: match[1],
-    moduleName: match[2],
-    ...(dependencyModule === undefined ? {} : { dependencyModule }),
-    ...(missingExportName === undefined ? {} : { missingExport: missingExportName }),
-  }
-}
-
-function loaderMissingDependency(error: unknown, loaderModule: string): string | undefined {
-  const diagnostic = startupErrorChain(error)
-  const candidates = [...diagnostic.matchAll(MISSING_IMPORTED_MODULE)]
-    .map(match => match[1])
-    .filter((value): value is string => value !== undefined && value !== loaderModule)
-  return candidates.at(-1)
-}
-
-function deduplicateStartupIssues(issues: readonly ProfileDiagnostic[]): ProfileDiagnostic[] {
-  const seen = new Set<string>()
-  return issues.filter((issue) => {
-    const key = `${issue.code}\0${issue.attribution?.rootPackage ?? ''}\0${issue.attribution?.entryId ?? ''}`
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-}
-
-/** Decide whether a failed normal Profile can improve by omitting user-owned layers. */
-export function isDeterministicDiagnosticModeFailure(issue: ProfileDiagnostic): boolean {
-  return issue.code !== 'pnpm.network'
-    && issue.code !== 'pnpm.registry-auth'
-    && issue.code !== 'pnpm.minimum-release-age'
-    && issue.code !== 'profile.unknown'
-    && issue.code !== 'runtime.launch-invalid'
-}
-
-function configuredExternalBundles(profile: string): string[] {
-  try {
-    const profileDir = resolveProfileDir(profile)
-    const configured = readProfileManifest(NAME, profileDir).dsh?.profile?.bundles ?? []
-    const installationOwned = new Set(PROFILE_TEMPLATES[profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
-    return configured.filter(bundle => !installationOwned.has(bundle))
-  } catch {
-    return []
-  }
 }
 
 /**
@@ -583,30 +237,9 @@ function configuredExternalBundles(profile: string): string[] {
  * mounted plugins (or to a one-shot runner the composition mounts).
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
  * @returns the settled root context and the shutdown controller.
+ * @throws after disposing startup resources; cleanup failures retain the original error.
  */
-async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
-  const diagnosticMode = options.diagnosticMode === true
-  const packaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
-  const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'link'
-  const profileDir = resolveProfileDir(options.profile)
-  if (!diagnosticMode && options.resolvedProfile === undefined && existsSync(join(profileDir, 'package.json'))) {
-    await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR })
-    const dependencyHealth = repairProfileDependencies({
-      binName: NAME,
-      profile: options.profile,
-      installAnchor: INSTALL_ANCHOR,
-      runPackageManager: args => runProfilePackageManager(profileDir, args),
-    })
-    if (dependencyHealth.status === 'failed') {
-      throw new Error(
-        `${NAME}: profile ${options.profile} has unresolved shared Host dependency conflicts: `
-        + (dependencyHealth.diagnostic ?? JSON.stringify(dependencyHealth.conflicts)),
-      )
-    }
-    if (dependencyHealth.status === 'repaired' || dependencyHealth.status === 'quarantined') {
-      process.stderr.write(`${NAME}: profile dependency health ${JSON.stringify(dependencyHealth)}\n`)
-    }
-  }
+export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
   // Before the first plugin mounts and before anything can issue a request: Node's fetch ignores the
   // proxy environment on its own, so every profile would otherwise connect directly. Resolving from
   // the launcher's snapshot — not `process.env` — is what lets a proxy declared in a `.env` layer
@@ -616,79 +249,56 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
     (message) => { process.stderr.write(`${NAME}: ${message}\n`) },
   )
 
-  let composed: ComposedProfile
-  try {
-    composed = await composeProfile(
-      options.profile,
-      options.patchFiles,
-      diagnosticMode,
-      resolutionMode,
-      options.fromDefaultProfile,
-      options.resolvedProfile,
-    )
-  } catch (error) {
-    await disposeProxy()
-    throw error
-  }
   const app: { current?: Context } = {}
-  const appReady = createAppReady()
-  const shutdown = createProcessShutdown(async () => {
-    try {
-      await app.current?.fiber.dispose()
-    } finally {
-      try {
-        await disposeProxy()
-      } finally {
-        if (composed.diagnosticRuntimeRoot !== undefined) {
-          rmSync(composed.diagnosticRuntimeRoot, { recursive: true, force: true })
-        }
-      }
+  let disposal: Promise<void> | undefined
+  const dispose = (): Promise<void> => disposal ??= (async () => {
+    const failures: unknown[] = []
+    for (const release of [() => app.current?.fiber.dispose(), disposeProxy]) {
+      try { await release() } catch (error) { failures.push(error) }
     }
-  })
-  const signalShutdown = new AbortController()
-  const interrupt = (code: number): void => {
-    signalShutdown.abort()
-    shutdown.interrupt(code)
-  }
-  // Signals own teardown throughout the startup window, not only after boot()
-  // settles: an inserted provider can publish before sibling rows finish mounting.
-  // SIGTERM is a supervisor's ordinary stop request and exits 0 on every
-  // surface — the launcher does not know whether the app considered its work
-  // complete; SIGINT is a user interrupt and reports 130.
-  process.on('SIGTERM', () => { interrupt(0) })
-  process.on('SIGINT', () => { interrupt(130) })
-  installFailLoud(NAME, process, async () => {
-    await app.current?.fiber.dispose()
-  })
-
-  const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
-  const profileContext: ProfileContext = {
-    name: options.profile,
-    ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
-    dir: composed.profile.dir,
-    patchPath: composed.profile.patchPath,
-    installAnchor: options.resolvedProfile?.installAnchor ?? INSTALL_ANCHOR,
-    startedBundles: composed.profile.layers.map(layer => layer.packageName),
-    cwd: process.cwd(),
-    home: resolveDshHome(),
-    overlays: composed.overlays,
-    telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
-    projectPatches: patches => withDesktopCodexProxy([...patches], process.env),
-  }
-  const initialPatches = diagnosticMode
-    ? structuredClone(allPatches(composed))
-    : readProfilePatches(NAME, profileContext, composed.profile)
-  let ctx: Context
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'dsh: profile cleanup failed')
+  })()
   try {
-    ctx = await boot(NAME, rootConfig, initialPatches, async (hostCtx) => {
+    const composed = await composeProfile(
+      options.profile, options.patchFiles, options.fromDefaultProfile, options.resolvedProfile,
+    )
+    const appReady = createAppReady()
+    const shutdown = createProcessShutdown(dispose)
+    const signalShutdown = new AbortController()
+    const interrupt = (code: number): void => {
+      signalShutdown.abort()
+      shutdown.interrupt(code)
+    }
+    // Signals own teardown throughout the startup window, not only after boot()
+    // settles: an inserted provider can publish before sibling rows finish mounting.
+    // SIGTERM is a supervisor's ordinary stop request and exits 0 on every
+    // surface — the launcher does not know whether the app considered its work
+    // complete; SIGINT is a user interrupt and reports 130.
+    process.on('SIGTERM', () => { interrupt(0) })
+    process.on('SIGINT', () => { interrupt(130) })
+    installFailLoud(NAME, process, async () => {
+      await app.current?.fiber.dispose()
+    })
+
+    const rootConfig = join(composed.profile.dir, PROFILE_ROOT_FILENAME)
+    const profileContext: ProfileContext = {
+      name: options.profile,
+      ...(options.packageManager === undefined ? {} : { packageManager: options.packageManager }),
+      dir: composed.profile.dir, patchPath: composed.profile.patchPath,
+      installAnchor: options.resolvedProfile?.installAnchor ?? INSTALL_ANCHOR,
+      startedBundles: composed.profile.layers.map(layer => layer.packageName),
+      cwd: process.cwd(), home: resolveDshHome(),
+      overlays: composed.overlays, telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
+    }
+    const ctx = await boot(NAME, rootConfig, readProfilePatches(NAME, profileContext, composed.profile), async (hostCtx) => {
       app.current = hostCtx
       hostCtx.provide('profileContext', profileContext)
       // Before any config-tree entry mounts, so plugins resolve all launch-time
-      // environment values from the same immutable launch-environment snapshot.
+      // environment values from the same immutable launch snapshot.
       hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
-      await hostCtx.plugin(PluginPackages, resolutionMode === 'link' ? {} : {
-        generation: composed.resolution,
-        behavior: resolutionMode === 'dual' ? 'verify' : 'enforce',
+      await hostCtx.plugin(PluginPackages, {
+        resolution: composed.resolution,
       })
       // The command line and bounded exit request are launcher facts available
       // to every app plugin that injects the argument snapshot.
@@ -697,225 +307,17 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
         exit: code => void shutdown.shutdown(code),
         ready: appReady.service,
       })
-    }, diagnosticMode ? diagnosticProfileModuleBaseUrl(composed.profile.dir) : undefined)
-  } catch (error) {
-    try {
-      await disposeProxy()
-    } finally {
-      if (composed.diagnosticRuntimeRoot !== undefined) {
-        rmSync(composed.diagnosticRuntimeRoot, { recursive: true, force: true })
-      }
-    }
-    throw error
-  }
-  app.current = ctx
-  if (diagnosticMode) {
-    const current = readProfileDiagnosticReport(options.profile)
-    const enteredAt = new Date().toISOString()
-    writeProfileDiagnosticReport(createProfileDiagnosticReport(
-      options.profile,
-      current?.issues ?? [],
-      {
-        diagnosticMode: {
-          enteredAt,
-          skippedBundles: configuredExternalBundles(options.profile),
-          skippedUserLayers: true,
-          skippedUserSettings: true,
-          skippedUserSessions: true,
-          skippedUserStorage: true,
-        },
-      },
-    ))
-    process.stderr.write(`${NAME}: diagnostic mode active for profile ${JSON.stringify(options.profile)}\n`)
-  }
-  if (!signalShutdown.signal.aborted
-    && ctx.fiber.state === FiberState.ACTIVE
-    && ctx.get('loader') !== undefined) {
-    appReady.commit()
-  }
-  return { ctx, shutdown }
-}
-
-/**
- * Boot one Profile and retain a structured failure for desktop diagnostic recovery.
- * @param options - Profile composition, application arguments, and optional recovery policy.
- * @returns Settled root context and shutdown controller.
- */
-export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
-  try {
-    return await runProfileAttempt(options)
-  } catch (error) {
-    const entryFailures = options.diagnosticMode === true ? [] : loaderEntryFailures(error)
-    const entryFailure = entryFailures.at(-1)
-    const loaderFailure = options.diagnosticMode === true ? undefined : loaderClientModuleFailure(error)
-    let ownedFailure: UnresolvableProfileBundleEntry | undefined
-    let ownedEntry: ProfileBundleEntryOwnership | undefined
-    try {
-      const healthOptions = {
-        binName: NAME,
-        profile: options.profile,
-        installAnchor: INSTALL_ANCHOR,
-      }
-      ownedFailure = loaderFailure === undefined ? undefined : inspectUnresolvableProfileBundleEntries(healthOptions)
-        .find(failure => failure.entryId === loaderFailure.entryId && failure.moduleName === loaderFailure.moduleName)
-      const attributable = loaderFailure ?? entryFailure
-      if (ownedFailure === undefined && attributable !== undefined) {
-        const owner = inspectProfileBundleEntryOwnership(
-          healthOptions,
-          attributable.entryId,
-          attributable.moduleName,
-        )
-        ownedEntry = owner
-        const missingModule = loaderFailure === undefined
-          ? undefined
-          : loaderMissingDependency(error, loaderFailure.moduleName)
-        if (owner !== undefined && loaderFailure !== undefined && missingModule !== undefined) {
-          ownedFailure = {
-            ...owner,
-            failureKind: 'loader-dependency',
-            missingModule,
-            importerPackage: loaderFailure.moduleName,
-          }
-        } else if (owner !== undefined && loaderFailure !== undefined
-          && loaderFailure.dependencyModule !== undefined
-          && loaderFailure.missingExport !== undefined) {
-          ownedFailure = {
-            ...owner,
-            failureKind: 'loader-dependency',
-            missingModule: loaderFailure.dependencyModule,
-            importerPackage: loaderFailure.moduleName,
-          }
-        }
-      }
-      const ownerships = entryFailures
-        .map(failure => inspectProfileBundleEntryOwnership(
-          healthOptions,
-          failure.entryId,
-          failure.moduleName,
-        ))
-        .filter((owner): owner is ProfileBundleEntryOwnership => owner !== undefined)
-      const owners = new Set(ownerships.map(owner => owner.rootPackage))
-      if (owners.size === 1) {
-        ownedEntry = ownerships.find(owner => (
-          owner.entryId === loaderFailure?.entryId && owner.moduleName === loaderFailure.moduleName
-        )) ?? ownerships.at(-1)
-      } else if (owners.size > 1) {
-        // Several external bundles failed in the same Loader aggregate. There
-        // is no unique responsibility, so automatic startup quarantine must
-        // fail closed instead of choosing one by error ordering.
-        ownedEntry = undefined
-        ownedFailure = undefined
-      }
-    } catch {
-      ownedFailure = undefined
-      ownedEntry = undefined
-    }
-    const externalBundle = ownedFailure?.rootPackage ?? ownedEntry?.rootPackage ?? (
-      loaderFailure !== undefined
-        && loaderFailure.missingExport === undefined
-        && configuredExternalBundles(options.profile).includes(loaderFailure.moduleName)
-        ? loaderFailure.moduleName
-        : undefined
-    )
-    const issueValue = ownedFailure?.failureKind === 'loader-dependency'
-      ? new Error(
-        loaderFailure?.missingExport === undefined
-          ? `loader dependency unavailable: Loader module ${ownedFailure.moduleName} imports unavailable dependency ${ownedFailure.missingModule ?? '<unknown>'}`
-          : `loader dependency unavailable: Loader module ${ownedFailure.moduleName} expects export ${loaderFailure.missingExport} from ${ownedFailure.missingModule ?? '<unknown>'}, but the installed dependency does not provide it`,
-        { cause: error instanceof Error ? error : undefined },
-      )
-      : error
-    const issue = classifyProfileDiagnostic({
-      source: options.diagnosticMode === true ? 'runtime' : 'profile',
-      phase: startupFailurePhase(error),
-      value: issueValue,
-      home: resolveDshHome(),
-      ...(entryFailure === undefined
-        ? {}
-        : {
-          attribution: {
-            entryId: entryFailure.entryId,
-            moduleName: entryFailure.moduleName,
-            ...(ownedFailure?.missingModule === undefined ? {} : { missingModule: ownedFailure.missingModule }),
-            ...(loaderFailure?.missingExport === undefined ? {} : { missingExport: loaderFailure.missingExport }),
-            ...(ownedFailure?.importerPackage === undefined ? {} : { importerPackage: ownedFailure.importerPackage }),
-            ...(ownedFailure === undefined ? {} : { configKind: 'profile-patch' as const }),
-            ...(externalBundle === undefined ? {} : { rootPackage: externalBundle }),
-          },
-        }),
     })
-    let quarantined = false
-    const pendingActivation = existsSync(join(resolveDshHome(), 'plugin-transactions', options.profile, 'pending.json'))
-    if (options.diagnosticModeOnFailure === true && externalBundle !== undefined && !pendingActivation) {
-      const profileDir = resolveProfileDir(options.profile)
-      let release: (() => void) | undefined
-      try {
-        release = acquireProfilePluginMutationLock({ profile: options.profile, waitMs: 0, operationKind: 'startup-quarantine' })
-      } catch {
-        // The original Loader incident remains primary; a concurrent writer
-        // owns recovery, so startup must not mutate its Profile underneath it.
-        process.stderr.write(`${NAME}: startup quarantine deferred because the Profile mutation lock is unavailable\n`)
-      }
-      if (release !== undefined) {
-        let snapshot: ReturnType<typeof createProfilePluginSnapshot> | undefined
-        try {
-          snapshot = createProfilePluginSnapshot({ profile: options.profile, kind: 'automatic', trigger: 'diagnostic-repair' })
-          const outcome = quarantineProfilePluginAfterLoadFailure({
-            binName: NAME,
-            profile: options.profile,
-            installAnchor: INSTALL_ANCHOR,
-            runPackageManager: args => runProfilePackageManager(profileDir, args),
-          }, externalBundle, issue, loaderFailure === undefined
-            ? 'loader-lifecycle-failed'
-            : ownedFailure === undefined
-              ? 'client-module-unavailable'
-              : ownedFailure.failureKind === 'loader-dependency'
-                ? 'loader-dependency-unavailable'
-                : 'loader-module-unresolvable')
-          quarantined = outcome.status === 'quarantined'
-        } catch {
-          // Retain the original classified Loader incident when backup or repair fails.
-          process.stderr.write(`${NAME}: startup quarantine could not retain a safety point or complete repair; original incident retained\n`)
-        } finally {
-          try {
-            if (snapshot !== undefined) finalizeProfilePluginSnapshot({
-              profile: options.profile, snapshotId: snapshot.snapshotId, preserveIfUnchanged: snapshot.deduplicated === true,
-            })
-          } catch {
-            // Snapshot cleanup must not replace the original startup incident.
-            process.stderr.write(`${NAME}: startup quarantine snapshot cleanup deferred\n`)
-          } finally { release() }
-        }
-      }
-      if (quarantined) {
-        process.stderr.write(`${NAME}: quarantined startup-incompatible plugin ${JSON.stringify({
-          schema: 'dsh/profile-diagnostic/v2',
-          packageName: externalBundle,
-          entryId: entryFailure?.entryId,
-          code: issue.code,
-        })}\n`)
-      }
+    app.current = ctx
+    if (!signalShutdown.signal.aborted
+      && ctx.fiber.state === FiberState.ACTIVE
+      && ctx.get('loader') !== undefined) {
+      appReady.commit()
     }
-    let previous: readonly ProfileDiagnostic[] = []
-    try {
-      previous = readProfileDiagnosticReport(options.profile)?.issues ?? []
-    } catch {
-      // The fresh report below replaces an unreadable diagnostic file; user Profile data is untouched.
-    }
-    if (!quarantined) {
-      writeProfileDiagnosticReport(createProfileDiagnosticReport(
-        options.profile,
-        deduplicateStartupIssues([...previous, issue]),
-      ))
-    }
-    if (!quarantined
-      && options.diagnosticMode !== true
-      && options.diagnosticModeOnFailure === true
-      && isDeterministicDiagnosticModeFailure(issue)) {
-      process.stderr.write(`${NAME}: profile diagnostic mode eligible ${JSON.stringify({
-        schema: 'dsh/profile-diagnostic/v2',
-        code: issue.code,
-      })}\n`)
+    return { ctx, shutdown }
+  } catch (error) {
+    try { await dispose() } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], 'dsh: profile startup and cleanup failed')
     }
     throw error
   }

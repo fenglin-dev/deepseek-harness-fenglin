@@ -7,10 +7,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-message-feedback/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SessionLogDownloadController } from './controller.ts'
-import type { SessionLogDownloadDialogInjected } from './Dialog.tsx'
-import { SessionLogDownloadHeaderAction } from './HeaderAction.tsx'
+import { SessionLogDownloadHeaderAction, type SessionLogDownloadHeaderInjected } from './HeaderAction.tsx'
 import { en, NS, zh, type SessionLogDownloadKey } from './locales.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -27,25 +27,24 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export type { SessionLogDownloadEntry, SessionLogDownloadState } from './controller.ts'
 
-export const inject = ['slots', 'locale', 'settingsScope']
+export const inject = ['slots', 'locale']
 
 /**
  * Provide the download controller and mount its modal into the Session Header.
  * @param ctx - browser context carrying slots and locale services.
  */
 export function apply(ctx: ClientContext): void {
-  const privacy = ctx.settingsScope.bind<{
-    diagnosticExport: { preference: 'ask' | 'include' | 'exclude' }
-  }>({ namespace: 'custom-instructions' })
-  const controller = new SessionLogDownloadController(undefined, undefined, {
-    getPreference: () => privacy.getSnapshot().value?.diagnosticExport.preference ?? 'ask',
-    setPreference: async preference => privacy.mutate([{
-      op: 'set', path: ['diagnosticExport', 'preference'], value: preference,
-    }]),
-  })
+  const controller = new SessionLogDownloadController()
   ctx.provide('sessionLogDownload', controller)
   ctx.effect(() => async () => { await controller.dispose() }, 'session-log-download: browser download lifecycle')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'session-log-download: browser dictionaries')
+  const feedbackAvailable = createSnapshotStore(false)
+  ctx.inject(['feedbackUi'], (scope: ClientContext) => {
+    scope.effect(() => {
+      feedbackAvailable.set(true)
+      return () => { feedbackAvailable.set(false) }
+    }, 'session-log-download: feedback availability')
+  })
   ctx.on('command/executed', (sessionId, commandName, result) => {
     if (commandName === 'export' && result.kind === 'success') void controller.download(sessionId)
   })
@@ -53,18 +52,12 @@ export function apply(ctx: ClientContext): void {
     name: 'conversation.session.header.utilities',
     id: 'session-log-download',
     locale: NS,
-    children: {
-      'conversation.session.header.menu.item': { kind: 'list', scope: 'session' },
-    },
-    inject: (): SessionLogDownloadDialogInjected => ({
-      hooks: { sessionLogDownload: controller.store },
+    inject: (): SessionLogDownloadHeaderInjected => ({
+      hooks: { sessionLogDownload: controller.store, feedbackAvailable },
       request: (sessionId: SessionId) => controller.download(sessionId),
       dismiss: (sessionId: SessionId) => { controller.dismiss(sessionId) },
-      setIncludeCustomInstructions: (sessionId, include) => {
-        controller.setIncludeCustomInstructions(sessionId, include)
-      },
-      setRemember: (sessionId, remember) => { controller.setRemember(sessionId, remember) },
-      confirm: sessionId => controller.confirm(sessionId),
+      // The feedback plugin can unload between the menu render and this click.
+      openFeedback: (sessionId: SessionId) => { ctx.get('feedbackUi')?.openSession(sessionId) },
     }),
   }, SessionLogDownloadHeaderAction))
 }

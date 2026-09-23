@@ -906,7 +906,7 @@ describe('dsh-tool-subagent background mode', () => {
     })
     expect(text(collected)).toBe('background answer\n[status: completed]')
 
-    // Final-output reads are idempotent (not consumed).
+    // The result rides the first read after settlement; a later read carries only the status.
     const again = await ctx.tools.execute({
       signal: testToolSignal,
       callId: ToolCallId('collect-2'),
@@ -914,7 +914,7 @@ describe('dsh-tool-subagent background mode', () => {
       arguments: { job_id: 'subagent-1' },
       agent: parent,
     })
-    expect(text(again)).toBe('background answer\n[status: completed]')
+    expect(text(again)).toBe('(no new output)\n[status: completed]')
   })
 
   it('preserves provider diagnostics in one-shot background failure detail', async () => {
@@ -995,7 +995,7 @@ describe('dsh-tool-subagent background mode', () => {
     const result = await resultPromise
 
     expect(result.isError).toBe(true)
-    expect(ctx.jobs.list(parent)).toEqual([])
+    expect(ctx.jobs.list(parent.id)).toEqual([])
   })
 
   it('rejects startup when the provider changes during asynchronous route preflight', async () => {
@@ -1105,7 +1105,8 @@ describe('dsh-tool-subagent background mode', () => {
       arguments: { job_id: 'subagent-1', wait: true },
       agent: parent,
     })
-    expect(text(output)).toBe('(no new output)\n[status: killed]')
+    // The registry records the model's kill reason as the terminal detail.
+    expect(text(output)).toBe('(no new output)\n[status: killed, no longer needed]')
   })
 
   it('reports startup rollback failure after cancellation as a failed job', async () => {
@@ -1192,7 +1193,7 @@ describe('dsh-tool-subagent background mode', () => {
 
     // The aborted children settle as killed tasks.
     const killed = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('w1'), name: 'job_output', arguments: { job_id: 'subagent-1', wait: true }, agent: parent })
-    expect(text(killed)).toBe('(no new output)\n[status: killed]')
+    expect(text(killed)).toBe('(no new output)\n[status: killed, superseded]')
   })
 
 })
@@ -1263,7 +1264,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
     expect(match).not.toBeNull()
     const [, childId] = match!
     // No Task was created for the continuable child.
-    expect(ctx.jobs.list(parent)).toEqual([])
+    expect(ctx.jobs.list(parent.id)).toEqual([])
 
     await vi.waitFor(() => {
       expect(ctx.agents.get(SessionId(childId!))).toBeUndefined()
@@ -1294,7 +1295,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
     if (result.isError) throw new Error('expected foreground subagent success')
     expect(result.value).toMatchObject({ kind: 'foreground' })
     expect(text(result)).toBe('continuable answer')
-    expect(ctx.jobs.list(parent)).toEqual([])
+    expect(ctx.jobs.list(parent.id)).toEqual([])
   })
 
   it('isolates a cancelled continuable preparation from a concurrent sibling', async () => {

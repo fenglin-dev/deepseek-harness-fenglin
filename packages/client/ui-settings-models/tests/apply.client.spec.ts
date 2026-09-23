@@ -1,6 +1,8 @@
 /** Models section registration: slot declaration injection, the locale-following label thunk, and HMR recovery. */
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import Schema from '@deepseek-ai/schemastery'
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -13,8 +15,13 @@ import {
   WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE, WELCOME_NOTICE_VERSION,
 } from '../src/onboarding-copy.ts'
 import { ModelsSection } from '../src/client/ModelsSection.tsx'
-import { SetupWizard } from '../src/client/SetupWizard.tsx'
-import { apply as hostApply } from '../src/index.ts'
+import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog.tsx'
+import { WelcomeNotice } from '../src/client/WelcomeNotice.tsx'
+import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
+import * as hostPlugin from '../src/index.ts'
+import { ONBOARDING_CONFIG_GLOBAL } from '../src/onboarding-config.ts'
+
+afterEach(() => { vi.unstubAllGlobals() })
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
@@ -61,14 +68,49 @@ function declare(slots: SlotRegistry): () => void {
 }
 
 describe('ui-settings-models apply', () => {
-  it('keeps the host Loader entry inert', () => {
-    expect(hostApply).not.toThrow()
+  it('keeps manual credential onboarding available when the native shell owns automatic onboarding', async () => {
+    const { ctx, slots } = await bench()
+    declare(slots)
+    try {
+      const host = ctx.plugin(hostPlugin, { credentialOnboarding: false })
+      await host.await()
+      const rows: IndexInjection[] = []
+      ctx.emit('webserver/index-inject', rows)
+      expect(rows).toEqual([{ kind: 'global', name: ONBOARDING_CONFIG_GLOBAL, value: { credentialOnboarding: false } }])
+      for (const row of rows) if (row.kind === 'global') vi.stubGlobal(row.name, row.value)
+      const plugin = ctx.plugin({ inject: [...inject], apply })
+      await plugin.await()
+      expect(slots.entries('settings.onboarding').map(entry => entry.options.id)).toEqual(['welcome-notice', 'deepseek-official'])
+      const onboarding = slots.entries('settings.onboarding').find(entry => entry.options.id === 'deepseek-official')!
+      expect((onboarding.inject as () => { automatic: boolean })().automatic).toBe(false)
+      expect(slots.entries('settings.section').map(entry => entry.options.id)).toEqual(['models'])
+      await plugin.dispose()
+      expect(slots.entries('settings.onboarding')).toEqual([])
+      await host.dispose()
+      const after: IndexInjection[] = []
+      ctx.emit('webserver/index-inject', after)
+      expect(after).toEqual([])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('defaults to browser onboarding and rejects malformed bootstrap options', async () => {
+    expect(hostPlugin.Config({})).toEqual({ credentialOnboarding: true })
+    expect(hostPlugin.Config['~standard'].validate({ credentialOnboarding: 'false' })).toHaveProperty('issues')
+    const { ctx } = await bench()
+    try {
+      vi.stubGlobal(ONBOARDING_CONFIG_GLOBAL, { credentialOnboarding: 'false' })
+      expect(() => { apply(ctx) }).toThrow()
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('declares the services it uses', () => {
     expect(inject).toEqual([
       'slots', 'locale', 'remote', 'remote.credentials', 'remote.llm', 'remote.settings',
-      'settingsScope', 'settingsSchema',
+      'configForms', 'settingsSchema',
     ])
   })
 
@@ -91,19 +133,19 @@ describe('ui-settings-models apply', () => {
     expect(injected.hooks.snapshot).toBe(injected.controller.store)
     expect(typeof injected.operations.writeSettings).toBe('function')
     const onboarding = before.slots.entries('settings.onboarding')
-    expect(onboarding).toHaveLength(1)
-    const setup = onboarding.find(entry => entry.options.id === 'setup-wizard')!
-    expect(setup.component).toBe(SetupWizard)
-    expect(setup.options).toMatchObject({ id: 'setup-wizard', order: 0 })
-    const setupInjected = (
-      setup.inject as unknown as () => import('../src/client/SetupWizard.tsx').SetupWizardInjected
+    expect(onboarding).toHaveLength(2)
+    expect(onboarding.find(entry => entry.options.id === 'welcome-notice')).toMatchObject({
+      component: WelcomeNotice,
+      options: { id: 'welcome-notice', order: -100 },
+    })
+    const deepSeek = onboarding.find(entry => entry.options.id === 'deepseek-official')!
+    expect(deepSeek.component).toBe(DeepSeekOnboardingDialog)
+    expect(deepSeek.options).toMatchObject({ id: 'deepseek-official', order: 0 })
+    const deepSeekInjected = (
+      deepSeek.inject as unknown as () => import('../src/client/DeepSeekOnboardingDialog.tsx').DeepSeekOnboardingInjected
     )()
-    expect(setupInjected.hooks.models).toBe(injected.controller.store)
-    expect(setupInjected.modelsController).toBe(injected.controller)
-    expect(setupInjected.hooks.welcome).toBe(setupInjected.welcomeController.store)
-    expect(setupInjected.hooks.locale).toBe(before.locale)
-    setupInjected.setLocale('en')
-    expect(before.locale.getLocale().active).toBe('en')
+    expect(deepSeekInjected.hooks.models).toBe(injected.controller.store)
+    expect(typeof deepSeekInjected.operations.storeCredential).toBe('function')
 
     const after = await bench()
     await after.ctx.plugin({ inject: [...inject], apply }).await()
@@ -112,7 +154,7 @@ describe('ui-settings-models apply', () => {
     declare(after.slots)
     await Promise.resolve()
     expect(after.slots.entries('settings.section')[0]!.component).toBe(ModelsSection)
-    expect(after.slots.entries('settings.onboarding')).toHaveLength(1)
+    expect(after.slots.entries('settings.onboarding')).toHaveLength(2)
     // The self-inflicted ledger notifications hit the duplicate guard.
     expect(after.slots.entries('settings.section')).toHaveLength(1)
   })
@@ -151,7 +193,7 @@ describe('ui-settings-models apply', () => {
     declare(b.slots)
     await Promise.resolve()
     expect(b.slots.entries('settings.section')[0]!.component).toBe(ModelsSection)
-    expect(b.slots.entries('settings.onboarding')).toHaveLength(1)
+    expect(b.slots.entries('settings.onboarding')).toHaveLength(2)
     // The locale path also recovers through the same ledger re-check.
     b.locale.setLocale('en')
     expect(resolveSlotLabel(b.slots.entries('settings.section')[0]!.options.label)).toBe('Models')
@@ -199,13 +241,13 @@ describe('ui-settings-models apply', () => {
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const entry = b.slots.entries('settings.onboarding')
-      .find(candidate => candidate.options.id === 'setup-wizard')!
+      .find(candidate => candidate.options.id === 'welcome-notice')!
     const injected = (
-      entry.inject as unknown as () => import('../src/client/SetupWizard.tsx').SetupWizardInjected
+      entry.inject as unknown as () => import('../src/client/WelcomeNotice.tsx').WelcomeNoticeInjected
     )()
 
-    await injected.welcomeController.load()
-    expect(injected.welcomeController.store.getSnapshot()).toEqual({
+    await injected.controller.load()
+    expect(injected.controller.store.getSnapshot()).toEqual({
       status: 'ready', acknowledged: false, error: null,
     })
   })
@@ -229,13 +271,13 @@ describe('pushed invalidations', () => {
       store: { getSnapshot: () => ({ status: 'ready' }) },
       load: () => { loads.push(1); return Promise.resolve() },
     }
-    refreshIfLoaded(controller as unknown as import('../src/client/store.ts').ModelsSettingsStore)
+    refreshIfLoaded(controller as import('../src/client/store.ts').ModelsSettingsStore)
     expect(loads).toHaveLength(1)
     const idle = {
       store: { getSnapshot: () => ({ status: 'idle' }) },
       load: () => { loads.push(2); return Promise.resolve() },
     }
-    refreshIfLoaded(idle as unknown as import('../src/client/store.ts').ModelsSettingsStore)
+    refreshIfLoaded(idle as import('../src/client/store.ts').ModelsSettingsStore)
     expect(loads).toHaveLength(1)
   })
 
@@ -244,13 +286,13 @@ describe('pushed invalidations', () => {
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const entry = b.slots.entries('settings.onboarding')
-      .find(candidate => candidate.options.id === 'setup-wizard')!
+      .find(candidate => candidate.options.id === 'deepseek-official')!
     const injected = (
       entry.inject as unknown as
-      () => import('../src/client/SetupWizard.tsx').SetupWizardInjected
+      () => import('../src/client/DeepSeekOnboardingDialog.tsx').DeepSeekOnboardingInjected
     )()
-    injected.modelsController.store.update((state) => { state.status = 'ready' })
-    const load = vi.spyOn(injected.modelsController, 'load').mockResolvedValue()
+    injected.controller.store.update((state) => { state.status = 'ready' })
+    const load = vi.spyOn(injected.controller, 'load').mockResolvedValue()
     b.remote.emit('credentials/reference-updated', ['DEEPSEEK_API_KEY'])
     expect(load).toHaveBeenCalledTimes(1)
   })
@@ -261,9 +303,9 @@ describe('pushed invalidations', () => {
     const mock = RemoteMock.create().load(remoteDefaultResponses)
     const namespace = {
       ns: WELCOME_NOTICE_SETTINGS_NAMESPACE,
-      schema: {},
+      schema: JSON.parse(JSON.stringify(Schema.object({ [WELCOME_NOTICE_ACK_FIELD]: Schema.string() }).toJSON())) as JsonValue,
       value: {},
-      applies: 'live' as const,
+      autoGenerate: true, applies: 'live' as const,
       secrets: [],
       revision: 0,
     }
@@ -273,12 +315,12 @@ describe('pushed invalidations', () => {
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const entry = b.slots.entries('settings.onboarding')
-      .find(candidate => candidate.options.id === 'setup-wizard')!
+      .find(candidate => candidate.options.id === 'welcome-notice')!
     const injected = (
       entry.inject as unknown as
-      () => import('../src/client/SetupWizard.tsx').SetupWizardInjected
+      () => import('../src/client/WelcomeNotice.tsx').WelcomeNoticeInjected
     )()
-    await injected.welcomeController.load()
+    await injected.controller.load()
     await vi.waitFor(() => {
       expect(injected.hooks.welcome.getSnapshot()).toMatchObject({ status: 'ready', acknowledged: false })
     })
@@ -286,7 +328,7 @@ describe('pushed invalidations', () => {
       ...document,
       namespaces: [{ ...namespace, value: { [WELCOME_NOTICE_ACK_FIELD]: WELCOME_NOTICE_VERSION }, revision: 1 }],
     }))
-    b.remote.emit('settings/document-updated', ['ui-onboarding', 1])
+    b.remote.emit('settings/document-updated', ['ui-settings-general', 1])
     await vi.waitFor(() => {
       expect(injected.hooks.welcome.getSnapshot()).toMatchObject({ status: 'ready', acknowledged: true })
     })
@@ -294,7 +336,7 @@ describe('pushed invalidations', () => {
 
   it('joins the refreshed mirror view on a settings invalidation', async () => {
     const mock = RemoteMock.create().load(remoteDefaultResponses)
-    const namespace = { ns: 'llm-test', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 1 }
+    const namespace = { ns: 'llm-test', schema: {}, value: {}, autoGenerate: true, applies: 'live' as const, secrets: [], revision: 1 }
     const document = { writable: true, hasDocument: false, namespaces: [namespace] }
     const describe = mock.remote.settings.describe
     describe.mockResolvedValue(ok(document))

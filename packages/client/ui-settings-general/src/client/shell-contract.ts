@@ -15,8 +15,7 @@ import type {
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // Type-only: pulls the settings slot declarations the shell renders into.
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { SettingsNavigationRequest } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { DesktopUpdateView } from './desktop-update-bridge.ts'
+import type { DesktopUpdateView } from '../types.ts'
 
 /** One nav row projected from a settings.section registration's options. */
 export interface SettingsSectionRow {
@@ -37,12 +36,12 @@ export interface SettingsOnboardingStep {
  * sources, while the reconnect command remains a plain callback.
  */
 export type SettingsRootInjected = {
-  /** Open or advance the community Desktop updater. */
+  /** Request the current shell-owned update action. */
   openDesktopUpdate: () => void
   /** Request a fresh logical generation and physical WebSocket immediately. */
   reconnect: () => void
   hooks: {
-    /** Optional community Desktop update carrier state. */
+    /** Shared Electron status for both sidebar locations. */
     desktopUpdate: HostObservable<DesktopUpdateView>
     /** Connection-owned state for the current Host connection. */
     connectionState: HostObservable<ConnectionState | undefined>
@@ -50,13 +49,7 @@ export type SettingsRootInjected = {
     sections: HostObservable<readonly SettingsSectionRow[]>
     /** settings.onboarding ledger projected into coordinator order. */
     onboardingSteps: HostObservable<readonly SettingsOnboardingStep[]>
-    /** Programmatic requests from feature surfaces such as plugin discovery. */
-    navigation: HostObservable<SettingsNavigationRequest | undefined>
-    /** Durable user-selected vertical order of settings section ids. */
-    sectionOrder: HostObservable<readonly string[]>
   }
-  /** Persist the complete visible order while retaining absent plugin ids. */
-  setSectionOrder: (ids: readonly string[]) => Promise<void>
 }
 
 /**
@@ -67,8 +60,8 @@ export type SettingsRootInjected = {
  */
 export type SettingsRootComponentProps =
   PropsRuntime<'sidebar.settings'>
-  & PropsLocale<'settings'>
   & PropsRenderSlots<
+    | 'settings.launcher'
     | 'settings.trigger'
     | 'settings.header'
     | 'settings.action'
@@ -77,3 +70,4 @@ export type SettingsRootComponentProps =
     | 'settings.onboarding'
   >
   & InjectFace<SettingsRootInjected>
+  & PropsLocale<'settings'>

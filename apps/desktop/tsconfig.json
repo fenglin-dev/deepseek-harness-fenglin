@@ -1,15 +1,11 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "composite": false,
-    "declaration": false,
-    "declarationMap": false,
-    "rootDir": "src",
-    "outDir": "lib"
-  },
-  "include": ["src"],
+  "files": [],
   "references": [
-    { "path": "../../packages/nas/nas-protocol" },
-    { "path": "../../packages/subprocess/subprocess" }
+    {
+      "path": "./tsconfig.host.json"
+    },
+    {
+      "path": "./tsconfig.client.json"
+    }
   ]
 }

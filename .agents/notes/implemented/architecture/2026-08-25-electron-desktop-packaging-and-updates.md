@@ -38,6 +38,8 @@ The browser Web UI, dsh backend, existing `dsh plugin` CLI, user npm, and user p
 
 The renderer uses `nodeIntegration: false`, `contextIsolation: true`, and `sandbox: true`. Preload exposes typed RPC, lifecycle, update, locale, and desktop-plugin actions rather than raw `ipcRenderer`, filesystem access, shell commands, or pnpm arguments. Electron selects a typed English or Chinese dictionary from its application locale and falls back to English; menus, native dialogs, and the plugin-management renderer use that locale-owned copy.
 
+Update confirmations use the shell static origin because they must remain available without a ready Web Host. Their packaged documents and assets retain the same method and path restrictions as other local static assets.
+
 ## Filesystem layout
 
 ```text
@@ -78,6 +80,8 @@ Electron update uses one `electron-updater` release stream and signed `electron-
 The [immediate-window decision](2026-09-09-desktop-immediate-window-and-direct-start.md) owns the local loading page, direct Host startup, and recovery in the main window. Profile reconciliation follows the [bundled-runtime decision](2026-09-08-desktop-bundled-runtime-and-external-plugins.md).
 
 `DSH_DESKTOP_AUTO_UPDATE_ENV` selects the test deployment by default or the production deployment for both the target-specific generic-provider URL and COS destination. Release automation supplies the test HTTPS origin through `DOWNLOAD_TEST_ORIGIN` and each deployment's bucket through `DOWNLOAD_TEST_COS_BUCKET` or `DOWNLOAD_PROD_COS_BUCKET`; keeping mutable test routing and COS storage identities out of source lets deployment infrastructure change without a code release, while the public production origin remains fixed. Packaging resolves only the public updater URL, disables electron-builder publishing, removes every COS credential field from its subprocess environment, and writes a completion record only after electron-builder and every signing or notarization hook succeeds. Target upload additionally requires the selected bucket, then requires the completion record, root dsh version, Desktop version, version-derived channel metadata, artifact names, sizes, and SHA-512 values to agree before it reads the selected credentials or sends data. It uploads immutable versioned updater payloads and any separate blockmaps before replacing the channel metadata emitted by electron-builder, and it never deletes historical objects. Stable versions use the `latest` metadata name; prereleases use the first semantic-version prerelease identifier. NSIS embeds its blockmap in the signed executable; the macOS ZIP carries a separate blockmap. Both let electron-updater download changed blocks when supported, while application replacement and the local pnpm package operation remain separate operations.
+
+Test releases require `DOWNLOAD_TEST_RELEASE_ID` from the platform dotenv file. Their feeds and binaries share `dsh-desk/<release-id>/`; production retains its fixed directories. The ID is part of the packaged update URL, so upload rejects a different ID. Internal distribution can supply a new installer after rotation; installed clients retain their existing feed. Random directories reduce guessing but provide no authorization for link holders. The [release configuration](../../../../apps/desktop/README.md#upload-updates) defines generation and reuse.
 
 ## Security and release policy
 

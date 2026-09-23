@@ -10,12 +10,12 @@
  * settles like Enter, and Escape and Shift+Tab leave a drilled pane first and
  * otherwise close back to the trigger. A drilled pane hands focus to the row
  * of the value in use, and returning to the root pane hands it back to the
- * cell that opened it.
- * Data and submission ride the SAME per-session ModelDirectory as the
- * /model popup; exact-model reasoning metadata and the selected effort come
- * from the Host rather than a client-owned vocabulary. A rejected selection
- * announces through the shared transient Toast anchored to the composer
- * card; the in-menu strip with Retry remains the catalog-load surface.
+ * cell that opened it. Data and submission ride the SAME per-session
+ * ModelDirectory as the /model popup; exact-model reasoning metadata and the
+ * selected effort come from the Host rather than a client-owned vocabulary. A
+ * rejected selection announces through the shared transient Toast anchored to
+ * the composer card; the in-menu strip with Retry remains the catalog-load
+ * surface.
  */
 import {
   useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
@@ -25,8 +25,8 @@ import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import type { ModelReasoningEffort, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14,
-  IconCloseOutline16, IconDataOutline16, IconSearchOutline16, IconWarningOutline16, Toast,
+  IconCheckOutlineRegular, IconChevronDownOutlineRegular, IconChevronRightOutlineRegular,
+  IconDataOutlineRegular, IconWarningOutlineRegular, Toast,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ModelSelectInjected } from './slots.ts'
@@ -61,7 +61,6 @@ export function ModelSelect(
   )
   const [open, setOpen] = useState(false)
   const [pane, setPane] = useState<Pane>('root')
-  const [query, setQuery] = useState('')
   // The in-menu error strip serves catalog loads (its Retry re-runs the
   // load); a rejected SELECTION announces through the transient toast
   // instead, so the strip renders only while the latest failure-capable
@@ -72,7 +71,6 @@ export function ModelSelect(
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
-  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const [menuPos, setMenuPos] = useState<CSSProperties | null>(null)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
@@ -89,17 +87,6 @@ export function ModelSelect(
           : { reasoningEffort: model.reasoning.defaultEffort },
       } satisfies ModelSelection,
     }))), [state.groups])
-  const normalizedQuery = query.trim().toLocaleLowerCase()
-  const filteredGroups = useMemo(() => state.groups.flatMap((group) => {
-    const providerMatches = normalizedQuery.length === 0 || [group.id, group.name]
-      .some(value => value.toLocaleLowerCase().includes(normalizedQuery))
-    const models = providerMatches
-      ? group.models
-      : group.models.filter(model => [model.id, model.name]
-        .some(value => value.toLocaleLowerCase().includes(normalizedQuery)))
-    return models.length === 0 ? [] : [{ ...group, models }]
-  }), [normalizedQuery, state.groups])
-  const filteredChoiceCount = filteredGroups.reduce((count, group) => count + group.models.length, 0)
   const selectedIndex = state.current === null
     ? -1
     : choices.findIndex(c => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)
@@ -143,15 +130,22 @@ export function ModelSelect(
   }, [open])
 
   // A pane switch unmounts the row that had focus, which drops focus onto the
-  // page body. Every switch therefore names the next keyboard target.
+  // page body — outside the card's subtree, where its key handling no longer
+  // sees a keystroke. Every switch therefore names where the keyboard lands:
+  // drilling on the pane's current value, coming back on the cell that opened
+  // the pane left.
   const paneFocus = useRef<'drill' | 'model' | 'effort' | null>(null)
   useEffect(() => {
     const intent = paneFocus.current
     paneFocus.current = null
     if (!open || intent === null) return
     if (intent === 'drill') {
+      // The checked row is the value in use; a pane without one opens on its
+      // first row.
       const checked = menuRef.current?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]:not([disabled])')
       const target = checked ?? itemRefs.current.find(item => item !== null && !item.disabled)
+      // Rows a selection in flight disabled cannot take the keyboard; the
+      // trigger does, so the card's keys still reach the menu.
       ;(target ?? triggerRef.current)?.focus()
       return
     }
@@ -190,14 +184,14 @@ export function ModelSelect(
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }
-  }, [open, pane, query, state])
+  }, [open, pane, state])
   /* jscpd:ignore-end */
 
   if (!available) return null
 
   const show = (): void => {
+    triggerRef.current?.focus()
     setPane('root')
-    setQuery('')
     setOpen(true)
     reload()
   }
@@ -205,7 +199,6 @@ export function ModelSelect(
   const close = (restoreFocus = false): void => {
     setOpen(false)
     setPane('root')
-    setQuery('')
     if (restoreFocus) queueMicrotask(() => { triggerRef.current?.focus() })
   }
 
@@ -224,6 +217,9 @@ export function ModelSelect(
     const items = itemRefs.current.filter(item => item !== null)
     if (items.length === 0) return
     const active = items.findIndex(item => item === document.activeElement)
+    // Focus outside the rows (the trigger, which keeps it while the menu
+    // opens) enters at the end the step comes from: the first row forward,
+    // the last row backward.
     const next = active === -1
       ? (offset > 0 ? 0 : items.length - 1)
       : (active + offset + items.length) % items.length
@@ -239,6 +235,9 @@ export function ModelSelect(
       return
     }
     if (!open) return
+    // Tab settles like Enter and Shift+Tab leaves like Escape, so the menu's
+    // keys mean what they mean in the composer. Both are consumed: the card
+    // keeps the browser's focus traversal out while it is open.
     if (event.key === 'Tab') {
       if (event.shiftKey) {
         event.preventDefault()
@@ -246,6 +245,10 @@ export function ModelSelect(
         else close(true)
         return
       }
+      // Settling activates the row the keyboard is on; with focus still on the
+      // trigger, Tab enters the menu at the value in use instead. Any other
+      // control inside the card (a retry button) keeps the browser's traversal,
+      // so the keystroke stays unconsumed there.
       const focused = document.activeElement
       const rows = itemRefs.current.filter((item): item is HTMLButtonElement => item !== null)
       if (focused instanceof HTMLButtonElement && rows.includes(focused)) {
@@ -273,7 +276,7 @@ export function ModelSelect(
     close()
   }
 
-  const settleSelection = (result: Awaited<ReturnType<typeof select>>): void => {
+  const settleSelection = (result: Awaited<ReturnType<ModelSelectInjected['select']>>): void => {
     if (result === undefined) return
     if (result.ok) {
       if (rootRef.current !== null) close(true)
@@ -289,13 +292,19 @@ export function ModelSelect(
     })
   }
 
+  const submit = (selection: ModelSelection): void => {
+    lastActionRef.current = 'select'
+    // Disabled option rows cannot retain focus while a selection is pending.
+    triggerRef.current?.focus()
+    void select(selection).then(settleSelection)
+  }
+
   const choose = (selection: ModelSelection): void => {
     if (state.current?.provider === selection.provider && state.current.model === selection.model) {
       close(true)
       return
     }
-    lastActionRef.current = 'select'
-    void select(selection).then(settleSelection)
+    submit(selection)
   }
 
   const chooseEffort = (effort: string | undefined): void => {
@@ -309,8 +318,7 @@ export function ModelSelect(
       model: state.current.model,
       ...effort === undefined ? {} : { reasoningEffort: effort },
     }
-    lastActionRef.current = 'select'
-    void select(selection).then(settleSelection)
+    submit(selection)
   }
 
   const waiting = state.current === null && state.status === 'loading'
@@ -334,7 +342,16 @@ export function ModelSelect(
   }
 
   return (
-    <div ref={rootRef} className={css.root} onKeyDown={onRootKeyDown} onBlur={onBlur}>
+    <div
+      ref={rootRef}
+      className={css.root}
+      onKeyDown={onRootKeyDown}
+      onBlur={onBlur}
+      onMouseDown={(event) => {
+        // WebKit blurs a focused row before click unless the button's mousedown keeps focus.
+        if (event.target instanceof Element && event.target.closest('button') !== null) event.preventDefault()
+      }}
+    >
       <button
         ref={triggerRef}
         type="button"
@@ -347,16 +364,16 @@ export function ModelSelect(
         disabled={locked}
         onClick={() => {
           if (open) {
-            close()
+            close(true)
           } else {
             show()
           }
         }}
       >
-        <IconDataOutline16 className={css.triggerIcon} size={16} />
+        <IconDataOutlineRegular className={css.triggerIcon} size={16} />
         <span className={css.triggerLabel}>{modelLabel}</span>
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
-        <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
+        <IconChevronDownOutlineRegular className={clsx(css.chevron, open && css.chevronOpen)} />
       </button>
 
       {/* Portaled to body (Menu primitive's portal mode) so the sidebar and
@@ -377,13 +394,13 @@ export function ModelSelect(
               <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { drill('model') }}>
                 <span className={css.cellLabel}>{t('menu.model')}</span>
                 <span className={css.cellValue}>{modelLabel}</span>
-                <IconChevronRightOutline14 className={css.cellChevron} />
+                <IconChevronRightOutlineRegular className={css.cellChevron} />
               </button>
               {reasoning !== undefined && (
                 <button ref={itemRef()} type="button" role="menuitem" className={css.cell} onClick={() => { drill('effort') }}>
                   <span className={css.cellLabel}>{t('menu.effort')}</span>
                   <span className={css.cellValue}>{effortLabel}</span>
-                  <IconChevronRightOutline14 className={css.cellChevron} />
+                  <IconChevronRightOutlineRegular className={css.cellChevron} />
                 </button>
               )}
             </>
@@ -391,30 +408,6 @@ export function ModelSelect(
 
           {pane === 'model' && (
             <>
-              <div className={css.search} role="search">
-                <span className={css.searchIcon} aria-hidden="true"><IconSearchOutline16 /></span>
-                <input
-                  ref={searchInputRef}
-                  type="search"
-                  value={query}
-                  placeholder={t('search.placeholder')}
-                  aria-label={t('search.label')}
-                  onChange={(event) => { setQuery(event.currentTarget.value) }}
-                />
-                {query.length > 0 && (
-                  <button
-                    type="button"
-                    className={css.clearSearch}
-                    aria-label={t('search.clear')}
-                    onClick={() => {
-                      setQuery('')
-                      searchInputRef.current?.focus()
-                    }}
-                  >
-                    <IconCloseOutline16 />
-                  </button>
-                )}
-              </div>
               {state.status === 'loading' && (
                 <div className={css.status}>{t('status.loading')}</div>
               )}
@@ -431,7 +424,7 @@ export function ModelSelect(
                 </div>
               ))}
               <div className={clsx(css.groups, 'scrollable')}>
-                {filteredGroups.map((group) => {
+                {state.groups.map((group) => {
                   const headingId = `${id}-${group.id}`
                   return (
                     <section role="group" aria-labelledby={headingId} className={css.group} key={group.id}>
@@ -454,7 +447,7 @@ export function ModelSelect(
                               <span className={css.modelName}>{model.name}</span>
                             </span>
                             <span className={css.check}>
-                              {selected ? <IconCheckOutline16 /> : null}
+                              {selected ? <IconCheckOutlineRegular /> : null}
                             </span>
                           </button>
                         )
@@ -465,9 +458,6 @@ export function ModelSelect(
               </div>
               {state.status === 'ready' && choices.length === 0 && (
                 <div className={css.empty}>{t('empty.models')}</div>
-              )}
-              {state.status === 'ready' && choices.length > 0 && filteredChoiceCount === 0 && (
-                <div className={css.empty}>{t('empty.search')}</div>
               )}
             </>
           )}
@@ -497,7 +487,7 @@ export function ModelSelect(
                       <span className={css.modelName}>{level.label}</span>
                     </span>
                     <span className={css.check}>
-                      {effectiveEffort === level.effort ? <IconCheckOutline16 /> : null}
+                      {effectiveEffort === level.effort ? <IconCheckOutlineRegular /> : null}
                     </span>
                   </button>
                 ))}
@@ -510,7 +500,7 @@ export function ModelSelect(
         <Toast
           key={toast.seq}
           text={toast.text}
-          icon={<IconWarningOutline16 />}
+          icon={<IconWarningOutlineRegular />}
           anchor={rootRef.current?.closest<HTMLElement>('[data-composer-card]') ?? null}
           onDone={() => { setToast(null) }}
         />

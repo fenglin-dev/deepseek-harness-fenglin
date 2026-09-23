@@ -1,231 +1,425 @@
-# Open DeepSeek Harness Desktop
+# DeepSeek Harness 桌面端
 
 [English](README.md) | 中文
 
-`@deepseek-ai/dsh-desktop` 是现有 DeepSeek Harness Web GUI 的原生应用宿主。它启动一个本地 Harness 进程，等待规范的就绪输出，再用经过加固的 Electron 窗口加载该回环地址。Harness 数据仍保持普通格式，但存放在桌面端自有 home 中，不再实时共享官方 CLI 的 `~/.dsh` 目录树。
+桌面应用是完整 dsh Web 应用外的一层 Electron 壳。Electron RunAsNode 子进程启动共享 profile runner，Electron 立即从 `dsh-app://app/` 加载打包内的 Web 入口。共享加载页等待 Host 启动注入，然后在同一文档中启动客户端。Electron 将应用 HTTP 请求转发给已认证的 Web Host，转发时丢弃描述 Node fetch 连接而非资源本身的响应头（`transfer-encoding`、`connection`、`keep-alive`），并把插件 bundle 响应标记为 `no-store`，因为其每次启动都变化的 revision 只会在 Chromium 磁盘缓存中累积；WebSocket 流连接到该 Host，仅为归属的应用窗口附加凭据。Node IPC 承载启动注入、就绪与关闭。Desktop 默认使用端口 `19387`，与 Web 的 `3080` 分开；可通过 `webserver.config.port` patch 覆盖。
 
-## 运行时与会话兼容性
+应用菜单第一项“**关于 DeepSeek Harness**”打开 Electron 原生关于面板，展示应用图标、产品名称和当前安装的发布版本。菜单文案跟随桌面壳的语言。macOS 的隐藏、隐藏其他、显示全部和退出条目使用本地化文案，隐藏和退出条目包含 DeepSeek Harness 产品名称。这些条目保留原生动作和快捷键。macOS 从应用包读取图标，因此未打包的开发启动会显示 Electron 图标；Windows 使用随包分发的 PNG。
 
-本次集成使用 Harness 0.1.6-alpha.2 和外部 Node 24.21.0，Electron 固定为 44.0.0，pnpm 固定为 11.7.0。macOS 安装版要求 macOS 13.5 或更高版本；这是内置 Node 二进制的最低要求，不能只根据 Electron 推断系统兼容性。
+Desktop 的本地原生目录流程打开绑定应用窗口的 Electron 文件夹对话框，并先恢复、显示和聚焦该窗口。并发请求共用一个对话框；取消不返回路径，失败后可以重试。普通 Web 使用 Host 选择器。浏览模式列出 Host 目录。Linux 缺少 zenity 或 kdialog 时，自动选择使用浏览模式，不使用 Electron 对话框。
 
-会话历史遵循完整的 V0 → V1 → V2 → V3 迁移链。迁移保留旧代文件并写入经过校验的后继文件，但不能假设旧客户端能理解新写入的 V3 数据。插件快照不包含会话，也不能撤销会话格式升级。复用重要历史数据前，应使用数据目录的隔离副本验证升级。
+Creator 和 Web Plugin Manager 在 Electron Node 模式下使用 Desktop 内置 pnpm，无需 PATH 中存在 pnpm。私有 Node 启动器环境仅应用于包操作。
 
-只有普通 Profile 就绪才可以验证最近成功启动的插件快照。诊断进程可用不会把失败的活动 Profile 或应用标为健康；快照恢复期间进入诊断模式会触发现有启动失败回滚。只有完整的 owner 记录通过校验后，死亡进程才允许清理遗留锁；owner 元数据损坏时保持阻塞，等待人工检查。
+内嵌 Platform 文档使用独立且不持久化的 WebContentsView 会话。Host 通过私有 Node IPC 发送账号凭证；账号 RPC 和 Harness 渲染进程不接收 token。Platform preload 在页面脚本执行前通过一次同步 IPC 读取主进程中已准备的凭证。它暴露 displayMode、同步的 getAuthToken() 和 getLocale() getter，以及返回取消订阅函数的 onLocaleChange(listener)。两个 getter 都只读取 preload 内存，不再调用 IPC。bootstrap 包含 Desktop 已解析的语言（`zh_CN` 或 `en_US`）；Settings 语言变更会更新 preload 缓存并通知已打开的 Platform 文档，无需重载。Platform 在首屏渲染前应用该语言，且不将其持久化为浏览器偏好。主进程处理器仅校验调用来源并读取内存，不等待 Host、磁盘或网络。可信页面初始化失败时保留内嵌模式，由 getter 抛错，避免回退到浏览器凭证。只有受控 Platform 页面中、位于所配置签发来源的主 frame 能完成初始化。退登、凭证替换、Host 关闭及视图关闭都会销毁文档。跨来源文档导航被阻止。请求新窗口的 HTTPS 链接在系统浏览器中打开，不携带内嵌会话或 token；其他协议及带 URL 凭证的链接被拒绝。原生视图占据 Account 功能返回栏下方的视口。
 
-## 从当前仓库运行
+Desktop Host 的 Platform API 请求与更新策略请求使用相同的 `x-client-platform` 映射。账号 provider 管理[仅 API 使用的请求头配置](../../packages/credentials/deepseek-account-platform/README.zh.md#use-this-package)。
 
-使用 Node `^22.19.0 || >=24.0.0`，先构建仓库，再启动桌面应用：
+桌面麦克风访问仅允许主 `dsh-app://app` 页面发起的音频请求。macOS 使用系统麦克风授权与随包用途说明。
+
+按 F12（多媒体功能键键盘上为 Fn+F12）、macOS 的 Command+Option+I 或 Windows 的 Ctrl+Shift+I，可切换当前获得焦点的应用页面的 DevTools，打包版本同样支持。这些原生快捷键通过隐藏的应用菜单项注册。更新遮罩和打包版本的内嵌浏览器禁用 DevTools。
+
+## 关键技术决策
+
+设计师原稿位于 `resources/icon.png` 和 `resources/icon.svg`；平台适配保留鲸鱼与渐变，分别位于 `resources/icon-windows.*` 和 `resources/icon-macos.*`。将各平台 SVG 导出为透明的 1024×1024 PNG。electron-builder 为 Windows 应用、安装程序和卸载程序生成多尺寸 ICO（[Windows 图标要求](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)）。安装页面在两种主题下使用匹配的图案；卸载程序的欢迎和完成页共用 `installer/assets/uninstaller-sidebar.png`，准备阶段将其转换为 164×314 BMP。
+
+macOS PNG 使用带留白的圆角底板，供传统 ICNS 打包使用，包含最高 1024 像素的表示。它是扁平图标，并非 Icon Composer 文档。Apple 的[应用图标指南](https://developer.apple.com/design/human-interface-guidelines/app-icons)要求向 Icon Composer 提供未遮罩的图层；这些输入需要在 macOS 上单独导出，不能复用已做圆角的 ICNS 图案。发布前须在支持的 macOS 版本中验收 Finder 和 Dock 的显示效果。
+
+### 内置工作区依赖
+
+Windows 签名打包按 PE 文件内容扫描第一方运行时和应用生产依赖，包括没有常规扩展名的文件。最终扫描覆盖整个解包应用。目录链接、格式错误的 `MZ` 文件以及非 PE 的 `.exe`、`.dll` 或 `.pyd` 文件会使打包停止；以 `MZ` 开头的数据文件也会被拒绝，除非包含有效 PE 头。它保留有效的上游签名，并在记录运行时哈希或执行冒烟检查前为未签名代码补签。公钥验签每个进程处理最多 32 个文件，同时最多运行四个进程；硬件令牌签名仍串行执行，每个新签名必须匹配配置的证书且带时间戳。硬件签名或验签失败会停止本轮执行；独立的时间戳请求遵循下文的有界重试规则。electron-builder 只有在验签和逐字节比对通过后，才保留复制后运行时可执行文件的签名。写入发布完成记录前，必须通过最终 PE 签名检查，以及使用全新缓存的 ASAR 载荷和 Host 冒烟检查。开发、仅准备和未签名构建不使用硬件令牌，可能被 Windows 代码完整性策略阻止；任何构建模式都不会关闭该策略。冒烟检查通过不代表兼容所有企业策略。
+
+Desktop 携带独立的 Python、Node.js 和 pnpm 分发包。Python 包含 numpy、pandas、python-docx、python-pptx、openpyxl、Pillow、lxml、XlsxWriter 及其完整依赖。`load_workspace_dependencies` 工具首次使用时，将该产物离线安装到 `$DSH_HOME/dsh-runtimes/dsh-primary-runtime`（通常为 `~/.dsh/dsh-runtimes/dsh-primary-runtime`），并返回解释器、pnpm 脚本和库目录的绝对路径，以及记录内置分发包名称与版本的 `pythonDistributions`。版本报告不包含用户自行安装的包。Office 任务默认使用这些库，用户或工作区指令指定其他环境时遵循其要求。pnpm 脚本通过返回的 Node 可执行文件运行。返回的 Node 库目录为随包交付的库预留，不是 pnpm 的全局安装目录。
+
+Desktop 默认注册 `office-docx`、`office-pptx` 和 `office-xlsx`。这些技能使用内置 Python 库创建文件和进行定点编辑，随后重新打开文件，并在交付前运行共享结构检查器。PowerPoint 的创建和编辑使用 python-pptx。技能资源复制到 ASAR 外的 `runtime/office-skills`，让 Python 可以读取检查器。可用的 `render_document` 工具可以补充视觉检查；缺少该工具不妨碍创作或交付。检查范围与限制见 [Office 技能包](../../packages/skill/skill-office/README.zh.md)。
+
+该产物随 Desktop 版本发布。`runtime.json` 记录 Desktop 版本、目标平台、顶层解释器和包管理器版本及 Python 分发包版本表，以及所选目标的锁定产物输入与组装格式的摘要。分发包名称按 PEP 503 归一化；名称归一化后重复时，清单会被拒绝。旧 `components` 清单通过归一化继续可读，并保留其原有库版本一致性校验。匹配的安装会被复用；依赖或压缩包变化后，即使 Desktop 版本不变，也会在完整暂存副本完成后替换目录。不含摘要的旧清单会在下次安装时被替换。用户自行添加的 Python 包仅在产物身份一致时保留。目录替换失败时保留之前的安装；解释器仍在运行时，Windows 可能拒绝替换。
+
+Desktop 私有的 `runtime/bin` 目录仅添加到包安装进程，不进入 PTC 和 agent shell 从 Host 继承的 PATH。该工具不修改 PATH、环境变量或用户包管理器配置。pnpm 的全局包、命令入口和 store 保留自身默认值及用户设置，包括环境不支持全局安装时的原生错误。不提供独立依赖更新器。[第一方 Runtime 决策](../../.agents/notes/implemented/feature/2026-09-14-desktop-primary-runtime.zh.md)记录这些选择。
+
+Node 准备内置解释器和 Python 库，无需系统 Python 或 pip。[下载锁](../../scripts/primary-runtime/lock.json)固定解释器压缩包、Python 分发包版本及目标平台 wheel 的 URL 和哈希；共享构建器从根开发依赖中解析 pnpm 固定版本。测试检查根 package-manager 版本和 Desktop 固定版本保持一致。每个目标的 wheel 文件名必须与分发包版本一致。所选目标、wheel 记录及分发包映射内部的键顺序，以及 wheel 条目顺序都会影响产物身份，编辑时须保留；锁文件顶层键的顺序不影响该身份。库 wheel 解压到 site-packages，各 wheel 的 `.data/scripts` 目录保留辅助文件，不生成命令行包装器。其他安装方案会被拒绝。本机目标检查在清理暂存目录后以及 macOS 签名后验证锁定 wheel 的集合与版本，允许解释器自带的 pip，并检查 Python 版本、Office 文档读写和依赖完整性，不写入字节码。独立 Node 可执行文件获得 V8 所需的 JIT 权限。跨目标执行和签名安装需要对应的发布主机。`dev:desktop` 和 `start:desktop` 都会在启动 Electron 前准备 `.desktop-build/targets/<target>/runtime/primary-runtime`；首次准备可能需要下载锁定的依赖。准备未完成时，启动命令不能报告成功退出。
+
+| 决策 | 原因 | 直接结果 |
+|---|---|---|
+| 发布身份 | 桌面壳 API、Web 客户端、后端与插件依赖图作为一个组合完成验证；独立版本会产生未经验证的组合，并让更新可用性含糊不清。 | Electron 与 `@deepseek-ai/dsh` 始终使用同一精确版本。即使桌面壳代码不变，升级 dsh 也必须发布新 Desktop 版本。 |
+| 运行时 | 应用必须能够在没有系统 Node.js 或 pnpm 的机器上运行。 | dsh 通过设置 `ELECTRON_RUN_AS_NODE=1` 和 `--expose-internals` 的 Electron 运行，所有包操作都使用内置 pnpm。包管理器配置和 Host 环境遵循用户设置。包脚本通过 `node` shell 启动器转发给 Electron。 |
+| 包来源 | 即使离线，启动时安装核心依赖也会增加开销。 | `app.asar/dsh` 携带完整生产依赖树；profile 只安装外部插件。 |
+| 状态归属 | 共享可执行依赖图会让 CLI（命令行界面）与 Desktop 相互改变 dsh、Cordis、插件或原生模块版本，而两个桌面进程还可能争用同一个 profile。 | Electron 在访问任何 profile 前获取进程生命周期单实例锁，并独占 `$DSH_HOME/profiles/desktop` 及其包管理器状态。CLI 与 Desktop 共享 `$DSH_HOME` 下受支持的产品数据，但绝不共享可执行包、插件激活、锁文件或 `node_modules`。 |
+| 传输 | Web 服务与认证共享一套实现。 | Electron 加载打包的 Web 资源；Host 提供启动注入和经过认证的 API。 |
+| 插件变更 | Desktop 与 Web 需要一致的安装和激活行为。 | 主应用使用共享 Web 插件管理器和内置 pnpm。 |
+| 更新 | 桌面壳与 dsh 独立更新会重新产生版本分裂，而桌面壳未变化的数据块不应强制完整传输。 | Electron 壳、匹配的 dsh 运行时与 pnpm 组成一个已签名更新单元。平台更新产物可以复用未变化的数据块，但运行时版本选择绝不脱离 Desktop 发布。 |
+
+[薄壳决策](../../.agents/notes/implemented/architecture/2026-09-10-desktop-web-wrapper.zh.md)负责共享 Web 行为与 Desktop 适配。[Electron 打包与更新决策](../../.agents/notes/implemented/architecture/2026-08-25-electron-desktop-packaging-and-updates.zh.md)负责发布身份、签名及更新验收。
+
+## 安装归属
+
+Electron 拥有 `$DSH_HOME/profiles/desktop`。其 `dependencies` 包含 pnpm 安装的包；`dsh.profile.bundles` 包含内置 bundle，后接已启用插件。签名应用从 `resources/app.asar/dsh` 提供 dsh、私有 Desktop Host 及其生产依赖。打包应用选择 runtime profile 解析，不创建包链接；开发 profile 使用文件系统链接。宿主与插件在同一个 Electron Node 模式进程中执行；Desktop 不启用 `--preserve-symlinks`。CLI 不能启动或修改此 profile。
+
+应用 preload 只向 `dsh-app://app` 文档暴露启动就绪、致命启动失败上报、原生目录选择、用于 composer 路径引用的 `__DSH_HOST_PATHS__` 桥接和租约范围内的 Browser 桥接。产品页面还获得 Desktop 标记、更新展示数据和打开原生确认的操作，不能选择安装产物或授权安装。插件管理使用 Web 应用经过认证的 HTTP API；Electron 在 `dsh-app://shell/` 本地提供更新弹窗文档和资源，不依赖 Host 就绪。Electron 不提供插件管理 IPC 或独立管理页面。
+
+只有主应用窗口启用 `<webview>`。guest 挂载必须匹配主进程签发的租约和分区；guest 保持 sandbox、context isolation 和 Web security，不启用 Node integration 或 guest preload。Browser IPC 监听只为应用文档创建。[Sidebar Browser](../../packages/client/ui-sidebar-browser/README.zh.md) 说明存储分组和 guest 限制；Host 鉴权仍独立于 URL 过滤而必需。
+
+`dsh-app://shell/` 无需联系 Host 即可提供打包的更新文档、脚本和样式。静态请求保留 GET/HEAD、路径范围和 MIME 处理；每个更新文档继续使用隔离 preload 和所属窗口的 IPC 校验。
+
+产品 UI 保留 Web 操作，包括通过共享认证 HTTP 路由执行的“打开方式…”。Desktop 使用 Web 的自动目录选择机制，并以共享 Web 模板的 bundle 列表初始化新 profile。
+
+Electron 根据应用语言选择类型化的英文或中文 shell 文案，并回退到英文。macOS 应用包通过 `CFBundleLocalizations` 声明支持英语和简体中文，让 macOS 根据用户的首选语言匹配初始应用语言。主界面仍优先使用已保存的 Client UI 语言偏好。在 Windows 上，主文档的语言会更新桌面菜单、恢复与更新提示。仓库 Client UI i18n 检查覆盖桌面端源码。
+
+Windows 使用 40 DIP 顶栏，保留原生窗口按钮，颜色随应用调色板同步。侧栏开关旁的本地化“应用”和“编辑”入口打开原生弹出菜单。仅当应用框架发布 shell overlay 席位后才挂载菜单，启动加载期间不显示。“应用”提供检查更新和退出；“编辑”向当前编辑器发送对应按键，提供撤销、重做、剪切、复制、粘贴、删除和全选。插件管理使用主应用的“插件”页面。按 Alt 不会出现额外的原生菜单行。其他平台保留原生菜单。可编辑区域保留快捷键和不带快捷键标注的右键菜单；命令可用状态由 Chromium 提供，选中的只读文本提供“复制”命令。 顶栏菜单保留鼠标和键盘操作，顶栏中的 Web 控件仍可触达。共享 DOM 只约束展示，不构成安全边界：产品脚本可以隐藏蒙层，但不能借此清除主进程策略或授权安装。更新操作与状态通过隔离预加载和壳 frame 之间的私有 MessageChannel 传递。
+
+macOS 上自定义应用菜单还会声明标准的 File、Window 和应用菜单，因为替换 Electron 的默认菜单会丢掉 Close Window（⌘W）、Minimize（⌘M）和 Hide（⌘H）。Linux 保留应用菜单和 Edit 菜单。
+
+### 运行时与插件激活
+
+签名资源中的 `resources/app.asar/dsh/desktop-runtime.json` 绑定 shell 版本、Electron 的 Node 版本、平台、架构、共享包版本和最终文件清单。启动读取元数据，并检查共享包记录。发布 schema、shell 版本、目标兼容性和文件完整性在打包时验证。首次启动不会把核心包复制到 profile 存储或通过 pnpm 安装核心包。
+
+1. 主窗口在 profile 准备或后端启动前，从打包静态资源于屏幕外加载共享 Web 加载页。共享 profile 初始化创建缺失的 manifest、空用户 patch 与 pnpm workspace 文件，不覆盖现有文件。
+2. 启动 Host 前，Desktop 校验运行时描述符并准备 profile，不改动已安装的包、依赖声明与锁文件；只删除早期 Link 后端启动写下的 `.dsh-module-fallback` 投影，启动从不运行 pnpm。profile 内的包保持原生优先级，本体包名通过 runtime resolution 解析（[查找顺序](../../.agents/notes/implemented/architecture/2026-09-19-profile-resolution-lookup-order.zh.md)；[清理移除](../../.agents/notes/implemented/simplification/2026-09-19-remove-desktop-profile-core-cleanup.zh.md)）。
+3. Electron 的 Node 版本、平台或架构变化时保留已安装插件。原生兼容性问题在加载时报错，可通过 pnpm 修复。
+4. 主应用的“插件”页面通过共享[插件管理器](../../packages/boot/plugin-manager/README.zh.md)操作 Desktop profile。包操作使用内置 pnpm 及正常的用户和 profile 配置。
+5. 共享管理器负责安装错误、激活和重启要求。即使 Host 无法启动，原生恢复仍可禁用第三方 bundle。
+
+[Web 插件 UI](../../packages/client/ui-plugin-manager/README.zh.md)负责管理界面。Desktop profile 初始化和恢复保留已安装插件文件。
+
+主窗口创建、主文档加载、preload、渲染器、Web 初始化或后端的致命失败，会在每个应用进程中打开一次原生恢复对话框。对话框显示首次错误末尾的限长摘要，标明截断情况，并提供退出、重启、禁用第三方插件、备份 profile patch 并重启。启动失败保留 Web 加载页和动画；运行中失败保留当前页面。预期关闭、取消导航和普通请求错误不会触发恢复。共享 Web 插件管理器报告包操作错误；插件变更后的 Host 启动失败会进入原生恢复。不通过启动超时推断故障。 包含 `listen EADDRINUSE` 的监听失败以退出其他正在运行的 DSH 实例的提示替代诊断和重装建议，仅提供退出和重启。
+
+原生弹窗详情最多包含 1,200 个 UTF-16 代码单元和八行诊断，若已写入下述崩溃报告则附上其路径。Host 错误诊断仅保留 stderr 输出的最后 64 Ki 个字符。更早的输出会被丢弃，避免长期运行的 Host 使壳的诊断缓冲区无限增长。
+
+首个致命弹窗打开前，Electron 会向平台日志目录（`app.getPath('logs')`：macOS 为 `~/Library/Logs/DeepSeek Harness`，Windows 与 Linux 为应用 `userData` 目录下的 `logs`）写入一份崩溃报告，最多等待写入一秒；写入缓慢或失败时弹窗不带路径。文件 `crash-<UTC 时间>-<source>.log` 记录来源（`host` 为 Host 退出、`web-boot` 为渲染进程启动失败、`renderer` 为渲染进程或文档失败、`main` 为壳自身错误）、后端是否已就绪、应用与运行时版本、包含可枚举属性与 cause 链的错误（截至 256 KiB）、Host 在退出前通过 IPC 报告启动失败时自己的 inspect 错误（最多 64 KiB），以及主窗口最近的 error 级 console 输出（最多 64 KiB）。因此 Host 退出报告包含保留的 stderr 尾部，其中可能含有插件输出。关闭过程中的致命失败只写报告、不弹窗。平台支持时文件仅所有者可读；启动时保留最新十份报告并删除更早的，不触碰目录中的其他文件。
+
+恢复操作等待 Host 关闭后才修改插件启用状态。原生恢复操作在 profile 事务锁内调用共享 app-boot 恢复函数。它禁用第三方 bundle，并将 profile 的 `cordis.patch.yml` 重命名为 `cordis.patch.yml.bak-<timestamp>`（重名时追加序号），无需解析；下次启动创建空 patch。已安装包和已有备份保留。home 级 patch 不变。Electron 控制台记录备份路径（或原文件不存在）以及 home 级 patch 未修改。profile 数据无效、重命名失败或写入失败会作为恢复操作错误报告；已完成的修改保留，Desktop 不会假装恢复成功后重启。Desktop 不提供 profile 重置操作或应急 HTML 文档。
+
+
+## 开发
+
+开发环境应用菜单提供“刷新页面”（macOS 为 Cmd+R，其他平台为 Ctrl+R）和“重启应用与 Host”。重启会等待 Host 关闭，再重新启动 Electron 和新的 Host；这两项操作都不会重新构建源码。
+
+`dev:desktop` 会构建当前 Host、客户端 bundle、Web 前端和 Electron 壳，把已构建的 CLI 包、私有 Desktop Host 包及其 workspace 依赖投影为一次性桌面 npm 项目，然后直接启动 Electron；这条路径不从 npm 解析 dsh：
 
 ```sh
-node scripts/install-dependencies.mjs
-pnpm run build:community-desktop
 pnpm run dev:desktop
 ```
 
-桌面 `dev` 命令会监听宿主源码，短暂防抖后重新构建，并且只在构建成功后重启 Electron。构建失败时当前应用继续运行，监听器会在下一次编辑后重试。
+开发 Harness 状态默认写入 `apps/desktop/.desktop-build/development/home`，一次性 npm 项目位于 `apps/desktop/.desktop-build/development/project`，Electron 浏览器数据则位于 `apps/desktop/.desktop-build/development/electron-user-data`。因此，会话、设置、凭据、包链接和浏览器数据都不会进入用户正常使用的 Harness home；显式 `DSH_HOME` 只会替换开发 Harness home。Renderer DevTools 默认自动打开，Main、Renderer 和 dsh Host 调试端口依次为 9229、9222 和 9230。`DSH_DESKTOP_MAIN_INSPECT_PORT`、`DSH_DESKTOP_RENDERER_DEBUG_PORT` 与 `DSH_DESKTOP_HOST_INSPECT_PORT` 可以替换这些端口，`DSH_DESKTOP_OPEN_DEVTOOLS=0` 则保持 Renderer 调试窗口关闭。
 
-源码构建会在“通用设置”中显示“进入恢复模式”。该操作会打开真实的启动失败恢复工作区，同时保持健康 Harness 运行；点击“继续”即可返回活动客户端。页面会保留暂停的启动进度条，再原位展开四个相互独立的工具：卸载外部插件、回退插件快照、切换配置目录及导出脱敏诊断。进入任一工具后，四个并列栏目会持续显示，因此无需通过“上一步”才能换用其他修复方式。插件清单只显示 Profile 的直接依赖，并锁定安装方提供的核心 Bundle；卸载操作只接受当前清单中的包名，先停止 Harness，再执行有时限的 `dsh plugin remove`，用户可继续卸载其他插件，最后点击“继续”恢复启动。安装版不提供开发入口，但真实启动失败时会显示同一工作区。
-
-恢复插件清单会把能够唯一归因的异常插件排在健康项目之前。恢复变更若无法通过检查或激活，桌面端会先回滚候选状态并释放 Profile 租约，再报告失败。候选环境激活前也会稳定指向外部本地依赖的链接，因此同一磁盘上的相对 `link:` 来源在 `node_modules` 移到层级更浅的活动 Profile 后仍能正确解析。每次使用新 Harness 启动令牌认证前，桌面会只清理本会话中按 authority 命名的 `dsh-auth-*` Cookie，避免随机回环端口长期累积并撑大 Cookie 请求头。本机主页返回 HTTP 错误时会进入有明确分类的恢复界面，而不是留下空白窗口；点击“继续”会重新执行认证交换，不删除会话或插件。
-
-应用提供与 `dsh web` 相同的引导和设置界面。用户无需维护第二份配置，即可配置 DeepSeek 或其他兼容 API Provider、选择模型、查看已安装插件、编辑受支持的插件设置、调用 Skill、选择工作区并管理会话。
-
-普通启动采用上游的必需/可选插件分类。可选插件失败时，客户端会列出包名和激活阶段，并在核心功能可用时继续进入界面；核心服务、根配置、未结事务或 Profile 锁失败仍进入诊断模式，不会显示为健康启动。桌面自有候选操作还会严格验证目标插件：指定版本、Bundle 注册和激活任一失败，受管依赖文件与 seed marker 都恢复到操作前状态；无关可选插件失败不会回滚已成功激活的目标。
-
-“模型”页面展示 DeepSeek 官方会话事件上报设置；官方端点默认开启，用户可立即关闭。说明会明确列出请求可能包含会话消息、工具事件与结果以及工作目录路径；自定义提供方不会收到该扩展。新建桌面 Profile 默认使用官方终端，并通过 Better Sidebar 的公开设置关闭重复终端入口；导入或复用 Profile 保留用户已有选择。已归档会话继续使用社区版分组、搜索、Workspace 筛选、单项及批量恢复页面，底层采用上游 Workspace 恢复操作。
-
-在 macOS 和 Windows 安装版中，通用设置、文件菜单和托盘菜单都可以在系统浏览器中打开当前 Harness 启动代次。主进程校验并保留带认证的回环 URL，不向渲染层暴露该地址；浏览器接受启动令牌后会重定向到干净 URL，并继续使用同一 Profile 和进程。该页面可通过“设置”旁的“返回客户端”唤醒同一个 Electron 客户端。用户可保存“每次 Harness 成功启动后打开一个浏览器页面”的偏好。交接成功且托盘可用时，桌面窗口会隐藏；交接失败时，窗口保持或恢复显示。完整退出 Desktop 会停止共用 Harness，并断开浏览器页面。
-
-<a id="plugin-changes"></a>
-## 插件变更
-
-受管插件操作为候选依赖复制提供最多五分钟，并记录耗时。准备失败后，该次操作不会为了其他预设重复相同复制。清理要求本次事务身份精确匹配且工作进程已确认退出；归属不明的恢复状态保留供诊断。这限制了重复尝试，不移除预设，也不降低首次启动的完整性要求。
-
-桌面自有插件操作会显式准备同磁盘候选目录，期间当前 Web Profile 持续运行。CLI 验证通过后，桌面停止 Harness、激活候选状态，并保留旧依赖目录，直到普通 Profile 的两项就绪信号都到达。启动失败会恢复旧受管文件和依赖；激活中断会在启动检查前恢复。构建授权及其后续重试属于同一个候选事务。会话、凭据、用户 Patch 和插件业务数据不参与回退。候选准备保留本地来源声明；无法安全暂存的相对路径或 workspace 来源会明确失败，不修改活动 Profile。
-
-插件市场命令使用带 Profile 写锁和自动快照的普通 CLI 修改，不继承桌面候选事务授权。命令成功时活动 Profile 已完成变更，市场随后检查结果并提供热加载或重启操作。这条路径不保留完整候选依赖目录，不能在启动失败时自动回滚整套依赖。异常退出后，桌面每秒检查外部写入者，最多等待十五分钟，并恢复遗留事务；所有权不明或恢复失败会进入诊断。桌面主动激活不等待自身租约。官方市场重启入口保持不变。桌面为每轮受管 Web 启动添加标记；CLI 阻止继承该标记的同目录、同 Web Profile 替代进程重复启动，由 Supervisor 单独启动下一轮。此启动标记不授予插件变更权限；独立 CLI、其他目录和 Profile 保持原有行为。
-
-修改锁同时记录控制进程和实际执行 pnpm 的 Node 工作进程。任一进程仍存活时都不会回收锁；释放时仍须匹配当前 owner token。
-
-pnpm 生成的本地来源定位随激活重新计算相对位置；manifest 原始 spec 和锁定的完整性值保持不变。被替换的成功启动快照转为受既有保留数量限制的自动回退点，因此去重复用的变更前快照不会随下一次成功启动而消失。
-
-插件激活后，Harness 冷启动最多有 180 秒发布服务端 URL，随后最多有 60 秒等待客户端和事件分发就绪。超时回滚会在日志中指出失败阶段。首次预设准备中断或失败时仍可恢复，也不会被标记为完成；准备完成不代表激活成功。
-
-新建桌面托管 Profile 必须准备全部启动预设插件后才打开客户端。各平台原生构建提供带校验清单的可迁移 Profile 模板。归档哈希、条目路径与链接安全检查及解压共用一次流式读取；加载页与持久日志会标明这项首次启动操作并记录耗时。匹配的模板复制到同磁盘的一个候选目录，适配路径、执行只读 Doctor 后统一激活，不运行 pnpm 安装。存在明确构建拒绝或模板不适配时，改用一次有界的本地归档批量安装；模板损坏则停止准备。持久化待完成标记跨中断保留。确认旧所有者已退出后，相同模板的准备任务可以复用已校验的完整文件，激活前重新验证。只有正常就绪且事务提交后才清除标记。已有及复用 Profile 保留用户主动更新、卸载和版本选择；同一桌面版本的后续启动不会再次预装插件。模板不与应用资源共享可写文件，不包含 pnpm store、凭据或会话。
-
-<a id="application-menus"></a>
-## 应用菜单
-
-恢复预览、快速重启和完整退出会拒绝活动或无法读取的 Profile 修改锁，也覆盖桌面自身任务队列之外发起的插件市场操作。请在操作结束后重试；保护检查不会删除锁。仍存活的孤立安装进程需要先诊断进程，再进行恢复，不能强行删除锁。
-
-应用菜单提供新对话、设置、插件管理与恢复、诊断、快照、外部工具、手机访问、IM 机器人、数据目录切换、更新、日志和项目帮助。“新对话”复用现有工作区流程，不发送消息。已加载的客户端与 Runtime 重连时，顶栏“设置”会像页面内设置入口一样保持可用；只有客户端尚未注册菜单处理器或正在执行受保护变更时才禁用。插件页面缺失时给出说明，不会自动安装插件。“检查更新”打开通用设置，不退出应用或安装更新。
-
-macOS 使用名为 Open DeepSeek Harness Desktop 的系统原生菜单。Windows 与 Linux 在独立的 36 px 标题栏中显示横向菜单、应用图标、可拖动标题和窗口按钮。窄窗口会把菜单收进“更多”。原生弹出菜单可以超出顶栏高度，但不在 Harness 内部覆盖插件。编辑操作保留原始文本目标；缩放只影响 Harness。菜单文案跟随客户端语言，缺失语言回退为英文。开发者工具只在源码运行时提供。
-
-“快速重启”和“完整退出”需要等待进行中的插件修改及恢复完成。普通关闭保留用户的隐藏或退出偏好。托盘创建失败时，后台启动会显示窗口，“隐藏到托盘”会提供取消或完整退出，避免窗口无法访问。Linux 不会从托盘对象创建成功推断图标实际可见，设置中会说明其对桌面环境的依赖。Linux 更新操作保留现有 Release 页面回退，不宣称支持安装 DEB/RPM。
-
-macOS 开发启动器会在 `.artifacts/desktop-dev/` 中按版本创建 ad-hoc 签名的 Open DeepSeek Harness Desktop.app，其 Bundle 显示名和运行时进程标题使用统一产品名，内部启动文件则保留为 `Electron`，让 Electron 继续将它识别为源码开发版。共享 Electron 安装、Bundle 标识、Helper 布局、数据位置和已保存的自定义图标均不改变。macOS 安装版从同一 `productName` 生成应用、主进程与 Helper 名称；Windows 从它生成可执行文件和全新安装目录；Linux 使用对应的 `open-deepseek-harness-desktop` 可执行文件名。为保证升级兼容，应用标识、数据目录、软件包身份和 Release 资产名保持不变。实现与平台验证限制记录在[应用菜单决策](../../.agents/notes/implemented/feature/2026-09-03-desktop-application-menus.zh.md)中。
-
-## 独立数据目录与复制
-
-安装版使用平台应用数据根下的 `open-deepseek-harness-desktop/dsh-home`，源码开发版使用其中的 `development/dsh-home`。两者的 Electron 偏好、浏览器会话数据、日志、解压运行时和 Harness 状态彼此独立，也不再与官方 CLI 共用。自动化和高级启动显式设置的 `DSH_HOME` 仍具有最高优先级。
-
-Windows 辅助卸载向导默认保留本地配置和数据。用户可以主动勾选，并在二次确认后永久删除安装版应用的数据，其中包括对话历史、模型与凭据设置、插件、插件快照、日志、缓存和桌面偏好。删除可以释放磁盘空间，也可能清除由损坏本地状态引起的错误，但无法撤销。清理会排除源码运行使用的 `development` 子目录，也不会跟随或删除由用户直接复用的官方 `.dsh` 或其他外部自选目录。静默卸载和原地升级始终保留数据。macOS 删除应用和 Linux 软件包卸载没有这种交互式选择，仍会保留本地数据，除非用户另行删除。
-
-首次准备配置前，可选择官方 DeepSeek Harness 配置、已有 Open DeepSeek Harness Desktop 配置或全新开始。选择页同时报告官方与社区配置的检测结果，并为两个来源分别提供目录选择按钮；开发版自动把安装版目录作为社区来源检查，安装版则检查开发目录。官方 DeepSeek Harness 来源一律导入新的独立环境。社区桌面版来源在 Harness home 包含本发行版的 `.open-deepseek-harness-desktop.json` 身份文件，或桌面根目录包含指向该 home 的有效旧版 `data-home-setup.json` 记录时，可以直接使用或复制到独立环境。仅含可识别 DSH 数据、但两种记录都不存在的旧目录，会由原生确认框询问用户是否确实来自旧版 Open DeepSeek Harness Desktop；确认后由主进程签发短期不透明来源标识，并在最终提交时再次检查同一条件。损坏的设置记录、损坏的身份文件及其他发行版的身份 schema 仍是权威失败，不能借此兼容路径绕过。直接使用会在最终确认后才原子写入身份文件；复制不会修改来源，只会标记新目标。两类来源分别记住所选目录。导入、复制与全新开始另有目标目录步骤，可使用桌面默认位置或既有空文件夹；直接使用社区配置则就地读写界面展示的来源目录，不创建副本。自定义目标由 Electron 生成短期不透明选择标识，并在最终确认后再次检查来源身份和空目标目录，渲染层不能提交任意路径或伪造来源类别。选择页使用统一桌面语言目录（`zh`、`en`、`ja`、`ko`、`es`、`fr`、`de`、`pt-BR` 与 `ru`）；尚未翻译的功能文案按 key 回退到英文。Profile 尚不可用时，Electron 优先使用最近一次由已就绪 Profile 报告、并原子保存在自身 user-data 中的语言，再回退到操作系统语言。官方导入流程通过拒绝符号链接的白名单处理设置、凭据、会话、工作区元数据、Agent 预设、Skill 与连接状态，且不修改来源；Profile、`node_modules`、锁文件、预装插件 marker、隔离与健康状态、匿名用户 id 均不会复制。应用会另行把 Web Profile 依赖与 bundle 的有序交集记录到 `imported-plugin-restore.v1.json`，并且只提取布尔型 `allowBuilds` 条目。进入客户端后，一次性弹窗与“插件”页面允许用户选择可迁移的 registry、npm alias 和不含凭据的 Git 插件，并通过现有 CLI 串行重新安装；本地来源与带凭据来源会显示原因但不能执行。桌面预置插件先完成核对，同名恢复项显示为客户端已提供。精确构建许可复制到独立 Profile，`false` 优先，任何全局安全降级均被忽略。由于不复制来源锁文件，声明版本范围可能解析到更新的兼容版本。官方 DeepSeek Harness 来源的兼容导入会从新副本中删除 `ui-onboarding` 完成记录，使桌面环境显示自己的设置向导；社区桌面版来源与其余受支持设置则原样保留。直接使用社区配置时，客户端沿用所选目录的 Profile、插件、`allowBuilds` 与向导状态，不做合并、迁移或权限改写。每条插件生命周期命令都会收到选定的 `DSH_HOME`。
-
-社区复制现在采用与官方导入相同的可迁移边界，同时保留社区配置已经完成的 onboarding 状态。它会复制受支持的设置、凭据、会话、工作区元数据、预设、Skill、连接状态与插件业务存储，但不复制 Profile、`node_modules`、pnpm store、锁文件、预置标记和已安装插件代码。来源 Profile 只用于生成有序插件恢复清单和精确布尔型 `allowBuilds` 规则。首次准备会优先从安装包内经过校验的归档安装相同预设，其余可迁移的 registry、npm alias 和不含凭据的 Git 插件由现有导入插件流程提供下载恢复；本地来源与带凭据来源仍会列出不支持原因。应用用带版本的设置标记区分这种可迁移流程；旧版本已经复制完成、且没有该标记的目录继续保留完整 Profile，不会被本次变更重建。
-
-完成首次设置后，“通用设置”和原生应用菜单中的对应入口会重新打开同一套经过验证的选择页，不再维护第二套切换弹窗。仅从运行中进入时，左下角会显示本地化的“回到主页面”；关闭窗口、按 Escape 或点击该按钮都会回到内容不变的主窗口。用户可以把另一套配置导入或复制到独立环境、直接使用经识别的社区桌面版 home，或全新开始。Electron 会在原子记录设置并完整重启应用前再次校验最终来源与目标。Harness 正在使用的活动 home 不能在运行中作为复制来源。当前 home、包含当前 home 的目录以及当前 home 内部的目录也都不能作为复制或全新目标；应用自有默认目标不可用时会直接隐藏，不让用户选中后才失败。重复打开请求只会聚焦已有选择页。切换不会移动、覆盖或删除原 home；启动环境显式提供 `DSH_HOME` 时此控件会禁用，因为启动环境仍拥有最高优先级。
-
-诊断页的“插件快照”会在插件安装、更新、卸载、构建授权、隔离和修复前自动保存 Web Profile 的依赖声明、精确锁文件、有序 Bundle、`allowBuilds`、隔离状态、预置 seed 状态与导入恢复状态。它不复制 `node_modules`，也不保存或回退会话、凭据、`settings.yaml`、用户 Patch、插件业务数据、主题或背景。写入自动快照载荷前，桌面版会先比较受管文件指纹；若已有内容相同且载荷健康的回退点，就直接复用而不保存重复副本。客户端与事件分发均成功就绪且应用稳定运行三十秒后，当前状态才会成为唯一的“最近成功启动”点；内容相同时只更新验证时间。另保留最近十个不同的自动状态，手动命名快照只由用户删除。卡片常态只展示最近三个回退点，其余内容可通过展开/收起按钮查看。恢复会先创建不可淘汰的安全点，优先通过内置 pnpm 离线冻结重建并运行只读 Doctor；缓存不足时先撤销操作，再由用户明确确认联网重试。恢复后的客户端无法就绪时会自动回到安全点。Harness 完全无法进入主界面时，独立启动失败页也能直接列出和恢复这些快照。
-
-打包版本在 `bundled-plugins/manifest.json` 中携带九个固定版本、经过完整性校验的启动预设归档，以及六个仅供诊断使用的资源。启动集合包含用于展示 Token 用量、Provider 账户、会话费用估算、预算与导出的 `@ychris12138/dsh-usage-stats`、提供平滑流式渲染与滚动的 `dsh-smooth-stream`、离线渲染 Mermaid 图表的 `dsh-mermaid`，以及显示余额和用量挂件的 `dsh-whale-widget`。本地打包开始前，pnpm 会通过 registry 启动条目的 `latest` 稳定 dist-tag 解析版本，从 npm 官方 registry 下载 tarball，核对 registry 提供的 SHA-512，并原子替换整套快照；固定 Git 与诊断条目继续保留经过审核的归档。GitHub 打包只解析一次快照，并让所有平台复用同一组文件。全新安装会在 Harness 启动前预装包括 Better Sidebar 在内的九个插件；应用覆盖升级后，已有 Profile 的首次启动会尝试一次受管预设核对。此时会把安装包内的本地归档交给 pnpm，不从 registry 解析或下载该插件包；普通传递依赖仍由 Profile 的 pnpm store 与解析规则管理。全新安装的首次准备成功提交后记录桌面版本；已有 Profile 在覆盖升级尝试前记录版本。同版本后续启动不再自动解压、重装或升级预设插件。构建授权的期限为十五秒，单个归档安装为十分钟。首次强制准备会部署模板或一次批量安装全部预设。已有 Profile 的显式插件变更仍会先创建隐藏安全点；失败时恢复受管文件并离线冻结安装，不写虚假的成功 marker。回滚失败会停止后续 Profile 变更并进入隔离的诊断模式；正常 Profile 仍保持启动失败。只有诊断演练中心可以安装 `dsh-font`、`@dsh-diagnostic-lab/scoped-loader-mismatch`、`@dsh-diagnostic-lab/loader-dependency-unavailable`、`@dsh-diagnostic-lab/loader-export-unavailable` 、`@dsh-diagnostic-lab/legacy-session-api` 和 `@dsh-diagnostic-lab/immutable-agent-input-mutation`；依赖类样本分别验证“聚合 Loader 可以解析、但内部 Host 导入缺失”和“依赖已安装、但插件要求的命名导出不存在”时仍能正确归属并隔离，无副作用 Session 样本则验证风险提示不会触发自动隔离。配套的损坏设置场景无需另一个插件归档，会验证真实诊断模式入口和设置的精确恢复。所有平台安装包都不携带 Codex 和 Claude Code：用户在“外部工具”中点击安装后，客户端才从 npm 下载经过审核的兼容版本与平台依赖，因此这一步需要联网。打包前门禁会逐项确认两个精确 Provider 版本、原生运行时坐标、所有已声明的平台包，以及经过审核的 SHA-512 都真实存在于 npm 官方 registry。另一份兼容清单通过 GitHub Actions OIDC 和 Sigstore 签名发布；已发布客户端只有在仓库、工作流、分支、in-toto 主体摘要、完整桌面版本、有效期、schema 与安装包内置精确坐标全部匹配时才会采用。经过验证的缓存可供之后离线使用；网络、签名、有效期、身份、解析、版本或坐标任一不匹配时，客户端只回退到安装包内置的精确已知可用版本。两条路径都不会跟随可变 dist-tag，也不会根据桌面版本拼接 Provider 版本。开发版使用仓库固定的 pnpm，安装版使用内置 pnpm，两者都不依赖系统 pnpm。持久种子标记在用户卸载后继续保留，因此启动不会擅自装回插件，而用户明确点击发现页或导入插件恢复操作时仍可重新安装。更新版本安装包在已有 Profile 的首次启动时执行一次受管预设核对，并记录该版本；即便有插件失败，同版本再次启动也不会重复缓慢或失败的流程。用户可在插件管理中明确安装或更新预设，失败由诊断报告。沿用旧版复制流程的社区 Profile 保留原有插件，仅记录版本，不自动替换。用户管理和自定义来源、相同或更高的已解析版本、快照版本保持与卸载墓碑都会保留，系统也不会降级插件。桌面端继续保留精确白名单的延后安装任务和进度能力，供明确的恢复流程复用，但 Better Sidebar 不再自动触发进入后的延后任务。打包不会复制开发电脑 Web profile 中已经安装或更新过的插件。
-
-每次外部工具安装请求都会读取以应用完整桌面版本命名的不可变清单；同时发起的请求共享进行中的查询。后续请求可以从此前的网络失败中恢复，但不能采用为其他桌面构建发布的 Provider 坐标，也不能采用本构建后来发生变化的修订版。发布门禁要求记录的源码审核基线及运行时版本与工作区一致，因此任一坐标变化都需要新的桌面版本和新清单。桌面端从 `https://flaqai.github.io/open-deepseek-harness-desktop/metadata/external-tools/v2/` 获取带版本文件和共用的多主体证明。仅允许 master 的发布工作流会保留所有带版本的源清单，拒绝用不同内容覆盖同一公开 URL 上已经存在的文档，签名完整保留集合，并且只通过 GitHub Pages 部署这些文档，不具备 Release 写入权限。发布要求仓库的 Pages 来源设为 GitHub Actions，且 `github-pages` 环境允许 master 部署。本仓库的 Pages 专用于元数据；文档部署在这里被排除，避免覆盖元数据站点。使用旧滚动地址编译的客户端在该地址不可用后会回退到自身内置的精确坐标；此工作流既不删除，也不重建 GitHub Release。
-
-每个原生安装包都内置一份根据 `primary-runtime-lock.json` 构建的目标平台 Python 3.12 归档，其中包含 NumPy、pandas、Pillow、lxml、python-docx、python-pptx、openpyxl、XlsxWriter 及锁定的传递依赖。打包流程会先使用原生解释器验证依赖，再把归档及其目标元数据加入 Electron 资源。已发布客户端只接受匹配原生目标、预期文件名、大小上限、SHA-256 和载荷摘要的归档；安装包缺少归档时视为安装损坏，不会回退到联网下载 Python。
-
-`OptionalRuntimeManager` 统一拥有有界输出、归档策略、原子解压、共享的 `userData/optional-runtimes` 缓存，以及按规范化 `DSH_HOME` 保存的独立引用。渲染层 IPC 只能提交 `office` 或 `ptc`，不能提交 URL、路径或包坐标。托管 Python 从安装资源复制；Office 仍按需下载官方 `@deepseek-ai/libreoffice-kit-*` npm 归档，并校验压缩包大小、npm SHA-512 integrity、包名和版本。启用操作通过现有启动 Profile 事务写入受管块；只有普通客户端与事件分发都正常就绪并提交事务后，状态才会从等待重启变为已启用。Office 加载 `@deepseek-ai/dsh-host-workspace-runtime`，由它发布 `load_workspace_dependencies` 和内置 Office Skill，并显式指向经过校验的载荷以及安装包 Node/pnpm。PTC 使用独立受管块，Windows 不支持。实验性 PTC 适配包不在默认 CLI 依赖中；用户手动启用后，Desktop 会在重启事务中通过 npm 把同一发行版本的适配包安装到该 Profile。首次启用需要联网；安装失败时保留先前的 Profile。停用一项不会影响另一项。NAS 模式中的两张卡片仅展示不可用状态。
-
-自定义 CPython 的探测和 pip 命令会显式使用 UTF-8 模式，Windows 也一样。启动变更遇到缺少单侧应用受管标记的 Office 块时，仅在对应受管条目唯一的情况下重建；条目含糊时保持原文件不变，并要求手动恢复。
-
-桌面端只为官方 Codex Provider 解析系统代理，显式代理设置优先。插件下载保留 pnpm 与 Git 自身配置，不继承面向 ChatGPT 的专用路由。网络失败会附带有长度边界的分类与耗时提示；不会仅凭环境变量推断实际路由。详见[代理作用范围与验证限制](../../.agents/notes/implemented/bug-fix/2026-09-03-desktop-codex-proxy-scope.zh.md)。
-
-开发与打包脚本会从 Desktop 和 Web 各自的应用目录执行。每个 Unix 打包命令都会把明确的平台与架构同时传给运行时和 Codex 准备步骤，使 macOS Apple 芯片、macOS Intel、Linux x64 与 Windows x64 的 staging 相互独立。
-
-<a id="custom-application-icons"></a>
-schema 4 seed 状态会分别记录已经评估的安装包预设版本，以及从实体安装包读取的实际版本。只有这些字段与 Profile 声明及实体包一致时，启动才会跳过包管理。首批经过核验的 registry 迁移清单覆盖 `@xmanrui/dsh-im@3.0.6`、`dsh-better-sidebar@0.16.1`、`dsh-pocket@1.14.5` 与 `dsh-skill-picker@0.2.0`；只有这些精确历史版本会被自动接管和升级。
-
-## 自定义应用图标
-
-输出预览包含透明留白与平滑圆角。自定义 macOS 应用图标的主体位于 512 像素画布中央的 412 × 412 区域；Windows 应用图标与自定义托盘图标使用 480 × 480 区域，保持小图标可读性。保存的裁剪图不含这些样式，启动时按固定规则生成，因此不会反复缩小。内置图标保留原有图形。macOS 开发版与安装版在启动、设置预览和恢复默认时共用默认 Dock 图片，通过减少透明边距做小幅视觉放大；调整始终从内置原图生成，不会累积。
-
-“通用设置 → 应用图标”接受不超过 10 MB、1600 万像素的本地 PNG 或 JPEG；Windows 还接受内部包含 PNG 压缩帧的现代 ICO，并根据帧内 PNG 的真实尺寸选择最大帧，而不是依赖 ICO 目录中只有一个字节的尺寸字段。仅含旧式 BMP/DIB 帧的 ICO 会明确提示转换，不会静默使用低分辨率帧。拖动图片或使用方向键定位方形裁剪区域，调整缩放，检查大图及深浅背景下的 16/32 像素预览，然后确认。取消与 Escape 会丢弃本次选择。裁剪区域小于 512 × 512 时显示清晰度提示。托盘图片默认跟随应用图标；关闭跟随后可单独选择图片。“恢复默认”会移除对应覆盖设置。Linux 与普通 Web 客户端不显示这些控件。
-
-Electron 会规范化 JPEG 方向，只在 `userData/icons` 保存 512 像素 PNG、派生 ICO 帧及原子选择记录，不保留原图路径或元数据。Windows 输出包含 16、20、24、32、40、48、64、96、128 和 256 像素的精确 PNG 帧，运行窗口也直接使用该 ICO 路径，避免常见 Shell DPI 比例反复缩放单张 512 像素位图。这些文件属于当前桌面构建，不属于 `DSH_HOME`，因此切换数据目录和恢复插件快照不会切换图标。启动会在创建窗口与托盘前加载已保存图片。文件缺失或损坏时回退到内置图片，并显示修复提示，不阻断启动。
-
-macOS 只更新运行中的 Dock 和菜单栏，不修改应用包、Finder、签名或退出后的图标。自定义菜单栏图片保留原色，内置回退图标沿用现有模板图。Windows 请求更新窗口/任务栏与托盘，同时保留 AppUserModelID。快捷方式适配器只检查当前用户桌面顶层的链接，但会递归检查开始菜单分组；桌面中的无关项目目录不会进入扫描。它只更新指向本安装实例、且仍使用内置或受管图标的链接，保留启动参数和用户另行设置的图标，并把扫描数量受限与权限失败分别报告。除非用户点击“创建本用户桌面快捷方式”，否则不会创建缺失链接。每个位置独立报告结果。固定的任务栏入口可能需要取消固定后重新固定；应用不会重启 Explorer 或清理系统缓存。Windows Shell 行为及安装版升级行为需要原生发布验收，适配器测试不能代替这些检查。
-
-macOS 默认菜单栏图标使用[确认版骑鲸模板](../../.agents/notes/implemented/bug-fix/2026-08-20-macos-tray-template-icon.zh.md)，保留空心嘴部与向外的下颌圆弧。白色加透明通道的图形按比例缩放为横向图片，由 macOS 根据菜单栏调整显示颜色。图形独立于 Dock 图标。
-
-## 可选终端命令
-
-Windows 与 macOS 安装版可以注册由桌面客户端管理的 `dsh` 命令，但不会把应用私有的 npm 或 pnpm 暴露到系统环境。Windows 安装向导提供默认不勾选的当前用户 PATH 选项，“通用设置”也提供安装、检查修复和移除；静默安装只有显式传入 `/ADDCLI=1` 才会启用。macOS 由“通用设置”在 `.zprofile` 或 `.bash_profile` 中维护带固定标记的精确区块，首次修改前保留一次备份；无法识别的 Shell 只显示手动说明，不自动修改配置。
-
-启动器始终使用应用内置的 Node、Harness 和 pnpm 路径，并在每次调用时读取 `data-home-setup.json`：导入与全新模式跟随首次设置时确认的独立 home（包括可选的自定义空文件夹目标），复用模式跟随用户选择的社区桌面版 home。已有记录中直接复用官方 home 的旧设置仍可读取，但首次启动选择页不会再创建这种设置。首次目录选择尚未完成、设置文件损坏或内置运行时不完整时，命令会明确失败并提示打开客户端修复，不会静默创建另一套环境。发现其他来源的 `dsh` 时会先显示冲突，只有用户明确确认后才让客户端入口优先。卸载仅删除本应用写入的精确 PATH 条目或 Shell 标记区块。
-
-## 桌面发行包
-
-在架构匹配的 Mac 上使用下列命令构建 ad-hoc 签名、未公证的 macOS 软件包：
-
-macOS 保持自动生成的 `CFBundleName` 与 `productName` 和所有 Helper 可执行文件名称一致，显示品牌使用 `CFBundleDisplayName`。上传前，打包工作流对最终 DMG 和 ZIP 都运行[原生安装包检查](scripts/smoke-macos-package.mjs)。专用 `--dsh-native-smoke` 入口等待 Electron 就绪后退出，不加载桌面宿主；该检查不代表 Harness 或界面已就绪。
+显式构建完成后，`start:desktop` 会重新生成一次性项目，并跳过构建直接启动已有产物：
 
 ```sh
-npm run package:desktop:macos:arm64
-npm run package:desktop:macos:x64
+pnpm run start:desktop
 ```
 
-产物写入 `.artifacts/desktop-macos/`。原生安装包携带展开后的 Harness 生产依赖、Node 24.21.0、pnpm 11.7.0、目标平台 Python 归档、小型工作运行时适配模块、内置 Office Skill 资源，以及独立的预构建 Profile 模板；不携带 LibreOffice 引擎。打包在生成 Harness 闭包后删除全部 `@deepseek-ai/libreoffice-kit-*` 引擎，残留任一引擎都会使校验失败；Office 引擎保持为官方 npm 归档，不会重新打包为 Desktop Release 资产。复制 `.app` 时一并安装核心资源。Linux deb/rpm 使用相同的展开 Harness 布局，Windows 保留 NSIS 资源部署。安装程序不执行用户插件脚本，也不选择配置目录。准备阶段验证固定 Node 与 Python 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
+Web 侧的对应命令是 `pnpm run dev:web` 与 `pnpm run start:web`，见[开发指南](../../docs/development.zh.md)。Workspace 开发使用 Electron RunAsNode 运行当前 CLI 与私有 Desktop Host 包，插件管理和恢复使用 `$DSH_HOME/profiles/desktop`，与一次性工作区运行时分离。Host 在开发与打包构建中都使用 runtime 模块解析，不创建官方包的 fallback 链接；开发者安装的包（包括链接）保留原生优先级。需要验证 Electron RunAsNode、内置 pnpm、内置 dsh 资源、插件安装和修复时，应运行未封装安装器的应用目录。
 
-在 Windows 上使用下列命令构建未签名的 Windows x64 NSIS 安装程序：
+
+### 启动引导
+
+重复启动和 `dsh://open` 会保持工作区隐藏，直到启动凭据检查或欢迎页操作允许进入。从 Welcome 进入时，键盘焦点落在文档上，不选中侧边栏控件；Tab 导航仍可使用。
+
+Desktop 在 Host 启动后、打开工作区前检查模型 API Key 引用是否已配置。没有已配置的密钥时，欢迎窗口提供 [API Key 页面](https://www.figma.com/design/jRBBK7zBgcszdVWQ0Fh5J8/Harness?node-id=2138-44626)。“保存并继续”通过现有凭证服务写入 DeepSeek 官方提供方配置的引用，然后打开工作区。“稍后配置”打开工作区，但不保存草稿或完成标记；下次进程启动时会重新检查凭证。“返回登录”回到入口并清空未保存的密钥和校验提示。保存或打开工作区期间，按钮保持原文案并禁用竞争操作。Desktop preload 标记使 Web 凭证弹窗不再显示，同时保留模型设置页和欢迎须知。
+
+欢迎窗口在显示前读取共享的 `locale.preference`。用户明确选择的英文或中文优先；否则 Desktop 按系统语言顺序匹配支持的语言，并以英文兜底。主界面在挂载前通过隔离 preload 读取同一偏好和系统语言顺序。在设置中切换语言会更新桌面壳的当前词典和菜单；自动选择不会写入偏好。欢迎窗口不提供语言切换入口。
+
+等待浏览器登录时，欢迎页提供当前待授权请求的链接复制入口、加载指示和取消操作；剪贴板写入失败后可以重试复制，复制结果提示在两秒后恢复；已复制状态下链接禁用，恢复后可再次点击。Welcome 文字使用 Montserrat Light 并回退到系统字体，底部大按钮保留系统字体，文字按钮使用 Montserrat Light。英文欢迎正文及产品名均为 24px，中文欢迎正文为 24px、产品名为 26px。登录操作按钮宽 240px，文字为 14px。授权状态标题使用 20px Montserrat Regular 字重。API Key 页的标题为 20px，返回操作为 14px，次级按钮底边距窗口底部 84px。
+
+### 欢迎窗口外观
+
+欢迎窗口使用设计稿的 Platform light/dark 颜色跟随系统外观，展示 600 × 700 的[入口布局](https://www.figma.com/design/jRBBK7zBgcszdVWQ0Fh5J8/Harness?node-id=2121-39334)和 API Key 表单，包含原生窗口控件、可拖动标题区域、本地品牌 SVG、系统无衬线字体回退，以及非按钮文字使用的本地 Montserrat Light 字体。窗口使用 macOS menu vibrancy 或 Windows acrylic，叠加 onboarding 的窗口背景色：浅色模式为 40% 白色，深色模式为 50% rgb(24 25 28)。本地 React 欢迎入口将 React、公共 `StateDot` 加载指示器及其 CSS 一起打包；它通过隔离 preload 工作，不加载主 Web 应用。入口、登录状态和 API Key 页面共用固定的底部操作行；“返回登录”链接位于操作行下方。按钮共用平台的过渡时序，开启“减少动态效果”会禁用过渡。操作系统控制模糊强度和外部圆角。macOS 的“降低透明度”会抑制半透明效果，“增强对比度”会强制开启该设置。“保存并继续”写入开发环境的凭证存储；“稍后配置”打开真实工作区，不保存密钥或完成标记。生成的开发项目同时链接已声明的 workspace 依赖闭包和 pnpm 提升的包，因此未提升的配置插件仍能解析。[窗口记录](../../.agents/notes/implemented/architecture/2026-09-08-desktop-welcome-window-material.zh.md)负责材质与引导决策。
+
+## 打包
+
+<a id="release-versions"></a>
+
+### 发布版本
+
+每次 Desktop 打包前，第一步都要与当前用户确认完整版本号。检查所选部署环境、dsh 基础版本、保留的发布记录和已发布对象，再提出准确版本供用户确认。用户确认前不得启动打包；仅选择部署环境不代表用户已认可版本号。
+
+记录当前 dsh 版本作为基础版本。production Desktop 使用完全相同的版本，包括其中的 `alpha`、`beta` 或 `rc` 标识。test 发布保留完整的预发布基础版本并追加 `.YYYYMMDD.index`；稳定基础版本则追加 `-test.YYYYMMDD.index`。
+
+| dsh 基础版本 | production Desktop | test Desktop 示例 |
+|---|---|---|
+| `0.1.6-alpha.1` | `0.1.6-alpha.1` | `0.1.6-alpha.1.20260916.1` |
+| `0.1.6-beta.2` | `0.1.6-beta.2` | `0.1.6-beta.2.20260916.1` |
+| `0.1.6-rc.3` | `0.1.6-rc.3` | `0.1.6-rc.3.20260916.1` |
+| `0.1.6` | `0.1.6` | `0.1.6-test.20260916.1` |
+
+日期使用实际创建时的 Asia/Shanghai 日期。每个基础版本、每天的序号从 1 开始，检查保留的发布记录与已发布对象后递增；绝不复用已发布版本。test 分发不发布对应的无后缀基础版本。
+
+把确认后的版本通过 `--build-version` 传给打包命令，该值同时决定产物文件名、更新 feed 与上传校验。清单保留产品版本，因此 test 打包不再改写发布家族，也不留下需要还原的改动：
 
 ```sh
-npm run package:desktop:win:x64
+pnpm --dir apps/desktop run package:win:x64 --build-version 0.1.6-alpha.1.20260916.1
 ```
 
-安装程序写入 `.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe`。它包含官方 Windows x64 Node 24.21.0 可执行文件、pnpm 11.7.0，以及保留真实 `node_modules` 层级且无符号链接的 Harness 生产依赖闭包，用户无需在 `PATH` 中安装 Node 或 pnpm。Harness 环境会把内置运行时放在最前面，保证包含 `%SystemRoot%`、`System32`、Wbem 与 Windows PowerShell，再保留 Electron 启动时继承的用户 PATH。因此插件可以按裸命令名启动 Windows 系统程序和已继承的第三方命令。未出现在这份继承 PATH 中的第三方工具仍不可用；客户端运行期间修改注册表 PATH 或安装新命令后需要重启应用，客户端不会执行 PowerShell profile 来发现其他命令。Electron Builder 运行前，准备脚本会校验官方 Node 归档的 SHA-256、必需的 Windows 原生模块、内置 pnpm 版本，并实际启动 Harness 等待就绪。
+`--build-version auto` 会给出当天的下一个序号：读取目标 bucket 中已发布的对象，未配置 bucket 或列举未能在期限内完成时回退到本目标的本地输出目录。上传前请确认它打印的版本号；run script 会自行透传 `--`，打包入口两种写法都接受。
 
-在 Linux 上使用下列命令构建 Linux x64 软件包：
+production 发布使用产品版本本身，不传 `--build-version`。其上传成功后会把打包所用 commit 打成 `desktop-v<版本>` 标签；来自有改动工作区的构建不打标签，打标签失败也只打印手工命令，不会让已完成的上传变成失败。test 与本地构建有意不留标签，而所有产物的清单都记录 `dshBuildCommit` 与 `dshBuildDirty`，直接分发的构建同样可溯源。
+
+版本派生不改变固定更新通道，也不改变 `nightly.yml` / `nightly-mac.yml` 文件名。SemVer 排序为 `0.1.6-alpha.1 < 0.1.6-alpha.1.20260916.1 < 0.1.6-alpha.2`，稳定基础版本的测试版低于该稳定版。客户端只接受更高版本：替换 feed 无法让已安装的较高版本更新到较低的纠正版。这类客户端需要手动安装；保持自动降级关闭。[版本决策](../../.agents/notes/implemented/process/2026-09-16-desktop-release-version-derivation.zh.md)解释为什么不能用通道名替换预发布标识。
+
+打包、上传以及手动 macOS 签名检查使用 `apps/desktop/.env.windows` 或 `.env.macos`，由目标平台选择。复制对应的 [Windows 模板](.env.windows.example) 或 [macOS 模板](.env.macos.example)，填写本机配置；Git 忽略这两个本地文件，安装产物也不包含它们。发布字段只从目标文件读取，不回退到系统或 shell 中的同名变量；`PATH`、代理和构建工具环境仍保留。发布版本是命令参数而非发布字段，上传从打包写下的完成记录中读取它。文件使用 UTF-8，支持 BOM；相对证书、SignTool、Apple API Key 和钥匙串路径以 `apps/desktop` 为基准，变量值不做 shell 展开，包含 `#` 或空格的密码需要引号。CI 同样在运行前生成目标文件。
+
+每条打包命令在构建与下载前检查应用 ID、更新地址和该模式需要的签名配置，随后探测本次运行要用的外部工具：归档读取工具，以及 Windows 目标的安装器编译器。macOS 检查身份、Team ID、一套完整公证凭据、`CSC_LINK` 指定的可读本地 p12 文件、显式配置的 `CSC_KEY_PASSWORD`，以及引用的 API Key 和钥匙串文件；Windows 检查公开代码签名证书、SignTool 文件、容器名称和 PIN 格式。仅准备 Windows 资源或显式未签名打包不要求签名凭据。配置检查不验证 PIN 是否正确、Token 是否登录、钥匙串是否解锁或 Apple 是否接受凭据；实际签名与公证负责这些检查。`--build-version auto` 会访问目标 bucket，`--check` 下同样如此。单独运行相同检查：
 
 ```sh
-npm run package:desktop:linux:x64
+pnpm --dir apps/desktop run check:package
 ```
 
-DEB 与 RPM 文件写入 `.artifacts/desktop-linux/`。与 macOS 相同，它们包含目标平台原生的 Node、pnpm 与 Harness 生产运行时归档。`Desktop packages` 工作流会运行四个原生任务，上传五种安装包并生成 `SHA256SUMS`。手动运行默认只保留 Actions artifact；仅从 `dsh-v*` 标签明确要求发布，或推送该标签时，才会使用固定平台文件名创建或更新对应 GitHub Release。
+无需提前执行 `prepare:desktop`：
 
-<a id="nas-runtime-mode"></a>
-## NAS 运行端模式
+```sh
+pnpm run package:desktop
+```
 
-Desktop 可以保存多个 Linux NAS 运行端，并在本地 Harness 与一个已选远程运行端之间切换。NAS 拥有插件、模型设置、会话与工作区；窗口等展示偏好仍保存在当前设备。选择 NAS 后会跳过本地 Profile 引导和本地 Harness 启动。连接失败会明确展示，未由用户显式切换时绝不会回退到本机。
+发布自动化使用固定目标命令，确保运行时准备、dsh 准备与 electron-builder 接收相同的平台和架构：
 
-配对使用十分钟有效的八位码和随机逐设备 Bearer grant，grant 通过 Electron `safeStorage` 保存。自签名来源需要核对并固定 SHA-256 证书指纹。请求只向精确匹配的已选 HTTPS/WSS 来源附加 grant。远程 preload 由正向白名单组装：保留设备偏好、生命周期重启与就绪报告、Release 检查和 NAS 管理，同时不提供本机日志、插件与进程控制、诊断、命令行注册、文件系统或环境变量能力。新增本机 preload 方法不会自动暴露给远程页面，只有显式更新远程投影及其精确键测试后才会开放。mDNS 结果只是不受信任的地址建议，仍必须核对证书并完成配对。Compose 部署与备份要求见 [`../../deploy/nas/README.zh.md`](../../deploy/nas/README.zh.md)。
+```sh
+pnpm run package:desktop:mac:arm64
+pnpm run package:desktop:mac:x64
+pnpm run package:desktop:win:x64
+```
 
-`DesktopNasRuntimeAuthority` 统一拥有运行端选择、配对确认、证书 pin、精确 origin 凭据注入、身份检查、设备撤销、连接展示和重启顺序。Electron 生命周期、窗口、TLS、请求与 IPC 代码只是该 seam 上的 adapters，不再重复实现 NAS 策略。
+macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS 或带 Rosetta 的 Apple Silicon 上运行。Windows x64 命令要求 Windows x64。Linux 不是受支持的 Desktop 发布目标。
 
-`@deepseek-ai/dsh-nas-protocol` 统一拥有 NAS 线路协议 v1 的方法、路由、JSON 文档、构造和运行时校验。Desktop 网络代码是该 seam 上的一个 adapter，NAS 运行端主机是另一个。
+每个目标都在 `apps/desktop/.desktop-build/targets/<target>/` 下持有自己的打包输入、已准备运行时、包集合、dsh 依赖树、pnpm 准备状态、未打包应用、更新元数据和最终产物。Electron 归档缓存继续由 `.desktop-build/downloads` 共享，因为每个归档文件名都包含版本、平台和架构，并且在解包前经过验证。目标构建绝不读取其他目标的可变准备状态。
 
-## 进程生命周期
+### 运行时文件筛选
 
-Electron 主进程不经过 shell，直接启动 `node apps/cli/lib/bin.js web --host 127.0.0.1 --port 0`。所有打包平台都使用内置的目标平台原生 Node，不使用 Electron 或用户安装的 Node 可执行文件。宿主只把 `dsh web: http://127.0.0.1:<port>` 识别为就绪信号；应用退出时先发送 `SIGTERM`，超过固定期限后再发送 `SIGKILL`。Desktop 控制台输出以及 Harness 的 stdout 和 stderr 共用持久化 `harness.log`：每行都带 ISO 时间、来源与级别，每次重启追加会话标记，8 MiB 文件会在移除常见凭据形式后轮转并保留四份历史。设置页顶部操作会打开该固定文件，文件缺失时回退到所在目录。默认关闭窗口只会隐藏到系统托盘；用户可以改为关闭即请求完整退出，所有显式退出都会等待 Harness 清理。启动期间，单向确定进度条只按桌面环境、内置运行时、Profile 兼容性、预设插件与 Harness 的真实里程碑前进，同时显示当前操作和插件名称；Harness 就绪时达到 100%，随后才把窗口交给 Web GUI。Harness 数据目录尚未确定时，目录选择页跟随系统外观；完成选择后，持久化的 `ui-theme.preference` 会通过同一个 `system`／`light`／`dark` 来源同步加载页、原生边框、自定义顶栏、首次引导和 Web 主界面，并在用户切换主题时继续更新。Harness 在就绪前连续退出三次后会停止自动重启，并显示重试与日志操作。连接页等待十五秒后会显示当前有界操作、已等待时间、截止时间、自动降级策略和固定日志入口，而不是泛化的缓慢提示。
+Desktop 在本地打包工作区包，并通过目标捆绑的 Node 和 pnpm 安装外部依赖。[Desktop 文件策略](scripts/runtime-file-policy.ts)随后在签名和完整性封装前过滤不可变的 `resources/app.asar/dsh/node_modules` 副本。它排除 TypeScript 声明、已识别的 JavaScript/CSS/TypeScript source map、TypeScript 构建缓存、Domino 测试目录、选定的原生编译器输出和其他平台的 node-pty 预构建文件。它保留运行时 JavaScript、原生模块及其 DLL/EXE 辅助文件、WASM、未知资源、许可证和 notices。依赖清单在完整性封装前经过 electron-builder 的元数据清理，确保归档保持已记录的字节。该策略不修改 npm tarball、捆绑的包管理器或用户安装的插件文件。
 
-已有 Profile 会先执行十五秒期限的只读 Doctor 检查。健康结果不会触发启动写入；超时会记录诊断事件、禁止当前启动代次继续修改 Profile，并直接尝试普通 Harness 启动。只有 Doctor 报告问题时才会使用隐藏安全点和六十秒期限运行修复。修复失败会恢复受管文件并执行离线冻结安装；回滚失败，或发现活动、损坏、无法读取的 Profile 变更锁时，应用不会读取可能正在变化的 Profile，而是进入隔离的诊断模式；正常 Profile 仍保持启动失败。全新 home 只执行一次有界初始化；初始化无法完成时会展示带恢复入口的启动失败页。
+[Office 转换提供方](../../packages/document/office-to-pdf/README.zh.md)携带目标已声明的原生引擎；kit 未声明匹配原生目标时携带 WASM 引擎。准备阶段在打包前拒绝缺少目标引擎的情况。完整 Office 依赖（CLI、JavaScript 库和选定引擎的可执行文件、数据、许可证及 notices）解包到 `resources/app.asar.unpacked/dsh/node_modules/` 下。Desktop Host 将引擎清单解析到这些物理目录，并向加载的技能提供独立 Node 和解包后 CLI 的绝对路径。Node 位于 `resources/runtime/primary-runtime/dependencies/node/bin/`；CLI 位于解包后的 `@deepseek-ai/libreoffice-kit/lib/cli.js`。macOS 上的原生辅助程序获得 [LibreOffice UNO 桥](https://github.com/LibreOffice/core/blob/master/sysui/desktop/macosx/hardened_runtime.xcent.in)所需的 JIT entitlement。
 
-`DesktopOperationSupervisor` 负责所有短生命周期的 Doctor、pnpm、预装、快照和恢复子进程。每次调用都声明操作类型、截止时间、中止信号和可接受退出码，限制捕获输出；普通包修改任务最长运行十分钟。桌面从所选 Harness 运行时加载与 subprocess 提供方相同的 Windows Job、Linux scope 和带身份围栏的 POSIX 进程观察能力。Desktop 每两秒记录已观察后代；Electron 控制通道意外断开时，独立守护进程会读取最小化的 PID／启动时间恢复日志。该日志不保存命令、路径、参数或环境值。
+打包应用运行编译后的 JavaScript 和预生成的 Typert 元数据，不编译 TypeScript 插件。源码级调试导航和编辑器声明仍可从开发包中获取。[复制规则测试](tests/runtime-file-policy.spec.ts)覆盖排除项和保留资源；[产物 smoke](tests/fixtures/runtime-payload-smoke.mjs) 在 Host smoke 和最终清单验证之前，使用 Electron RunAsNode 执行。产物 smoke 解析搜索工具使用的 ripgrep 可执行文件，并验证文本搜索和文件枚举。Windows 签名构建在依赖签名后运行这些检查；其他构建在 `prepare:dsh` 中运行。[Host smoke](scripts/smoke-runtime.ts) 使用捆绑的 Python 创建 DOCX、XLSX 和 PPTX 输入，通过真实 Office 提供方逐一转换并检查 PDF 输出。每个组装后的应用（包括目录包和 Windows 未签名构建）都会针对 ASAR 重复产物和 Host 检查。归档完整性检查将归档内完整描述符与准备结果比对，并核对归档和解包目录中的文件内容与清单、归档内文件记录的执行标志，以及解包文件的物理权限。转换失败会在写入发布记录前终止打包；macOS DMG/ZIP 构建在公证前执行这些检查。
 
-重启、切换数据目录和完整退出会先关闭任务准入、取消修改任务，请求 Harness 与插件正常停止，回收受管范围，再检查 Profile 锁；加载页会显示这些真实阶段。正常清理等待十秒后进入强制终止，再用五秒确认范围为空。只要存在无法确认的进程、观察器故障或残留 Profile 修改锁，就会阻止退出和重新启动；失败页只提供日志入口与重新回收，不提供绕过检查的强制重启。经批准的插件常驻服务在通用设置中单独列出。许可绑定 Profile、插件版本、稳定服务标识与 Host 计算的启动指纹；任何非秘密启动输入变化都需重新确认。Desktop 清理与异常守护会保留精确的已批准身份，已有存活身份也会阻止同一服务重复启动。撤销许可、卸载责任插件和切换数据目录都会先按进程身份完成服务回收；无法确认清理完成时，不会继续删除插件。此许可只改变生命周期，不会增加文件、网络、执行或模型权限。
+Windows 发布验收还需在 Desktop 构建后手动运行[目录和替换检查](scripts/smoke-windows.ps1)。将 `$Makensis`、`$SevenZip` 和 `$PluginDir` 分别设为锁定版本构建器的 NSIS 编译器、7-Zip 可执行文件和 x86-unicode NSIS 插件目录；通过 `-FrameLibrary` 传入已准备好的 `window-frame.dll`，即可同时覆盖原生解压路径及其失败报告。从仓库根目录运行以下命令。它验证 目录替换与回滚和两种文件占用替换方式；不属于单元测试通道。
 
-主动停止 Harness 时，如果原生进程范围观察失败，Desktop 会通过停止操作报告清理错误，不会留下未捕获的异步拒绝，也不会宣称进程范围已清空。
+```powershell
+pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Makensis $Makensis -SevenZip $SevenZip -PluginDir $PluginDir -FrameLibrary apps/desktop/.desktop-build/targets/win-x64/installer-ui/window-frame.dll
+```
 
-使用标准 subprocess API 的启动会立即登记；进程表采样只用于补充仍直接创建子进程的旧插件。通过系统接口打开的浏览器、编辑器，以及 Desktop 启动前已存在的服务均不属于回收范围。若进程在首次观察前已经脱离，应用不会按名称、端口或命令文本猜测并结束它，而会明确报告平台限制。Profile 变更锁保存 owner token、进程身份、操作类型和创建时间；释放时只删除相同 token，死亡 owner 可以清理，存活 owner 永不被抢占，无法读取的锁状态会安全失败。
+Windows 安装器先将新版本解压到安装目录旁边，再退出旧应用并通过同卷目录改名完成替换。同路径升级在替换成功前保留旧目录；解压失败时旧版不变，替换失败时尝试恢复旧目录。安装器在启动前清理旧版备份。强制结束安装器或断电可能留下 `.new-*` 或 `.old-*` 目录；不同安装位置或安装范围迁移仍使用 electron-builder 的旧卸载器流程。
 
-托盘可以恢复窗口、在系统浏览器中打开当前 Harness、定位 Harness 日志、切换通知、启用已打包 macOS 的登录启动或退出。崩溃、最终启动失败和恢复通知均可关闭并按事件节流。桌面偏好以原子方式存入以仓库名命名的 Electron `userData`；非法字段会各自恢复安全默认值。
+解压失败时，安装器会把 7-Zip 的结果和完整错误输出写入更新缓存目录 `%LOCALAPPDATA%\<按包名派生>-updater\installer-logs\extract-failure-<时间戳>.log`（当前为 `@deepseek-aidsh-desktop-updater`），并在弹窗中显示首条错误行和 **复制错误信息** 按钮；静默安装只写入报告。未签名的 Windows 构建（`DSH_DESKTOP_UNSIGNED=1`）会将安装包命名为 `deepseek-harness-<版本>-win-x64-unsigned.exe`，以免被误当作发布产物。
 
-可通过 `DSH_DESKTOP_DSH_BIN` 测试其他已构建的 `dsh` 启动文件。若 Electron 继承的环境无法找到 `node`，可设置 `DSH_DESKTOP_NODE_BIN`。
+<a id="upload-updates"></a>
 
-## 官方源码更新
+### 上传更新
 
-用户确认后，升级器快进工作树，通过桌面 Harness 所选的 Node 可执行文件运行 `pnpm install --frozen-lockfile`，再执行完整仓库构建。依赖安装与构建子进程不会继承名称包含凭据特征的环境变量。准备失败时，升级器把工作树重置到原提交并重新准备该版本；如果恢复失败，结果会明确报告回退不完整，而不会把旧构建显示为健康状态。升级成功后需重启应用，设置卡片会提供该操作。
+test 与 production 的 `upload:*` 上传在发布前置检查通过后，分别保留新的 `.desktop-build/upload-records/<environment>-<target>-*` 目录。`plan.json` 记录目标、版本、每个文件的大小/SHA-512 和发布的 YAML 字节；刷盘的 `events.jsonl` 记录 PUT 意图及可用的响应状态/请求 ID；`result.json` 记录完成结果或最后失败阶段。缺少最终结果表示中断或存储不可用，不表示成功。不记录凭据值、认证头或原始 SDK 错误。审计写入失败即停止后续 PUT。每个对象都以一次流式腾讯 COS PUT 上传，并携带显式长度与 Content-MD5；COS SDK 仅在请求体不是流时才会重发请求，上传器自身也不重试。保留部分记录，检查远端状态后再执行下一次操作：超时或回执写入失败不能证明对象未存储。这些记录仅在本地，不防篡改，也不会自动备份；每次发布应将它们与构建证据一同归档到受控存储。公网 CDN 回读仍是单独的发布验收，上传结果明确标记为 `not-performed`。
 
-只有在测试另一个可信工作树时才设置 `DSH_DESKTOP_SOURCE_ROOT`。没有 Git 工作树的安装包不会运行该升级器；安装包自动更新仍以签名发布元数据和可用回退为前提。
+Windows 操作人员可以在仓库外保存 CLIXML 对象，其中 `SecretId` 和 `SecretKey` 是经 DPAPI 加密的 SecureString 字段。[凭据启动器](scripts/upload-with-credentials.ps1)要求显式提供 `-CredentialFile` 和 `-Environment production` 或 `test`；不指定 `-Upload` 时，只验证解密以及向本地 Node 子进程注入凭据，不发起网络请求。它要求 `PATH` 中有 Node，并使用加密该文件时的 Windows 用户和机器。明文、空字段及纯空白字段都会失败。父进程环境保持不变；子进程先清除无关密钥与 Node 预加载选项，再仅接收所选 COS 凭据对。原始子进程 stderr 不会显示，stdout 中的凭据值会被遮盖。此检查不能证明 COS 授权有效。显式上传还要求 `-Upload -Target <target> -Bucket <bucket>` 及下述常规发布完成前提；真实云端上传仍需发布操作人员验收。此启动器支持长期密钥，不支持 STS 凭据。显式上传要求所选部署环境和 bucket 与目标 dotenv 文件及已完成的打包记录一致，才会发起网络写入；即使 dotenv 文件含有其他 COS 密钥，也使用 DPAPI 凭据对。
 
-## 下载源与代理
+`DSH_DESKTOP_AUTO_UPDATE_ENV` 同时选择打包写入的 URL 与后续 COS 上传环境，可取 `test` 或 `production`；缺省为 `test`。测试打包通过 `DOWNLOAD_TEST_ORIGIN` 提供 HTTPS origin；生产使用 `https://download.deepseek.com`。上传通过 `DOWNLOAD_TEST_COS_BUCKET` 或 `DOWNLOAD_PROD_COS_BUCKET` 提供所选 bucket。生产清单位于 `dsh-desk/feeds/<target>/`，安装包位于 `dsh-desk/bin/<target>/`。测试发布必须配置 `DOWNLOAD_TEST_RELEASE_ID`：32 位小写十六进制字符，分别插入路径 `dsh-desk/<release-id>/feeds/<target>/` 和 `dsh-desk/<release-id>/bin/<target>/`。YAML 引用、稳定通道别名和 blockmap 都位于该发布目录内。目标为 `mac-arm64`、`mac-x64` 和 `win-x64`。
 
-“通用设置”提供应用更新及 Desktop 发起的 npm 包安装下载策略。应用更新可以使用 GitHub 或固定的 `hecoococ/open-deepseek-harness-desktop` CNB 索引，并可选择系统代理、直接连接或带认证的 HTTP(S) 代理。由 Desktop 管理的 npm 安装默认使用 `npmmirror`，也可选择 npm 官方源或自定义 registry 与代理。应用下载和插件下载分别使用经过认证的回环端点，因此 Electron 可以在主进程发起请求时回应代理认证质询，且无需向渲染进程暴露凭据或混用两类策略。官方市场尚未为其自行执行的目录、README、源码归档和 Git 操作提供宿主管理网络策略，因此这些操作继续使用市场原有网络配置。这些设置不会改变模型、MCP、Git SSH 或其他应用流量。系统支持时，Electron 安全存储保存代理密码；否则密码只在本次运行的内存中保留，渲染层和日志均无法取得密码。
+更新目标与上传凭据都与所选环境对应：
 
-预装的 `dshmarket` 使用其上游维护者发布的未修改归档。市场列表、README、源码归档和自身更新请求使用市场自己的网络配置。CNB 发现只接受未过期的匿名索引，且其中的附件必须匹配精确文件名、大小和 SHA-256；只有同时配置仓库变量 `CNB_SYNC_ENABLED` 和 Secret `CNB_TOKEN` 后，休眠的同步工作流才会镜像附件并发布该索引。
+| 环境 | 公开 origin | COS bucket | COS 凭据 |
+|---|---|---|---|
+| `test` 或未设置 | `DOWNLOAD_TEST_ORIGIN` | `DOWNLOAD_TEST_COS_BUCKET` | `DOWNLOAD_TEST_COS_SECRET_ID`、`DOWNLOAD_TEST_COS_SECRET_KEY` |
+| `production` | `https://download.deepseek.com` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`、`DOWNLOAD_PROD_COS_SECRET_KEY` |
 
-## 打包版本的 Release 发现
+每个测试发布批次用下方命令生成新 ID，将输出填入 `.env.macos` 或 `.env.windows` 的 `DOWNLOAD_TEST_RELEASE_ID`。这两个被 Git 忽略的平台文件管理该值，shell 变量不能覆盖它，dotenv 值也不会进行 shell 展开。打包、上传和重试必须沿用同一个 ID；上传会拒绝更新 URL 不一致的完成记录。需要验证跨版本升级时，后续版本沿用已安装客户端的 ID。生产环境不使用该字段。
 
-打包应用会在启动后、运行期间每六小时以及用户明确请求时检查所选更新源。GitHub 保持默认来源，并识别社区 `odsh-v*`、旧版 `dsh-v*` 和普通 `v*` 标签。标为 GitHub pre-release 的 Release 始终被排除，因此把有问题的 Release 从 Latest 改为 pre-release 后即可从应用内更新发现中撤回。CNB 使用独立且有有效期的匿名索引，不依赖实时 GitHub 查询。每个来源都会在下载前和打开安装包前重新验证；客户端不会静默切换来源，也不会拼接不同来源的断点文件。GitHub 继续保留系统网络和 Asset API 两条内部下载通道。完成的安装包仍必须与所选来源声明的大小和 SHA-256 一致；取消下载、切换来源或退出应用都会删除未完成文件。
+```sh
+node --input-type=module -e "import { randomBytes } from 'node:crypto'; console.log(randomBytes(16).toString('hex'))"
+```
 
-## 安全性
+通过完整下载链接分发每个测试批次。已安装的测试客户端保留当前批次的清单地址，不会自动发现新 ID。格式校验无法判断随机性，请使用生成器的输出。随机路径降低被猜中的概率，不限制持有链接者访问；撤下批次需要删除其 COS 对象并清除对应 CDN 目录缓存。
 
-渲染进程使用 `nodeIntegration: false`、`contextIsolation: true` 和 `sandbox: true`。导航仅允许 Harness 进程对应的精确回环来源。新开的 HTTPS 窗口交给系统浏览器，其余新窗口全部拒绝。受监管主框架发起的安全剪贴板写入保持静默，因此普通复制不会弹窗。其他已识别的渲染能力进入串行原生确认流程，只有用户允许后才会在当前 Harness 来源和本次渲染运行期间获得内存授权；麦克风与摄像头分别授权。未知权限、外部来源、子框架和 `openExternal` 权限请求继续拒绝。因此，共用客户端可使用标准 Web API，而不必暴露通用的高权限 Electron bridge。main 与 preload 为这些命名操作和发布共同引用唯一的 `DESKTOP_IPC` 词汇；每个 preload capability 仍保持显式，不存在面向渲染器的通用 invoke 或 send 方法。
+在目标 `.env` 中配置更新地址与所选 COS bucket、SecretId、SecretKey，再打包并上传同一个目标：
 
-API 密钥仍由 Harness credentials 服务持有。可选的首次导入只会把凭据文档作为不透明用户数据复制到独立 home；不会解析、显示、记录或删除来源。直接复用社区配置会显式共享所选社区 home 的 credentials 服务；官方数据则导入副本。沙箱 preload 在源码运行中暴露类型化源码更新调用，并提供桌面能力、偏好更新、不含 URL 的当前认证回环页面打开请求、固定日志定位、Release 发现、安装包归档精确白名单，以及桌面端拥有的导入插件恢复清单与插件快照中的不透明 id。Electron 从经过校验的进程状态或本机记录解析 Web URL、恢复说明符和快照文件；渲染层不能提交 URL、快照文件、包说明符、命令、路径或文件内容。一个使用独立随机端口的回环监听器只接受当前 Harness 精确来源发出的空 POST，并要求携带当前启动代次凭证；该请求只能显示已有窗口。浏览器通过 URL 片段接收此凭证，将其保存在当前标签页，并从可见地址中删除。其他任意包名仍必须经过受保护的 Harness 插件服务。Release URL 仅限本仓库。在 Windows 和 Linux 上，preload 还会渲染桌面宿主自有标题栏，并将固定的最小化、最大化或还原、关闭意图直接发送给主进程。它不暴露通用命令、文件系统、URL 打开或下载方法。
+```sh
+pnpm run package:desktop:mac:arm64
+pnpm run upload:mac:arm64
+```
 
-Profile 插件属于可信的可执行代码。内置包管理运行时让插件的 pnpm 生命周期脚本使用确定的工具版本，但不会对从 registry、Git 仓库、tarball 或本地 checkout 安装的代码提供沙箱或背书。
+内测打包在目标 `.env` 中显式设置 `DSH_DESKTOP_AUTO_UPDATE_ENV=test` 和 `DOWNLOAD_TEST_ORIGIN=https://download-test.deepseek.com`；上传使用 `DOWNLOAD_TEST_COS_BUCKET=bj-toc-download-test-1320056602` 及独立测试凭据。test 和 production 都使用固定 Nightly 通道，部署选择不提供通道切换。
 
-<a id="cross-platform-release-matrix"></a>
+前期内测包使用 `test` 部署。只有正式发布才显式选择 `production`；更换上传凭据不会改变已有安装包的更新目标。打包不需要 COS 凭据，会禁用 electron-builder 发布、移除子进程的 COS 凭据，并且仅在签名与公证成功后记录完成状态。上传在读取凭据前验证该记录、部署、目标、共同版本号、文件名、大小与 SHA-512。安装包和 blockmap 先于 YAML 上传；历史对象继续保留。每个版本发布 `nightly.yml` 或 `nightly-mac.yml`；稳定版本还发布指向相同产物的 `latest.yml` 或 `latest-mac.yml`。发布的 YAML 使用安装包绝对 URL。上传器不设置 Cache-Control，包括 COS SDK 否则会添加的空头部：缓存策略由部署基础设施负责，清单不缓存，安装包缓存单独配置。同一目标应串行发布，并在发布验收前验证公网产物与清单内容。
 
-## 跨平台发行矩阵
+macOS 配置使用必填发布环境，不会接受钥匙串中最先发现的证书。空值、格式错误的 Team ID、包含 electron-builder 不支持的 `Developer ID Application:` 前缀的签名身份，以及不完整的公证凭据都会被拒绝。macOS 打包要求已配置的身份及其私钥可用。运行时准备会把该身份、安全时间戳与 hardened runtime 应用到每个内嵌 Mach-O 文件；应用签名完成后，深度严格检查会拒绝其他叶证书 Authority 或 Team ID，验证通过才生成发布产物。macOS 固定目标安装包命令为已签名应用创建独立副本，并发执行两条产物流。一路先公证 App 并钉票，再生成 ZIP 及其更新元数据。另一路把已签名 App 副本封装进签名 DMG，再公证 DMG、钉票并验证；其中的 App 不单独附加票据。只有两路均成功结束，产物才会移入最终目录并写入发布完成记录。仅生成目录的命令同样需要公证凭据，并等待 Apple 公证和 App 钉票完成。[并行公证决策](../../.agents/notes/implemented/process/2026-09-09-parallel-macos-notarization.zh.md)负责副本隔离与容器票据语义。`CSC_LINK` 必须指向包含 Developer ID Application 证书及私钥的本地 p12，不支持 URL 或 Base64 输入。`CSC_KEY_PASSWORD` 是其导出密码，不是 Apple 账号或登录密码；未加密的 p12 可显式填写空值。构建前，打包流程自动创建并解锁私有临时钥匙串、导入 p12、授权签名并签署小型探针。运行时与 App 签名显式使用该钥匙串，无需预先配置或手动解锁登录钥匙串。子进程只接收钥匙串路径，不接收 p12 密码。成功或普通失败后删除临时钥匙串；强制终止后由 CI 清理临时凭据。CI 从密钥存储生成证书文件和 `.env.macos`，限制文件访问权限，并在作业结束后删除二者。环境中的 `CSC_NAME` 与证书发现顺序都不能选择发布所有者。公证凭据也可以使用 electron-builder 支持的完整 Apple ID 或钥匙串 profile 方式。手动执行 `pnpm --dir apps/desktop run verify:mac-signature -- <path-to-app>` 重复应用检查时，也必须提供两个 macOS 身份变量。
 
-源码宿主只使用 macOS、Windows 和 Linux 共用的 Electron 与 Node 进程 API。macOS 保留原生标题栏与交通灯按钮；Windows 和 Linux 使用无系统边框 BrowserWindow，其渲染器只承载 36 px 可拖拽标题栏及最小化、最大化或还原、关闭按钮。独立的 `WebContentsView` 从 `y = 36` 开始加载启动页、Harness 和所有插件，因此内容视口天然排除桌面 chrome，全视口 Web 内容也无法渲染到窗口按钮下方。打包工作流会在匹配的原生运行器上构建以下矩阵：
+macOS 签名遍历真实文件，不跟随 Framework 的软链接别名。PAK 资源保留全部随附语言，由外层 Framework 或应用签名记录完整性，不逐个签名。[发布策略](../../.agents/notes/implemented/architecture/2026-08-25-electron-desktop-packaging-and-updates.zh.md)负责依赖补丁和验证要求。
 
-| 平台 | 原生运行器 | 产物 |
-| --- | --- | --- |
-| macOS arm64 | `macos-15` | DMG 与 ZIP |
-| macOS x64 | `macos-15-intel` | DMG 与 ZIP |
-| Windows x64 | `windows-2025` | NSIS EXE |
-| Linux x64 | `ubuntu-24.04` | DEB 与 RPM |
+macOS 运行时准备将已验证的单架构 Mach-O 签名缓存在 `.desktop-build/targets/<target>/signature-cache`。缓存键包含输入字节与权限、签名探针实际使用的叶证书、签名标识、entitlement 字节、macOS 版本，以及签名工具与策略。复用不取决于 Git 提交：未提交的字节变更会使对应文件失效。每次命中都验证缓存字节、严格签名、证书、标识、entitlements、安全时间戳和 hardened runtime，再替换未被并发修改的输入。通用二进制每次重新签名。运行时完整性与 smoke 检查、App 签名和 Apple 公证仍会执行。缓存要求受信任的本地构建存储。缓存损坏或不安全链接会令构建失败；停止打包后删除对应缓存目录再重试。成功的签名阶段会将完整缓存条目的内容总量裁剪至一 GiB；中断留下的临时条目需手动清理。并发淘汰可能使读取方安全失败。日志记录命中、未命中及未缓存数量。
 
-Windows 任务会把最终 NSIS 产物静默安装到包含空格和中文字符的路径，检查安装后的运行时，使用隔离的应用数据启动已安装程序，并在上传产物前要求 Harness 输出就绪行，同时确认六个启动预设的依赖、bundle 条目、Profile 锁文件和持久化 seed 标记均已生成。Better Sidebar 必须在 Harness 就绪前完成安装，而 Codex 与 Claude Code 在用户操作前必须保持未安装。其他平台仍需完成原生安装、首次启动、退出、子进程清理、目录选择、文件打开、PTY 与沙箱行为的发布验证。只有在发布签名与回滚可用后才添加已签名的更新元数据。
+Mac 打包命令通过 `DESKTOP_PACKAGING_RECORD` 输出 `apps/desktop/.desktop-build/packaging-runs/` 下的唯一目录。读取本地配置后，每次运行保留 `run.json`（发布版本、产品版本、Git 提交、工作区是否有改动、目标及 Node 版本）、`events.jsonl`（带时间戳的阶段、耗时、并行输出归属及代理恢复状态）、脱敏后的子进程 `stdout.log` / `stderr.log`，以及 `result.json`（整体结果、阶段结果和产物目录）。事件还记录打包并发数及各代理是否配置。失败和后续打包不会清除日志；没有自动删除流程。缺少 `result.json` 表示完成状态未经确认。已知凭据值会被遮盖；不记录环境变量全集或 notarytool 认证参数。运行时准备分别记录包暂存、安装、依赖树复制、签名、清单生成、smoke 检查、描述文件校验和清理。嵌套阶段的耗时存在重叠，不能直接相加。
 
-Windows 验证会在构建前检查 runner 协议，再在未压缩的应用目录中分别探测受管 client 和 CLI task 启动。client 探针启动一个嵌套子进程，并要求确认进程范围已清理。首次安装启动和升级后启动一旦发现 supervisor 记录的终止性错误，就立即结束等待；可恢复的插件错误不会中止验证。进程管理者失败时，同时保留原始错误和清理状态观测错误。
+App 和 DMG 公证分别记录 submission ID，以及独立的 `notarytool:upload:*` 和 `notarytool:wait:*` 耗时。上传使用 `submit --no-wait`，包含认证、本地校验、传输和服务端受理，并非纯传输时间。等待从该命令返回后开始，包含轮询及剩余的 Apple 处理时间；Apple 可能在上传提交命令返回前已开始处理。日志保留 Apple 状态与诊断信息，包括拒绝结果；签名检查、接受状态校验和 stapling 仍由 `@electron/notarize` 负责。仅生成目录的打包命令也使用同一条可计时的 App 公证路径。各子进程输出仍实时显示在终端，阶段失败及嵌套错误保留在事件日志中。两个平台均记录父进程打包失败，并在终端显示脱敏诊断，包括代理恢复操作指引。仅检查配置的 `check:package` 命令不创建运行日志。
 
-不得通过把整个工作区源码复制进 Electron 来打包仓库。发布产物必须只包含已发布的运行时闭包、生成的第三方声明，且不得包含开发凭证。
+Mac 打包从 `.env.macos` 读取三个调优字段：
 
-## 扩展方向
+| 设置 | 默认值 | 作用范围 |
+|---|---|---|
+| `DSH_DESKTOP_MACOS_PACK_CONCURRENCY` | `4` | 第一方与 vendor workspace tarball 的打包 worker 数；必须是正整数。 |
+| `DSH_DESKTOP_MACOS_DOWNLOAD_PROXY` | 空 | Electron、运行时资源、pnpm 安装及 builder 下载使用的 HTTP/HTTPS 代理 origin。 |
+| `DSH_DESKTOP_MACOS_NOTARIZATION_PROXY` | 空 | 通过临时系统代理设置供 Apple 工具使用的 HTTP 代理 origin。 |
 
-桌面专属行为保持在 agent loop 之外。插件与 Skill 管理继续使用 Harness 服务和现有设置界面。远程控制应通过 transport 插件接入：它把经过身份验证的 IM 会话映射为持久化 Harness 会话输入，并通过 interaction 服务回传审批或问题答复。微信、Discord 和 Slack 适配器应作为建立在公共 transport 服务之上的独立 Provider 插件，并明确实现身份映射、授权、审计事件、限流和撤销。
+两个代理字段互相独立，拒绝 URL 中的凭证、路径、查询参数和片段。空值沿用继承的网络设置。显式下载代理会替换子进程的代理变量，仅绕过本地主机；它不修改系统设置。Windows 与独立 `release:pack` 保持现有并发默认值。公司代理地址仅写入 Git 忽略的本地文件；具体地址参见内部文档。
 
-后续桌面里程碑依次为已签名安装器、审批请求的原生通知、托盘状态、深层链接和经过身份验证的本地控制端点。内置浏览器、Git 面板、终端和插件市场只应作为由 Harness 服务支撑的 client 插件加入，不能依赖 Electron 专属状态。
+Apple 工具使用 macOS 当前活动网络服务的 HTTP/HTTPS 代理。配置公证代理后，打包会检查代理可达性、保存该服务的设置，在两条产物任务期间启用代理，并在两条任务均结束后恢复原设置。对于原本关闭、服务器为空且端口为零的代理，恢复时仅关闭代理；临时服务器和端口可能保留，但不生效。仅生成目录的打包会在签名目录构建完成后的 App 公证期间启用代理。这会临时影响其他应用，并要求修改系统代理的权限；必须先禁用 PAC、自动发现、SOCKS 及需要认证的代理配置。打包和恢复在读取恢复记录或修改代理前获取同一个用户级 POSIX 文件锁；进程退出会释放锁的持有权，锁文件保留。这会阻止不同 checkout 的代理事务重叠；其他用户及网络设置工具不得同时修改这些设置。SIGINT/SIGTERM 会等待活动任务结束后恢复。强制终止或恢复失败后，先停止残留公证进程，再运行 `pnpm --dir apps/desktop run restore:mac-proxy`；保存的记录会保留到恢复成功。配置检查仅验证 URL 语法，不修改系统设置或连接代理。
 
-## 限制
+### 未签名 Windows 测试安装包
 
-- 当前源码运行需要已构建的仓库和兼容的 Node 可执行文件。
-- macOS arm64 与 x64 的 DMG 和 ZIP 使用 ad-hoc 签名且未公证；首次启动时需要用户在 Gatekeeper 中明确授权。
-- Windows x64 安装程序未签名，Linux x64 软件包也没有仓库签名；用户必须核对 `SHA256SUMS` 与发布来源。
-- Developer ID 签名、公证、安装包自动安装、Windows/Linux 登录启动、深链接和 IM 控制尚未实现。源码升级器只接受来自官方 `master` 的干净快进更新；本地分叉仍需人工处理。
-- Windows 打包任务会在构建运行器上验证安装和 Harness 就绪；macOS 与 Linux 打包任务仍只证明原生组装完成，还需安装与运行时验证。
+在 Windows x64 上，使用完整的未签名打包命令进行本地安装测试：
+
+```sh
+pnpm run package:desktop:win:x64:unsigned
+```
+
+该命令要求设置 `DSH_DESKTOP_APP_ID` 并具备常规构建依赖，包括编译原生模块所需的 Python 和 Visual C++ 构建工具。Python 不在 `PATH` 中时，将 `PYTHON` 设置为其可执行文件路径。命令将安装包写入 `.desktop-build/targets/win-x64/unsigned-artifacts/`，省略自动更新配置，清除签名凭据，且不生成发布完成记录。它不需要 EV 凭据或更新源地址。签名打包和上传命令仍遵循正式发布要求。
+
+### Windows 安装界面
+
+Windows 安装程序使用原生 NSIS 页面，提供亮暗配色、系统阴影、可编辑的安装目录，以及默认勾选立即启动的完成页。安装仅面向当前用户。点击安装或按 Enter 均校验当前路径；新安装位置必须为空，非空位置必须是已登记的安装目录。受影响安装路径中的程序运行时显示系统提示，并保持应用运行；其他目录中的同名应用不阻止安装。静默更新最多等待受影响应用退出十秒，若仍在运行则以退出码 2 结束。
+
+主题在启动时跟随 Windows；可用 `/THEME=light`、`/THEME=dark` 和 `/THEME=auto` 显式选择配色。窗口在品牌控件准备完成后显示。欢迎页首次出现时，安装窗口会一次性移到普通窗口前方；若焦点在其他窗口，任务栏按钮会闪烁提示，但安装窗口不会始终置顶。进度读取锁定版本的 7-Zip 解压器百分比；目录替换、注册和清理仍使用有界估算。加权百分比不代表剩余时间。NSIS 报告成功后，进度条用 600 毫秒补满并短暂显示 100%，再显示完成页；切换目标时长为 750 毫秒。完成页保留窗口位置。点击完成后，安装程序先隐藏窗口，再启动已安装的可执行文件；启动失败会恢复页面以供重试。目录替换和失败恢复遵循上文描述的安装流程。首次启动的配置档案准备仍属于独立的 Desktop 操作。
+
+Windows 打包使用 Visual C++ Build Tools 和 Windows SDK 编译 x86 Win32/GDI+ 辅助库；签名构建通过已配置的 Windows 签名器对该库签名。准备钩子在所有平台上均由 electron-builder 继续负责收集生产依赖。[安装界面决策](../../.agents/notes/implemented/architecture/2026-09-10-windows-native-installer-pages.zh.md)记录 NSIS 接入方式和发布验证要求。
+
+在有交互式桌面的 Windows x64 上，从仓库根目录运行 `pnpm --dir apps/desktop run test:installer`，可将小型原生测试载荷接入正式安装配置并执行验证。每次运行使用独立产品身份，依次验证仅英文和仅中文的安装器变体，并根据实际显示的欢迎页按钮选择测试文案。两个变体均安装到私有目录并在测试后卸载；截图和结果保留在 `.desktop-build/installer-tests/` 下。检查包含末尾带分隔符的已登记路径升级，以及磁盘根目录拒绝。可选的 `--signed` 标志使用下文的 Windows EV 配置，在嵌入前对测试程序和辅助库签名；它不会启用更新源。
+
+Windows 卸载程序会随应用一起删除 Electron 用户数据目录（`%APPDATA%` 下按包作用域嵌套的浏览器存储与缓存）、`%APPDATA%` 下的产品目录，以及 `%LOCALAPPDATA%` 下的更新下载缓存，随后移除 `%APPDATA%` 之下普通且已空的作用域目录。Harness 主目录（`~/.dsh` 或 `DSH_HOME`：会话、设置、凭据、插件）不会被触碰；以 Windows 环境变量发布的 `DSH_HOME` 还会保护所有与其重叠的目标。静默卸载删除相同的数据；以 `--updated` 或 `/KEEP_APP_DATA` 启动的卸载程序保留数据，electron-builder 在原地更新和从其他目录替换旧安装时正是这样启动它。删除通过原生辅助程序执行：它拒绝受保护的 Windows 目录以及与安装目录或主目录重叠的路径，要求固定的本地驱动器，链接的根目录或祖先目录原样保留，遇到重解析点只解除链接而不进入目标，清除只读属性，并在遇到被占用文件后继续删除其余兄弟项；残余不会中止卸载，也不会提示。安装时在 Windows 卸载注册项上记录 `InstallLocation` 作为标准的清单元数据；在 Windows 11 上，开始菜单右键菜单中的“卸载”对所有 Win32 应用都会打开已安装应用列表，只有 MSIX 包能从那里直接卸载。卸载程序声明 DPI 感知，中文使用微软雅黑 UI。此行为仅适用于 Windows。
+
+使用 `node apps/desktop/scripts/test-windows-installer.mjs --uninstall-only --compile-only` 以每次运行唯一的带作用域包名编译独立的中英文夹具。省略 `--compile-only` 可对预置数据运行原生删除器回归，以及交互、静默、`--updated`、`/KEEP_APP_DATA` 和 `DSH_HOME` 位于 Electron 数据内的检查。编译本身不能证明已安装卸载行为。
+
+### Windows EV 签名
+
+运行时签名在当前 Windows 账户的各 worktree 间共享完整的已签名文件。`.env.windows` 中的 `DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_DIR` 指定固定本地磁盘上的绝对目录；默认值为 `%USERPROFILE%\.dsh-desktop-signing\signature-cache\v1`。缓存目录必须属于当前账户，访问权限不得向其他普通账户开放；带链接的路径会被拒绝。缓存项标识原始字节、公钥证书和签名工具链。每次恢复都检查摘要、Windows 信任状态、时间戳和证书，再替换未签名文件；缓存项无效会停止打包，不回退到硬件签名。不会仅因缓存较旧而重新签名。缓存信任同账户运行的程序，不防御管理员。[运行时签名缓存决策](../../.agents/notes/implemented/process/2026-09-17-windows-runtime-signature-cache.zh.md)定义验收要求和设计限制。
+
+预检、主要运行时签名、应用运行时签名和产物生成分别持有账户级签名阶段锁，直到受监督的子进程结束。其他构建进入这些阶段前等待；编译和准备步骤不持锁。运行时签名进程自行持锁，因此仅终止外层打包进程不会释放仍在访问缓存的阶段锁。迁移及维护获取同一把锁；旧版或外部签名命令不参与排队，应另行避免并发。阶段等待不计入预检期限。关闭阶段句柄会释放普通竞争锁，不删除独立的硬件尝试互锁；遗留硬件失败仍需操作人员恢复。
+
+缓存命中的复制、摘要和逐文件信任检查使用 `.env.windows` 中的 `DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY` 个工作任务（默认 `4`，整数 `1`–`8`）。所有恢复及后置验签完成后，未命中项才进入串行硬件签名。恢复或验签失败会停止派发新任务，并在释放阶段锁前等待在途工作结束；硬件签名、运行时 smoke 检查和最终完整性校验仍须执行。
+
+每个运行时阶段向标准输出及打包日志写入 `SIGNATURE_CACHE_SUMMARY`，包含实际目录、策略标识、命中及未命中数、新发布及保留项数、签名请求数、省去的签名请求数和验证失败数。计时区分签名、恢复文件和新签名文件的信任验证及恢复；恢复耗时包含其信任检查和暂存清理。这些统计不包含预检、最终产物签名及外层运行时验签。阶段锁事件单独记录等待时间。 并发计时累加逐文件工作耗时，不代表阶段墙钟时间。
+
+使用 `pnpm --dir apps/desktop run cache:windows-signatures --usage` 查看结构完整的缓存项字节数和数量，或用 `--from <absolute-old-cache>` 导入显式指定、属于同账户的旧缓存。迁移不修改源目录，跳过暂存名称，拒绝损坏项，并保留已有有效项，即使它们的时间戳字节不同。`--clear` 在阶段锁保护下显式删除完整缓存项；不执行自动容量淘汰。`--directory <absolute-cache>` 指定维护目标目录，无需加载发布凭据。不完整暂存项保持原状并单独计数；仅在所有构建停止后检查它们。这些命令绝不清除硬件失败证据。默认存储位于 AppData 之外，避免 MSIX 启动器虚拟化将账户缓存拆开；被重定向的覆盖目录会明确失败。
+
+Windows 签名构建在编译或准备依赖前执行受监督的签名预检。静态配置、证书有效期、审计存储、编译器可用性及遗留签名锁的检查不访问 Token。本地 .NET Framework C# 编译器生成一个专用小探针，由正式签名器仅签名一次，随后必须验出配置的证书和时间戳才能继续构建。探针绝不执行。预检的整体 60 秒期限包含时间戳尝试；超时、硬件签名报错或验签失败都会停止本轮流程，不再次调用硬件。成功只证明当前签名路径可用，不证明 PIN 已独立认证：SafeNet 可能复用登录状态。不要为了验证 PIN 而注销或重复认证。`--check`、仅准备和 `--unsigned` 模式不执行此硬件预检；未签名产物仍不能发布上传。自动回归测试使用假签名器，真实硬件由发布操作人员单独验收。
+
+Windows NSIS 上传要求安装包旁存在生成的非空 `.exe.blockmap`。blockmap 先于通道 YAML 上传；NSIS 安装包元数据不要求另一种 web-installer 格式使用的内嵌 `blockMapSize`。文件清单测试使用固定版本构建器的 blockmap 生成器，而不是手工编造内嵌映射字段。
+
+签名 Windows 配置从同一份公开证书的 `CN`、`O` 和 `C` 属性生成 updater 的 `publisherName`。每个属性都必须存在、非空且只有一个值。这些身份属性允许证书续期，无需固定叶证书指纹。已安装应用的 `app-update.yml` 保存预期发布者，下载的清单不能选择该身份。未签名测试构建省略 updater 配置。真实文件验证及其限制见[签名验收记录](tests/README.zh.md)。
+
+本项目使用的 SafeNet Token 出现 `SignTool Error: No private key is available.` 时，说明 PIN（密码）错误。立即停止所有签名尝试，等待用户处理 PIN 后再继续。PIN 输错达到五次会锁定 Token。遇到该错误后，不得重试打包或签名探针。签名器串行执行 Token 操作，首次失败后拒绝所有排队任务。
+
+Windows 打包命令通过 `DESKTOP_PACKAGING_RECORD` 输出 `.desktop-build/packaging-runs/` 下的唯一目录。每次运行保留 `run.json`、带时间戳的 `events.jsonl`、脱敏后的 `stdout.log` 和 `stderr.log`，以及 `result.json`。签名失败还会写入 `fatal.json` 并通过 stderr 通知父进程；监督程序立即请求终止当前阶段的进程树并等待退出。失败阶段不能启动后续阶段或生成发布完成记录。日志写入失败也会停止运行。终止错误仍按失败处理，需要操作者检查；缺少最终记录表示尚未确认完成。
+
+硬件签名必须属于受监督的打包运行。调用命令解释器前，签名器原子获取 `%USERPROFILE%/.dsh-desktop-signing/attempt.json` 并记录本次尝试。只有签名成功且配置证书的主签名通过验证后才释放该文件；随后完成时间戳，不再访问硬件。失败、中断、已有锁定文件或审计存储不可用都会阻止再次访问硬件，包括同一 Windows 账户下的另一个签名器实例、进程或代码检出目录。没有定时恢复或自动重试。管理员必须检查保留的证据及令牌状态，再明确授权恢复锁定状态；登录令牌或替换 PIN 文件不会清除它。记录区分签名意图、命令解释器 PID 和完成结果，不计量 CSP／令牌内部的认证次数。不记录命令参数、PIN 或凭据环境。其他 Windows 账户及无关签名程序不在此锁定机制的保护范围内。
+
+Windows 打包将 7-Zip 过滤器固定为 `BCJ`，以兼容内置的 NSIS 解码器。这样可以保留 x64 安装包中由依赖携带的 ARM64 二进制文件；自动 ARM64 过滤会生成该解码器无法解压的条目。
+
+NSIS 在安装阶段清理临时解压目录，完成后才显示完成页或自动启动应用。已安装的生产依赖保持为普通文件；启动时不会再次解压。安装仍会写入完整的应用目录树。
+
+在 `.env.windows` 中填写 `DSH_DESKTOP_WINDOWS_CER_FILE`（公开 EV 叶证书）、`DSH_DESKTOP_WINDOWS_SIGNTOOL`（SafeNet 兼容的 SignTool）、`DSH_DESKTOP_WINDOWS_KEY_CONTAINER`（匹配的私钥容器）和 `DSH_DESKTOP_WINDOWS_TOKEN_PIN`（Token Password）。私钥仍保留在 USB Token；不要把证书或本地凭据文件提交到 Git。
+
+```sh
+pnpm run package:desktop:win:x64
+```
+
+打包前插入并解锁 Token。electron-builder 钩子把每个产物交给采用 CRLF 的 `scripts/windows-sign.cmd`；该 CMD 只调用一次已配置的 SignTool，并指定 `/f`、SafeNet `/kc "[{{PIN}}]=容器"`、`/csp "eToken Base Cryptographic Provider"`和 SHA-256 文件摘要，不请求时间戳。随后钩子在隔离副本上完成 DigiCert SHA-256 RFC 3161 时间戳，不传递签名凭据。钩子不会改用 electron-builder 内置的 SignTool，也不会重试失败的签名请求。SignTool、证书、容器、PIN、Token 或签名不可用时，Windows 发布打包会失败，不会生成未签名产物。
+
+时间戳处理仅对正常退出但返回失败或警告的时间戳命令重试，最多尝试三次，间隔为一秒和两秒。每次均从同一份已验证的主签名开始。启动错误、终止状态不确定或验签失败会立即停止。SignTool 使用短的私有路径；发布时先把已验证字节复制到目标卷，再原子替换。最终必须通过 Windows 信任、证书、时间戳和规范化全文件相等检查。尝试耗尽后停止打包并保留证据，不再次调用硬件。参见[签名完成决策](../../.agents/notes/implemented/process/2026-09-17-windows-signature-completion.zh.md)。
+
+PIN 不能包含 `]`、引号或换行，因为这些字符用于分隔 SafeNet `/kc` 值或对应的 CMD 参数。CMD 会禁用延迟展开，因此包含 `!` 的 PIN 可以原样到达 SafeNet。打包流程不会把任何 `DSH_DESKTOP_WINDOWS_*` 字段传给构建与 运行时准备子进程；它只向签名预检、独立的第一方运行时签名阶段与 electron-builder 提供四个配置输入，在其他字段已经清理的环境中只向签名 CMD 提供经过校验的签名字段，在 SignTool 启动前清除这些字段，并遮盖 SignTool 诊断。SafeNet 仍要求 PIN 出现在 SignTool 进程命令行中。本地 `.env.windows` 明文保存 PIN，应限制文件访问权限；CI 使用临时文件并在任务结束后删除。不要提交或分享文件内容，也不要把凭据写入日志。配置检查不会消耗 Token 的 PIN 尝试次数；签名仍在首次失败后停止整批任务。
+
+使用对应的 `:dir` 命令可以生成可直接运行的应用目录，而不是安装包，例如：
+
+```sh
+pnpm run package:desktop:dir
+pnpm run package:desktop:mac:arm64:dir
+```
+
+需要检查或诊断为宿主目标准备的资源而不调用 electron-builder 时，可以让同一流水线在准备完成后停止：
+
+```sh
+pnpm run prepare:desktop
+```
+
+这条诊断命令是另一种停止位置，并非两条命令构建流程的前半段。之后执行 `package:desktop*` 时仍会重新完成正式构建与准备，避免使用陈旧的 dsh 包、运行时文件或 dsh 内容。
+
+每条打包命令都会构建仓库，打包以 dsh 和私有 Desktop Host 为根的第一方生产依赖闭包，并准备目标专用的 Electron 分发包与 pnpm CLI。`prepare:dsh` 在构建时安装一次生产依赖图，准备物化包供 electron-builder 归档到 `app.asar/dsh`，移除包管理器元数据，并生成包含共享包版本和最终文件哈希的 `desktop-runtime.json`。在 macOS 上，它先签名并验证原生文件，再生成清单；electron-builder 不对已签名的此目录重复进行嵌套签名。资源映射明确包含默认根目录过滤器会忽略的 `dsh/node_modules`；准备完成的运行时清单在原生签名后检查。原生可执行文件及库解包到 ASAR 旁；Python、独立 Node 和 pnpm 保留在外部 runtime 资源中。Windows 打包逐项检查准备好的 PE，确认其 ASAR 条目已标记为解包，且磁盘副本字节一致；未签名构建也执行此检查。Builder glob 规则用单字符通配符匹配 PE 文件名中的花括号，因此同目录中名称匹配的文件也可能被解包。准备好的运行时 smoke 沿用已验证的目标描述符，不使用构建宿主的架构。签名安装包、公证、已安装应用升级和各目标原生模块的验收需要发布环境。
+
+macOS 打包在组装 App 时、代码签名前写入 `Contents/Resources/app-update.yml`，供并行 ZIP 与 DMG 路线使用的目录构建也执行此操作。签名钩子验证准确的更新源和 updater 缓存目录。写入发布完成记录前，流程会再次检查两条路线的副本和最终移入的 App；配置缺失或不匹配会阻止移入产物，因而也会阻止上传。
+
+未压缩产物包含 Electron、物化后的 dsh 生产依赖树、pnpm，以及壳应用。安装包大小与文件系统占用不同；发布验收需要测量两者，以及 profile 插件存储和首次启动耗时。此布局用更多应用内文件换取消除用户机器上的核心包安装过程。
+
+## 更新
+
+打包应用在启动后异步检查固定 Nightly。常规轮询以十分钟为基础间隔，每次独立采样 ±20% 的随机抖动。每次检查失败将基础延迟翻倍，上限为一小时；成功后重置。随机延迟不超过该上限，并从全部复用调用结算后开始计时。本地化的“检查更新…”菜单项（Windows 可从顶栏的“应用”菜单进入）立即执行，并复用正在进行的检查。回到前台和系统恢复时遵守相同的单调时钟截止时间。新收到的强更策略也会立即请求检查更新清单。自动检查从不弹窗或下载安装包。手动检查显示正在检查、失败或包含已安装版本号的无更新反馈。常规更新弹窗原位渐入渐出；连续弹窗替换卡片内容并重置其滚动位置，保留蒙层与背景模糊。
+
+`DSH_DESKTOP_UPDATE_CHECK_INTERVAL_MS` 配置常规基础间隔，`DSH_DESKTOP_UPDATE_CHECK_MAX_BACKOFF_MS` 配置上限；两者均接受 1000 至 2147483647 的整数毫秒数，且上限不能小于间隔。省略上限时取一小时与间隔中的较大值。`DSH_DESKTOP_UPDATE_CHECK_JITTER` 配置 0 至 1 的抖动比例，默认 `0.2`；最终延迟至少一秒，且不超过上限。这些配置不改变强更策略轮询，也不授权下载重试。
+
+左下角账户行显示本地化的更新可用状态、加载图标与下载百分比、验证、就绪状态，或带可访问提示的持久红色重试操作。嵌入 Web 界面的文案跟随应用内当前语言；原生弹窗使用 Desktop 壳语言。侧栏收起时，顶部展开按钮显示圆点。连接状态优先展示。选择可用版本即开始下载。准备成功后自动打开壳拥有的重启确认；关闭后保留就绪状态，不重复弹窗。选择就绪入口可再次打开确认。运行中的 agent、排队输入，以及运行中或停止中的后台任务都会在该确认中触发中断警告。仅有 API 请求不会触发警告。用户批准后，Host 锁定新请求，等待已接收的请求结束，再检查任务，包括已接收写操作创建的工作。等待超过控制请求截止时间时，拒绝安装并解除准入锁。任务状态未知、未获中断授权的新任务，或未成功完成正常收尾，都会阻止安装。常规退出会在停止 Host 前隐藏产品窗口，在收尾期间忽略新的聚焦请求，且从不安装更新。下次启动通过已有的启动与恢复流程校准版本绑定的运行时。
+
+若任务收尾失败但已确认 Host 退出，安装会被拒绝，壳会在允许再次确认重启前恢复当前版本的 Host。Host 正常停止后的安装器启动失败使用同一恢复路径。替代 Host 启动并完成认证后，壳重新加载原有应用地址，让 Web 页面获取当前端口、Cookie 和启动注入数据；页面加载失败时打开原生致命故障恢复弹窗。未确认进程退出时，绝不允许启动替代 Host。已下载目标保留以供重试。已知强更策略在恢复过程中继续阻塞；Host 恢复失败打开原生致命故障恢复弹窗。
+
+已确认 Host 退出但任务未成功收尾时，常规与强更弹窗均展示本地化恢复提示。两种语言都根据类型化的准备失败原因选择提示，翻译文案变化不会改变失败分类。“查看技术详情”默认折叠，仅展示退出状态、信号、关闭确认和截止时间事实，不展示插件 stderr。展开详情既不重试，也不授权安装。
+
+### 强制更新策略
+
+[强更客户端决策](../../.agents/notes/implemented/feature/2026-09-11-desktop-mandatory-update-client.zh.md)负责策略查询和阻塞窗口。打包读取 `.env.windows` 或 `.env.macos`：`DSH_DESKTOP_AUTO_UPDATE_ENV=test`（默认值）选择 `DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN`；`production` 选择 `DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN`。模板将两个源站留空；在 Git 忽略的目标 dotenv 文件中填写所选部署的源站。在准备产物或签名前，所选源站必须配置，包括未签名和仅准备构建；未选环境的源站可不填。这些配置不会回退到父进程环境或另一部署环境。打包将选定策略与应用 ID 写入元数据；打包应用忽略运行时覆盖。
+
+`DSH_DESKTOP_MANDATORY_UPDATE_CONFIG` JSON 提供测试登录源站，以及可选的轮询和下载页面选项；打包拒绝其中的 `origin` 和 `authentication`。页面白名单默认只包含所选服务源站；需要其他已批准下载页面源站时应显式配置。测试包选择 `feishu-test`，且必须在 `DSH_DESKTOP_MANDATORY_UPDATE_CONFIG` 中配置 `allowedAuthOrigins`；正式包选择 `anonymous`，并拒绝该字段。每个登录源站必须是没有凭据、路径、查询或片段的 HTTPS origin。登录窗口仅允许文档导航到所选策略源站和这些已配置源站。策略请求拒绝重定向；仅测试鉴权携带网关 Cookie。未打包开发模式则从此变量读取完整策略 JSON，并要求 `DSH_DESKTOP_APP_ID`；缺少 JSON 会禁用开发模式策略查询，仅匿名开发允许 HTTP `127.0.0.1`。用户发起常规检查时会并发触发策略检查，但不会等待或展示策略失败。只有已确认的强更决定可以关闭常规弹窗。测试环境鉴权会等待当前常规弹窗结束，取消或失败不会丢弃 updater 结果。
+
+| 解析后的策略字段 | 含义与默认值 |
+|---|---|
+| `origin` | 必填 HTTPS API 源站，不含凭据、路径、查询或片段；请求使用 `/api/v0/check_client_update` |
+| `allowedPageOrigins` | 非空的精确 HTTPS 源站数组；打包时默认只包含所选 API 源站；不隐含子域名或其他端口 |
+| `authentication` | 打包时测试环境选择 `feishu-test`，正式环境选择 `anonymous`；未打包开发模式默认为 `anonymous` |
+| `allowedAuthOrigins` | 测试鉴权必填的非空 HTTPS 登录文档源站数组；正式环境禁止配置 |
+| `intervalMs` | 轮询间隔；默认 `600000` |
+| `timeoutMs` | 请求截止时间；默认 `15000` |
+| `maxBackoffMs` | 含抖动的失败请求最大间隔；默认 `3600000`，不小于 `intervalMs` |
+| `jitter` | 随机增加的间隔比例；默认 `0.2`，范围为 `0` 至 `1` |
+
+时长必须是 1000 至 2147483647 毫秒的整数。启动与定时轮询独立于业务请求；前台／恢复检查遵守下次到期时间，手动检查绕过该时间并复用在途请求。客户端发送已安装平台、架构、完整壳与内置 dsh 版本、应用 ID、语言和固定 Nightly。不使用业务登录凭据或安装 ID。
+
+启用 `feishu-test` 时，包含 `error.code: "UNAUTHENTICATED"` 的 HTTP 401 JSON 响应会在用户主动检查和打包应用首次启动检查时提供登录入口，不等待本地后端就绪。本地化说明指出这是测试版、需要飞书鉴权，且登录不会下载或安装更新。确认后先关闭说明，再打开配置源站根路径的沙箱窗口，不使用响应中的登录 URL。并发检查复用整个确认／登录流程，并聚焦已有窗口。在测试环境登录窗口按 F12 可打开独立的 DevTools 进行排查。取消后，定时或前台检查不会反复弹窗；用户可手动重试。
+
+登录和策略请求共用内存 Session，与产品窗口及 updater 隔离；应用重启后需要重新登录。关闭窗口取消登录，导航失败提供本地化重试提示。返回服务后重新查询策略；重定向、Cookie 或 HTTP 422 都不是有效策略决定。取消、登录过期及无效响应均保留已知强更阻塞。固定登录结果写入进程诊断及可选更新日志；登录控制器不记录 Cookie、OAuth 参数或远程错误原文。真实 Harness 网关/API 联调及 macOS 登录验收仍未完成。
+
+扁平化的 `40005` 打开壳拥有的模态窗口，并拒绝后续插件修改，不停止现有 Host 任务。服务端标题与详情是可选纯文本，缺失时使用客户端兜底文案；缺少下载地址或地址未获批准时隐藏外部页面操作，不解除阻塞。macOS 强更蒙层原位渐入渐出，在更新状态切换时保留蒙层，并将父窗口焦点和键盘输入重定向到蒙层。Windows 由隔离的应用 preload 在主窗口内挂载 shell 来源的 frame，以蒙层和弹窗覆盖 40 DIP 顶栏下方的内容区域。它阻止背景页面输入，不创建额外的原生窗口；移动和最大化只作用于主窗口。父窗口保持启用，原生移动、缩放、最小化、最大化和关闭控件仍可操作。退出应用会完成清理，不会解除更新要求；Esc 不会关闭覆盖层。批准安装后，安装器接管的退出流程会在 Electron 关闭窗口前释放模态窗口。下载、含准备步骤的文件校验、任务检查和安装确认共用同一弹窗。只有第二次用户批准才允许任务收尾和安装；稍后更新保留阻塞与安装包。仅存在受影响任务时，重启文案才提示正在停止任务。策略不跨应用重启持久化，策略响应也不作废或替换 updater 产物。
+
+失败时在同一弹窗内保留阻塞、本地化重试提示和折叠诊断。白名单下载页面操作只在恢复状态出现，不与正常下载或安装并列。请求打开浏览器后立即提供复制替代入口，即使系统请求尚未返回；请求成功不证明网页已打开。复制失败时展示完整、只读的地址供手动复制。浏览器与剪贴板结果不覆盖 updater 错误。只有新的有效无需强更响应才解除阻塞；阻塞期间仍可使用顶部菜单检查。
+
+后台强更安装确认请求 Windows 任务栏提醒或 macOS 信息级 Dock 弹跳，并在每轮就绪时尝试一次无声通知，不还原窗口或抢焦点。点击通知只返回当前确认界面。回到前台、安装、策略解除和退出时清理提醒。系统权限和专注模式可能抑制通知；仍需完成 Windows 与 macOS 安装包通知验收。
+
+### 本地 updater 验证
+
+常规更新 HTTP 请求具有逐连接的无活动截止时间：`60000` 毫秒内未收到响应头或后续响应字节会使操作失败。`DSH_DESKTOP_UPDATE_HTTP_IDLE_TIMEOUT_MS` 接受 `1000` 至 `2147483647` 的整数进行调整；活跃下载没有总时长限制。下载失败保留重试提示，并要求用户再次操作。
+
+在已安装工作区依赖的 Windows 上，从仓库根目录运行：
+
+```sh
+node apps/desktop/node_modules/pnpm/bin/pnpm.mjs --dir apps/desktop run test:updates:local
+```
+
+此命令构建 Desktop 壳，让其协调器通过真实 Electron HTTP 请求和 `NsisUpdater` 访问私有回环服务器。它验证用户授权的完整下载、SHA-512 拒绝、显式重试、并发请求合并、清单替换和安装交接。它还打开使用沙箱预加载的真实强更页面，检查按钮操作、关闭／Esc 拦截、纯文本内容、策略请求停滞和策略解除。成功时打印 `LOCAL_UPDATER_RESULT` 并以零退出码结束；功能失败时返回非零退出码。每次调用独占随机端口和临时用户数据／缓存目录，关闭监听器、等待 Electron 退出，并移除临时文件。报告和可用截图保存在唯一的 `.desktop-build/qualification/local-updater-*` 目录中。截图失败单独记录，绝不当作视觉验收通过。不需要 COS 或签名凭据。
+
+下载内容是不可执行的测试字节，安装调用仅记录而不执行。测试替换浏览器打开与剪贴板写入，避免外部导航和剪贴板修改。它不启动完整产品工作区，不验证真实安装器或重启，不验证发布者签名，也不覆盖差分更新或 macOS。停滞的策略请求、清单请求和负载传输会执行真实截止时间及恢复。真实常规弹窗验证隔离预加载、卡片尺寸、背景模糊、取消、任务警告选项与显式安装批准；账户行组件测试另行提供证据。[本地验证决策](../../.agents/notes/implemented/testing/2026-09-10-desktop-local-updater-qualification.zh.md)和[验证记录](tests/README.zh.md)保留这些限制；生产发布要求保持不变。
+
+## 底层开发覆盖项
+
+未打包的 Electron 进程使用应用目录下的 `.desktop-build/development/project` 作为开发项目。`DSH_DESKTOP_PNPM_ENTRY` 和 `DSH_DESKTOP_DSH_DIR` 是带应用路径默认值的可选覆盖项。每次未打包启动都必须设置 `DSH_DESKTOP_PRIMARY_RUNTIME_DIR`：开发启动器（`dev:desktop`、`start:desktop` 及工作区更新验证运行器）会把它设置为自己已准备目标的 primary-runtime 目录；缺少该变量的启动会以致命启动对话框失败。启动器必须设置它，因为壳无法从 `process.arch` 推导该目录：构建目标将 Windows 固定为 x64，而宿主可能是 arm64。打包应用会忽略这些变量，从 `process.resourcesPath` 解析签名资源，并使用受管 Desktop profile。
+
+## 已知限制
+
+- 账号登录尚未接入；登录按钮禁用。Windows 材质效果仍需平台验证。
+
+- 发布签名、公证、更新托管和跨上一版本的已安装产物验证需要生产发布环境。
+- 依赖的生命周期脚本遵循 pnpm 的构建权限；Desktop 不提供单独的审批对话框。
+- 桌面壳与 CLI dsh 共享 `$DSH_HOME` 下的会话、设置、凭据、工作区和存储，但可执行包、插件激活和锁文件彼此隔离。
+- 在 Electron win32-arm64 宿主上，未打包启动现在可以成功，但载荷仍为 x64：`packages/skill/tool-workspace-dependencies/src/index.ts` 的架构校验会把载荷记录的架构与宿主 `process.arch` 比较，因此 `load_workspace_dependencies` 工具仍可能拒绝 primary runtime。
+
+登录会在系统浏览器中打开配置的平台页面。Host 负责 PKCE 和临时本机回调，在进入工作区前保存凭证，再将浏览器跳转到平台完成页。打开和复制的授权链接通过 `theme=light` 或 `theme=dark` 携带当前生效的 Desktop 主题；`system` 在执行操作时解析。即使平台页面随后批准，取消仍会撤销本地尝试。设置中的账号页面提供退出；没有独立 API Key 时，退出后返回欢迎窗。打包应用注册 dsh://open，只显示窗口而不传递凭证。macOS 开发启动器在 `.desktop-build/development` 下准备经临时签名的 `Harness Dev.app`，在 Info.plist 中声明 `dsh` 并注册到 Launch Services。它加载当前工作区，并记录选定的开发 home、浏览器数据路径和调试设置，以供冷启动使用。启动此应用会将其设为 `dsh://` 默认处理程序；启动打包应用会重新注册打包版处理程序。生成的应用包不包含账号 token，依赖工作区和已准备的运行环境继续存在。
+
+登录超时后显示超时标题，并提供重新登录和添加 API Key 按钮。打开 API Key 表单会关闭授权视图；后续账号状态通知不会覆盖正在填写的密钥。
+
+内嵌 Platform 视图在文档加载完成前保持隐藏，让渲染层加载图标可见。关闭或替换待加载视图后，该视图不会再次出现。 所属应用文档刷新或替换、渲染进程终止以及窗口关闭也会销毁原生视图，不依赖 React 清理。
+
+私有 Platform 部署请求头由内嵌浏览器会话注入，仅用于配置来源的文档和 API 请求。Cookie 覆盖按名称合并。跨来源请求移除部署请求头；bootstrap 仅暴露 origin、token 和已解析的语言。
+
+账号提供者的 `embeddedPageDist` 配置为内嵌用量和充值页面 URL 添加 `dist` 查询参数。默认值为空；私有前端分支选择值应写在本地 profile patch 中。此配置不改变 API 地址或凭证传递方式。
+
+## 开发备注
+
+上线前 CDN 与容量决策见[桌面更新提案](../../.agents/notes/proposed/feature/2026-09-08-desktop-update-policy-and-installation.zh.md#cdn-and-capacity-qualification)。

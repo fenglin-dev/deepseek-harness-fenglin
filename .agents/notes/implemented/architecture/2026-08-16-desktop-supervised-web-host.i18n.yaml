@@ -1,6 +1,12 @@
 # Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
+<<<<<<<< HEAD:.agents/notes/implemented/architecture/2026-08-16-desktop-supervised-web-host.i18n.yaml
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-16-desktop-supervised-web-host.md
 2026-08-16-desktop-supervised-web-host.md: 9f3eb9d97c1aa437b000b54658fae23638944908
 2026-08-16-desktop-supervised-web-host.zh.md: 9c765c1a815aa51589b0669152397040feb42c59
+========
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-16-movable-mandatory-update-window.md
+2026-09-16-movable-mandatory-update-window.md: da996e5b37f990ff773e3ec88de0baed3c4b54f3
+2026-09-16-movable-mandatory-update-window.zh.md: 15fd4eb2520a39d8259321a747b33c833b56cbb1
+>>>>>>>> dsh-v0.1.7-rc.1:.agents/notes/archived/bug-fix/2026-09-16-movable-mandatory-update-window.i18n.yaml

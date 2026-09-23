@@ -8,7 +8,7 @@
 
 import { pathToFileURL } from 'node:url'
 import { readFileSync } from 'node:fs'
-import { parseEnv } from 'node:util'
+import { inspect, parseEnv } from 'node:util'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
 import { Context, type FiberState } from '@deepseek-ai/cordis'
@@ -19,6 +19,17 @@ import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 export { readProfilePatches, resolveTelemetryPatch, type ProfileContext, type ProfilePnpmInvocation } from './profile-context.ts'
 export { sanitizeProfile } from './profile-sanitize.ts'
+export { getDshRuntimeVersion, evaluatePluginCompatibility, pluginCompatibilityWarning, type PluginCompatibility } from './plugin-compatibility.ts'
+export {
+  PROFILE_COMPATIBILITY_FILENAME, readProfileCompatibility, readProfileVersionExemptions,
+  setProfileVersionExemption, type ProfileCompatibility,
+} from './profile-compatibility.ts'
+import { prepareProfilePatches } from './compatibility-preflight.ts'
+export { prepareProfileEntries, prepareProfilePatches } from './compatibility-preflight.ts'
+export { readPluginMeta } from './package-meta.ts'
+export { generateConfigSchema, type ConfigSchemaDump, type NativeConfigSchema } from './config-schema/index.ts'
+export { createConfigProjector, LOADER_EXPRESSION_SCHEMA, type ConfigProjection } from './config-schema/projector.ts'
+export { isNativeConfigSchema } from './config-schema/native.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
 export {
@@ -31,18 +42,26 @@ declare module '@deepseek-ai/cordis' {
     /** Harness-home path resolver available to Loader `!!js` config expressions. */
     dshHomePath?: typeof dshHomePath
   }
+
+  interface Events {
+    /**
+     * Profile patches were reconciled into the running Loader tree: every entry update settled and no new
+     * inactive entry was introduced. Carries no diff; listeners re-read Loader entries.
+     * @mode emit
+     */
+    'app-boot/config-reload'(): void
+  }
 }
 
 export {
   composeEntries,
-  createProfileResolutionGeneration,
+  createRuntimeResolution,
   DEFAULT_PROFILE_BUNDLES,
   OPTIONAL_BUNDLES,
-  healProfilesModuleFallback,
-  healIsolatedProfileModuleFallback,
-  unlinkProfileModuleFallback,
+  bundlePatchFiles,
+  bundlePatchPaths,
   initProfile,
-  loadDiagnosticProfile,
+  removeLinkProjections,
   loadProfile,
   loadProfileDirectory,
   PROFILE_PATCH_FILENAME,
@@ -50,16 +69,15 @@ export {
   PROFILES_DIR,
   readProfileManifest,
   resolveBundleDir,
-  resolveProfileLoaderModule,
   resolveProfileDir,
   writeProfileManifest,
   type Profile,
   type ProfileLayer,
   type ProfileManifest,
-  type ProfileModuleFallbackOptions,
-  type ProfileResolutionEntry,
-  type ProfileResolutionGeneration,
-  type ProfileResolutionMode,
+  type LinkedRoot,
+  type RuntimeResolutionOptions,
+  type RuntimeResolutionEntry,
+  type RuntimeResolution,
   type ProfileTemplate,
 } from './profile.ts'
 export {
@@ -67,113 +85,6 @@ export {
   type PluginPackage,
   type PluginPackagesConfig,
 } from './profile-resolution/service.ts'
-
-export {
-  allowProfilePackageBuild,
-  allowProfileRegistryPackageBuild,
-  type ProfilePackageBuildAllowance,
-} from './profile-package-builds.ts'
-
-export {
-  approveQuarantinedProfilePluginHostVersion,
-  clearQuarantinedProfilePlugin,
-  clearLastProfileRepairReport,
-  inspectProfileDependencies,
-  inspectProfileHostCompatibility,
-  inspectProfileImmutableAgentInputMutation,
-  inspectProfileLegacySessionApi,
-  inspectProfileLoaderEntryCollisions,
-  inspectOrphanedProfileBundles,
-  inspectProfileBundleEntryOwnership,
-  inspectUnresolvableProfileBundleEntries,
-  inspectQuarantineRemovalResidue,
-  listQuarantinedProfilePlugins,
-  PROFILE_QUARANTINE_SCHEMA,
-  quarantineProfilePluginAfterLoadFailure,
-  reconcileRestoredQuarantinedProfilePlugins,
-  repairProfileDependencies,
-  retryQuarantinedProfilePlugin,
-  readLastProfileRepairReport,
-  SHARED_HOST_PACKAGES,
-  uninstallQuarantinedProfilePlugin,
-  type ProfileDependencyConflict,
-  type ProfileHostCompatibilityIssue,
-  type OrphanedProfileBundle,
-  type ProfileBundleEntryOwnership,
-  type ProfileLoaderEntryCollision,
-  type ProfileQuarantineReason,
-  type ProfileDependencyOptions,
-  type ProfilePackageManagerResult,
-  type ProfileRepairOptions,
-  type UnresolvableProfileBundleEntry,
-  type ProfileRepairReport,
-  type ProfileQuarantineRetryOptions,
-  type QuarantineRemovalResidue,
-  type QuarantinedProfilePlugin,
-} from './profile-health.ts'
-
-export {
-  classifyProfileDiagnostic,
-  clearProfileDiagnosticReport,
-  createProfileDiagnosticReport,
-  extractProfileBuildApprovalKey,
-  orphanedBundleDiagnostic,
-  PROFILE_DIAGNOSTIC_SCHEMA,
-  profileDiagnosticRuleCatalog,
-  profileDependencyConflictDiagnostic,
-  profileHostCompatibilityDiagnostic,
-  profileLoaderEntryCollisionDiagnostic,
-  quarantineRemovalResidueDiagnostic,
-  quarantinedPluginDiagnostic,
-  readProfileDiagnosticReport,
-  sanitizeProfileDiagnostic,
-  writeProfileDiagnosticReport,
-  type ClassifyProfileDiagnosticOptions,
-  type ProfileDiagnostic,
-  type ProfileDiagnosticAction,
-  type ProfileDiagnosticAttribution,
-  type ProfileDiagnosticCode,
-  type ProfileDiagnosticPhase,
-  type ProfileDiagnosticReport,
-  type ProfileDiagnosticRuleSummary,
-  type ProfileDiagnosticSeverity,
-  type ProfileDiagnosticSource,
-} from './profile-diagnostics.ts'
-
-export {
-  backupAndResetInvalidSettings,
-  prepareDiagnosticRuntimeDirectories,
-  prepareDiagnosticSettingsDocument,
-  type DiagnosticRuntimeDirectories,
-  type ResetInvalidSettingsResult,
-} from './settings-diagnostics.ts'
-
-export {
-  acquireProfilePluginMutationLock,
-  assertProfilePluginMutationLease,
-  beginProfilePluginMutationLease,
-  createProfilePluginSnapshot,
-  finalizeProfilePluginSnapshot,
-  endProfilePluginMutationLease,
-  listProfilePluginSnapshots,
-  PROFILE_PLUGIN_SNAPSHOT_SCHEMA,
-  removeProfilePluginSnapshot,
-  restoreProfilePluginSnapshotFiles,
-  settleProfilePluginSafetySnapshot,
-  withAutomaticProfilePluginSnapshot,
-  type CreateProfilePluginSnapshotOptions,
-  type CreatedProfilePluginSnapshot,
-  type ProfilePluginSnapshotDifference,
-  type ProfilePluginSnapshotFile,
-  type ProfilePluginSnapshotKind,
-  type ProfilePluginSnapshotOptions,
-  type ProfilePluginSnapshotPackage,
-  type ProfilePluginSnapshotRecord,
-  type ProfilePluginSnapshotSummary,
-  type ProfilePluginSnapshotTrigger,
-  type ProfilePluginSnapshotVersionChange,
-  type RestoredProfilePluginSnapshot,
-} from './profile-plugin-snapshot.ts'
 
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
@@ -370,7 +281,10 @@ export async function reconcileProfilePatches(
     fiber: row.fiber, failed: row.fiber.state === FIBER_FAILED || row.fiber.state === FIBER_DISPOSED,
   }])
   const { patches: _previous, ...includeConfig } = entry.options.config as Include.Config
-  await entry.update({ config: { ...includeConfig, patches } })
+  // The recomposition judges the rows the launch judged, resolved from the file this Include read.
+  const parentURL = new URL('.', new URL(includeConfig.path, entry.parent.tree.ctx.baseUrl)).href
+  const prepared = prepareProfilePatches(ctx, patches, parentURL, binName)
+  await entry.update({ config: { ...includeConfig, patches: prepared } })
   const results = await Promise.allSettled(previousFibers.map(({ fiber }) => fiber.await()))
   await ctx.loader.await()
   const failures = await inactiveEntries(ctx)
@@ -381,45 +295,8 @@ export async function reconcileProfilePatches(
   for (const [index, result] of results.entries()) {
     if (result.status === 'rejected' && !previousFibers[index]?.failed) throw result.reason
   }
+  ctx.emit('app-boot/config-reload')
   return failures.map(inactiveDiagnostic)
-}
-
-/** Options for the legacy exact-path profile patch watcher. */
-export interface UserPatchWatchOptions {
-  /** Diagnostic prefix used when loading or applying the patch file. */
-  binName: string
-  /** Absolute path to the optional patch-list file. */
-  filename: string
-  /** Rebuild the complete generation from the freshly read user layer. */
-  compose?: (userPatches: PatchOptions[]) => PatchOptions[]
-}
-
-/**
- * Register one exact profile patch path with the shared HMR transaction queue.
- *
- * New profile launches provide {@link ProfileContext} and let HMR own all
- * profile inputs. This helper remains as a compatibility surface for callers
- * that intentionally manage one patch layer themselves; it delegates both
- * scheduling and serialization to that same HMR service.
- * @param ctx Booted root context containing HMR and its root Include entry.
- * @param options Patch path and optional complete-generation composer.
- * @returns An asynchronous watcher disposer.
- */
-export async function watchUserPatches(
-  ctx: Context, options: UserPatchWatchOptions,
-): Promise<() => Promise<void>> {
-  const hmr = ctx.get('hmr') as undefined | {
-    watchConfig(filename: string, refresh: () => Promise<void>): Promise<() => Promise<void>>
-  }
-  if (hmr === undefined) throw new Error(`${options.binName}: profile reload requires the Cordis HMR service`)
-  if (bootstrapIncludes.get(ctx) === undefined) {
-    throw new Error(`${options.binName}: profile reload requires the root Include entry`)
-  }
-  const compose = options.compose ?? ((patches: PatchOptions[]) => patches)
-  return hmr.watchConfig(options.filename, async () => {
-    const userPatches = loadOptionalPatches(options.binName, options.filename) ?? []
-    await reconcileProfilePatches(ctx, compose(userPatches), options.binName)
-  })
 }
 
 /**
@@ -517,14 +394,15 @@ export interface ConfigDumpLayer {
 }
 
 /**
- * Compose the effective entry list exactly as `boot()` would mount it: parse
- * the base config file with the include's entry-list dialect, apply every
- * layer's patches as ONE flattened list through the include's own patch
- * algorithm (`applyEntryPatches`) — the same single call `boot()` makes, so
- * even patch-visibility corner cases (a later layer targeting a group child a
- * plain config replacement introduced, which the single-pass id index never
- * sees) compose identically — then render the result as YAML in the same
- * dialect (`!!js` expressions print verbatim, unevaluated).
+ * Compose the configured entry list: parse the base config file with the
+ * include's entry-list dialect, apply every layer's patches as ONE flattened
+ * list through the include's own patch algorithm (`applyEntryPatches`) — the
+ * same call `boot()` makes, so even patch-visibility corner cases (a later
+ * layer targeting a group child a plain config replacement introduced, which
+ * the single-pass id index never sees) compose identically — then render the
+ * result as YAML in the same dialect (`!!js` expressions print verbatim,
+ * unevaluated). Row admission is a later stage: a plugin row the compatibility
+ * policy denies still appears here, while a denied bundle contributes no layer.
  *
  * Every run of rows from the same file and patch layers is preceded by a `# ==` comment
  * naming the file that contributed the rows and any layers that patched them,
@@ -650,6 +528,7 @@ function groupedDump(
  * @param patches - initial app and user patches, applied in order.
  * @param bareModuleBaseUrl - optional installed-host base for bare package
  * names; relative names continue to resolve beside the configuration file.
+ * @param binName - diagnostic prefix for a profile plugin denied by compatibility policy; defaults to `dsh`.
  * @returns the created root Include entry, or `undefined` when a surface
  * disposed the whole tree (taking the Loader service with it) while the
  * entry creation was in flight.
@@ -659,6 +538,7 @@ export async function mountRootInclude(
   absoluteConfigPath: string,
   patches: readonly PatchOptions[] = [],
   bareModuleBaseUrl?: string,
+  binName = 'dsh',
 ): Promise<Entry | undefined> {
   ctx.loader.builtins.include = bareModuleBaseUrl === undefined
     ? Include
@@ -682,9 +562,12 @@ export async function mountRootInclude(
   // Pinned id: the bootstrap include is app glue, not a config row, and its
   // id appears in Loader failure chains — a random id would make startup
   // diagnostics unstable across runs (and snapshot fixtures).
+  // The launcher's own copy is prepared here: compatibility decisions must be made before the root
+  // Include imports anything, and they change no profile patch layer, manifest, or bundle list.
+  const prepared = prepareProfilePatches(ctx, [...patches], pathToFileURL(dirname(absoluteConfigPath)).href + '/', binName)
   const includeConfig: Include.Config = {
     path: pathToFileURL(absoluteConfigPath).href,
-    ...patches.length > 0 ? { patches: [...patches] } : {},
+    ...prepared.length > 0 ? { patches: prepared } : {},
   }
   const rootInclude: EntryOptions = {
     id: 'include',
@@ -699,13 +582,16 @@ export async function mountRootInclude(
   return entry
 }
 
+/** The two process events {@link installFailLoud} turns into a fatal exit. */
+export type FailLoudEvent = 'unhandledRejection' | 'uncaughtException'
+
 /**
  * The slice of `process` {@link installFailLoud} needs — injectable so tests
  * exercise the handler without registering on (or exiting) the real process.
  */
 export interface FailLoudProcess {
-  on(event: 'unhandledRejection', handler: (err: unknown) => void): unknown
-  off(event: 'unhandledRejection', handler: (err: unknown) => void): unknown
+  on(event: FailLoudEvent, handler: (err: unknown) => void): unknown
+  off(event: FailLoudEvent, handler: (err: unknown) => void): unknown
   stderr: { write(chunk: string): unknown }
   /**
    * Terminate the process. Callers treat this as the end of the run, as
@@ -749,11 +635,22 @@ async function observeLoaderRejectionCheckpoint(reasons: readonly unknown[]): Pr
 export const FAIL_LOUD_RELEASE_TIMEOUT_MS = 2_000
 
 /**
- * Install before boot to turn a late unhandled plugin-init rejection into one
- * labelled stderr diagnostic and `exit(1)`. A rejection already included by
- * {@link auditStartupEntries} is ignored during its process checkpoint;
- * every other rejection remains fatal. Stdout remains untouched for ACP; the
- * returned function removes the handler.
+ * Install before boot to turn an unhandled rejection or an uncaught exception,
+ * at any point in the process lifetime, into one labelled stderr diagnostic and
+ * `exit(1)`. A rejection already included by {@link auditStartupEntries} is
+ * ignored during its process checkpoint; every other rejection and every
+ * uncaught exception remains fatal. Control never returns to the failed
+ * operation after either: only the throw site knows which state is intact, and
+ * a listener that threw mid-update (a stream `'data'` handler, a half-applied
+ * registry write) leaves silently wrong results behind if it were resumed. The
+ * event loop keeps running only until the release hook settles or times out.
+ * Stdout remains untouched for ACP; the returned function removes both handlers.
+ *
+ * The diagnostic is `util.inspect(err)`, not `err.stack`: a `node:fs` error's
+ * `code`, `syscall`, and `path` and any `cause` chain are enumerable properties
+ * that the stack line omits, and they are what a crash report needs. Once a
+ * handler is installed Node prints nothing of its own, so this line is the
+ * only record of the failure.
  *
  * The Loader mounts entries concurrently, so a surface that owns the terminal
  * can already hold it when a sibling entry rejects. Exiting straight from the
@@ -775,7 +672,7 @@ export const FAIL_LOUD_RELEASE_TIMEOUT_MS = 2_000
  * @param release - optional teardown awaited before exit, used by a
  *   terminal-owning surface to restore the terminal. Its own failure is
  *   swallowed because the pending fatal exit already owns the outcome.
- * @returns the uninstaller that removes the rejection handler.
+ * @returns the uninstaller that removes both handlers.
  */
 export function installFailLoud(
   binName: string,
@@ -783,14 +680,13 @@ export function installFailLoud(
   release?: () => Promise<void> | void,
 ): () => void {
   let exiting = false
-  const handler = (err: unknown): void => {
-    if (assembledActivationRejections.has(err)) return
-    // A release in flight already owns the exit. Swallow later rejections
+  const report = (err: unknown, label: string): void => {
+    // A release in flight already owns the exit. Swallow later failures
     // (teardown's own included) rather than reporting a second failure over the
     // real one or letting Node kill the process before the terminal is back.
     if (exiting) return
     exiting = true
-    proc.stderr.write(`${binName}: fatal load failure: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`)
+    proc.stderr.write(`${binName}: ${label}: ${inspect(err, { depth: 4, maxArrayLength: 50 })}\n`)
     if (release === undefined) {
       proc.exit(1)
       return
@@ -814,8 +710,18 @@ export function installFailLoud(
       proc.exit(1)
     })()
   }
-  const uninstall = (): void => void proc.off('unhandledRejection', handler)
-  proc.on('unhandledRejection', handler)
+  const onRejection = (err: unknown): void => {
+    if (assembledActivationRejections.has(err)) return
+    // Label kept stable: the Web profile expected-output e2e tests match it.
+    report(err, 'fatal load failure')
+  }
+  const onException = (err: unknown): void => { report(err, 'fatal uncaught exception') }
+  const uninstall = (): void => {
+    proc.off('unhandledRejection', onRejection)
+    proc.off('uncaughtException', onException)
+  }
+  proc.on('unhandledRejection', onRejection)
+  proc.on('uncaughtException', onException)
   return uninstall
 }
 
@@ -844,9 +750,6 @@ const requiredStartupEntryIds = new Set<string>([
   'acp',
   'sdk-jsonrpc-server',
 ])
-
-/** Machine-readable prefix consumed by supervisors that validate a staged plugin activation. */
-export const OPTIONAL_STARTUP_FAILURES_MARKER = 'dsh: optional startup failures '
 
 /** Render plugin stacks, nested causes, and aggregate member failures once per error. */
 function formatActivationError(error: unknown): string {
@@ -1023,27 +926,14 @@ export async function auditStartupEntries(
   warn: (line: string) => void = line => void process.stderr.write(line),
 ): Promise<void> {
   const failures = await inactiveEntries(ctx)
-  const requiredEntries: InactiveEntry[] = []
-  const optional: InactiveEntry[] = []
-  for (const failure of failures) {
-    const target = failure.entry === bootstrapIncludes.get(ctx)
-      || requiredStartupEntryIds.has(failure.entry.options.id) ? requiredEntries : optional
-    target.push(failure)
-  }
-  if (optional.length > 0) {
-    const summary = optional.map(failure => ({
-      id: failure.entry.options.id,
-      name: failure.entry.options.name,
-    }))
-    warn(`${OPTIONAL_STARTUP_FAILURES_MARKER}${JSON.stringify(summary)}\n${activationDiagnostic(binName, optional)}`)
-  }
-  const required = new Set(requiredEntries.map(({ entry }) => entry))
+  const required = new Set(failures.filter(({ entry }) => entry === bootstrapIncludes.get(ctx)
+    || requiredStartupEntryIds.has(entry.options.id)).map(({ entry }) => entry))
   if (required.size > 0) {
     throw new StartupError(startupDiagnostic(binName, failures, required), failures.map(({ entry, outcome }) => ({
       id: entry.options.id, module: entry.options.name, required: required.has(entry), fiberState: entry.fiber?.state, outcome,
     })))
   }
-  if (required.size === 0 && optional.length > 0) return
+  if (failures.length > 0) warn(activationDiagnostic(binName, failures))
 }
 
 /**
@@ -1109,7 +999,7 @@ export async function boot(
     await ctx.plugin(Loader)
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'
-    await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl)
+    await mountRootInclude(ctx, absoluteConfigPath, patches, bareModuleBaseUrl, binName)
     // A surface can finish and dispose the whole tree while startup is still
     // in flight, before the last entry settles. The Loader service goes with
     // it, and the activation audit describes a live tree — reading `ctx.loader`

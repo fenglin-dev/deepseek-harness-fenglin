@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
-import type { ReactNode } from 'react'
+import type { KeyboardEventHandler, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
-import { IconCloseOutline16 } from './icons/index.tsx'
+import { IconCloseOutlineRegular } from './icons/index.tsx'
 import css from './Modal.module.css'
 
 interface ModalBaseProps {
@@ -14,6 +14,7 @@ interface ModalBaseProps {
   footer?: ReactNode
   className?: string
   contentClassName?: string
+  onKeyDownCapture?: KeyboardEventHandler<HTMLDivElement>
 }
 
 type ModalProps = ModalBaseProps & (
@@ -34,10 +35,11 @@ type ModalProps = ModalBaseProps & (
  * @param props.contentClassName - optional class for a scrollable content region.
  * @param props.headless - render children directly in the card (no default
  * header/close/body chrome); mask, card, Escape, and aria-label remain.
+ * @param props.onKeyDownCapture - handle a nested dialog's keys before the document Escape listeners.
  * @returns null when closed; otherwise the overlay tree.
  */
 export function Modal({
-  open, onClose, title, closeLabel, description, children, footer, className, contentClassName, headless = false,
+  open, onClose, title, closeLabel, description, children, footer, className, contentClassName, onKeyDownCapture, headless = false,
 }: ModalProps) {
   useEffect(() => {
     if (!open) return
@@ -51,7 +53,7 @@ export function Modal({
   if (!open) return null
 
   return createPortal((
-    <div className={css.root} role="presentation">
+    <div className={css.root} role="presentation" onKeyDownCapture={onKeyDownCapture}>
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
       <div
         className={clsx(css.dialog, className)}
@@ -67,7 +69,7 @@ export function Modal({
                 <div className={css.header}>
                   <h2 className={css.title}>{title}</h2>
                   <button type="button" className={css.close} aria-label={closeLabel} onClick={onClose}>
-                    <IconCloseOutline16 size={14} />
+                    <IconCloseOutlineRegular size={14} />
                   </button>
                 </div>
                 {description !== undefined && description !== '' && (

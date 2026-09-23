@@ -12,7 +12,7 @@
       "path": "../../boot/app-boot"
     },
     {
-      "path": "../../preset/agent-presets"
+      "path": "../../util/package-manifest"
     },
     {
       "path": "../../../vendor/cordis"
@@ -21,19 +21,13 @@
       "path": "../../../vendor/loader"
     },
     {
-      "path": "../../../vendor/schemastery"
+      "path": "../../preset/agent-preset-registry"
     },
     {
       "path": "../../util/brand"
     },
     {
       "path": "../../typert/protocol"
-    },
-    {
-      "path": "../../subprocess/subprocess"
-    },
-    {
-      "path": "../../subagent/tool-subagent"
     }
   ]
 }
