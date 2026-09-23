@@ -562,11 +562,14 @@ importers:
   apps/desktop:
     dependencies:
       '@deepseek-ai/cordis':
-        specifier: workspace:~
+        specifier: workspace:^
         version: link:../../vendor/cordis
       '@deepseek-ai/dsh-api-gateway':
         specifier: workspace:*
         version: link:../../packages/api/gateway
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../packages/util/http-proxy
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9
@@ -661,6 +664,9 @@ importers:
       vite:
         specifier: ^6.0.0
         version: 6.4.3(@types/node@22.20.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.4)(yaml@2.9.0)
+      yaml:
+        specifier: ^2.8.1
+        version: 2.9.0
 
   apps/desktop-host:
     dependencies:
