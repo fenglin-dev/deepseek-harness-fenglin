@@ -120,7 +120,7 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
     PATH: `${join(node, '..')}${delimiter}${process.env.PATH ?? ''}` })
   const command = (home, args) => runHarnessInvocation({ command: node,
     args: [join(harnessRoot, 'lib/bin.js'), 'plugin', '--profile', 'web', ...args], environment: environment(home), cwd: harnessRoot,
-  }, { kind: 'prebuilt-profile-prepare', timeoutMs: 20 * 60_000, signal: new AbortController().signal })
+  }, { kind: 'prebuilt-profile-prepare', timeoutMs: 40 * 60_000, signal: new AbortController().signal })
   for (const entry of manifest.plugins.filter(entry => entry.installPolicy === 'startup')) {
     await seedBundledPlugin({ entry, resourcesDirectory: resources, dshHome: destination,
       prepare: async () => { for (const name of entry.approvedBuilds ?? []) await command(destination, ['approve-build', name]) },
@@ -150,6 +150,31 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
       'sharp-linuxmusl-arm64',
       'sharp-linuxmusl-x64',
       'sharp-win32-arm64',
+      '@img/sharp-darwin-arm64',
+      '@img/sharp-darwin-x64',
+      '@img/sharp-freebsd-wasm32',
+      '@img/sharp-libvips-darwin-arm64',
+      '@img/sharp-libvips-darwin-x64',
+      '@img/sharp-libvips-linux-arm',
+      '@img/sharp-libvips-linux-arm64',
+      '@img/sharp-libvips-linux-ppc64',
+      '@img/sharp-libvips-linux-riscv64',
+      '@img/sharp-libvips-linux-s390x',
+      '@img/sharp-libvips-linux-x64',
+      '@img/sharp-libvips-linuxmusl-arm64',
+      '@img/sharp-libvips-linuxmusl-x64',
+      '@img/sharp-linux-arm',
+      '@img/sharp-linux-arm64',
+      '@img/sharp-linux-ppc64',
+      '@img/sharp-linux-riscv64',
+      '@img/sharp-linux-s390x',
+      '@img/sharp-linux-x64',
+      '@img/sharp-linuxmusl-arm64',
+      '@img/sharp-linuxmusl-x64',
+      '@img/sharp-wasm32',
+      '@img/sharp-webcontainers-wasm32',
+      '@img/sharp-win32-arm64',
+      '@img/sharp-win32-ia32',
     ])
     const yamlText = await readFile(pnpmWorkspacePath, 'utf8')
     const doc = parseDocument(yamlText)
