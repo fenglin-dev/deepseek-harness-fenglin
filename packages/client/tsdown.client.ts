@@ -157,7 +157,7 @@ export function clientBundle(
 export function staticLinked(id: string, libEntry: readonly string[]): BuildFaceConfig {
   // Each entry names its own output file, so two entries with the same basename
   // would overwrite one artifact instead of emitting two.
-  const names = new Set(libEntry.map(entry => basename(entry, '.js')))
+  const names = new Set(libEntry.map(entry => basename(entry).replace(/\.(?:js|ts)$/, '')))
   if (names.size !== libEntry.length) {
     throw new Error(`tsdown: ${id} entries collide on an output name: ${libEntry.join(', ')}`)
   }
@@ -258,7 +258,7 @@ interface AssetEmitter {
   }): string
 }
 
-function staticLinkedConfig(id: string, entry: string, outputName = basename(entry, '.js')): UserConfig {
+function staticLinkedConfig(id: string, entry: string, outputName = basename(entry).replace(/\.(?:js|ts)$/, '')): UserConfig {
   const emitted = new Set<string>()
   const isolation = clientInputIsolation(id)
   return {
