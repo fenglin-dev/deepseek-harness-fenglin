@@ -1,15 +1,14 @@
-import { createRequire } from "node:module";
 import { access, lstat, mkdir, open, opendir, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep, win32 } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
-import z from "schemastery";
+import { parse } from "yaml";
+import z from "@deepseek-ai/schemastery";
 import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { chmodSync, createWriteStream, existsSync, readFileSync, realpathSync } from "node:fs";
+import { createWriteStream, watch } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { SettingsConflictError } from "@deepseek-ai/dsh-settings";
-import { homedir, userInfo } from "node:os";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { snapshotSubagentDescriptor } from "@deepseek-ai/dsh-subagent";
@@ -28,15 +27,9 @@ const SIDEBAR_PREFS_NS = "dsh-better-sidebar";
 const SIDEBAR_PREFS_DEFAULTS = {
 	autoOpenSubagent: true,
 	autoOpenJobs: true,
-	agentTerminalTools: false,
 	agentOpenTools: false,
-	bottomPanelAutoTerminal: true,
-	terminalFontFamily: "",
-	terminalFontSize: 13,
 	editorExplorer: false,
 	workspaceFence: true,
-	terminalShell: "",
-	terminalShellArgs: "",
 	titleBarScheme: "auto",
 	titleBarPresetId: "",
 	customCss: "",
@@ -44,11 +37,6 @@ const SIDEBAR_PREFS_DEFAULTS = {
 	titleBarStripPx: 40,
 	htmlViewerNoSandbox: false,
 	htmlViewerDefaultUnsafe: false,
-	browserNoSandbox: false,
-	browserInterceptLinks: true,
-	browserInterceptHttp: true,
-	browserInterceptHttps: false,
-	browserAllowedLoopback: "",
 	tabsEnabled: {},
 	viewersEnabled: {},
 	pluginSettings: {}
@@ -59,18 +47,23 @@ const SIDEBAR_PREFS_DEFAULTS = {
 * Serializable configuration and defaults for the sidebar host half. Loader
 * schema validation normally fills defaults; {@link resolveSidebarConfig}
 * applies the same defaults for direct callers that bypass the Loader.
+*
+* Schemastery comes from DSH, not from the public `schemastery` package, and
+* that is load-bearing rather than stylistic: only DSH's build WRAPS a
+* `meta.volatile` field in a cosmokit `Volatile` reference when it parses the
+* config. The Loader's volatile-commit path walks those references
+* (`volatileEntries` / `updateVolatile`), so a schema built with the public
+* package produces plain values, leaves the loader nothing to commit, and
+* **silently drops every live preference write** — the write reports success
+* and the effective value never changes.
 * @module dsh-better-sidebar/config
 */
-/** Schemastery schema for the plugin configuration. */
-const Config = z.object({
+/** Schemastery schema for the deployment-provided host limits. */
+const LimitsSchema = z.object({
 	readLimit: z.number().step(1).min(1).default(524288),
 	mediaLimit: z.number().step(1).min(1).default(20971520),
 	uploadLimit: z.number().step(1).min(1).default(134217728),
-	listLimit: z.number().step(1).min(1).default(1e3),
-	terminalsPerSession: z.number().step(1).min(1).default(3),
-	reconnectGraceMs: z.number().step(1).min(0).default(3e4),
-	shell: z.string().default(""),
-	shellArgs: z.array(z.string()).default([])
+	listLimit: z.number().step(1).min(1).default(1e3)
 });
 /**
 * Apply direct-call defaults after Loader schema validation has normally run.
@@ -83,26 +76,16 @@ function resolveSidebarConfig(config) {
 		readLimit: config?.readLimit ?? 524288,
 		mediaLimit: config?.mediaLimit ?? 20971520,
 		uploadLimit: config?.uploadLimit ?? 134217728,
-		listLimit: config?.listLimit ?? 1e3,
-		terminalsPerSession: config?.terminalsPerSession ?? 3,
-		reconnectGraceMs: config?.reconnectGraceMs ?? 3e4,
-		shell: config?.shell?.trim() ?? "",
-		shellArgs: config?.shellArgs ?? []
+		listLimit: config?.listLimit ?? 1e3
 	};
 }
 /** Schemastery schema for the user-facing preferences (validated by the settings service). */
 const PrefsSchema = z.object({
 	autoOpenSubagent: z.boolean().default(true),
 	autoOpenJobs: z.boolean().default(true),
-	agentTerminalTools: z.boolean().default(false),
 	agentOpenTools: z.boolean().default(false),
-	bottomPanelAutoTerminal: z.boolean().default(true),
-	terminalFontFamily: z.string().default(""),
-	terminalFontSize: z.number().step(1).min(9).max(32).default(13),
 	editorExplorer: z.boolean().default(false),
 	workspaceFence: z.boolean().default(true),
-	terminalShell: z.string().default(""),
-	terminalShellArgs: z.string().default(""),
 	titleBarScheme: z.union([
 		z.const("auto"),
 		z.const("web"),
@@ -115,14 +98,18 @@ const PrefsSchema = z.object({
 	titleBarStripPx: z.number().step(1).min(0).max(120).default(40),
 	htmlViewerNoSandbox: z.boolean().default(false),
 	htmlViewerDefaultUnsafe: z.boolean().default(false),
-	browserNoSandbox: z.boolean().default(false),
-	browserInterceptLinks: z.boolean().default(true),
-	browserInterceptHttp: z.boolean().default(true),
-	browserInterceptHttps: z.boolean().default(false),
-	browserAllowedLoopback: z.string().default(""),
 	tabsEnabled: z.dict(z.boolean()).default({}),
 	viewersEnabled: z.dict(z.boolean()).default({}),
 	pluginSettings: z.dict(z.dict(z.any())).default({})
+});
+const volatilePrefs = Object.fromEntries(Object.entries(PrefsSchema.dict ?? {}).map(([key, field]) => [key, field.volatile()]));
+/**
+* Config schema of this plugin's Loader row: deployment limits plus the live
+* user preferences.
+*/
+const Config = z.object({
+	...LimitsSchema.dict,
+	...volatilePrefs
 });
 //#endregion
 //#region src/wire.ts
@@ -714,32 +701,6 @@ function decodeHtmlUrl(pathname) {
 	};
 }
 //#endregion
-//#region src/browser-probe.ts
-/**
-* Pure helpers for the `browser.probe` route (sidebar browser): the host
-* fetches the response HEADERS of a URL the user is browsing and the client
-* decides whether the target site forbids being embedded (X-Frame-Options /
-* CSP frame-ancestors are exactly the signals the browser enforces when it
-* refuses an iframe load). Kept dependency-free so the parser is
-* unit-testable.
-*/
-/**
-* Extract the `frame-ancestors` source list of a Content-Security-Policy
-* header, or undefined when the directive is absent (or empty). The
-* directive is the only one with a source list; sources are space-separated
-* tokens (`'none'`, `'self'`, `*`, or origins).
-*/
-function extractFrameAncestors(csp) {
-	if (csp === null) return void 0;
-	for (const directive of csp.split(";")) {
-		const parts = directive.trim().split(/\s+/);
-		if (parts[0] === "frame-ancestors") {
-			const sources = parts.slice(1).filter((source) => source !== "");
-			return sources.length === 0 ? void 0 : sources;
-		}
-	}
-}
-//#endregion
 //#region src/trust-fence.ts
 function header(headers, name) {
 	const value = headers[name];
@@ -811,7 +772,6 @@ function isTrustedApiRequest(request, trustedHosts) {
 */
 /** The chunk names the client may request (mirror of src/client/chunk-loader.ts). */
 const CHUNK_NAMES = [
-	"terminal",
 	"editor",
 	"mermaid",
 	"locale"
@@ -906,6 +866,90 @@ function registerBundleRoute(ctx, fence) {
 		path: "/sidebar/bundle",
 		handler: createBundleRouteHandler(fence)
 	});
+}
+//#endregion
+//#region src/fs-watch.ts
+/**
+* Directory change watching behind the file tree's live refresh.
+*
+* The tree used to go stale the moment anything wrote to disk outside the
+* plugin (a build, a formatter, the model's own `bash`): a folder was listed
+* once, when it was expanded, and never again. DSH 0.1.7 gave its own tree
+* per-directory watching; this plugin owns its tree (it took the `files` kind
+* over), so it needs its own watcher.
+*
+* One connection watches the directories the reader actually has expanded —
+* not the whole workspace — because `fs.watch` is one OS handle per directory
+* and a deep tree would exhaust them. Collapsing a folder or closing the
+* socket releases its handle.
+* @module dsh-better-sidebar/fs-watch
+*/
+/** How long a burst of filesystem events is folded into a single push. */
+const DEBOUNCE_MS = 150;
+/**
+* Directory watchers one connection may hold. The cap is a resource guard,
+* not a policy: a reader with more than this many folders expanded simply
+* stops gaining new watchers, and collapsing any folder frees a slot.
+*/
+const MAX_WATCHES = 64;
+/**
+* Create the watcher set of one connection.
+*
+* `fs.watch` reports a directory's own entry list changing, which is exactly
+* what re-listing that directory needs — file CONTENTS changing inside an
+* expanded folder is not observable this way and is not what the tree shows.
+* @param push - called once per debounced burst with the changed directory.
+* @param onError - called when a directory cannot be watched or its watcher
+*   fails; the directory is dropped either way, so the caller only reports it.
+* @returns the connection's watcher set.
+*/
+function createDirectoryWatchers(push, onError) {
+	const watchers = /* @__PURE__ */ new Map();
+	const drop = (dir) => {
+		const entry = watchers.get(dir);
+		if (entry === void 0) return;
+		watchers.delete(dir);
+		if (entry.timer !== void 0) clearTimeout(entry.timer);
+		entry.watcher.close();
+	};
+	const notify = (dir) => {
+		const entry = watchers.get(dir);
+		if (entry === void 0 || entry.timer !== void 0) return;
+		entry.timer = setTimeout(() => {
+			entry.timer = void 0;
+			if (watchers.has(dir)) push({ dir });
+		}, DEBOUNCE_MS);
+		entry.timer.unref();
+	};
+	return {
+		add(dir) {
+			if (watchers.has(dir)) return true;
+			if (watchers.size >= MAX_WATCHES) return false;
+			let watcher;
+			try {
+				watcher = watch(dir, { persistent: false });
+			} catch (error) {
+				onError(dir, error);
+				return false;
+			}
+			watcher.on("change", () => {
+				notify(dir);
+			});
+			watcher.on("error", (error) => {
+				onError(dir, error);
+				drop(dir);
+			});
+			watchers.set(dir, {
+				watcher,
+				timer: void 0
+			});
+			return true;
+		},
+		remove: drop,
+		close() {
+			for (const dir of [...watchers.keys()]) drop(dir);
+		}
+	};
 }
 //#endregion
 //#region src/open-external.ts
@@ -1412,1668 +1456,6 @@ async function cherryPick(cwd, hash, selected) {
 	await runGit(await repoRoot(cwd, selected), ["cherry-pick", hash]);
 }
 //#endregion
-//#region src/pty-deps.ts
-/**
-* node-pty dependency loading for the host half (issue #140, plugin side).
-*
-* The terminal surfaces (UI tabs + model-facing terminal_* tools) need
-* node-pty, but the package must NEVER be imported statically at module
-* top level: a missing or broken install (pnpm 11's strict-dep-builds
-* skipping node-pty's install script, a pruned store entry, a failed
-* prebuilt-binary download…) would then fail the plugin module load and —
-* because a loader entry apply failure aborts the boot — take the whole
-* `dsh web` server down with it.
-*
-* Instead the host half loads node-pty lazily (synchronously, via
-* createRequire — the same resolution `ensureSpawnHelper` already uses in
-* production). When the load fails the plugin stays mounted in a degraded
-* state: the terminal tab shows a friendly error carrying a pasteable
-* repair command (see scripts/install.sh / install.ps1 `--repair`), and the
-* agent terminal tools are simply not registered.
-*
-* Version contract: the plugin must stay in sync with DSH core —
-* `@deepseek-ai/dsh-subprocess-local` declares `"node-pty": "^1.1.0"` in
-* its `dependencies`. Both sides then resolve the SAME pnpm store entry
-* (same range, same integrity → one native binding, no drift). Do NOT
-* switch to a fork (e.g. @lydell/node-pty) or a different range without
-* re-checking the core declaration.
-*/
-/**
-* The node-pty version range this plugin ships. MUST stay identical to the
-* range DSH core declares (`@deepseek-ai/dsh-subprocess-local`): the same
-* range keeps pnpm resolving both to one physical package.
-*/
-const DSH_NODE_PTY_RANGE = "^1.1.0";
-/**
-* The WebSocket close-code-1011 reason the host sends when node-pty is
-* unavailable. The client recognizes this exact marker and fetches the full
-* repair details from `/sidebar/api/terminal.deps` (a WS close reason is
-* capped at 123 bytes, so the command itself cannot ride the close frame).
-*/
-const PTY_DEPS_MISSING = "pty-deps-missing";
-const defaultRequire = createRequire(import.meta.url);
-let cached;
-/**
-* Load node-pty once (synchronously) and cache the outcome. Returns null
-* when the package or its native binding cannot be loaded; the cause stays
-* queryable through {@link nodePtyLoadCause}. Never throws.
-*/
-function loadNodePty(requireImpl = defaultRequire) {
-	if (cached === void 0) try {
-		cached = {
-			ok: true,
-			module: requireImpl("node-pty")
-		};
-	} catch (cause) {
-		cached = {
-			ok: false,
-			cause
-		};
-	}
-	return cached.ok ? cached.module : null;
-}
-/** The recorded load failure (undefined when the load succeeded or never ran). */
-function nodePtyLoadCause() {
-	return cached !== void 0 && !cached.ok ? cached.cause : void 0;
-}
-/** Load node-pty or throw the canonical degraded-mode error (class-constructor default). */
-function loadRequiredNodePty() {
-	const module = loadNodePty();
-	if (module === null) {
-		const cause = describeCause(nodePtyLoadCause());
-		throw new SidebarError("pty-deps-missing", `node-pty (${DSH_NODE_PTY_RANGE}) failed to load: ${cause} — run the repair command shown in the terminal tab`, 503);
-	}
-	return module;
-}
-/** Resolve a directory to its physical location (symlinked/link: installs). */
-function realDir(file) {
-	try {
-		return dirname(realpathSync(file));
-	} catch {
-		return dirname(file);
-	}
-}
-/** Walk up from `dir` looking for a DSH profile root (package.json + pnpm-workspace.yaml). */
-function walkUp(dir, isRoot) {
-	let current = dir;
-	for (let depth = 0; depth < 16; depth += 1) {
-		if (isRoot(current)) return current;
-		const parent = dirname(current);
-		if (parent === current) break;
-		current = parent;
-	}
-	return null;
-}
-/** Whether `dir` looks like a DSH profile root (the plugin lives under its node_modules). */
-function isProfileRoot(dir) {
-	return existsSync(join(dir, "package.json")) && existsSync(join(dir, "pnpm-workspace.yaml"));
-}
-/**
-* Detect the DSH profile directory this plugin is installed into: the
-* nearest ancestor of the plugin module that carries both `package.json`
-* and `pnpm-workspace.yaml` (the profile root; the plugin resolves from the
-* profile's node_modules). Falls back to `$DSH_HOME/profiles/web` (the
-* standard web profile), then null.
-*/
-function findProfileDir(fromFile = fileURLToPath(import.meta.url)) {
-	const detected = walkUp(realDir(fromFile), isProfileRoot);
-	if (detected !== null) return detected;
-	const home = process.env.DSH_HOME !== void 0 && process.env.DSH_HOME.trim() !== "" ? process.env.DSH_HOME : join(homedir(), ".dsh");
-	const web = join(home, "profiles", "web");
-	return isProfileRoot(web) ? realpathSync(web) : null;
-}
-/** Whether `dir`'s package.json declares this plugin's name. */
-function isPluginRoot(dir) {
-	const file = join(dir, "package.json");
-	if (!existsSync(file)) return false;
-	try {
-		return JSON.parse(readFileSync(file, "utf8")).name === "dsh-better-sidebar";
-	} catch {
-		return false;
-	}
-}
-/** The plugin package root (walk-up from the module; works for lib/ and src/ layouts). */
-function findPluginRoot(fromFile = fileURLToPath(import.meta.url)) {
-	return walkUp(realDir(fromFile), isPluginRoot);
-}
-/**
-* The pasteable repair command for a broken node-pty install: rerun the
-* plugin's own installer in `--repair` mode (idempotent: it re-writes the
-* profile's `allowBuilds: node-pty: true` and re-installs/rebuilds the
-* dependency). Falls back to DSH's plugin command when the scripts are not
-* shipped (exotic layouts).
-*/
-function buildRepairCommand(options) {
-	const { pluginRoot, profileDir } = options;
-	const platform = options.platform ?? process.platform;
-	const profileName = profileDir !== null ? basename(profileDir) : null;
-	const profileArg = profileName !== null ? platform === "win32" ? ` -Profile "${profileName}"` : ` --profile "${profileName}"` : "";
-	if (pluginRoot !== null) {
-		if (platform === "win32") {
-			const script = join(pluginRoot, "scripts", "install.ps1");
-			if (existsSync(script)) return { command: `powershell -ExecutionPolicy Bypass -File "${script}" -Repair${profileArg}` };
-		} else {
-			const script = join(pluginRoot, "scripts", "install.sh");
-			if (existsSync(script)) return { command: `bash "${script}" --repair${profileArg}` };
-		}
-	}
-	return {
-		command: `dsh plugin --profile "${profileName ?? "web"}" install`,
-		note: "If pnpm 11 blocked node-pty's build script, ensure `allowBuilds: node-pty: true` in the profile's pnpm-workspace.yaml (the plugin's scripts/install.sh / install.ps1 --repair does this automatically)."
-	};
-}
-/** One-line human description of the recorded load cause. */
-function describeCause(cause) {
-	if (cause instanceof Error) return cause.message;
-	return String(cause);
-}
-/** Current node-pty dependency status (loaded vs degraded + repair info). */
-function depsStatus(options = {}) {
-	if (loadNodePty() !== null) return { ok: true };
-	const pluginRoot = findPluginRoot(options.fromFile);
-	const profileDir = findProfileDir(options.fromFile);
-	const { command, note } = buildRepairCommand({
-		pluginRoot,
-		profileDir
-	});
-	return {
-		ok: false,
-		cause: describeCause(nodePtyLoadCause()),
-		command,
-		profile: profileDir !== null ? basename(profileDir) : null,
-		...note !== void 0 ? { note } : {}
-	};
-}
-//#endregion
-//#region src/pty-manager.ts
-/**
-* PTY session table for the sidebar terminals. One node-pty process per
-* `${sessionId}:${tabId}` key; processes survive WebSocket disconnects
-* (page refresh, tab switch) and reconnect to the same process by key.
-* Output is mirrored into a bounded transcript ring (capped bytes) so a new
-* connection replays history before live data. Sessions die only when the
-* tab is closed or the plugin tears down.
-*/
-/** Per-terminal transcript bound (bytes kept for replay). */
-const TRANSCRIPT_LIMIT$1 = 1 << 20;
-/**
-* Restore the executable bit pnpm strips from node-pty's prebuilt
-* spawn-helper (the macOS helper that forks and sets up the pty). Without it
-* every spawn fails with `posix_spawnp failed`. Idempotent; mirrors
-* @deepseek-ai/dsh-terminal-bash's ensure-spawn-helper postinstall, run at
-* plugin activation so link-installed deployments get the fix too.
-*/
-function ensureSpawnHelper() {
-	if (process.platform === "win32") return;
-	try {
-		const entry = createRequire(import.meta.url).resolve("node-pty");
-		const packageRoot = dirname(dirname(entry));
-		const candidates = [join(packageRoot, "prebuilds", `${process.platform}-${process.arch}`, "spawn-helper"), join(packageRoot, "build", "Release", "spawn-helper")];
-		for (const helper of candidates) if (existsSync(helper)) chmodSync(helper, 493);
-	} catch {}
-}
-/**
-* The terminal registry. `maxPerSession` bounds concurrent processes per
-* conversation (the client caps tabs at the same number).
-*
-* Lifecycle of a UI-tab pty when its WebSocket drops:
-* - **Close frame** (`{type:'close'}`): the user closed the tab → schedule a
-*   0-ms close (quota released immediately).
-* - **Park frame** (`{type:'park'}`): the user switched to another
-*   conversation; the tab is still open in its session's persisted state but
-*   its view unmounted → mark the pty as parked (no auto-close countdown).
-*   The pty stays alive until the user switches back (a reconnecting view
-*   calls `open()` which clears the parked state) or the tab is later closed
-*   (a `{type:'close'}` frame from a fresh connection). Without `park`, a
-*   bare socket drop would start the reconnect-grace countdown and kill the
-*   shell after `reconnectGraceMs` — wrong for a session switch, where the
-*   user is still actively using the app, just in another conversation.
-* - **Bare socket drop** (no frame): page refresh, crash, plugin teardown →
-*   schedule a close after `reconnectGraceMs` so a quick reconnect reattaches
-*   the same shell.
-*/
-var PtyManager = class {
-	shell;
-	maxPerSession;
-	shellArgs;
-	nodePty;
-	sessions = /* @__PURE__ */ new Map();
-	pendingCloses = /* @__PURE__ */ new Map();
-	/** Tabs whose view unmounted because the user switched conversations — the
-	*  tab is still open in its session's state, so the pty must NOT enter the
-	*  reconnect-grace countdown. Cleared by `cancelClose` (a reconnecting
-	*  view's `open()` cancels it) or by `scheduleClose` (an explicit close
-	*  frame still kills a parked pty). */
-	parked = /* @__PURE__ */ new Set();
-	constructor(shell, maxPerSession, shellArgs = [], nodePty = loadRequiredNodePty()) {
-		this.shell = shell;
-		this.maxPerSession = maxPerSession;
-		this.shellArgs = shellArgs;
-		this.nodePty = nodePty;
-	}
-	/** All live terminal keys of one session. */
-	keysOf(sessionId) {
-		const keys = [];
-		for (const handle of this.sessions.values()) if (handle.sessionId === sessionId) keys.push(handle.key);
-		return keys;
-	}
-	/**
-	* Open (or reuse) the terminal for a session/tab key. A handle whose
-	* process already exited is replaced with a fresh spawn (reconnecting a
-	* dead terminal must yield a live shell, not an input sink), and so is a
-	* live handle whose spawn cwd differs from the now-authoritative one (the
-	* first connect of a page load can arrive before the session hydrates, so
-	* it fell back to the process cwd — reconnecting with the real cwd must
-	* restart the shell in the right directory). Reopening also cancels any
-	* pending scheduled close (a reconnect within the grace window keeps the
-	* process alive).
-	* @param sessionId - conversation id.
-	* @param tabId - client tab id.
-	* @param cwd - initial working directory (the session's cwd).
-	* @param cols - initial terminal width.
-	* @param rows - initial terminal height.
-	* @returns the live handle.
-	* @throws {SidebarError} pty-error when the per-session cap is reached.
-	*/
-	open(sessionId, tabId, cwd, cols, rows, shell, shellArgs) {
-		const key = `${sessionId}:${tabId}`;
-		this.cancelClose(key);
-		const existing = this.sessions.get(key);
-		if (existing !== void 0 && !existing.exited && existing.cwd === cwd) return existing;
-		if (existing !== void 0) this.close(key);
-		for (const [candidate, handle] of [...this.sessions]) if (handle.sessionId === sessionId && handle.exited) this.close(candidate);
-		if (this.keysOf(sessionId).length >= this.maxPerSession) throw new SidebarError("pty-error", `terminal limit reached (${this.maxPerSession}) for this session`, 400);
-		const executable = resolveShellExecutable(shell ?? this.shell);
-		const handle = {
-			key,
-			sessionId,
-			tabId,
-			cwd,
-			pty: this.nodePty.spawn(executable, shellSpawnArgs(shellArgs ?? this.shellArgs), {
-				name: "xterm-256color",
-				cols: Math.max(2, Math.floor(cols)),
-				rows: Math.max(2, Math.floor(rows)),
-				cwd,
-				env: { ...process.env }
-			}),
-			transcript: "",
-			exited: false
-		};
-		handle.pty.onData((data) => {
-			handle.transcript += data;
-			if (handle.transcript.length > TRANSCRIPT_LIMIT$1) handle.transcript = handle.transcript.slice(handle.transcript.length - TRANSCRIPT_LIMIT$1);
-		});
-		handle.pty.onExit(({ exitCode }) => {
-			handle.exited = true;
-			handle.exitCode = exitCode;
-		});
-		this.sessions.set(key, handle);
-		return handle;
-	}
-	/**
-	* Schedule the terminal's destruction after `delayMs`. A tab close sends
-	* delay 0 (release the quota immediately); a bare socket drop (refresh,
-	* crash) uses the grace period so a quick reconnect keeps the process.
-	* `open()` cancels any pending close. Clears the parked state — an explicit
-	* close frame on a parked pty (the user switched back and closed the tab)
-	* still kills it.
-	*/
-	scheduleClose(key, delayMs) {
-		if (this.sessions.get(key) === void 0) return;
-		this.cancelClose(key);
-		const timer = setTimeout(() => {
-			this.close(key);
-		}, delayMs);
-		this.pendingCloses.set(key, timer);
-	}
-	/**
-	* Park a terminal: the owning tab's view unmounted because the user
-	* switched to another conversation, but the tab is still open in its
-	* session's persisted state. Cancels any pending grace close and marks
-	* the pty so the host's `ws.on('close')` handler does NOT start the
-	* reconnect-grace countdown — the pty stays alive until the user switches
-	* back (a reconnecting view's `open()` clears this) or explicitly closes
-	* the tab (a `{type:'close'}` frame's `scheduleClose` clears this).
-	*/
-	park(key) {
-		if (this.sessions.get(key) === void 0) return;
-		this.cancelClose(key);
-		this.parked.add(key);
-	}
-	/** Whether this pty was parked (its view unmounted for a session switch). */
-	isParked(key) {
-		return this.parked.has(key);
-	}
-	/** Cancel a pending scheduled close (the terminal is being reopened).
-	*  Also clears the parked state — a reconnecting view reattaches a parked
-	*  pty and resumes normal lifecycle. */
-	cancelClose(key) {
-		const timer = this.pendingCloses.get(key);
-		if (timer !== void 0) {
-			clearTimeout(timer);
-			this.pendingCloses.delete(key);
-		}
-		this.parked.delete(key);
-	}
-	/** Resolve a live handle by key, or undefined. */
-	get(key) {
-		return this.sessions.get(key);
-	}
-	/** Close a terminal and drop its state (the owning tab was closed). */
-	close(key) {
-		this.cancelClose(key);
-		const handle = this.sessions.get(key);
-		if (handle === void 0) return;
-		this.sessions.delete(key);
-		try {
-			handle.pty.kill();
-		} catch {}
-	}
-	/** Close every terminal (plugin teardown). */
-	disposeAll() {
-		for (const timer of this.pendingCloses.values()) clearTimeout(timer);
-		this.pendingCloses.clear();
-		for (const key of [...this.sessions.keys()]) this.close(key);
-	}
-};
-/** Read one Windows environment value case-insensitively. Real
-* `process.env` has case-insensitive lookup on Windows, but injected objects
-* and some embedders do not preserve that behavior. */
-function windowsEnv(env, name) {
-	const direct = env[name];
-	if (direct !== void 0) return direct;
-	const lowered = name.toLowerCase();
-	for (const [key, value] of Object.entries(env)) if (key.toLowerCase() === lowered) return value;
-}
-/**
-* Candidate directories that may contain a `pwsh.exe` on Windows: PATH
-* entries first, then the well-known machine/user install locations
-* (including preview channels and per-user MSI/portable layouts). The
-* machine-scope search reads both `ProgramW6432` and `ProgramFiles` so a
-* 32-bit Node process — whose `ProgramFiles` points at `(x86)` — still
-* finds a 64-bit PowerShell 7 install. De-duped while preserving priority
-* order.
-*/
-function windowsPwshCandidateDirs(env) {
-	const dirs = [];
-	const pathEntries = windowsEnv(env, "PATH");
-	if (pathEntries !== void 0) for (const entry of pathEntries.split(";")) {
-		const trimmed = entry.trim();
-		if (trimmed !== "") dirs.push(trimmed);
-	}
-	for (const programFiles of [windowsEnv(env, "ProgramW6432"), windowsEnv(env, "ProgramFiles")]) {
-		if (programFiles === void 0 || programFiles.trim() === "") continue;
-		dirs.push(join(programFiles, "PowerShell", "7"));
-		dirs.push(join(programFiles, "PowerShell", "7-preview"));
-	}
-	const localAppData = windowsEnv(env, "LOCALAPPDATA");
-	if (localAppData !== void 0 && localAppData.trim() !== "") {
-		dirs.push(join(localAppData, "Microsoft", "PowerShell", "7"));
-		dirs.push(join(localAppData, "Microsoft", "PowerShell", "7-preview"));
-		dirs.push(join(localAppData, "Programs", "PowerShell", "7"));
-		dirs.push(join(localAppData, "Programs", "PowerShell", "7-preview"));
-	}
-	return [...new Set(dirs)];
-}
-/**
-* Resolve the configured shell executable before handing it to node-pty.
-*
-* POSIX and Windows are both probed BEFORE spawn so a wrong configured name
-* becomes a stable, actionable `shell-not-found` error instead of a bare
-* "[process exited with code N]" (POSIX execvp) or an opaque native string
-* (Windows). Windows' native backend additionally does not consistently
-* apply the shell's PATHEXT lookup to a bare value (`pwsh` / `cmd` can fail
-* with the opaque `File not found:` error), so perform the lookup ourselves:
-*
-* - an explicit path is accepted as-is when it exists (or with a PATHEXT
-*   suffix when the user omitted `.exe`),
-* - a bare name is searched through PATH, System32, and PowerShell's known
-*   install directories,
-* - failure becomes a stable, actionable `shell-not-found` error instead of
-*   a native backend string with no mention of the configured shell.
-*/
-function resolveShellExecutable(shell, options = {}) {
-	const configured = unquotePath(shell.trim());
-	const platform = options.platform ?? process.platform;
-	if (configured === "") return configured;
-	const env = options.env ?? process.env;
-	const exists = options.exists ?? existsSync;
-	const notFound = () => new SidebarError("shell-not-found", `shell executable not found: "${configured}"`, 400, { shell: configured });
-	if (platform === "win32") {
-		const executableExts = (windowsEnv(env, "PATHEXT") ?? ".COM;.EXE").split(";").map((extension) => extension.trim()).filter((extension) => /^\.(?:com|exe)$/i.test(extension));
-		if (executableExts.length === 0) executableExts.push(".EXE", ".COM");
-		const names = win32.extname(configured) !== "" ? [configured] : executableExts.map((extension) => configured + extension.toLowerCase());
-		const hasPath = win32.isAbsolute(configured) || /[\\/]/.test(configured);
-		const candidates = [];
-		if (hasPath) candidates.push(...names);
-		else {
-			const path = windowsEnv(env, "PATH");
-			if (path !== void 0) for (const dir of path.split(";").map((entry) => entry.trim()).filter(Boolean)) for (const name of names) candidates.push(win32.join(dir, name));
-			const systemRoot = windowsEnv(env, "SystemRoot");
-			if (systemRoot !== void 0 && systemRoot.trim() !== "") for (const name of names) candidates.push(win32.join(systemRoot, "System32", name));
-			if (/^pwsh(?:\.exe)?$/i.test(configured)) for (const dir of windowsPwshCandidateDirs(env)) candidates.push(win32.join(dir, "pwsh.exe"));
-		}
-		for (const candidate of [...new Set(candidates)]) if (exists(candidate)) return candidate;
-		throw notFound();
-	}
-	if (configured.includes("/")) {
-		if (!exists(configured)) throw notFound();
-		return configured;
-	}
-	const path = env.PATH ?? "/usr/bin:/bin";
-	for (const dir of path.split(":").map((entry) => entry.trim()).filter(Boolean)) {
-		const candidate = join(dir, configured);
-		if (exists(candidate)) return candidate;
-	}
-	throw notFound();
-}
-/**
-* The interactive shell for this platform, resolved like a terminal
-* emulator: an explicitly configured shell (the `shell` config field) wins,
-* then `$SHELL` on POSIX (deployment override), then the account's login
-* shell from passwd, then `/bin/bash`. The passwd step matters because
-* service managers and container inits often start dsh without `SHELL`, and
-* the tab should still open the user's login shell (e.g. zsh) instead of
-* silently degrading to bash.
-*
-* Windows previously short-circuited to `powershell.exe` (the inbox 5.1)
-* before any resolution, so PowerShell 7 users always got a legacy shell
-* without `??`/`?.`/ternary and with poor ANSI/UTF-8 defaults. The Windows
-* chain is now: explicit shell → `DSH_SIDEBAR_SHELL` env override → first
-* `pwsh.exe` found on PATH or in a known install directory → the 5.1
-* fallback (machines without PowerShell 7 keep working).
-*/
-function defaultShell(options = {}) {
-	const platform = options.platform ?? process.platform;
-	const env = options.env ?? process.env;
-	const exists = options.exists ?? existsSync;
-	const explicit = options.explicit;
-	if (explicit !== void 0 && explicit.trim() !== "") return explicit.trim();
-	if (platform === "win32") {
-		const envShell = env.DSH_SIDEBAR_SHELL;
-		if (envShell !== void 0 && envShell.trim() !== "") return envShell.trim();
-		for (const dir of windowsPwshCandidateDirs(env)) {
-			const candidate = join(dir, "pwsh.exe");
-			if (exists(candidate)) return candidate;
-		}
-		return "powershell.exe";
-	}
-	const envShell = env.SHELL;
-	if (envShell !== void 0 && envShell.trim() !== "") return envShell.trim();
-	try {
-		const loginShell = userInfo().shell;
-		if (typeof loginShell === "string" && loginShell.trim() !== "") return loginShell;
-	} catch {}
-	return "/bin/bash";
-}
-/**
-* A short display name for a shell executable, used as the terminal tab
-* title. `/bin/zsh` → `zsh`, `C:\...\powershell.exe` → `powershell`.
-* Falls back to the raw value when no basename can be derived.
-*/
-function shellDisplayName(shell) {
-	const normalized = shell.replace(/\\/g, "/");
-	const base = normalized.slice(normalized.lastIndexOf("/") + 1);
-	if (base === "") return shell;
-	return base.replace(/\.(exe|cmd|bat)$/i, "");
-}
-/**
-* Spawn arguments that make the shell behave like a terminal-emulator tab:
-* POSIX shells start as login shells (`-l`) so they read the profile files
-* (`~/.profile`, `~/.zprofile`); Windows PowerShell takes no login flag.
-*
-* When explicit `configured` args are supplied they REPLACE the platform
-* defaults entirely, giving deployments full control over shell startup.
-*/
-function shellSpawnArgs(configured = []) {
-	if (configured.length > 0) return [...configured];
-	return process.platform === "win32" ? [] : ["-l"];
-}
-/**
-* Strip ONE pair of surrounding quotes from a configured shell path. Users
-* paste Windows paths with spaces pre-quoted (`"C:\Program Files\…"`); the
-* quotes are shell-input syntax, not part of the path. Unpaired quotes and
-* shorter values stay verbatim.
-*/
-function unquotePath(value) {
-	if (value.length >= 2) {
-		const first = value[0];
-		const last = value[value.length - 1];
-		if (first === "\"" && last === "\"" || first === "'" && last === "'") return value.slice(1, -1);
-	}
-	return value;
-}
-/**
-* Split a settings-page shell-arguments string into argv with quote-aware
-* grouping: `'…'` / `"…"` group whitespace, and characters inside quotes are
-* LITERAL — a backslash is never an escape, so Windows paths survive intact
-* (`-File "C:\my init\init.ps1"` → three tokens, the last containing spaces).
-* The price is that an argument containing a literal quote character cannot
-* be expressed; shell startup arguments never need one. An unclosed quote
-* folds the remainder into the current token (settings input stays
-* forgiving); an empty quote pair yields no argument.
-*/
-function splitShellArgs(input) {
-	const args = [];
-	let current = "";
-	let quote = null;
-	let started = false;
-	for (const ch of input) {
-		if (quote !== null) {
-			if (ch === quote) quote = null;
-			else current += ch;
-			continue;
-		}
-		if (ch === "\"" || ch === "'") {
-			quote = ch;
-			started = true;
-			continue;
-		}
-		if (/\s/.test(ch)) {
-			if (started) {
-				args.push(current);
-				current = "";
-				started = false;
-			}
-			continue;
-		}
-		current += ch;
-		started = true;
-	}
-	if (started) args.push(current);
-	return args.filter((arg) => arg !== "");
-}
-//#endregion
-//#region src/agent-pty.ts
-/**
-* Agent-owned terminal registry: a uuid-keyed table of long-lived PTY
-* sessions created by the model through the `terminal_create` tool. Each
-* handle survives across tool calls (and across WebSocket disconnects from
-* the sidebar view) until the model calls `terminal_close` or the user
-* closes the corresponding sidebar tab — tmux semantics, scoped per agent
-* session.
-*
-* This is a parallel registry to {@link PtyManager}: UI tabs are keyed by
-* `${sessionId}:${tabId}` and capped per session, while agent terminals are
-* keyed by uuid and uncapped (the model is trusted to close unused ones).
-* Both registries share the same shell resolver and spawn-helper fix.
-*/
-/** Per-agent-terminal transcript bound (bytes kept for replay and reads). */
-const TRANSCRIPT_LIMIT = 1 << 20;
-/** POSIX signals the registry forwards to a live pty. */
-const ALLOWED_SIGNALS = [
-	"SIGINT",
-	"SIGTERM",
-	"SIGKILL",
-	"SIGHUP",
-	"SIGTSTP"
-];
-/** Largest pty dimension the registry accepts (mirrors the tool contract). */
-const TERMINAL_DIM_MAX = 1024;
-/** Clamp one cols×rows pair into the supported pty range (flooring decimals). */
-function clampDims(cols, rows) {
-	const clamp = (value) => Math.min(TERMINAL_DIM_MAX, Math.max(2, Math.floor(value)));
-	return {
-		cols: clamp(cols),
-		rows: clamp(rows)
-	};
-}
-/**
-* node-pty's Windows terminal queues resize calls that arrive before the
-* ConPTY control socket's first data flush (`_deferNoArgs` in
-* windowsTerminal.js). If the pty exits before the queue flushes, the
-* deferred resize throws inside the socket's 'data' handler — uncatchable
-* by any caller and fatal to the host process. POSIX terminals have no such
-* queue (resize is synchronous), so the gate is armed on Windows only:
-* {@link tryResizePty} parks dims requested before the first output and
-* replays them after the flush, when node-pty executes resizes
-* synchronously (and the throw for an exited pty is catchable).
-*/
-const ptyResizeGates = /* @__PURE__ */ new WeakMap();
-/**
-* Arm the Windows pre-ready resize gate for one freshly spawned pty.
-* No-op on POSIX and for injected ptys without `onData`.
-*/
-function armPtyResizeGate(pty) {
-	if (process.platform !== "win32") return;
-	if (typeof pty.onData !== "function" || ptyResizeGates.has(pty)) return;
-	const state = { sawData: false };
-	ptyResizeGates.set(pty, state);
-	pty.onData(() => {
-		if (state.sawData) return;
-		state.sawData = true;
-		const dims = state.pending;
-		state.pending = void 0;
-		if (dims === void 0) return;
-		setImmediate(() => {
-			tryResizePty(pty, dims.cols, dims.rows);
-		});
-	});
-}
-/**
-* Best-effort resize for WebSocket-driven terminal views. Layout animation
-* can briefly produce unusable dimensions, and node-pty can reject a resize
-* after the socket setup's outer try/catch has returned. Ignore that one
-* frame so the host stays alive and a later valid measurement can retry.
-* Returns whether node-pty accepted the resize (or parked it for replay on
-* the first output — the Windows pre-ready window).
-*/
-function tryResizePty(pty, cols, rows) {
-	if (!Number.isFinite(cols) || !Number.isFinite(rows)) return false;
-	const dims = clampDims(cols, rows);
-	const gate = ptyResizeGates.get(pty);
-	if (gate !== void 0 && !gate.sawData) {
-		gate.pending = dims;
-		return true;
-	}
-	try {
-		pty.resize(dims.cols, dims.rows);
-		return true;
-	} catch {
-		return false;
-	}
-}
-/** Map a POSIX signal number to its conventional name (best-effort). */
-const SIGNAL_NAMES = {
-	1: "SIGHUP",
-	2: "SIGINT",
-	3: "SIGQUIT",
-	4: "SIGILL",
-	6: "SIGABRT",
-	9: "SIGKILL",
-	11: "SIGSEGV",
-	13: "SIGPIPE",
-	14: "SIGALRM",
-	15: "SIGTERM",
-	17: "SIGCHLD",
-	18: "SIGCONT",
-	19: "SIGSTOP",
-	20: "SIGTSTP"
-};
-/** Convert a raw signal number to a name (or null when absent/unknown). */
-function signalNameOf(signal) {
-	if (signal === null || signal === void 0) return null;
-	return SIGNAL_NAMES[signal] ?? `signal ${signal}`;
-}
-/**
-* Compile a wait needle into a RegExp. The needle is treated as a JavaScript
-* regular expression; a pattern that fails to compile ( e.g. an unbalanced
-* group typed as a literal ) degrades to verbatim substring matching so
-* legacy literal needles keep working.
-*/
-function compileNeedle(needle) {
-	try {
-		return new RegExp(needle);
-	} catch {
-		return null;
-	}
-}
-/**
-* Locate the first occurrence of `needle` in `transcript`, returning its
-* line/column plus the actual matched text — for alternation patterns
-* ( e.g. `(BUILD_OK|BUILD_FAIL)` ) the match tells which alternative hit.
-* `re` is the precompiled form of `needle` (from {@link compileNeedle});
-* `null` means verbatim substring matching.
-*/
-function locateNeedle(transcript, needle, re) {
-	if (needle === "") return void 0;
-	let hit;
-	if (re !== null) {
-		re.lastIndex = 0;
-		const m = re.exec(transcript);
-		hit = m === null ? void 0 : {
-			index: m.index,
-			text: m[0]
-		};
-	} else {
-		const idx = transcript.indexOf(needle);
-		hit = idx === -1 ? void 0 : {
-			index: idx,
-			text: needle
-		};
-	}
-	if (hit === void 0) return void 0;
-	let line = 0;
-	let lineStart = 0;
-	for (let i = 0; i < hit.index; i += 1) if (transcript.charCodeAt(i) === 10) {
-		line += 1;
-		lineStart = i + 1;
-	}
-	return {
-		line,
-		column: hit.index - lineStart,
-		match: hit.text
-	};
-}
-/** Snapshot projection of a handle (drops the pty reference and transcript). */
-function snapshotOf(handle) {
-	const out = {
-		uuid: handle.uuid,
-		title: handle.title,
-		command: handle.command,
-		exited: handle.exited
-	};
-	if (handle.exited) {
-		out.exitCode = handle.exitCode ?? null;
-		out.exitSignal = signalNameOf(handle.exitSignal);
-	}
-	const active = handle.waits.at(-1);
-	if (active !== void 0) out.waiting = {
-		needle: active.needle,
-		since: active.since
-	};
-	return out;
-}
-/**
-* The agent terminal registry. The constructor takes the resolved shell
-* binary (the same `defaultShell()` the UI-tab registry uses) and runs the
-* spawn-helper chmod fix once at construction so the first agent terminal
-* does not race a lazy fixer.
-*/
-var AgentPtyRegistry = class {
-	shell;
-	shellArgs;
-	nodePty;
-	sessions = /* @__PURE__ */ new Map();
-	changeListeners = /* @__PURE__ */ new Set();
-	constructor(shell, shellArgs = [], nodePty = loadRequiredNodePty()) {
-		this.shell = shell;
-		this.shellArgs = shellArgs;
-		this.nodePty = nodePty;
-		ensureSpawnHelper();
-	}
-	/**
-	* Spawn one agent terminal: start the shell in `cwd`, then write
-	* `command + '\n'` to stdin so the command runs in the fresh shell. The
-	* terminal stays alive after the command exits — the model can send more
-	* input through `terminal_send` until it calls `terminal_close` or the
-	* user closes the sidebar tab. An empty `command` spawns a bare shell.
-	* @returns the new handle's uuid (the model-facing opaque id).
-	*/
-	create(sessionId, title, command, cwd, cols = 80, rows = 24, shell, shellArgs) {
-		const uuid = randomUUID();
-		const dims = clampDims(cols, rows);
-		const executable = resolveShellExecutable(shell ?? this.shell);
-		const pty = this.nodePty.spawn(executable, shellSpawnArgs(shellArgs ?? this.shellArgs), {
-			name: "xterm-256color",
-			cols: dims.cols,
-			rows: dims.rows,
-			cwd,
-			env: { ...process.env }
-		});
-		armPtyResizeGate(pty);
-		const handle = {
-			uuid,
-			sessionId,
-			title,
-			command,
-			cwd,
-			pty,
-			transcript: "",
-			exited: false,
-			waits: []
-		};
-		pty.onData((data) => {
-			handle.transcript += data;
-			if (handle.transcript.length > TRANSCRIPT_LIMIT) handle.transcript = handle.transcript.slice(handle.transcript.length - TRANSCRIPT_LIMIT);
-		});
-		pty.onExit(({ exitCode, signal }) => {
-			handle.exited = true;
-			handle.exitCode = exitCode;
-			handle.exitSignal = signal;
-			this.notify();
-		});
-		if (command !== "") try {
-			pty.write(`${command}\r`);
-		} catch {}
-		this.sessions.set(uuid, handle);
-		this.notify();
-		return uuid;
-	}
-	/** All live agent terminals belonging to one conversation. */
-	list(sessionId) {
-		const out = [];
-		for (const handle of this.sessions.values()) if (handle.sessionId === sessionId) out.push(snapshotOf(handle));
-		return out;
-	}
-	/** Resolve a live handle by uuid, or throw `not-found`. */
-	expect(uuid) {
-		const handle = this.sessions.get(uuid);
-		if (handle === void 0) throw new SidebarError("not-found", `agent terminal "${uuid}" not found`, 404);
-		return handle;
-	}
-	/**
-	* Resolve a live handle that belongs to `sessionId`, or throw `not-found`.
-	* The model-facing tools call this before every uuid-keyed operation: a
-	* uuid from another session is indistinguishable from an unknown one, so a
-	* model can never reach (or probe) a terminal it does not own.
-	*/
-	assertOwned(uuid, sessionId) {
-		const handle = this.expect(uuid);
-		if (handle.sessionId !== sessionId) throw new SidebarError("not-found", `agent terminal "${uuid}" not found`, 404);
-		return handle;
-	}
-	/** Resolve a handle's snapshot, or undefined if it does not exist. */
-	snapshot(uuid) {
-		const handle = this.sessions.get(uuid);
-		return handle === void 0 ? void 0 : snapshotOf(handle);
-	}
-	/** Write raw text to a terminal's stdin (tmux `send-keys` semantics). */
-	send(uuid, text) {
-		const handle = this.expect(uuid);
-		if (handle.exited) throw new SidebarError("bad-request", `agent terminal "${uuid}" has exited`, 400);
-		handle.pty.write(text);
-	}
-	/**
-	* Read one bounded page of the retained transcript. `offset` is a 0-based
-	* line index from the start of the retained transcript (default 0);
-	* `count` caps the page size (default 500). A negative `offset` reads
-	* from the end (e.g. -50 reads the last 50 lines). Returns `totalLines`
-	* so the model can paginate.
-	*/
-	read(uuid, offset, count) {
-		const lines = this.expect(uuid).transcript.split("\n");
-		const totalLines = lines.length;
-		const pageSize = Math.max(1, Math.min(count ?? 500, 500));
-		let start;
-		if (offset === void 0 || offset === 0) start = 0;
-		else if (offset < 0) start = Math.max(0, totalLines + offset);
-		else start = Math.min(offset, totalLines);
-		const end = Math.min(start + pageSize, totalLines);
-		return {
-			text: lines.slice(start, end).join("\n"),
-			totalLines,
-			lineBegin: start,
-			lineEnd: end
-		};
-	}
-	/**
-	* Resize a terminal's pty, clamped to the 2..1024 sane range.
-	* @returns the dimensions actually applied (the caller echoes these, so the
-	* reported value always matches the pty).
-	*/
-	resize(uuid, cols, rows) {
-		const handle = this.expect(uuid);
-		const dims = clampDims(cols, rows);
-		if (!handle.exited) tryResizePty(handle.pty, dims.cols, dims.rows);
-		return dims;
-	}
-	/**
-	* Wait for `needle` to appear in a terminal's transcript, or for the
-	* terminal to exit, or for the timeout to elapse — whichever happens
-	* first. The wait polls the live transcript every ~50ms and short-circuits
-	* on `signal` abort (re-thrown as the abort reason so the tool layer
-	* surfaces cancellation).
-	*
-	* The match scans the FULL retained transcript on each poll, not just the
-	* delta since the last poll — a needle that scrolled past the most recent
-	* chunk but is still within the ~1 MiB bound is still a match. The
-	* returned line/column locate the FIRST occurrence (oldest), which is what
-	* a user watching the terminal would have seen first.
-	*
-	* The implementation uses polling (not pty onData subscription) because
-	* node-pty's onData fires before the registry's own onData listener
-	* updates the transcript (listener order is not guaranteed), and on
-	* Windows ConPTY output can arrive in bursts with batching delays that
-	* make event-driven wakeups unreliable. A 50ms poll is fast enough for
-	* interactive use and simple enough to be obviously correct.
-	* @param uuid - terminal to watch.
-	* @param needle - JavaScript regular expression to search for
-	*   (case-sensitive); a pattern that fails to compile falls back to
-	*   verbatim substring matching. May cover several outcomes at once
-	*   ( e.g. `(BUILD_OK|BUILD_FAIL)` for build success vs failure ) — the
-	*   returned `match` reports the text that actually matched, so callers
-	*   can tell which outcome hit.
-	* @param timeoutMs - max wait; default 10000 (10s). Clamped to ≥100ms.
-	* @param signal - caller-owned cancellation; aborts the wait re-throwing.
-	* A wait can also be skipped by the user from the sidebar banner (`skipWait`), which resolves it with `{kind:'skipped'}`.
-	* @returns one of `found` / `timeout` / `exited` / `skipped`.
-	*/
-	async waitFor(uuid, needle, timeoutMs = 1e4, signal) {
-		if (needle === "") throw new SidebarError("bad-request", "needle must be a non-empty string", 400);
-		const handle = this.expect(uuid);
-		const timeout = Math.max(100, Math.floor(timeoutMs));
-		const start = Date.now();
-		const deadline = start + timeout;
-		const re = compileNeedle(needle);
-		if (handle.exited) return {
-			kind: "exited",
-			needle,
-			exitCode: handle.exitCode ?? null,
-			exitSignal: signalNameOf(handle.exitSignal)
-		};
-		const firstHit = locateNeedle(handle.transcript, needle, re);
-		if (firstHit !== void 0) return {
-			kind: "found",
-			needle,
-			line: firstHit.line,
-			column: firstHit.column,
-			match: firstHit.match,
-			elapsedMs: Date.now() - start
-		};
-		const record = {
-			needle,
-			since: start,
-			skipped: false
-		};
-		handle.waits.push(record);
-		this.notify();
-		try {
-			while (true) {
-				if (signal?.aborted) signal.throwIfAborted();
-				if (handle.exited) return {
-					kind: "exited",
-					needle,
-					exitCode: handle.exitCode ?? null,
-					exitSignal: signalNameOf(handle.exitSignal)
-				};
-				if (record.skipped) return {
-					kind: "skipped",
-					needle
-				};
-				const hit = locateNeedle(handle.transcript, needle, re);
-				if (hit !== void 0) return {
-					kind: "found",
-					needle,
-					line: hit.line,
-					column: hit.column,
-					match: hit.match,
-					elapsedMs: Date.now() - start
-				};
-				if (Date.now() >= deadline) return {
-					kind: "timeout",
-					needle,
-					timeoutMs: timeout,
-					totalLines: handle.transcript.split("\n").length
-				};
-				await new Promise((resolve) => {
-					const t = setTimeout(resolve, 50);
-					if (typeof t === "object" && "unref" in t) t.unref();
-				});
-			}
-		} finally {
-			const index = handle.waits.indexOf(record);
-			if (index !== -1) handle.waits.splice(index, 1);
-			this.notify();
-		}
-	}
-	/**
-	* Mark every active wait on one terminal as skipped (the sidebar banner's
-	* skip button). Each waiting poll loop observes its record's flag within
-	* one 50ms tick and returns `{kind:'skipped'}`. Idempotent: 0 when nothing
-	* is waiting (a stale banner racing a wait that already resolved).
-	* @returns the number of waits that transitioned to skipped.
-	*/
-	skipWait(uuid) {
-		const handle = this.expect(uuid);
-		let count = 0;
-		for (const record of handle.waits) if (!record.skipped) {
-			record.skipped = true;
-			count += 1;
-		}
-		return count;
-	}
-	/**
-	* Send a POSIX signal to a terminal's foreground process.
-	*
-	* Two delivery paths, by signal kind:
-	* - **Interactive control signals** (SIGINT, SIGTSTP) are delivered by
-	*   writing the corresponding control character to the pty stdin. This is
-	*   how a real terminal sends Ctrl+C / Ctrl+Z: the byte hits the kernel
-	*   line discipline (POSIX ISIG mode) or the ConPTY input pipeline
-	*   (Windows), which translates it into a SIGINT/SIGTSTP for the
-	*   foreground process group. This works on every platform — calling
-	*   `node-pty.kill('SIGINT')` throws on Windows and is fragile on POSIX,
-	*   but writing `\x03` is universally correct.
-	* - **Termination signals** (SIGKILL, SIGTERM, SIGHUP) use `pty.kill()`,
-	*   which maps to the platform's process-termination path (POSIX
-	*   `kill(2)`, Windows `TerminateProcess`). These cannot be faked with
-	*   control characters.
-	*/
-	signal(uuid, signal) {
-		const handle = this.expect(uuid);
-		if (handle.exited) return;
-		if (signal === "SIGINT" || signal === "SIGTSTP") {
-			const ctrlByte = signal === "SIGINT" ? "" : "";
-			try {
-				handle.pty.write(ctrlByte);
-			} catch {}
-			return;
-		}
-		try {
-			handle.pty.kill(signal);
-		} catch {
-			try {
-				handle.pty.kill();
-			} catch {}
-		}
-	}
-	/**
-	* Close a terminal and drop its state. Idempotent: a second close of the
-	* same uuid is a no-op. Returns true iff a live handle was actually
-	* dropped.
-	*/
-	close(uuid) {
-		const handle = this.sessions.get(uuid);
-		if (handle === void 0) return false;
-		this.sessions.delete(uuid);
-		try {
-			handle.pty.kill();
-		} catch {}
-		this.notify();
-		return true;
-	}
-	/** Resolve a live handle by uuid (for the WS attach path). */
-	get(uuid) {
-		return this.sessions.get(uuid);
-	}
-	/**
-	* Subscribe to registry changes (create / close / exit). The sidebar push
-	* endpoint uses this to forward snapshots to the connected view. Returns
-	* the unsubscribe function.
-	*/
-	subscribe(listener) {
-		this.changeListeners.add(listener);
-		return () => {
-			this.changeListeners.delete(listener);
-		};
-	}
-	/** Close every agent terminal (plugin teardown). */
-	disposeAll() {
-		for (const uuid of [...this.sessions.keys()]) this.close(uuid);
-	}
-	/** Fire every change listener (callers wrap in try/catch if needed). */
-	notify() {
-		for (const listener of [...this.changeListeners]) try {
-			listener();
-		} catch {}
-	}
-};
-//#endregion
-//#region src/tools.ts
-/**
-* Eight model-facing tools for the agent-owned sidebar terminals (tmux
-* semantics: spawn-and-detach, send-keys, read, wait-for, resize, signal,
-* close, list). Each tool binds to the calling agent's session through
-* `exec.agent.session.id`, so the model never passes a sessionId — the
-* agent identity is the scope.
-*
-* Conventions (per plugin-development-guide.md §3):
-*   C1 — parameters schema-validated before `execute` runs.
-*   C4 — `execute` returns one canonical JSON value; `render` is a separate
-*        pure text projection.
-*   C6 — `exec.signal.throwIfAborted()` before any spawn.
-*   C10 — no UI/transport vocabulary in the canonical value.
-*/
-/** Maximum UTF-8 bytes of one `terminal_read` result text. */
-const READ_BYTE_LIMIT = 262144;
-/**
-* Bound a string to a byte limit, marking truncation. Truncation never
-* splits a multi-byte UTF-8 sequence: when the byte cap lands inside one,
-* the walk-back retreats to the sequence's leading byte so the retained
-* prefix decodes cleanly (a split would decode to U+FFFD).
-* @internal exported for the unit tests, like {@link snapshotOf}.
-*/
-function boundBytes(text, maxBytes) {
-	const buf = Buffer.from(text, "utf8");
-	if (buf.byteLength <= maxBytes) return {
-		text,
-		truncated: false
-	};
-	let end = maxBytes;
-	while (end > 0 && ((buf[end] ?? 0) & 192) === 128) end -= 1;
-	return {
-		text: buf.subarray(0, end).toString("utf8"),
-		truncated: true
-	};
-}
-/** Pure text projection helper (the canonical value is already structured). */
-function textRender$1(fn) {
-	return (_args, value) => [{
-		type: "text",
-		text: fn(value)
-	}];
-}
-/** Extract the calling agent or throw the canonical "no agent" error. */
-function requireAgent$1(agent) {
-	if (agent === void 0) throw new Error("sidebar terminal tools require an initiating agent");
-	return agent;
-}
-/** Resolve the calling agent's session id (the registry scope + ownership key). */
-function sessionIdOf$1(exec) {
-	return requireAgent$1(exec.agent).session.id;
-}
-/**
-* Register the eight terminal tools against the host tool registry. The
-* `resolveCwd` callback threads the live session cwd (authoritative from the
-* session store, falling back to the process cwd) so a freshly-created
-* terminal lands in the right directory without the model passing it.
-* Every uuid-keyed tool first asserts the terminal belongs to the calling
-* session (`registry.assertOwned`), so one agent can never reach another
-* session's terminals.
-* @param ctx - host plugin context (carries the tools service).
-* @param registry - the agent-owned terminal registry.
-* @param resolveCwd - async cwd resolver for one session id. Resolves through
-*  the session header, the client-supplied cwd, and the persistence index
-*  before falling back to the host process cwd (production always provides
-*  persistence, so the fallback is reached only in tests / stripped-down hosts).
-* @returns a disposer that unregisters all eight tools (the caller gates
-* registration on the side-card setting and calls this to turn them off).
-*/
-function registerTools(ctx, registry, resolveCwd, readShellOverrides) {
-	const disposers = [];
-	const register = (tool) => {
-		disposers.push(ctx.tools.register(tool));
-	};
-	register(defineTool({
-		name: "terminal_create",
-		description: "Open a persistent terminal in the sidebar and run a command in it. Spawns an interactive shell, writes the command + Enter to its stdin, and returns a uuid handle. The terminal stays alive after the command exits — send more input with terminal_send (set submit=true to run a command), read output with terminal_read, send Ctrl+C with terminal_signal(signal=\"SIGINT\"), and close it with terminal_close when done. Use this for interactive shells, REPLs, long-running dev servers, or any work that needs persistent terminal state across tool calls. The terminal appears as a new tab in the right sidebar (titled with the `title` you provide) so the user can watch and interact with it.",
-		parameters: {
-			title: {
-				type: "string",
-				required: true,
-				description: "Short human-readable label for the terminal tab (e.g. \"dev server\", \"python repl\")."
-			},
-			command: {
-				type: "string",
-				required: true,
-				description: "Shell command to run in the freshly spawned shell. The host appends an Enter key automatically — do NOT include a trailing newline. Pass \"\" to open a bare shell with no command."
-			}
-		},
-		output: {
-			schema: {
-				type: "object",
-				additionalProperties: false,
-				properties: {
-					uuid: {
-						type: "string",
-						required: true,
-						description: "Opaque handle for the new terminal. Pass to terminal_send / terminal_read / terminal_resize / terminal_signal / terminal_close."
-					},
-					title: {
-						type: "string",
-						required: true,
-						description: "The title you provided (echoed for confirmation)."
-					}
-				}
-			},
-			render: textRender$1((v) => `Opened terminal "${v.title}" (uuid: ${v.uuid}). The sidebar tab appears automatically; use terminal_read to see output and terminal_send (with submit=true) to run more commands.`)
-		},
-		execute: async (args, exec) => {
-			exec.signal.throwIfAborted();
-			const sessionId = sessionIdOf$1(exec);
-			const cwd = await resolveCwd(sessionId);
-			const { shell, shellArgs } = readShellOverrides();
-			return {
-				uuid: registry.create(sessionId, args.title, args.command, cwd, 80, 24, shell, shellArgs),
-				title: args.title
-			};
-		}
-	}));
-	register(defineTool({
-		name: "terminal_list",
-		description: "List every terminal the current agent has opened in this session. Returns each terminal's uuid, title, the command it was started with, and whether the top-level process has exited (with exit code/signal if so). Use this to recover state after a long sequence of tool calls or to find a terminal you forgot to close.",
-		parameters: {},
-		output: {
-			schema: {
-				type: "array",
-				items: {
-					type: "object",
-					additionalProperties: false,
-					properties: {
-						uuid: {
-							type: "string",
-							required: true
-						},
-						title: {
-							type: "string",
-							required: true
-						},
-						command: {
-							type: "string",
-							required: true
-						},
-						exited: {
-							type: "boolean",
-							required: true
-						},
-						exitCode: { oneOf: [{ type: "integer" }, { type: "null" }] },
-						exitSignal: { oneOf: [{ type: "string" }, { type: "null" }] }
-					}
-				}
-			},
-			render: (_args, value) => {
-				const list = value;
-				if (list.length === 0) return [{
-					type: "text",
-					text: "No agent terminals open in this session."
-				}];
-				return [{
-					type: "text",
-					text: `Agent terminals in this session:\n${list.map((t) => {
-						const status = t.exited ? `exited (code ${t.exitCode ?? "?"}, signal ${t.exitSignal ?? "none"})` : "running";
-						return `  ${t.uuid}  "${t.title}"  [${status}]  $ ${t.command}`;
-					}).join("\n")}`
-				}];
-			}
-		},
-		execute: (_args, exec) => {
-			const sessionId = sessionIdOf$1(exec);
-			return Promise.resolve(registry.list(sessionId));
-		}
-	}));
-	register(defineTool({
-		name: "terminal_send",
-		description: "Send raw text (keystrokes) to a terminal opened with terminal_create — tmux send-keys semantics. The text is written verbatim to the pty stdin. To submit a command, set submit=true (appends an Enter key); do NOT put \"\\n\" or \"\\r\" in the text yourself. To send Ctrl+C (interrupt the running command), use the terminal_signal tool with signal=\"SIGINT\" — do NOT try to send the control character \"\\u0003\" as text. Use terminal_signal with signal=\"SIGTSTP\" for Ctrl+Z (suspend) as well. This tool does NOT wait for the command to finish or for output to settle — pair with terminal_read to observe the result. Throws if the terminal has exited.",
-		parameters: {
-			uuid: {
-				type: "string",
-				required: true,
-				description: "Terminal uuid from terminal_create or terminal_list."
-			},
-			text: {
-				type: "string",
-				required: true,
-				description: "UTF-8 text to write to the terminal stdin (verbatim, no shell escaping). Do not include trailing newlines — use the submit flag instead."
-			},
-			submit: {
-				type: "boolean",
-				description: "Append an Enter key (carriage return) after the text to submit a command. Default: false. Set to true when sending a command to run; leave false for partial input or control sequences."
-			}
-		},
-		output: {
-			schema: {
-				type: "object",
-				additionalProperties: false,
-				properties: {
-					uuid: {
-						type: "string",
-						required: true
-					},
-					bytes: {
-						type: "integer",
-						required: true,
-						description: "Number of UTF-8 bytes written (including the Enter key if submit was true)."
-					}
-				}
-			},
-			render: textRender$1((v) => `Sent ${v.bytes} byte(s) to terminal ${v.uuid}.`)
-		},
-		execute: (args, exec) => {
-			exec.signal.throwIfAborted();
-			const sessionId = sessionIdOf$1(exec);
-			registry.assertOwned(args.uuid, sessionId);
-			const payload = args.submit === true ? `${args.text}\r` : args.text;
-			registry.send(args.uuid, payload);
-			return Promise.resolve({
-				uuid: args.uuid,
-				bytes: Buffer.byteLength(payload, "utf8")
-			});
-		}
-	}));
-	register(defineTool({
-		name: "terminal_read",
-		description: "Read a bounded page of retained output from an agent terminal without sending input. The host keeps up to ~1 MiB of scrollback; this tool returns up to 500 lines per call. Use `offset` to paginate forward ( 0-based from the start of the retained transcript ) or backward ( negative reads from the end, e.g. -50 reads the last 50 lines ). Returns `totalLines` so you know how much scrollback remains. Output is bounded to 256 KiB per call; longer pages are truncated with the `truncated` flag.",
-		parameters: {
-			uuid: {
-				type: "string",
-				required: true,
-				description: "Terminal uuid from terminal_create or terminal_list."
-			},
-			offset: {
-				type: "number",
-				description: "0-based line offset from the start of the retained transcript (default 0). Negative reads from the end (e.g. -50 = last 50 lines)."
-			},
-			count: {
-				type: "number",
-				description: "Maximum lines to return (default 500, hard cap 500)."
-			}
-		},
-		output: {
-			schema: {
-				type: "object",
-				additionalProperties: false,
-				properties: {
-					text: {
-						type: "string",
-						required: true,
-						description: "The slice of transcript for the requested page."
-					},
-					totalLines: {
-						type: "integer",
-						required: true,
-						description: "Total lines in the retained transcript."
-					},
-					lineBegin: {
-						type: "integer",
-						required: true,
-						description: "0-based index of the first line in `text` (inclusive)."
-					},
-					lineEnd: {
-						type: "integer",
-						required: true,
-						description: "0-based index of the last line in `text` (exclusive)."
-					},
-					truncated: {
-						type: "boolean",
-						required: true,
-						description: "Whether `text` was truncated to fit the 256 KiB read cap."
-					}
-				}
-			},
-			render: (_args, value) => {
-				const v = value;
-				return [{
-					type: "text",
-					text: `${`[lines ${v.lineBegin}..${v.lineEnd} of ${v.totalLines}${v.truncated ? "; truncated to 256KiB" : ""}]`}\n${v.text}`
-				}];
-			}
-		},
-		execute: (args, exec) => {
-			exec.signal.throwIfAborted();
-			const sessionId = sessionIdOf$1(exec);
-			registry.assertOwned(args.uuid, sessionId);
-			const result = registry.read(args.uuid, args.offset, args.count);
-			const bounded = boundBytes(result.text, READ_BYTE_LIMIT);
-			return Promise.resolve({
-				text: bounded.text,
-				totalLines: result.totalLines,
-				lineBegin: result.lineBegin,
-				lineEnd: result.lineEnd,
-				truncated: bounded.truncated
-			});
-		}
-	}));
-	register(defineTool({
-		name: "terminal_wait_for",
-		description: "Block until a pattern appears in a terminal's retained transcript, or until the timeout elapses, or until the terminal exits — whichever happens first. Use this to synchronize on command completion cues ( e.g. a shell prompt, \"done\", \"Listening on\", \"Build successful\" ) without busy-polling terminal_read. The needle is a JavaScript regular expression ( a pattern that fails to compile falls back to verbatim substring matching ). One needle may cover MULTIPLE outcomes — e.g. wait on `(BUILD_OK|BUILD_FAIL)` or `Build (succeeded|failed)` returns as soon as EITHER marker appears, and the found result's `match` field tells which alternative hit ( build success vs failure ). The wait scans the FULL retained transcript (up to ~1 MiB) on every poll, so a needle that scrolled past the most recent chunk is still a match. Returns `found` with the line/column and the matched text, `timeout` if the needle did not appear in time, or `exited` if the terminal process died before the needle appeared. Default timeout is 10 seconds; raise it for long-running commands ( dev servers, test suites ). The wait is cooperative: a tool-call cancel ( or agent turn end ) aborts it immediately. The user can skip the wait from the sidebar ( a banner on the terminal's tab shows the needle and a skip button ) — the tool then returns `skipped`.",
-		parameters: {
-			uuid: {
-				type: "string",
-				required: true,
-				description: "Terminal uuid from terminal_create or terminal_list."
-			},
-			needle: {
-				type: "string",
-				required: true,
-				description: "JavaScript regular expression to wait for (case-sensitive); a pattern that fails to compile falls back to verbatim substring matching. May cover several outcomes in one wait ( e.g. `(BUILD_OK|BUILD_FAIL)` for build success/failure ) — check `match` in the found result to see which one hit. Must be non-empty."
-			},
-			timeout_ms: {
-				type: "number",
-				description: "Maximum wait in milliseconds (default 10000, i.e. 10s). Clamped to a minimum of 100ms."
-			}
-		},
-		output: {
-			schema: { oneOf: [
-				{
-					type: "object",
-					additionalProperties: false,
-					properties: {
-						kind: {
-							type: "string",
-							required: true,
-							const: "found"
-						},
-						needle: {
-							type: "string",
-							required: true
-						},
-						line: {
-							type: "integer",
-							required: true,
-							description: "0-based line index in the retained transcript where the needle first appeared."
-						},
-						column: {
-							type: "integer",
-							required: true,
-							description: "0-based column index within that line where the match starts."
-						},
-						match: {
-							type: "string",
-							required: true,
-							description: "The text that actually matched — for multi-outcome patterns ( e.g. `(BUILD_OK|BUILD_FAIL)` ) this tells which alternative matched."
-						},
-						elapsedMs: {
-							type: "integer",
-							required: true,
-							description: "Wall-clock milliseconds from wait start to match."
-						}
-					}
-				},
-				{
-					type: "object",
-					additionalProperties: false,
-					properties: {
-						kind: {
-							type: "string",
-							required: true,
-							const: "timeout"
-						},
-						needle: {
-							type: "string",
-							required: true
-						},
-						timeoutMs: {
-							type: "integer",
-							required: true,
-							description: "The configured timeout that elapsed."
-						},
-						totalLines: {
-							type: "integer",
-							required: true,
-							description: "Total lines retained when the timeout fired. Call terminal_read to inspect the tail."
-						}
-					}
-				},
-				{
-					type: "object",
-					additionalProperties: false,
-					properties: {
-						kind: {
-							type: "string",
-							required: true,
-							const: "exited"
-						},
-						needle: {
-							type: "string",
-							required: true
-						},
-						exitCode: {
-							oneOf: [{ type: "integer" }, { type: "null" }],
-							description: "Exit code, if known."
-						},
-						exitSignal: {
-							oneOf: [{ type: "string" }, { type: "null" }],
-							description: "Exit signal name, if killed by a signal."
-						}
-					}
-				},
-				{
-					type: "object",
-					additionalProperties: false,
-					properties: {
-						kind: {
-							type: "string",
-							required: true,
-							const: "skipped"
-						},
-						needle: {
-							type: "string",
-							required: true
-						}
-					}
-				}
-			] },
-			render: (_args, value) => {
-				const v = value;
-				if (v.kind === "found") {
-					const matched = v.match !== void 0 && v.match !== "" ? `, matched "${v.match}"` : "";
-					return [{
-						type: "text",
-						text: `Found "${v.needle}" at line ${v.line}, column ${v.column}${matched} (after ${v.elapsedMs}ms).`
-					}];
-				}
-				if (v.kind === "timeout") return [{
-					type: "text",
-					text: `Timed out after ${v.timeoutMs}ms waiting for "${v.needle}". Call terminal_read to inspect the transcript.`
-				}];
-				if (v.kind === "skipped") return [{
-					type: "text",
-					text: `Skipped by user while waiting for "${v.needle}" — the wait ended early. Call terminal_read to inspect the transcript and decide how to proceed.`
-				}];
-				const exitInfo = v.exitCode !== void 0 && v.exitCode !== null ? ` (exit code ${v.exitCode})` : "";
-				return [{
-					type: "text",
-					text: `Terminal exited before "${v.needle}" appeared${exitInfo}.`
-				}];
-			}
-		},
-		async execute(args, exec) {
-			exec.signal.throwIfAborted();
-			const sessionId = sessionIdOf$1(exec);
-			registry.assertOwned(args.uuid, sessionId);
-			const timeoutMs = args.timeout_ms ?? 1e4;
-			return await registry.waitFor(args.uuid, args.needle, timeoutMs, exec.signal);
-		}
-	}));
-	register(defineTool({
-		name: "terminal_resize",
-		description: "Resize an agent terminal's pty ( cols × rows ). The host clamps both to a 2..1024 sane range. Most shells redraw their prompt and any full-screen TUI on the next output frame. No-op if the terminal has exited. Returns the dimensions actually applied.",
-		parameters: {
-			uuid: {
-				type: "string",
-				required: true,
-				description: "Terminal uuid from terminal_create or terminal_list."
-			},
-			cols: {
-				type: "integer",
-				required: true,
-				description: "New column count ( clamped to 2..1024 )."
-			},
-			rows: {
-				type: "integer",
-				required: true,
-				description: "New row count ( clamped to 2..1024 )."
-			}
-		},
-		output: {
-			schema: {
-				type: "object",
-				additionalProperties: false,
-				properties: {
-					uuid: {
-						type: "string",
-						required: true
-					},
-					cols: {
-						type: "integer",
-						required: true
-					},
-					rows: {
-						type: "integer",
-						required: true
-					}
-				}
-			},
-			render: textRender$1((v) => `Resized terminal ${v.uuid} to ${v.cols}×${v.rows}.`)
-		},
-		execute: (args, exec) => {
-			exec.signal.throwIfAborted();
-			const sessionId = sessionIdOf$1(exec);
-			registry.assertOwned(args.uuid, sessionId);
-			const dims = registry.resize(args.uuid, args.cols, args.rows);
-			return Promise.resolve({
-				uuid: args.uuid,
-				...dims
-			});
-		}
-	}));
-	register(defineTool({
-		name: "terminal_signal",
-		description: "Send a POSIX signal to an agent terminal's foreground process — this is how you send Ctrl+C, Ctrl+Z, etc. Use signal=\"SIGINT\" for Ctrl+C (interrupt the running command), signal=\"SIGTERM\" to request termination, signal=\"SIGKILL\" to force-kill the pty, signal=\"SIGHUP\" to hang up (many shells exit), signal=\"SIGTSTP\" for Ctrl+Z (suspend). Do NOT try to send control characters (like \"\\u0003\") through terminal_send — use this tool instead. On Windows, only SIGKILL and SIGTERM are effective — others are accepted but may no-op. No-op if the terminal has already exited. Use terminal_close to dispose of the terminal entirely.",
-		parameters: {
-			uuid: {
-				type: "string",
-				required: true,
-				description: "Terminal uuid from terminal_create or terminal_list."
-			},
-			signal: {
-				type: "string",
-				required: true,
-				enum: ALLOWED_SIGNALS,
-				description: "Signal to deliver: SIGINT (Ctrl+C) | SIGTERM | SIGKILL | SIGHUP | SIGTSTP (Ctrl+Z)."
-			}
-		},
-		output: {
-			schema: {
-				type: "object",
-				additionalProperties: false,
-				properties: {
-					uuid: {
-						type: "string",
-						required: true
-					},
-					signal: {
-						type: "string",
-						required: true
-					}
-				}
-			},
-			render: textRender$1((v) => `Sent ${v.signal} to terminal ${v.uuid}.`)
-		},
-		execute: (args, exec) => {
-			exec.signal.throwIfAborted();
-			const sessionId = sessionIdOf$1(exec);
-			registry.assertOwned(args.uuid, sessionId);
-			registry.signal(args.uuid, args.signal);
-			return Promise.resolve({
-				uuid: args.uuid,
-				signal: args.signal
-			});
-		}
-	}));
-	register(defineTool({
-		name: "terminal_close",
-		description: "Close an agent terminal and release its process. The uuid becomes invalid for all subsequent tool calls. Idempotent: closing an already-closed uuid is a no-op. The corresponding sidebar tab is removed automatically when the host pushes the updated terminal list. Always close terminals you no longer need — the host keeps the pty alive until you do.",
-		parameters: { uuid: {
-			type: "string",
-			required: true,
-			description: "Terminal uuid from terminal_create or terminal_list."
-		} },
-		output: {
-			schema: {
-				type: "object",
-				additionalProperties: false,
-				properties: {
-					uuid: {
-						type: "string",
-						required: true
-					},
-					closed: {
-						type: "boolean",
-						required: true,
-						description: "Whether a live terminal was actually dropped (false if the uuid was already gone)."
-					}
-				}
-			},
-			render: textRender$1((v) => v.closed ? `Closed terminal ${v.uuid}.` : `Terminal ${v.uuid} was already closed.`)
-		},
-		execute: (args, exec) => {
-			exec.signal.throwIfAborted();
-			const sessionId = sessionIdOf$1(exec);
-			registry.assertOwned(args.uuid, sessionId);
-			const closed = registry.close(args.uuid);
-			return Promise.resolve({
-				uuid: args.uuid,
-				closed
-			});
-		}
-	}));
-	return () => {
-		for (const dispose of disposers) dispose();
-	};
-}
-//#endregion
 //#region src/agent-opens.ts
 /**
 * The model-facing `sidebar_open` tool and its delivery registry.
@@ -3312,34 +1694,49 @@ function registerOpenTool(ctx, registry, resolveCwd, readPrefs) {
 //#endregion
 //#region src/jobs-routes.ts
 /**
-* Extract the plain text of a finalized tool result: the text blocks inside
-* the 'tool-result' block, joined with newlines. Error results and
-* non-text blocks contribute nothing.
+* The result blocks and error flag of one tool/result message, read under BOTH
+* logged shapes: 0.1.6 wrapped the result in a single `type: 'tool-result'`
+* content block on a user-role message (the text nested inside it, `isError`
+* on the wrapper), 0.1.7's first-class tool-role message carries the blocks at
+* the message's own top level with `isError` lifted onto the message.
+* Historical logs keep the old shape forever, so both are read. Undefined when
+* the message carries no block array.
 */
-function resultText(message) {
+function resultOf(message) {
 	if (!Array.isArray(message.content)) return void 0;
-	const parts = [];
 	for (const block of message.content) {
 		if (block === null || typeof block !== "object") continue;
-		const candidate = block;
-		if (candidate.type !== "tool-result") continue;
-		const inner = candidate.content;
-		if (!Array.isArray(inner)) continue;
-		for (const item of inner) {
-			if (item === null || typeof item !== "object") continue;
-			const textItem = item;
-			if (textItem.type === "text" && typeof textItem.text === "string") parts.push(textItem.text);
-		}
+		const wrapper = block;
+		if (wrapper.type !== "tool-result") continue;
+		return {
+			blocks: Array.isArray(wrapper.content) ? wrapper.content : [],
+			isError: wrapper.isError === true
+		};
+	}
+	return {
+		blocks: message.content,
+		isError: message.isError === true
+	};
+}
+/**
+* Extract the plain text of a finalized tool result: its text blocks, joined
+* with newlines. Error results and non-text blocks contribute nothing.
+*/
+function resultText(message) {
+	const blocks = resultOf(message)?.blocks;
+	if (blocks === void 0) return void 0;
+	const parts = [];
+	for (const item of blocks) {
+		if (item === null || typeof item !== "object") continue;
+		const textItem = item;
+		if (textItem.type === "text" && typeof textItem.text === "string") parts.push(textItem.text);
 	}
 	return parts.length > 0 ? parts.join("\n") : void 0;
 }
-/** Whether a tool/result is an error result (the inner block's isError flag). */
+/** Whether a tool/result is an error result (0.1.7's message-level flag, else
+*  the 0.1.6 wrapper block's flag). */
 function resultIsError(message) {
-	if (!Array.isArray(message.content)) return false;
-	return message.content.some((block) => {
-		if (block === null || typeof block !== "object") return false;
-		return block.type === "tool-result" && block.isError === true;
-	});
+	return resultOf(message)?.isError === true;
 }
 /** Whether a job_output result carries no new output — the controller's
 *  model-facing "(no new output)" body, noise for the human pane. */
@@ -3426,23 +1823,35 @@ function createJobOutputMirror(ctx) {
 	return { entries: (sessionId) => perSession.get(sessionId) ?? [] };
 }
 /**
-* Build the jobs routes bound to the plugin context. `output` merges the
-* owner session's own event log with the live job_output mirror; `kill`
-* reads the jobs/agents services lazily and degrades to a 503 when the
-* deployment lacks the registry.
+* Build the jobs routes bound to the plugin context. `list` reads the
+* registry's own projection, `output` merges the owner session's event log
+* with the live job_output mirror, and `kill` cancels through the registry.
+* Every route that needs the registry degrades to a 503 when the deployment
+* lacks it.
 * @param ctx - host plugin context.
 * @param outputLimit - response cap for one output replay in bytes; longer
 *   texts are sliced and flagged `truncated` (mirrors the fs.read cap).
 */
 function buildJobsApi(ctx, outputLimit) {
 	const jobs = ctx.get("jobs");
-	const agents = ctx.get("agents");
 	const mirror = createJobOutputMirror(ctx);
-	/** The live caller whose session id the registry fence compares against. */
-	const callerOf = (sessionId) => agents?.get(sessionId);
 	/** Registry refusals become a 404 job-error; unknown and foreign ids are indistinguishable. */
 	const registryError = (error) => new SidebarError("job-error", error instanceof Error ? error.message : String(error), 404);
+	/** The registry, or the 503 every registry-backed route returns without it. */
+	const requireJobs = () => {
+		if (jobs === void 0) throw new SidebarError("job-error", "the background-job registry is not mounted in this deployment", 503);
+		return jobs;
+	};
 	return {
+		list(payload) {
+			const sessionId = requireString(payload, "sessionId");
+			try {
+				return { jobs: requireJobs().list(sessionId) };
+			} catch (error) {
+				if (error instanceof SidebarError) throw error;
+				throw registryError(error);
+			}
+		},
 		output(payload) {
 			const sessionId = requireString(payload, "sessionId");
 			const id = requireString(payload, "id");
@@ -3477,7 +1886,7 @@ function buildJobsApi(ctx, outputLimit) {
 			try {
 				return {
 					ok: true,
-					outcome: jobs.kill(id, callerOf(sessionId), reason)
+					outcome: jobs.kill(id, sessionId, reason)
 				};
 			} catch (error) {
 				throw registryError(error);
@@ -3494,10 +1903,14 @@ const SIDE_LABEL_PREFIX = "Side: ";
 *  first composer message carries the boundary and earns the real label).
 *  The client renders it localized; the prefix keeps the row filter honest. */
 const SIDE_NEW_THREAD_TITLE = "Side: New thread";
-/** The plugin identity stamped on the source of context-injection messages
-*  (boundary prompt + parked snapshot), so the transcript recognizes them
-*  structurally — not by text prefix. */
-const SIDE_INJECTION_PLUGIN = "dsh-better-sidebar";
+/** The plugin's producer-owned source kind, stamped on the source of
+*  context-injection messages (boundary prompt + parked snapshot) so the
+*  transcript recognizes them structurally — not by text prefix. Session
+*  format v4 retired the bare `kind: 'plugin'` + `plugin` pair; a plugin is
+*  now identified by its own `plugin:<name>` kind, which is exactly what
+*  DSH's own v3→v4 migration derives for rows this plugin wrote earlier, so
+*  both generations read back under one shape. */
+const SIDE_INJECTION_SOURCE_KIND = "plugin:dsh-better-sidebar";
 /**
 * The boundary prompt delivered as the thread's first user message: the
 * inherited seed is reference context only, never active instruction.
@@ -3604,23 +2017,33 @@ function hasDanglingToolCall(events, turnStart) {
 	}
 	return pending.size > 0;
 }
-/** The plain text of one tool/result message (text blocks inside its
-*  `tool-result` content block). */
-function toolResultText(data) {
-	const content = data.message?.content;
-	if (!Array.isArray(content)) return "";
-	const parts = [];
+/**
+* The result content blocks of one tool/result message under BOTH logged
+* shapes: 0.1.6 wrapped them in a single `type: 'tool-result'` content block
+* on a user-role message, 0.1.7's first-class tool-role message carries them
+* at the message's own top level. Historical logs keep the old shape forever,
+* so both are read. Undefined when the message carries no block array.
+*/
+function resultBlocks(content) {
+	if (!Array.isArray(content)) return void 0;
 	for (const block of content) {
 		if (block === null || typeof block !== "object") continue;
-		const candidate = block;
-		if (candidate.type !== "tool-result") continue;
-		const inner = candidate.content;
-		if (!Array.isArray(inner)) continue;
-		for (const item of inner) {
-			if (item === null || typeof item !== "object") continue;
-			const textItem = item;
-			if (textItem.type === "text" && typeof textItem.text === "string") parts.push(textItem.text);
-		}
+		const wrapper = block;
+		if (wrapper.type === "tool-result" && Array.isArray(wrapper.content)) return wrapper.content;
+	}
+	return content;
+}
+/** The plain text of one tool/result message (its text blocks, under either
+*  of the two shapes {@link resultBlocks} reads). */
+function toolResultText(data) {
+	const message = data.message;
+	const blocks = resultBlocks(message?.content);
+	if (blocks === void 0) return "";
+	const parts = [];
+	for (const item of blocks) {
+		if (item === null || typeof item !== "object") continue;
+		const textItem = item;
+		if (textItem.type === "text" && typeof textItem.text === "string") parts.push(textItem.text);
 	}
 	return parts.join("\n");
 }
@@ -4083,16 +2506,15 @@ function admitFollowup(agent, blocks) {
 * log therefore records two user/message events (injection, then question)
 * instead of one wrapped blob: the transcript shows the question as a user
 * bubble and collapses the injection as a context row. The injection source
-* is stamped `kind: 'plugin'` so recognition is structural; its text still
-* opens with SIDE_BOUNDARY_PREFIX, keeping boundaryDelivered intact.
+* carries the plugin's producer-owned kind (`plugin:dsh-better-sidebar` —
+* session format v4 refuses the retired bare `kind: 'plugin'`) so recognition
+* is structural; its text still opens with SIDE_BOUNDARY_PREFIX, keeping
+* boundaryDelivered intact.
 */
 function admitFirstContact(agent, injectionText, question) {
 	agent.inject(createUserMessage({
 		content: textPrompt(injectionText),
-		source: {
-			kind: "plugin",
-			plugin: SIDE_INJECTION_PLUGIN
-		}
+		source: { kind: SIDE_INJECTION_SOURCE_KIND }
 	}));
 	admitFollowup(agent, textPrompt(question));
 }
@@ -4381,16 +2803,15 @@ function createAssistantLiveBuffer(ctx, cap = LIVE_CHUNK_CAP) {
 * dsh-better-sidebar host half: the /sidebar JSON API (explorer listing, file
 * read/write, git), the /sidebar/file media route (images), the /sidebar/html
 * preview route, the /sidebar/bundle lazy-chunk route (client code splits),
-* and the terminal WebSocket upgrade. Every route passes the same
+* and the two WebSocket upgrades (sidebar_open pushes). Every route passes the same
 * browser-trust fence as the /api gateway — Host-header loopback or the
 * web runtime's `trustedHosts` (LAN IP literals sampled at boot plus
 * `--trusted-host` authorities), read per request from the live service
 * value so the fence tracks the same trust source the /api gateway derives
 * its list from.
 *
-* All operations are conversation-scoped: requests carry a sessionId, the
-* session's authoritative cwd comes from the session store, and terminal
-* processes are keyed by session.
+* All operations are conversation-scoped: requests carry a sessionId and the
+* session's authoritative cwd comes from the session store.
 */
 /** Plugin identity for cordis.yml rows. */
 const name = "dsh-better-sidebar";
@@ -4435,25 +2856,7 @@ function mediaTypeForPath(path) {
 * provides persistence, so the bug-fix path (header → client → persistence)
 * always resolves the real session cwd before reaching it.
 */
-/** Fenglin: rewrite synthetic layout session keys to a real attached session. */
-function fenglinIsSyntheticSid(v) {
-	return v === void 0 || v === null || v === "" || String(v) === "current" || String(v).startsWith("__fenglin");
-}
-function fenglinHostSessionId(ctx, sessionId) {
-	if (!fenglinIsSyntheticSid(sessionId)) return sessionId;
-	try {
-		const listed = ctx.sessions?.list?.();
-		if (listed !== void 0 && listed !== null) {
-			for (const s of listed) {
-				const id = s?.id ?? s?.header?.id;
-				if (!fenglinIsSyntheticSid(id)) return String(id);
-			}
-		}
-	} catch {}
-	return sessionId;
-}
 async function sessionCwdOf(ctx, sessionId, clientCwd) {
-	sessionId = fenglinHostSessionId(ctx, sessionId);
 	const headerCwd = ctx.sessions.get(sessionId)?.header.cwd;
 	if (headerCwd !== void 0 && headerCwd !== "") return headerCwd;
 	if (clientCwd !== void 0 && clientCwd !== "") try {
@@ -4523,25 +2926,6 @@ async function readText(path, readLimit) {
 		await handle.close();
 	}
 }
-/** Build the API method table bound to the plugin context, pty manager, agent pty registry, resolved config, and effective terminal shell. */
-/**
-* Resolve the settings-page terminal shell overrides (the terminal card's
-* gear rows). Empty fields mean "unset": keep the yaml `config.shell` /
-* `shellArgs` (or the platform auto-resolution). The settings page is the
-* runtime complement to the boot-time yaml — same contract, later binding:
-* the values here win for terminals opened afterwards.
-*/
-function shellOverridesOf(getSettings) {
-	const value = getSettings()?.get().value;
-	if (value === null || typeof value !== "object") return {};
-	const record = value;
-	const shell = typeof record.terminalShell === "string" ? unquotePath(record.terminalShell.trim()) : "";
-	const args = typeof record.terminalShellArgs === "string" ? record.terminalShellArgs.trim() : "";
-	return {
-		shell: shell === "" ? void 0 : shell,
-		shellArgs: args === "" ? void 0 : splitShellArgs(args)
-	};
-}
 /**
 * Whether the workspace fence is armed for the sidebar's filesystem routes
 * (the settings-page `workspaceFence` switch under the files card's gear).
@@ -4553,24 +2937,7 @@ function fenceEnabledOf(getSettings) {
 	if (value === null || typeof value !== "object") return true;
 	return value.workspaceFence !== false;
 }
-/**
-* Parse the browser tab's `browserAllowedLoopback` allowlist into a matcher
-* over host:port (same contract as the client-side helper in
-* src/client/browser.ts — kept in sync). Bare hosts (`localhost`,
-* `127.0.0.1`) match every port; `host:port` entries match exactly.
-*/
-function parseLoopbackAllowlist(allowlist) {
-	const entries = allowlist.split(",").map((entry) => entry.trim().toLowerCase()).filter((entry) => entry !== "");
-	const exact = new Set(entries);
-	const hosts = /* @__PURE__ */ new Set();
-	for (const entry of entries) if (!entry.includes(":")) hosts.add(entry.replace(/^\[|\]$/g, ""));
-	return (host, port) => {
-		const key = `${host}:${port}`;
-		if (exact.has(key) || exact.has(host)) return true;
-		return port !== "" && hosts.has(host);
-	};
-}
-function buildApi(ctx, ptyManager, agentPtyRegistry, resolved, terminalShell, getSettings, assistantLive) {
+function buildApi(ctx, resolved, getSettings, assistantLive) {
 	const cwdOf = async (payload) => {
 		const sessionId = requireString(payload, "sessionId");
 		const record = payload;
@@ -4752,35 +3119,10 @@ function buildApi(ctx, ptyManager, agentPtyRegistry, resolved, terminalShell, ge
 				lastSeq: window.at(-1)?.seq ?? afterSeq
 			};
 		},
-		"pty.close": (payload) => {
-			const sessionId = requireString(payload, "sessionId");
-			const tab = requireString(payload, "tab");
-			ptyManager?.close(`${sessionId}:${tab}`);
-			return { ok: true };
-		},
-		"agent-pty.close": (payload) => {
-			const uuid = requireString(payload, "uuid");
-			agentPtyRegistry?.close(uuid);
-			return { ok: true };
-		},
-		"agent-pty.skip-wait": (payload) => {
-			const uuid = requireString(payload, "uuid");
-			return {
-				ok: true,
-				skipped: agentPtyRegistry?.skipWait(uuid) ?? 0
-			};
-		},
-		"terminal.deps": () => depsStatus(),
+		"jobs.list": (payload) => jobsApi.list(payload),
 		"jobs.output": (payload) => jobsApi.output(payload),
 		"jobs.kill": (payload) => jobsApi.kill(payload),
 		"subagents.live": (payload) => subagentLiveApi.live(payload),
-		"shell.get": () => {
-			const effective = shellOverridesOf(getSettings).shell ?? terminalShell;
-			return {
-				shell: effective,
-				name: shellDisplayName(effective)
-			};
-		},
 		"settings.get": () => {
 			const settings = getSettings();
 			return settings === void 0 ? {
@@ -4806,58 +3148,6 @@ function buildApi(ctx, ptyManager, agentPtyRegistry, resolved, terminalShell, ge
 				throw new SidebarError("settings-rejected", error instanceof Error ? error.message : String(error), 400);
 			}
 		},
-		"browser.probe": async (payload) => {
-			const raw = requireString(payload, "url");
-			let parsed;
-			try {
-				parsed = new URL(raw);
-			} catch {
-				throw new SidebarError("bad-request", "invalid url", 400);
-			}
-			if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new SidebarError("bad-request", "only http/https urls can be probed", 400);
-			if (isLoopbackHostname(parsed.hostname)) {
-				const prefs = getSettings()?.get()?.value;
-				const allowlist = typeof prefs?.browserAllowedLoopback === "string" ? prefs.browserAllowedLoopback : "";
-				if (!(allowlist.trim() !== "" && parseLoopbackAllowlist(allowlist)(parsed.hostname, parsed.port))) throw new SidebarError("bad-request", "local addresses are not probed", 400);
-			}
-			const controller = new AbortController();
-			const timer = setTimeout(() => controller.abort(), 8e3);
-			try {
-				let response = await fetch(parsed, {
-					method: "HEAD",
-					redirect: "follow",
-					signal: controller.signal
-				});
-				let retriedFromHeadRejection = false;
-				if (response.status === 405 || response.status === 501) {
-					response = await fetch(parsed, {
-						method: "GET",
-						redirect: "follow",
-						signal: controller.signal
-					});
-					retriedFromHeadRejection = true;
-				}
-				if (!(response.headers.get("content-security-policy") !== null || response.headers.get("x-frame-options") !== null) && !retriedFromHeadRejection && response.status !== 405 && response.status !== 501) response = await fetch(parsed, {
-					method: "GET",
-					redirect: "follow",
-					signal: controller.signal
-				});
-				const frameAncestors = extractFrameAncestors(response.headers.get("content-security-policy"));
-				const xFrameOptions = response.headers.get("x-frame-options");
-				response.body?.cancel();
-				return {
-					reachable: true,
-					url: response.url,
-					status: response.status,
-					...xFrameOptions !== null ? { xFrameOptions } : {},
-					...frameAncestors !== void 0 ? { frameAncestors } : {}
-				};
-			} catch {
-				return { reachable: false };
-			} finally {
-				clearTimeout(timer);
-			}
-		},
 		"open.external": (payload) => {
 			const action = payload?.action;
 			if (action === "reveal") return launchExternal("reveal", requireString(payload, "path"));
@@ -4867,45 +3157,124 @@ function buildApi(ctx, ptyManager, agentPtyRegistry, resolved, terminalShell, ge
 		...buildSidechatApi(ctx, assistantLive)
 	};
 }
+/** The npm package name of this plugin, exactly as its Loader row declares it. */
+const SIDEBAR_PACKAGE_NAME = "dsh-better-sidebar";
 /**
-* Plugin body: mount the fenced routes and the pty lifecycle.
+* Profile entry id of the sibling `dsh-web-ui` right panel this sidebar yields
+* to when it is the active provider. Kept as a literal: it is that plugin's
+* own mount choice, not a contract this plugin can derive.
+*/
+const AIONUI_PANEL_ENTRY = "aionui-panel";
+/** The file-backed settings document DSH 0.1.7 retired. */
+const LEGACY_SETTINGS_FILE = "settings.yaml";
+/**
+* The Loader entry id of this plugin's own row.
+*
+* DSH 0.1.7 addresses settings forms by profile entry id, and that id is a
+* mount choice rather than a package property: this bundle's patch uses
+* `better-sidebar`, while an aggregate bundle mounts the same package under
+* its own id. The row is therefore identified by the package name plus fiber
+* identity, with an enabled same-name row as the fallback for the moment
+* before the fiber is attached.
+* @param ctx - the plugin's own context.
+* @returns the row's configured id, or undefined when no row can be identified.
+*/
+function ownEntryId(ctx) {
+	let fallback;
+	try {
+		for (const entry of ctx.loader.entries()) {
+			const id = entry.options.id;
+			if (entry.options.name !== SIDEBAR_PACKAGE_NAME || typeof id !== "string" || id === "") continue;
+			if (entry.fiber === ctx.fiber) return id;
+			if (entry.disabled !== true && fallback === void 0) fallback = id;
+		}
+	} catch {
+		return;
+	}
+	return fallback;
+}
+/**
+* Read this plugin's preference section out of the retired `settings.yaml`.
+*
+* Both names are tried: the settings service renames the document before it
+* imports any section, so on a host that already booted once only the
+* `.imported` copy is left, while a host migrated for the first time may still
+* be mid-import.
+* @param home - the harness home the retired document lives under.
+* @returns the section's own fields, or undefined when no usable section exists.
+*/
+async function readLegacyPrefs(home) {
+	const declared = new Set(Object.keys(Config.dict ?? {}));
+	for (const name of [`${LEGACY_SETTINGS_FILE}.imported`, LEGACY_SETTINGS_FILE]) {
+		let text;
+		try {
+			text = await readFile(join(home, name), "utf8");
+		} catch {
+			continue;
+		}
+		let document;
+		try {
+			document = parse(text);
+		} catch {
+			continue;
+		}
+		if (document === null || typeof document !== "object" || Array.isArray(document)) continue;
+		const section = document[SIDEBAR_PREFS_NS];
+		if (section === null || typeof section !== "object" || Array.isArray(section)) continue;
+		const filtered = Object.fromEntries(Object.entries(section).filter(([key]) => declared.has(key)));
+		if (Object.keys(filtered).length > 0) return filtered;
+	}
+}
+/**
+* One-time import of the Side card preferences a pre-0.1.7 release persisted.
+*
+* The 0.1.6 line stored them through the file-backed settings provider, in
+* `$DSH_HOME/settings.yaml` under a `dsh-better-sidebar` section. This release
+* deletes that provider; its migration renames the document to
+* `settings.yaml.imported` and re-imports each section into the entry of the
+* SAME id — and because a section key is the package name while the row id is
+* a mount choice, DSH warns and leaves this section behind. Without this
+* import every existing user would silently lose their preferences.
+*
+* The import runs only while the row's user layer is still empty, so it can
+* never overwrite a value set after the upgrade, and re-running it is a no-op.
+* @param ctx - host plugin context (profile home, logger).
+* @param settings - the settings forms service.
+* @param ns - this plugin row's entry id.
+* @returns which outcome the import reached.
+*/
+async function importLegacyPrefs(ctx, settings, ns) {
+	const home = ctx.profileContext?.home;
+	if (home === void 0) return "no-profile-home";
+	const row = settings.describe().find((candidate) => candidate.ns === ns);
+	if (row === void 0) return "no-form";
+	const user = row.user;
+	if (user !== null && typeof user === "object" && Object.keys(user).length > 0) return "already-configured";
+	const section = await readLegacyPrefs(home);
+	if (section === void 0) return "no-legacy-section";
+	await settings.update(ns, section);
+	return "imported";
+}
+/**
+* Plugin body: mount the fenced routes and the sidebar_open push socket.
 * @param ctx - host plugin context (webServer, sessions, webRuntime).
 * @param config - deployment-provided limits; the Loader validates against
 * {@link Config} and fills defaults, direct callers get them from
 * {@link resolveSidebarConfig}.
 */
 function apply(ctx, config) {
-	ensureSpawnHelper();
 	const resolved = resolveSidebarConfig(config);
-	const terminalShell = defaultShell({ explicit: resolved.shell });
 	const fence = (req) => isTrustedApiRequest(req, ctx.webRuntime.trustedHosts);
-	const nodePty = loadNodePty();
-	if (nodePty === null) {
-		const status = depsStatus();
-		const detail = status.ok ? "unknown cause" : `${status.cause}. Repair: ${status.command}`;
-		ctx.logger?.warn(`[dsh-better-sidebar] node-pty (${DSH_NODE_PTY_RANGE}) failed to load: ${detail}`);
-	}
-	const ptyManager = nodePty !== null ? new PtyManager(terminalShell, resolved.terminalsPerSession, resolved.shellArgs, nodePty) : null;
-	const agentPtyRegistry = nodePty !== null ? new AgentPtyRegistry(terminalShell, resolved.shellArgs, nodePty) : null;
 	const agentOpenRegistry = new AgentOpenRegistry();
 	let settingsFace;
-	let toolsDisposers = null;
 	let openToolsDisposers = null;
-	const syncToolsGate = (scope) => {
-		if (scope.get().agentTerminalTools) {
-			if (toolsDisposers === null) {
-				if (agentPtyRegistry === null) return;
-				toolsDisposers = registerTools(ctx, agentPtyRegistry, (sessionId) => sessionCwdOf(ctx, sessionId), () => shellOverridesOf(() => settingsFace));
-			}
-		} else if (toolsDisposers !== null) {
-			toolsDisposers();
-			toolsDisposers = null;
-			agentPtyRegistry?.disposeAll();
-		}
-	};
 	ctx.inject(["settings"], (sctx) => {
-		const ns = SIDEBAR_PREFS_NS;
-		const scope = sctx.settings.register(ns, PrefsSchema);
+		const ns = ownEntryId(ctx);
+		if (ns === void 0) {
+			ctx.logger?.warn?.("dsh-better-sidebar: no loader row for this package; Side card preferences stay at defaults");
+			return;
+		}
+		ctx.effect(() => sctx.settings.configure({ auto: false }, ctx.fiber), "dsh-better-sidebar: settings page policy");
 		const viewOf = () => {
 			const descriptor = sctx.settings.describe({ redactSecrets: true }).find((candidate) => candidate.ns === ns);
 			return descriptor === void 0 ? {
@@ -4917,40 +3286,49 @@ function apply(ctx, config) {
 			};
 		};
 		const externalDisable = () => {
-			return (sctx.settings.describe({ redactSecrets: true }).find((candidate) => candidate.ns === "aionui-panel")?.value)?.rightPanel === "aionui-panel";
+			return (sctx.settings.describe({ redactSecrets: true }).find((candidate) => candidate.ns === AIONUI_PANEL_ENTRY)?.value)?.rightPanel === "aionui-panel";
 		};
-		settingsFace = {
-			get: viewOf,
-			externalDisable,
-			update: async (patch, expectedRevision) => {
-				await sctx.settings.update(ns, patch, expectedRevision);
-				return viewOf();
-			}
+		const prefsOf = () => {
+			const value = viewOf().value;
+			return value !== null && typeof value === "object" ? value : SIDEBAR_PREFS_DEFAULTS;
 		};
-		syncToolsGate(scope);
 		const syncOpenToolsGate = () => {
-			if (scope.get().agentOpenTools) {
-				if (openToolsDisposers === null) openToolsDisposers = registerOpenTool(ctx, agentOpenRegistry, (sessionId) => sessionCwdOf(ctx, sessionId), () => {
-					const value = (settingsFace?.get())?.value;
-					return value !== null && typeof value === "object" ? value : SIDEBAR_PREFS_DEFAULTS;
-				});
+			if (prefsOf().agentOpenTools === true) {
+				if (openToolsDisposers === null) openToolsDisposers = registerOpenTool(ctx, agentOpenRegistry, (sessionId) => sessionCwdOf(ctx, sessionId), prefsOf);
 			} else if (openToolsDisposers !== null) {
 				openToolsDisposers();
 				openToolsDisposers = null;
 				agentOpenRegistry.drainAll();
 			}
 		};
+		settingsFace = {
+			get: () => {
+				syncOpenToolsGate();
+				return viewOf();
+			},
+			externalDisable,
+			update: async (patch, expectedRevision) => {
+				await sctx.settings.update(ns, patch, expectedRevision);
+				return viewOf();
+			}
+		};
 		syncOpenToolsGate();
-		scope.watch(() => {
-			syncToolsGate(scope);
-			syncOpenToolsGate();
+		Promise.resolve(ctx.loader?.await?.()).then(() => importLegacyPrefs(ctx, sctx.settings, ns)).then((outcome) => {
+			if (outcome === "no-profile-home" || outcome === "no-form") {
+				ctx.logger.warn("dsh-better-sidebar: legacy preference import could not run (%s)", outcome);
+				return;
+			}
+			ctx.logger.info("dsh-better-sidebar: legacy preference import: %s", outcome);
+		}).catch((error) => {
+			ctx.logger.warn("dsh-better-sidebar: legacy preference import was rejected");
+			ctx.logger.warn(error);
 		});
 	});
 	const assistantLive = createAssistantLiveBuffer(ctx);
 	ctx.effect(() => () => {
 		assistantLive.dispose();
 	}, "dsh-better-sidebar: live assistant stream buffer");
-	const api = buildApi(ctx, ptyManager, agentPtyRegistry, resolved, terminalShell, () => settingsFace, assistantLive);
+	const api = buildApi(ctx, resolved, () => settingsFace, assistantLive);
 	ctx.effect(() => ctx.webServer.register({
 		kind: "prefix",
 		path: "/sidebar/api",
@@ -5114,32 +3492,6 @@ function apply(ctx, config) {
 			}
 		}
 	}), "dsh-better-sidebar: /sidebar/html preview route");
-	const wss = new WebSocketServer({ noServer: true });
-	ctx.effect(() => ctx.webServer.registerUpgrade({
-		path: "/sidebar/ws/terminal",
-		handler: (req, socket, head) => {
-			if (!fence(req)) {
-				socket.destroy();
-				return;
-			}
-			wss.handleUpgrade(req, socket, head, (ws) => {
-				attachTerminal(ctx, ptyManager, agentPtyRegistry, ws, req, resolved, () => settingsFace);
-			});
-		}
-	}), "dsh-better-sidebar: terminal WebSocket");
-	const agentListWss = new WebSocketServer({ noServer: true });
-	ctx.effect(() => ctx.webServer.registerUpgrade({
-		path: "/sidebar/ws/agent-terminals",
-		handler: (req, socket, head) => {
-			if (!fence(req)) {
-				socket.destroy();
-				return;
-			}
-			agentListWss.handleUpgrade(req, socket, head, (ws) => {
-				attachAgentList(agentPtyRegistry, ws, req);
-			});
-		}
-	}), "dsh-better-sidebar: agent-terminals push WebSocket");
 	const agentOpenWss = new WebSocketServer({ noServer: true });
 	ctx.effect(() => ctx.webServer.registerUpgrade({
 		path: "/sidebar/ws/agent-opens",
@@ -5153,16 +3505,105 @@ function apply(ctx, config) {
 			});
 		}
 	}), "dsh-better-sidebar: agent-opens push WebSocket");
+	const fsWatchWss = new WebSocketServer({ noServer: true });
+	ctx.effect(() => ctx.webServer.registerUpgrade({
+		path: "/sidebar/ws/fs-watch",
+		handler: (req, socket, head) => {
+			if (!fence(req)) {
+				socket.destroy();
+				return;
+			}
+			fsWatchWss.handleUpgrade(req, socket, head, (ws) => {
+				attachFsWatch(ctx, ws, req, () => fenceEnabledOf(() => settingsFace));
+			});
+		}
+	}), "dsh-better-sidebar: file-tree watch WebSocket");
 	ctx.effect(() => () => {
-		toolsDisposers?.();
 		openToolsDisposers?.();
-		ptyManager?.disposeAll();
-		agentPtyRegistry?.disposeAll();
 		agentOpenRegistry.dispose();
-		wss.close();
-		agentListWss.close();
 		agentOpenWss.close();
+		fsWatchWss.close();
 	}, "dsh-better-sidebar: teardown");
+}
+/**
+* Serve one session's directory-watch socket until it closes.
+*
+* Frames are `{ op: 'watch' | 'unwatch', path }`, where `path` is relative to
+* the session's workspace exactly like `fs.tree`'s. A path that fails
+* resolution, or a rejection past the watcher cap, is answered with
+* `{ dir, ok: false }` so the client can stop asking rather than retry.
+* @param ctx - host plugin context (session cwd, workspace fence).
+* @param ws - the accepted socket.
+* @param req - the upgrade request carrying `?sessionId=`.
+* @param fenceEnabled - whether the workspace containment fence is on.
+*/
+async function attachFsWatch(ctx, ws, req, fenceEnabled) {
+	try {
+		const sessionId = new URL(req.url ?? "/", "http://dsh.internal").searchParams.get("sessionId");
+		if (sessionId === null) {
+			ws.close(1008, "sessionId is required");
+			return;
+		}
+		const watchers = createDirectoryWatchers((event) => {
+			if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ dir: event.dir }));
+		}, (dir, error) => {
+			ctx.logger.warn("dsh-better-sidebar: cannot watch %s", dir);
+			ctx.logger.warn(error);
+			if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({
+				dir,
+				ok: false
+			}));
+		});
+		ws.on("close", () => {
+			watchers.close();
+		});
+		ws.on("error", () => {
+			watchers.close();
+		});
+		ws.on("message", (data) => {
+			handleFsWatchFrame(ctx, ws, watchers, sessionId, data, fenceEnabled);
+		});
+	} catch (error) {
+		ws.close(1011, error instanceof Error ? error.message : String(error));
+	}
+}
+/**
+* Apply one watch frame.
+* @param ctx - host plugin context.
+* @param ws - the owning socket.
+* @param watchers - the socket's watcher set.
+* @param sessionId - the session the socket was opened for.
+* @param data - the raw frame text.
+* @param fenceEnabled - whether the workspace containment fence is on.
+*/
+async function handleFsWatchFrame(ctx, ws, watchers, sessionId, data, fenceEnabled) {
+	let frame;
+	try {
+		frame = JSON.parse(typeof data === "string" ? data : String(data));
+	} catch {
+		return;
+	}
+	const path = typeof frame.path === "string" ? frame.path : void 0;
+	if (path === void 0 || path === "") return;
+	try {
+		const dir = await ensureWorkspacePath(await sessionCwdOf(ctx, sessionId), path, fenceEnabled());
+		if (frame.op === "unwatch") {
+			watchers.remove(dir);
+			return;
+		}
+		if (frame.op !== "watch") return;
+		const ok = watchers.add(dir);
+		if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({
+			dir,
+			ok
+		}));
+	} catch (error) {
+		if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({
+			dir: path,
+			ok: false,
+			reason: error instanceof Error ? error.message : String(error)
+		}));
+	}
 }
 /** Push queued `sidebar_open` requests for one session to a connected view. */
 async function attachAgentOpen(registry, ws, req) {
@@ -5186,177 +3627,5 @@ async function attachAgentOpen(registry, ws, req) {
 		ws.close(1011, error instanceof Error ? error.message : String(error));
 	}
 }
-/** Push the live agent-terminal list for one session to a connected sidebar view. */
-async function attachAgentList(registry, ws, req) {
-	try {
-		const sessionId = new URL(req.url ?? "/", "http://dsh.internal").searchParams.get("sessionId");
-		if (sessionId === null) {
-			ws.close(1008, "sessionId is required");
-			return;
-		}
-		const send = () => {
-			if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(registry?.list(sessionId) ?? []));
-		};
-		send();
-		const unsubscribe = registry?.subscribe(send);
-		ws.on("close", () => {
-			unsubscribe?.();
-		});
-		ws.on("error", () => {
-			unsubscribe?.();
-		});
-	} catch (error) {
-		ws.close(1011, error instanceof Error ? error.message : String(error));
-	}
-}
-/**
-* The WS close reason for a failed terminal attach. A missing configured
-* shell gets a SHORT machine-readable marker (`shell-not-found:<name>`,
-* capped by BYTES — a WS close reason allows at most 123 bytes, which `ws`
-* validates with `Buffer.byteLength`) that the client maps to a localized,
-* actionable banner; every other failure keeps the raw message (the
-* model-side tool errors read it verbatim).
-*/
-function wsCloseReasonOf(error) {
-	if (error instanceof SidebarError && error.code === "shell-not-found") return `shell-not-found:${truncateUtf8Bytes(shellDisplayName(String(error.meta?.shell ?? "")), 100)}`;
-	return error instanceof Error ? error.message : String(error);
-}
-/**
-* Truncate to at most `maxBytes` UTF-8 bytes without splitting a code point.
-* A character-count `slice` does not bound the WS close reason: `ws` measures
-* `Buffer.byteLength` against its 123-byte cap, and the resulting throw would
-* replace the very error the reason describes.
-*/
-function truncateUtf8Bytes(value, maxBytes) {
-	if (Buffer.byteLength(value) <= maxBytes) return value;
-	let truncated = "";
-	for (const character of value) {
-		if (Buffer.byteLength(truncated + character) > maxBytes) break;
-		truncated += character;
-	}
-	return truncated;
-}
-/**
-* Wire one terminal socket to its pty: replay transcript, pump both ways.
-* Two attach modes share the wire protocol:
-* - `?uuid=...` attaches to an agent-owned terminal (created by the
-*   `terminal_create` tool). The close frame kills the pty immediately
-*   (the agent's terminal closes when the user closes the sidebar tab); a
-*   bare socket drop (refresh, tab switch) leaves the pty alive for the
-*   reconnect grace, exactly like UI-tab terminals.
-* - `?tab=...&sessionId=...` attaches to a UI-tab terminal (the user
-*   created it from the + menu). The close frame schedules a 0-ms close
-*   (the host's reconnect grace keeps the shell alive across a refresh).
-*   The park frame (sent when the user switches to another conversation)
-*   marks the pty as parked so the upcoming bare socket drop does NOT start
-*   the grace countdown — the tab is still open in its session's state, so
-*   the shell must survive until the user switches back or closes the tab.
-*/
-async function attachTerminal(ctx, ptyManager, agentPtyRegistry, ws, req, resolved, getSettings) {
-	try {
-		const url = new URL(req.url ?? "/", "http://dsh.internal");
-		const uuid = url.searchParams.get("uuid");
-		if (uuid !== null) {
-			if (agentPtyRegistry === null) {
-				ws.close(1011, `agent terminal "${uuid}" not found`);
-				return;
-			}
-			const handle = agentPtyRegistry.get(uuid);
-			if (handle === void 0) {
-				ws.close(1011, `agent terminal "${uuid}" not found`);
-				return;
-			}
-			pumpAgentTerminal(agentPtyRegistry, handle, ws);
-			return;
-		}
-		const sessionIdRaw = url.searchParams.get("sessionId");
-		const tabId = url.searchParams.get("tab");
-		if (sessionIdRaw === null || tabId === null) {
-			ws.close(1008, "either ?uuid or ?sessionId+?tab are required");
-			return;
-		}
-		const sessionId = fenglinHostSessionId(ctx, sessionIdRaw);
-		if (ptyManager === null) {
-			ws.close(1011, PTY_DEPS_MISSING);
-			return;
-		}
-		const cwd = await sessionCwdOf(ctx, sessionId, url.searchParams.get("cwd") ?? void 0);
-		const overrides = shellOverridesOf(getSettings);
-		const handle = ptyManager.open(sessionId, tabId, cwd, 80, 24, overrides.shell, overrides.shellArgs);
-		armPtyResizeGate(handle.pty);
-		if (handle.transcript !== "") ws.send(handle.transcript);
-		const onData = (data) => {
-			if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 4194304) ws.send(data);
-		};
-		const onExit = ({ exitCode }) => {
-			onData(`\r\n[process exited with code ${String(exitCode)}]\r\n`);
-		};
-		const dataSub = handle.pty.onData(onData);
-		const exitSub = handle.pty.onExit(onExit);
-		ws.on("message", (data) => {
-			const text = data.toString("utf8");
-			let control = null;
-			try {
-				const parsed = JSON.parse(text);
-				if (parsed !== null && typeof parsed === "object") control = parsed;
-			} catch {}
-			if (control !== null && control.type === "close") {
-				ptyManager.scheduleClose(handle.key, 0);
-				return;
-			}
-			if (control !== null && control.type === "park") {
-				ptyManager.park(handle.key);
-				return;
-			}
-			if (handle.exited) return;
-			if (control !== null && control.type === "resize" && typeof control.cols === "number" && typeof control.rows === "number") tryResizePty(handle.pty, control.cols, control.rows);
-			else handle.pty.write(text);
-		});
-		ws.on("close", () => {
-			dataSub.dispose();
-			exitSub.dispose();
-			if (!ptyManager.isParked(handle.key)) ptyManager.scheduleClose(handle.key, resolved.reconnectGraceMs);
-		});
-	} catch (error) {
-		ws.close(1011, wsCloseReasonOf(error));
-	}
-}
-/**
-* Pump one agent terminal's pty to a connected view. The close frame kills
-* the pty immediately (the agent's terminal closes when the user closes the
-* sidebar tab); a bare socket drop leaves the pty alive — the agent owns
-* the lifetime, and only `terminal_close`, a `{type:'close'}` frame, or
-* plugin teardown kills it.
-*/
-function pumpAgentTerminal(registry, handle, ws) {
-	if (handle.transcript !== "") ws.send(handle.transcript);
-	const onData = (data) => {
-		if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 4194304) ws.send(data);
-	};
-	const onExit = ({ exitCode }) => {
-		onData(`\r\n[process exited with code ${String(exitCode)}]\r\n`);
-	};
-	const dataSub = handle.pty.onData(onData);
-	const exitSub = handle.pty.onExit(onExit);
-	ws.on("message", (data) => {
-		if (handle.exited) return;
-		const text = data.toString("utf8");
-		let control = null;
-		try {
-			const parsed = JSON.parse(text);
-			if (parsed !== null && typeof parsed === "object") control = parsed;
-		} catch {}
-		if (control !== null && control.type === "close") {
-			registry.close(handle.uuid);
-			return;
-		}
-		if (control !== null && control.type === "resize" && typeof control.cols === "number" && typeof control.rows === "number") tryResizePty(handle.pty, control.cols, control.rows);
-		else if (control === null) handle.pty.write(text);
-	});
-	ws.on("close", () => {
-		dataSub.dispose();
-		exitSub.dispose();
-	});
-}
 //#endregion
-export { Config, apply, inject, mediaTypeForPath, name, wsCloseReasonOf };
+export { Config, apply, inject, mediaTypeForPath, name };

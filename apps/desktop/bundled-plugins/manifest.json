@@ -46,18 +46,20 @@
         {
             "seedId": "dsh-better-sidebar",
             "packageName": "dsh-better-sidebar",
-            "version": "0.19.1",
+            "version": "0.21.1",
             "profile": "web",
             "installPolicy": "startup",
-            "registrySpec": "dsh-better-sidebar@0.19.1",
+            "registrySpec": "dsh-better-sidebar@0.21.1",
             "managedUpgradeFrom": [
-                "0.16.1"
+                "0.16.1",
+                "0.19.0",
+                "0.19.1"
             ],
             "approvedBuilds": [
                 "node-pty"
             ],
-            "archive": "dsh-better-sidebar-0.19.1.tgz",
-            "integrity": "sha512-Jr0tPJoDKUVkq+fioL6Td+YwXZ+PULx3CnBJ4iktaQGNP5y9hgpz6V7o7f4Yh2czheVKZsewurqCaiN10GQYeQ=="
+            "archive": "dsh-better-sidebar-0.21.1.tgz",
+            "integrity": "sha512-gbE5E9pwoJeHeedefBftSpTjGjd3TUOPUGYc4LlXUkW+NuYHwY6Hhfcsd//OKuohQLv6snle+sWhrdGWc8ARCg=="
         },
         {
             "seedId": "dsh-pocket",

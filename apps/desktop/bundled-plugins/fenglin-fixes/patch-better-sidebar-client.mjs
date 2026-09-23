@@ -45,6 +45,7 @@ const SKILL_CSS = `// Fenglin: unify skill-center sidebar entry with task-board 
 
 export async function patchBetterSidebarClient(pkgRoot) {
   const clientPath = join(pkgRoot, 'lib', 'client.js')
+  // 0.21.x folded terminal helpers into client.js; keep the legacy path for 0.19.x.
   const terminalPath = join(pkgRoot, 'lib', 'client-terminal.js')
   let changed = false
   try {
@@ -105,29 +106,37 @@ export async function patchBetterSidebarClient(pkgRoot) {
   } catch (error) {
     console.warn('fenglin-better-sidebar: client.js skip', error?.message ?? error)
   }
-  try {
-    let term = await readFile(terminalPath, 'utf8')
-    if (!term.includes('fenglinRealSessionId')) {
+  const resolveSessionExpr = `(() => { let sid = scope.sessionId; const syn = (v) => v === void 0 || v === null || v === "" || String(v) === "current" || String(v).startsWith("__fenglin"); if (syn(sid)) { try { if (typeof globalThis.__dshBetterSidebarSessionId === "function") { const r = globalThis.__dshBetterSidebarSessionId(); if (!syn(r)) sid = String(r); } } catch {} } return sid ?? ""; })()`
+  for (const termFile of [clientPath, terminalPath]) {
+    try {
+      let term = await readFile(termFile, 'utf8')
+      if (term.includes('fenglinRealSessionId')) {
+        console.log('fenglin-better-sidebar: already patched', termFile)
+        continue
+      }
+      const before = term
       term = term.replace(
         'sessionId: scope.sessionId,\n\t\t\t\t\t\ttab: tabId',
-        'sessionId: (() => { let sid = scope.sessionId; const syn = (v) => v === void 0 || v === null || v === "" || String(v) === "current" || String(v).startsWith("__fenglin"); if (syn(sid)) { try { if (typeof globalThis.__dshBetterSidebarSessionId === "function") { const r = globalThis.__dshBetterSidebarSessionId(); if (!syn(r)) sid = String(r); } } catch {} } return sid ?? ""; })(),\n\t\t\t\t\t\ttab: tabId',
+        `sessionId: ${resolveSessionExpr},\n\t\t\t\t\t\ttab: tabId`,
       )
       term = term.replace(
         'sessionId: scope.sessionId,\n\t\t\t\tdir,',
-        'sessionId: (() => { let sid = scope.sessionId; const syn = (v) => v === void 0 || v === null || v === "" || String(v) === "current" || String(v).startsWith("__fenglin"); if (syn(sid)) { try { if (typeof globalThis.__dshBetterSidebarSessionId === "function") { const r = globalThis.__dshBetterSidebarSessionId(); if (!syn(r)) sid = String(r); } } catch {} } return sid ?? ""; })(),\n\t\t\t\tdir,',
+        `sessionId: ${resolveSessionExpr},\n\t\t\t\tdir,`,
       )
       term = term.replace(
         '\t\t\tsessionId: scope.sessionId,\n\t\t\t...scope.cwd',
-        '\t\t\tsessionId: (() => { const v = scope.sessionId; const syn = (x) => x === void 0 || x === null || x === "" || String(x) === "current" || String(x).startsWith("__fenglin"); if (!syn(v)) return String(v); try { if (typeof globalThis.__dshBetterSidebarSessionId === "function") { const r = globalThis.__dshBetterSidebarSessionId(); if (!syn(r)) return String(r); } } catch {} return v; })(),\n\t\t\t...scope.cwd',
+        `\t\t\tsessionId: ${resolveSessionExpr},\n\t\t\t...scope.cwd`,
       )
-      await writeFile(terminalPath, term, 'utf8')
+      if (term === before) continue
+      await writeFile(termFile, term, 'utf8')
       changed = true
-      console.log('fenglin-better-sidebar: patched client-terminal.js')
-    } else {
-      console.log('fenglin-better-sidebar: client-terminal.js already patched')
+      console.log('fenglin-better-sidebar: patched terminal session ids', termFile)
+    } catch (error) {
+      if (termFile === terminalPath && (error?.code === 'ENOENT' || /no such file/i.test(String(error?.message ?? error)))) {
+        continue
+      }
+      console.warn('fenglin-better-sidebar: terminal skip', termFile, error?.message ?? error)
     }
-  } catch (error) {
-    console.warn('fenglin-better-sidebar: terminal skip', error?.message ?? error)
   }
   return changed
 }
