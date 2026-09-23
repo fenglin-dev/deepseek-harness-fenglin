@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 function usage() {
-  console.error('usage: release-doctor.mjs [--release-state stable|prerelease] [--previous-tag <tag>] [--minimum-free-gib <gib>] [--minimum-mibps <mibps>] [--cnb-repository <owner/repo>] [--runtime-repository <owner/repo>] <owner/repo>')
+  console.error('usage: release-doctor.mjs [--release-state stable|prerelease] [--previous-tag <tag>] [--minimum-free-gib <gib>] [--minimum-mibps <mibps>] [--cnb-repository <owner/repo>] <owner/repo>')
   process.exit(2)
 }
 
@@ -14,7 +14,6 @@ const options = {
   minimumFreeGib: 10,
   minimumMibps: 1,
   cnbRepository: 'hecoococ/open-deepseek-harness-desktop',
-  runtimeRepository: 'hecoococ/open-dsh-runtime-assets',
 }
 const operands = []
 for (let index = 2; index < process.argv.length; index += 1) {
@@ -25,7 +24,6 @@ for (let index = 2; index < process.argv.length; index += 1) {
   else if (argument === '--minimum-free-gib') options.minimumFreeGib = Number(value())
   else if (argument === '--minimum-mibps') options.minimumMibps = Number(value())
   else if (argument === '--cnb-repository') options.cnbRepository = value()
-  else if (argument === '--runtime-repository') options.runtimeRepository = value()
   else if (argument.startsWith('-')) usage()
   else operands.push(argument)
 }
@@ -34,7 +32,7 @@ if (operands.length !== 1 || !['stable', 'prerelease'].includes(options.releaseS
   || !Number.isFinite(options.minimumMibps) || options.minimumMibps < 0) usage()
 const repository = operands[0]
 const repositoryPattern = /^[^/\s]+\/[^/\s]+$/u
-if (![repository, options.cnbRepository, options.runtimeRepository].every(value => repositoryPattern.test(value))) usage()
+if (![repository, options.cnbRepository].every(value => repositoryPattern.test(value))) usage()
 
 const scriptDirectory = resolve(import.meta.dirname)
 const root = run('git', ['rev-parse', '--show-toplevel']).trim()
@@ -159,7 +157,7 @@ check('publication:cnb-workflow', () => {
 const failedBeforeNetwork = checks.some(entry => entry.status === 'FAIL')
 let networkEvidence = ''
 if (!failedBeforeNetwork) {
-  check('network:release-endpoints', () => run(join(scriptDirectory, 'check-release-endpoints.sh'), [repository, options.runtimeRepository]).trim())
+  check('network:release-endpoints', () => run(join(scriptDirectory, 'check-release-endpoints.sh'), [repository]).trim())
   if (checks.at(-1)?.status === 'PASS') {
     check('network:actions-artifact', () => {
       networkEvidence = run(join(scriptDirectory, 'check-release-download-speed.sh'), [repository], {
@@ -175,7 +173,7 @@ if (!failedBeforeNetwork) {
 const failed = checks.filter(entry => entry.status === 'FAIL')
 if (failed.length === 0) {
   run(process.execPath, [join(scriptDirectory, 'release-plan.mjs'), 'init', planPath, version, repository,
-    options.cnbRepository, options.runtimeRepository, branch, sourceSha, previousTag, options.releaseState,
+    options.cnbRepository, branch, sourceSha, previousTag, options.releaseState,
     String(options.minimumMibps)])
   run(process.execPath, [join(scriptDirectory, 'release-plan.mjs'), 'set', planPath,
     'notes.status', 'verified', 'network.status', 'verified',

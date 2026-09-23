@@ -2,14 +2,13 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 [--publish] [--resume-draft] --release-state <stable|prerelease> --metadata-directory <directory> <owner/repo> <source-sha> <tag> <title> <notes-file> <release-directory>" >&2
+  echo "usage: $0 [--publish] [--resume-draft] --release-state <stable|prerelease> <owner/repo> <source-sha> <tag> <title> <notes-file> <release-directory>" >&2
   exit 2
 }
 
 publish=0
 resume_draft=0
 release_state=
-metadata_directory=
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --publish)
@@ -25,11 +24,6 @@ while [[ $# -gt 0 ]]; do
       release_state=$2
       shift 2
       ;;
-    --metadata-directory)
-      [[ $# -ge 2 ]] || usage
-      metadata_directory=$2
-      shift 2
-      ;;
     --)
       shift
       break
@@ -40,7 +34,6 @@ while [[ $# -gt 0 ]]; do
 done
 [[ $# -eq 6 ]] || usage
 [[ "$release_state" == stable || "$release_state" == prerelease ]] || usage
-[[ -n "$metadata_directory" ]] || usage
 
 repository=$1
 source_sha=$2
@@ -61,22 +54,11 @@ installers=(
   DeepSeek-Harness-macos-x64.zip
   DeepSeek-Harness-windows-x64.exe
 )
-metadata_assets=(
-  "workspace-runtimes-$version.v2.json"
-  workspace-runtimes.v2.sigstore.json
-)
-assets=("${installers[@]}" SHA256SUMS "${metadata_assets[@]}")
+assets=("${installers[@]}" SHA256SUMS)
 
 asset_path() {
   local filename=$1
-  case "$filename" in
-    workspace-runtimes-*.v2.json|workspace-runtimes.v2.sigstore.json)
-      printf '%s/%s\n' "$metadata_directory" "$filename"
-      ;;
-    *)
-      printf '%s/%s\n' "$release_directory" "$filename"
-      ;;
-  esac
+  printf '%s/%s\n' "$release_directory" "$filename"
 }
 
 for command_name in gh shasum wc awk; do
@@ -90,15 +72,6 @@ done
 [[ -f "$notes_file" && -s "$notes_file" && ! -L "$notes_file" ]] || { echo "notes file must be a non-empty regular file: $notes_file" >&2; exit 1; }
 
 "$script_directory/verify-release-directory.sh" "$release_directory"
-[[ -d "$metadata_directory" && ! -L "$metadata_directory" ]] || { echo "metadata directory must be a real directory: $metadata_directory" >&2; exit 1; }
-metadata_entries=()
-while IFS= read -r entry; do metadata_entries+=("$entry"); done < <(find "$metadata_directory" -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)
-[[ ${#metadata_entries[@]} -eq ${#metadata_assets[@]} ]] || { echo "metadata directory must contain exactly ${#metadata_assets[@]} files" >&2; exit 1; }
-for filename in "${metadata_assets[@]}"; do
-  metadata_path="$metadata_directory/$filename"
-  [[ -f "$metadata_path" && -s "$metadata_path" && ! -L "$metadata_path" ]] || { echo "missing or invalid release metadata: $metadata_path" >&2; exit 1; }
-done
-
 remote_sha=$(gh api "repos/$repository/commits/$source_sha" --jq .sha)
 [[ "$remote_sha" == "$source_sha" ]] || { echo "remote commit does not match $source_sha" >&2; exit 1; }
 

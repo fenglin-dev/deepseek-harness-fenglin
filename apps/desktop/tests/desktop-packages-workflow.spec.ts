@@ -90,17 +90,16 @@ describe('desktop package workflow bundled plugins', () => {
     expect(workflow['run-name']).toContain('inputs.orchestration_id')
   })
 
-  it('does not build or assemble optional runtimes in the desktop workflow', () => {
+  it('builds only the native bundled Python runtime and does not publish separate runtime artifacts', () => {
     const { workflow } = readWorkflow()
     for (const job of Object.values(workflow.jobs)) {
       for (const step of job.steps ?? []) {
-        expect(step.name).not.toBe('Build optional workspace runtime')
-        expect(step.run ?? '').not.toContain('prepare-workspace-runtime.ts')
         expect(step.run ?? '').not.toContain('assemble-workspace-runtime-manifest.ts')
         expect(step.with?.name ?? '').not.toMatch(/^workspace-runtime-/u)
         expect(step.with?.pattern ?? '').not.toMatch(/^workspace-runtime-/u)
       }
     }
+    expect(workflow.jobs.windows?.steps?.some(step => step.run?.includes('prepare-workspace-runtime.ts win-x64'))).toBe(true)
     expect(workflow.jobs.checksums?.steps?.some(step => step.uses === 'pnpm/action-setup@v4')).toBe(false)
     expect(workflow.jobs.checksums?.steps?.some(step => step.uses === 'actions/setup-node@v6')).toBe(false)
   })

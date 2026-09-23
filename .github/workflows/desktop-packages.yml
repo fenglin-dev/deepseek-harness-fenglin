@@ -238,6 +238,9 @@ jobs:
       - name: Build clean-checkout Host and Desktop
         run: pnpm run build:community-desktop
 
+      - name: Prepare bundled Python runtime and Office metadata
+        run: pnpm exec tsx apps/desktop/scripts/prepare-workspace-runtime.ts win-x64
+
       - name: Deploy Windows runtime
         run: node apps/desktop/scripts/prepare-windows-runtime.mjs
 

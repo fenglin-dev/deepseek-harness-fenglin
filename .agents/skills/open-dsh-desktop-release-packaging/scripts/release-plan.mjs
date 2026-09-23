@@ -37,7 +37,6 @@ function validate(plan) {
   if (!RELEASE_STATE.has(plan.identity.releaseState)) throw new TypeError('release plan: invalid Release state')
   expectString(plan.repositories?.github, 'GitHub repository', REPOSITORY)
   expectString(plan.repositories?.cnb, 'CNB repository', REPOSITORY)
-  expectString(plan.repositories?.runtime, 'runtime repository', REPOSITORY)
   expectString(plan.source?.branch, 'source branch')
   expectString(plan.source?.sha, 'source SHA', SHA)
   if (plan.branches?.release !== `release/${version}` || plan.branches?.packaging !== `fix/windows-packaging-${version}`) {
@@ -52,7 +51,6 @@ function validate(plan) {
     || plan.network.minimumMibps < 0) throw new TypeError('release plan: invalid download speed floor')
   expectStatus(plan.network?.status, 'network status')
   expectStatus(plan.bundledPlugins?.status, 'bundled plugin status')
-  expectStatus(plan.runtimeCatalog?.status, 'runtime catalog status')
   expectStatus(plan.artifacts?.status, 'artifact status')
   for (const platform of ['windows', 'macos', 'linux']) expectStatus(plan.platforms?.[platform]?.status, `${platform} status`)
   expectStatus(plan.publication?.github?.status, 'GitHub publication status')
@@ -126,7 +124,6 @@ This file is generated from the machine-readable release plan. Do not edit it di
 - Release state: \`${plan.identity.releaseState}\`
 - GitHub repository: \`${plan.repositories.github}\`
 - CNB repository: \`${plan.repositories.cnb}\`
-- Runtime repository: \`${plan.repositories.runtime}\`
 - Source: \`${plan.source.branch}\` at \`${plan.source.sha}\`
 - Previous public Release: \`${plan.previousRelease.tag}\`
 - Release branch: \`${plan.branches.release}\`
@@ -139,7 +136,6 @@ This file is generated from the machine-readable release plan. Do not edit it di
 | Bilingual notes | ${cell(plan.notes.status)} | ${cell(plan.notes.path)} |
 | Network route | ${cell(plan.network.status)} | ${cell(plan.network.route)}; floor ${cell(plan.network.minimumMibps)} MiB/s |
 | Bundled plugins | ${cell(plan.bundledPlugins.status)} | ${cell(plan.bundledPlugins.snapshotDigest)} |
-| Runtime catalog | ${cell(plan.runtimeCatalog.status)} | ${cell(plan.runtimeCatalog.digest)} |
 | Local artifacts | ${cell(plan.artifacts.status)} | ${cell(plan.artifacts.directory)} |
 
 ## Platform qualification
@@ -163,14 +159,14 @@ const [, , command, path, ...args] = process.argv
 if (command === undefined || path === undefined) usage()
 
 if (command === 'init') {
-  const [version, githubRepository, cnbRepository, runtimeRepository, branch, sourceSha, previousTag, releaseState, minimumMibps = '1'] = args
-  if ([version, githubRepository, cnbRepository, runtimeRepository, branch, sourceSha, previousTag, releaseState].some(value => value === undefined)) usage()
+  const [version, githubRepository, cnbRepository, branch, sourceSha, previousTag, releaseState, minimumMibps = '1'] = args
+  if ([version, githubRepository, cnbRepository, branch, sourceSha, previousTag, releaseState].some(value => value === undefined)) usage()
   const now = new Date().toISOString()
   let existing
   try { existing = await readPlan(path) } catch (error) { if (error?.code !== 'ENOENT') throw error }
   const identity = { version, tag: `odsh-v${version}`, title: `v${version}`, releaseState }
   const source = { branch, sha: sourceSha }
-  const repositories = { github: githubRepository, cnb: cnbRepository, runtime: runtimeRepository }
+  const repositories = { github: githubRepository, cnb: cnbRepository }
   if (existing !== undefined) {
     const expected = JSON.stringify({ identity, source, repositories, previousTag })
     const actual = JSON.stringify({ identity: existing.identity, source: existing.source, repositories: existing.repositories,
@@ -187,7 +183,6 @@ if (command === 'init') {
       notes: { path: `.artifacts/release-notes/odsh-v${version}.md`, status: 'pending' },
       network: { minimumMibps: Number(minimumMibps), status: 'pending' },
       bundledPlugins: { status: 'pending' },
-      runtimeCatalog: { status: 'pending' },
       platforms: { windows: { status: 'pending' }, macos: { status: 'pending' }, linux: { status: 'pending' } },
       artifacts: { status: 'pending' },
       publication: { github: { status: 'pending' }, cnb: { status: 'pending' } },
