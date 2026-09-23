@@ -36,7 +36,7 @@ vi.mock('electron', async () => {
 })
 afterEach(() => { vi.clearAllMocks(); ipcMain.removeAllListeners(); app.removeAllListeners() })
 function bench() {
-  let state: DesktopMenuState = { platform: 'win32', locale: 'en', ready: true, busy: false, maximized: false, fullscreen: false, development: false }
+  let state: DesktopMenuState = { platform: 'win32', locale: 'en', clientAvailable: true, ready: true, busy: false, maximized: false, fullscreen: false, development: false }
   const renderer = Object.assign(new EventEmitter(), {
     focus: vi.fn(), isDestroyed: () => false, copy: vi.fn(), getZoomLevel: () => 0, setZoomLevel: vi.fn(),
   })
