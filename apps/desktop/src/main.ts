@@ -3085,19 +3085,26 @@ async function startApplication(): Promise<void> {
       })
       if (reconciliation.recordedVersion !== undefined
         && reconciliation.recordedVersion !== reconciliation.actualVersion) {
-        void retainStartupWarning(
-          'runtime.bundled-plugin-marker-mismatch',
-          'bundled-plugin-reconciliation',
-          ['diagnostics', 'open-log', 'retry-plugin'],
-          reconciliation.packageName,
-          {
-            recordedVersion: reconciliation.recordedVersion,
-            ...(reconciliation.actualVersion === undefined ? {} : { actualVersion: reconciliation.actualVersion }),
-            targetVersion: reconciliation.targetVersion,
-          },
-        ).catch((error: unknown) => {
-          console.warn('desktop: could not retain bundled plugin reconciliation warning', error)
-        })
+        // Fenglin: a user-owned newer install is the preserved-user-version
+        // path (market upgrade), not a degraded startup. Only desktop-owned
+        // skew and a missing install are real marker mismatches.
+        const packageMissing = reconciliation.actualVersion === undefined
+        const userOwnedSkew = reconciliation.ownership === 'user'
+        if (packageMissing || !userOwnedSkew) {
+          void retainStartupWarning(
+            'runtime.bundled-plugin-marker-mismatch',
+            'bundled-plugin-reconciliation',
+            ['diagnostics', 'open-log', 'retry-plugin'],
+            reconciliation.packageName,
+            {
+              recordedVersion: reconciliation.recordedVersion,
+              ...(reconciliation.actualVersion === undefined ? {} : { actualVersion: reconciliation.actualVersion }),
+              targetVersion: reconciliation.targetVersion,
+            },
+          ).catch((error: unknown) => {
+            console.warn('desktop: could not retain bundled plugin reconciliation warning', error)
+          })
+        }
       }
     },
     onStartupDeferred: async (plugin, reason) => {
