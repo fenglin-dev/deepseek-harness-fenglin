@@ -1,4 +1,4 @@
-/** Assemble a version-bound optional Python runtime archive without adding it to an installer. */
+/** Assemble the target-specific Python runtime archive embedded in a desktop installer. */
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -85,7 +85,7 @@ function selectedTarget(): LockTarget {
   return value as LockTarget
 }
 
-/** Build one release archive and its mergeable catalog fragment. */
+/** Build one installer archive and its target-specific metadata. */
 export async function prepareWorkspaceRuntime(target = selectedTarget()): Promise<void> {
   const identity = TARGETS[target]
   const root = resolve(import.meta.dirname, '../../..')

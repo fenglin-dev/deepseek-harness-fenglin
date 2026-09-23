@@ -390,9 +390,14 @@ export class HarnessSupervisor {
           }
         }
         const timeout = setTimeout(() => { void forceStop() }, this.#options.stopTimeoutMs ?? STOP_TIMEOUT_MS)
-        void child.done.then(async () => {
-          if (await child.waitForExit()) finish()
-        }, () => {})
+        const finishAfterExit = async (): Promise<void> => {
+          if (!await child.waitForExit()) throw new Error('desktop: Harness process range remains active')
+          finish()
+        }
+        void child.done.then(finishAfterExit, finishAfterExit).catch((error: unknown) => {
+          this.#writeLog('error', `failed to observe Harness process range during stop: ${error instanceof Error ? error.message : String(error)}`)
+          finish(error)
+        })
         void child.terminate(false).catch((error: unknown) => {
           this.#writeLog('error', `failed to request Harness process-tree shutdown: ${error instanceof Error ? error.message : String(error)}`)
         })

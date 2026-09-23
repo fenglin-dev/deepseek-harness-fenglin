@@ -6,6 +6,7 @@ import { basename, join, relative, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 const SCHEMA = 'open-dsh/windows-package-candidate/v1'
+const GIT_OUTPUT_LIMIT_BYTES = 64 * 1024 * 1024
 const QUALIFICATION_ONLY = [
   /^\.artifacts\//u,
   /^\.agents\//u,
@@ -17,7 +18,14 @@ const QUALIFICATION_ONLY = [
 ]
 
 function runGit(root, args) {
-  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+  const result = spawnSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    maxBuffer: GIT_OUTPUT_LIMIT_BYTES,
+  })
+  if (result.error !== undefined) {
+    throw new Error(`git ${args.join(' ')} failed: ${result.error.message}`, { cause: result.error })
+  }
   if (result.status !== 0) throw new Error(result.stderr.trim() || `git ${args.join(' ')} failed`)
   return result.stdout.trim()
 }

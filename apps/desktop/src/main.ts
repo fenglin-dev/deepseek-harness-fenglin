@@ -18,6 +18,7 @@ import {
 import { appendBundledPluginFailure, seedBundledPluginsBatch, verifyBundledPluginArchive } from './bundled-plugin-seed.ts'
 import { BundledPluginStartupCooldown } from './bundled-plugin-cooldown.ts'
 import { FirstStartPreparation } from './first-start-preparation.ts'
+import { BundledPresetVersionGate } from './bundled-preset-version-gate.ts'
 import { applyFreshProfileDefaults } from './fresh-profile-defaults.ts'
 import { deployPrebuiltProfile, readPrebuiltProfile, readProfileBuildApprovals, type PrebuiltProfileManifest } from './prebuilt-profile.ts'
 import {
@@ -80,6 +81,7 @@ import type { IconSurfaceResult, IconTarget } from './icon-protocol.ts'
 import { ExternalToolCompatibilityManager } from './external-tool-compatibility.ts'
 import { EXTERNAL_TOOL_IDS, type DesktopExternalToolId } from './external-tool-compatibility-manifest.ts'
 import { WorkspaceRuntimeCatalog } from './workspace-runtime-catalog.ts'
+import { loadBundledWorkspaceRuntimeManifest } from './bundled-workspace-runtime.ts'
 import { OptionalRuntimeManager } from './workspace-runtime-manager.ts'
 import {
   WORKSPACE_RUNTIME_CAPABILITIES,
@@ -257,6 +259,7 @@ let menuLocale = 'en'
 let desktopLocaleStore: DesktopLocaleStore | undefined
 let persistedProfileLocale: string | undefined
 let menuClientReady = false
+let menuClientAvailable = false
 let reportedClientBootFailureOrigin: string | undefined
 let snapshotMutationActive = false
 let recoveryHarnessSuspended = false
@@ -1304,10 +1307,17 @@ function createWindow(): BrowserWindow {
   window.on('leave-full-screen', refreshMenu)
   surface.titlebarRenderer?.on('did-finish-load', () => { applicationMenu?.refresh() })
   const rendererId = surface.renderer.id
-  surface.renderer.on('destroyed', () => { iconManager?.discardOwner(rendererId); rejectPendingMenuCommands() })
+  surface.renderer.on('destroyed', () => {
+    iconManager?.discardOwner(rendererId)
+    menuClientAvailable = false
+    menuClientReady = false
+    rejectPendingMenuCommands()
+    applicationMenu?.refresh()
+  })
   surface.renderer.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) {
       iconManager?.discardOwner(rendererId)
+      menuClientAvailable = false
       menuClientReady = false
       rejectPendingMenuCommands()
       applicationMenu?.refresh()
@@ -1326,7 +1336,9 @@ async function startApplication(): Promise<void> {
   menuLocale = desktopLocaleStore.read(app.getLocale())
   applicationMenu = new ApplicationMenuController({
     surface: () => mainSurface,
-    state: () => ({ platform: process.platform, locale: menuLocale, ready: menuClientReady && harnessOrigin !== undefined,
+    state: () => ({ platform: process.platform, locale: menuLocale,
+      clientAvailable: menuClientAvailable && harnessOrigin !== undefined,
+      ready: menuClientReady && harnessOrigin !== undefined,
       busy: menuBusy(), maximized: mainWindow?.isMaximized() ?? false,
       fullscreen: mainWindow?.isFullScreen() ?? false, development: !app.isPackaged }),
     icon: () => (iconManager?.images().application ?? nativeImage.createFromPath(WINDOW_ICON))
@@ -1621,6 +1633,9 @@ async function startApplication(): Promise<void> {
       : {}),
   })
   const nativeWorkspaceTarget = workspaceRuntimeTarget(process.platform, process.arch)
+  const bundledWorkspaceRuntimeRoot = app.isPackaged
+    ? join(process.resourcesPath, 'workspace-runtime')
+    : join(fileURLToPath(new URL('../../..', import.meta.url)), '.artifacts', 'workspace-runtime')
   workspaceRuntimeManager = new OptionalRuntimeManager({
     cacheRoot: join(app.getPath('userData'), 'optional-runtimes'),
     stateFile: join(app.getPath('userData'), 'optional-runtimes', 'state-v1.json'),
@@ -1630,8 +1645,19 @@ async function startApplication(): Promise<void> {
     getHome: () => dshHome,
     isNas: () => bootNasRuntime() !== undefined,
     source: () => downloadNetworkStore?.read().application.source ?? 'github',
-    loadManifest: () => workspaceRuntimeCatalog.load(),
+    loadManifest: async () => {
+      if (nativeWorkspaceTarget !== undefined) {
+        try {
+          return await loadBundledWorkspaceRuntimeManifest(bundledWorkspaceRuntimeRoot, nativeWorkspaceTarget, app.getVersion())
+        } catch (error) {
+          if (app.isPackaged) throw error
+        }
+      }
+      return workspaceRuntimeCatalog.load()
+    },
     fetch: async (input, init) => (await applicationFetch())(input, init),
+    bundledArtifactsRoot: bundledWorkspaceRuntimeRoot,
+    requireBundledPython: app.isPackaged,
     ...(nativeWorkspaceTarget === undefined ? {} : { target: nativeWorkspaceTarget }),
   })
   ipcMain.handle(DESKTOP_IPC.capabilities, (event) => {
@@ -2539,8 +2565,10 @@ async function startApplication(): Promise<void> {
   })
   ipcMain.on(DESKTOP_IPC.menuClientState, (event, state: unknown) => {
     if (event.sender !== mainSurface?.renderer || typeof state !== 'object' || state === null) return
-    const { ready, locale } = state as { ready?: unknown; locale?: unknown }
-    if (typeof ready !== 'boolean' || typeof locale !== 'string' || locale.length > 64) return
+    const { available, ready, locale } = state as { available?: unknown; ready?: unknown; locale?: unknown }
+    if (typeof available !== 'boolean' || typeof ready !== 'boolean'
+      || typeof locale !== 'string' || locale.length > 64) return
+    menuClientAvailable = available
     menuClientReady = ready
     menuLocale = resolveDesktopLocale(locale)
     if (persistedProfileLocale !== menuLocale) {
@@ -2765,6 +2793,7 @@ async function startApplication(): Promise<void> {
     return parsePluginSnapshotJson(output) as T
   }
   const firstStartPreparation = new FirstStartPreparation(dshHome)
+  const presetVersionGate = new BundledPresetVersionGate(dshHome)
   let firstStartPending = await firstStartPreparation.begin(
     !await lstat(join(dshHome, 'profiles/web/package.json')).then(stat => stat.isFile(), () => false) && !preserveCopiedPlugins,
   )
@@ -2887,6 +2916,7 @@ async function startApplication(): Promise<void> {
         await appendDesktopStartupLog('Workspace runtime Profile changes committed after normal readiness.')
       }
       if (!firstStartPending) return
+      await presetVersionGate.markAttempted(app.getVersion())
       await firstStartPreparation.complete()
       firstStartPending = false
       preparingFirstStart = false
@@ -3233,6 +3263,24 @@ async function startApplication(): Promise<void> {
   const runtimePending = await workspaceRuntimeManager.pending(dshHome)
   const hasRuntimePending = Object.values(runtimePending).some(value => value !== undefined)
   const applyRuntimePending = hasRuntimePending && startupProfileMutationAllowed && !preserveCopiedPlugins
+  let presetUpgradeNeeded = false
+  let presetVersionMarkerUnavailable = false
+  if (!firstStartPending && (startupProfileMutationAllowed || preserveCopiedPlugins)) {
+    try {
+      if (await presetVersionGate.shouldAttempt(app.getVersion())) {
+        await presetVersionGate.markAttempted(app.getVersion())
+        presetUpgradeNeeded = !preserveCopiedPlugins && startupProfileMutationAllowed
+      }
+    } catch (error) {
+      presetVersionMarkerUnavailable = true
+      await retainStartupWarning(
+        'runtime.bundled-preset-version-marker-unavailable',
+        'bundled-preset-version-marker',
+        ['diagnostics', 'open-log'],
+      )
+      console.warn('desktop: bundled preset version marker is unavailable; skipping automatic preparation', error)
+    }
+  }
   try {
     if (firstStartPending && (!startupProfileMutationAllowed || preserveCopiedPlugins)) {
       showIncompletePreparation('Profile verification or transaction recovery did not complete.')
@@ -3272,7 +3320,8 @@ async function startApplication(): Promise<void> {
             await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment,
               ['plugin', '--profile', 'web', 'add', '--save-exact', ...archives], launchOptions), 'bundled-batch-install', BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS)
           })
-      } else {
+      } else if (presetUpgradeNeeded) {
+        await appendDesktopStartupLog(`Preparing bundled presets once for desktop ${app.getVersion()} after an application upgrade.`)
         const seedResults = await bundledPluginInstaller.seedStartup((progress) => {
           const mapped = mapBundledPluginProgress(
             progress.entry.packageName,
@@ -3287,7 +3336,11 @@ async function startApplication(): Promise<void> {
           seedResults.filter(item => item.result === result).length
         )
         const pending = seedResults.filter(result => result.result === undefined).length
-        await appendDesktopStartupLog(`Bundled startup plugin preparation finished: verified=${count('verified')}; installed=${count('installed')}; upgraded=${count('upgraded')}; preserved-user-version=${count('preserved-user-version')}; removed=${count('removed')}; unresolved=${count('unresolved')}; failed-or-deferred=${pending}. Activation still requires normal readiness.`)
+        await appendDesktopStartupLog(`Desktop ${app.getVersion()} bundled preset pass finished: verified=${count('verified')}; installed=${count('installed')}; upgraded=${count('upgraded')}; preserved-user-version=${count('preserved-user-version')}; removed=${count('removed')}; unresolved=${count('unresolved')}; failed-or-deferred=${pending}. Activation still requires normal readiness.`)
+      } else {
+        await appendDesktopStartupLog(presetVersionMarkerUnavailable
+          ? 'Skipped bundled plugin provisioning: the desktop version marker is unavailable; inspect startup diagnostics.'
+          : 'Skipped bundled plugin provisioning: this desktop version was already attempted for the Profile.')
       }
     } else {
       await appendDesktopStartupLog(
@@ -3512,7 +3565,10 @@ async function startApplication(): Promise<void> {
         desktopReturnControl?.clear()
         desktopWebAccess?.clear()
       }
-      if (state !== 'ready') menuClientReady = false
+      if (state !== 'ready') {
+        menuClientAvailable = false
+        menuClientReady = false
+      }
       applicationMenu?.refresh()
       if (state === 'starting') publishStartupProgress({ stage: 'starting-harness', progress: 92 })
       if (state === 'restarting') publishStartupProgress({ stage: 'restarting-harness', progress: 90 })

@@ -27,6 +27,7 @@ import {
   composeEntries,
   DEFAULT_PROFILE_BUNDLES,
   loadProfile,
+  OPTIONAL_BUNDLES,
   PROFILE_TEMPLATES,
   PROFILES_DIR,
   readProfileManifest,
@@ -706,10 +707,18 @@ export function inspectProfileDependencies(options: ProfileDependencyOptions): P
   return conflicts
 }
 
+/** An offered optional layer must be both declared and physically present in this installation. */
+function isInstallationOwnedOptionalBundle(options: ProfileDependencyOptions, packageName: string): boolean {
+  if (!OPTIONAL_BUNDLES.includes(packageName)) return false
+  const installation = readPackageManifest(options.installAnchor)
+  return installation.dependencies?.[packageName] !== undefined
+    && directPackageDir(options.installAnchor, packageName) !== undefined
+}
+
 /**
  * Find Loader bundles that are still composed but cannot be managed or removed by pnpm.
- * Only the active profile template's installation-owned layers are excluded;
- * separately installed official plugins remain dependency-managed like every other plugin.
+ * Exclude the active template and optional layers proven to belong to this
+ * installation; separately installed official plugins remain dependency-managed.
  * @param options - profile, installation anchor, and optional Harness home.
  * @returns orphaned third-party bundles in Loader order.
  */
@@ -722,7 +731,9 @@ export function inspectOrphanedProfileBundles(options: ProfileDependencyOptions)
   const installationOwned = new Set(PROFILE_TEMPLATES[options.profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
   const issues: OrphanedProfileBundle[] = []
   for (const [bundleIndex, packageName] of bundles.entries()) {
-    if (installationOwned.has(packageName) || dependencies[packageName] !== undefined) continue
+    if (installationOwned.has(packageName)
+      || isInstallationOwnedOptionalBundle(options, packageName)
+      || dependencies[packageName] !== undefined) continue
     const packageDir = directPackageDir(join(profileDir, 'package.json'), packageName)
       ?? directPackageDir(options.installAnchor, packageName)
     if (packageDir === undefined) {
@@ -1764,6 +1775,38 @@ function removeInterruptedQuarantineResidue(
   }
 }
 
+/** Undo the old orphan classification for an optional layer still supplied by this installation. */
+function restoreMisclassifiedOptionalBundles(options: ProfileDependencyOptions, home: string): void {
+  const records = readQuarantineFile(home).plugins
+    .filter(record => record.profile === options.profile
+      && record.reason === 'orphaned-bundle'
+      && record.bundleIndex !== null
+      && isInstallationOwnedOptionalBundle(options, record.packageName))
+    .sort((a, b) => (a.bundleIndex ?? 0) - (b.bundleIndex ?? 0))
+  if (records.length === 0) return
+
+  const profileDir = resolveProfileDir(options.profile, home)
+  const manifest = readProfileManifest(options.binName, profileDir)
+  const bundles = [...(manifest.dsh?.profile?.bundles ?? [])]
+  const restored = records.filter(record => manifest.dependencies?.[record.packageName] === undefined)
+  if (restored.length === 0) return
+  for (const record of restored) {
+    if (!bundles.includes(record.packageName)) {
+      bundles.splice(Math.min(record.bundleIndex ?? bundles.length, bundles.length), 0, record.packageName)
+    }
+  }
+  if (JSON.stringify(bundles) !== JSON.stringify(manifest.dsh?.profile?.bundles ?? [])) {
+    writeProfileManifest(profileDir, {
+      ...manifest,
+      dsh: { ...manifest.dsh, profile: { ...manifest.dsh?.profile, bundles } },
+    })
+  }
+  for (const record of restored) {
+    reconcileRemovedQuarantineReports(record, home)
+    clearQuarantinedProfilePlugin(record.quarantineId, home)
+  }
+}
+
 function recoverInterruptedQuarantine(
   options: ProfileRepairOptions,
   home: string,
@@ -1829,6 +1872,7 @@ function recoverInterruptedQuarantine(
 export function repairProfileDependencies(options: ProfileRepairOptions): ProfileRepairReport {
   const home = options.home ?? resolveDshHome()
   const profileDir = resolveProfileDir(options.profile, home)
+  restoreMisclassifiedOptionalBundles(options, home)
   const quarantineRemovalResidue = inspectQuarantineRemovalResidue({ ...options, home })
   writeProfilePnpmCompatibility(profileDir)
   const repairedQuarantineRemoval = repairQuarantineRemovalResidue(

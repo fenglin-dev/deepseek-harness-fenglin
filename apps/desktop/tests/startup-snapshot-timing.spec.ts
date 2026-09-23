@@ -2,9 +2,19 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 describe('desktop startup plugin snapshot timing', () => {
+  it('provisions presets once for a new or upgraded desktop version, not on every launch', () => {
+    const source = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
+    expect(source).toContain('} else if (firstStartPending) {')
+    expect(source).toContain('await seedBundledPluginsBatch(')
+    expect(source.includes('} else if (presetUpgradeNeeded) {')).toBe(true)
+    expect(source.includes('await presetVersionGate.markAttempted(app.getVersion())')).toBe(true)
+    expect(source.includes('await bundledPluginInstaller.seedStartup(')).toBe(true)
+    expect(source.includes('await presetVersionGate.shouldAttempt(app.getVersion())')).toBe(true)
+  })
+
   it('does not create a snapshot before seeding and retains one only after readiness', () => {
     const source = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
-    const seed = source.indexOf('await bundledPluginInstaller.seedStartup')
+    const seed = source.indexOf('await bundledPluginInstaller.seedStartup(')
     const supervisor = source.indexOf('supervisor.start()')
     const postReadiness = source.indexOf("appendDesktopStartupLog('Scheduling bootable plugin snapshot after 30 stable seconds.')")
 

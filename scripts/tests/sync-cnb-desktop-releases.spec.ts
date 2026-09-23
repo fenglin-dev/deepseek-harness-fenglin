@@ -96,7 +96,7 @@ describe('CNB desktop Release sync', () => {
     expect(DEFAULT_CNB_INDEX_TTL_HOURS).toBe(6)
     expect(result.releases).toHaveLength(1)
     expect((result.releases[0] as { assets: unknown[] }).assets).toHaveLength(installerNames.length)
-    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).endsWith('/assets/runtime-catalog'))).toBe(true)
+    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).endsWith('/assets/runtime-catalog'))).toBe(false)
     expect(JSON.parse(await readFile(outputPath, 'utf8'))).toMatchObject({ revision: 9 })
     expect(CNB_DEFAULT_BRANCH).toBe('master')
     const createReleaseCall = fetchMock.mock.calls.find(([input, init]) => {

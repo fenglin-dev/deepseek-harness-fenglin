@@ -52,7 +52,9 @@ for filename in \
   DeepSeek-Harness-linux-x64.deb DeepSeek-Harness-linux-x64.rpm; do
   source_path=$(find "$fixture_root" -type f -name "$filename" | head -n 1)
   hash=$(shasum -a 256 "$source_path" | awk '{ print $1 }')
-  printf '%s  %s\n' "$hash" "$filename" >> "$checksum_payload/SHA256SUMS"
+  checksum_name=$filename
+  if [[ "$filename" == DeepSeek-Harness-windows-x64.exe ]]; then checksum_name="./$filename"; fi
+  printf '%s  %s\n' "$hash" "$checksum_name" >> "$checksum_payload/SHA256SUMS"
 done
 (cd "$checksum_payload" && zip -qr "$artifact_store/desktop-checksums.zip" .)
 

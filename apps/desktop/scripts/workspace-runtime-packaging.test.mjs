@@ -6,7 +6,7 @@ import test from 'node:test'
 const root = resolve(import.meta.dirname, '../../..')
 const read = path => readFile(join(root, path), 'utf8')
 
-test('desktop installers exclude optional Python payloads while the Harness closure keeps adapters', async () => {
+test('desktop installers embed one native Python payload while the Harness closure keeps adapters', async () => {
   const builderConfigs = await Promise.all([
     'apps/desktop/electron-builder.yml',
     'apps/desktop/electron-builder.macos.yml',
@@ -14,7 +14,9 @@ test('desktop installers exclude optional Python payloads while the Harness clos
   ].map(read))
   for (const config of builderConfigs) {
     assert.match(config, /- scripts\/primary-runtime-lock\.json/u)
-    assert.doesNotMatch(config, /workspace-runtime-(?!lock)[^\n]*\.(?:tar|zip)|\.whl|python(?:3|\.exe)/iu)
+    assert.match(config, /DeepSeek-Harness-workspace-runtime-/u)
+    assert.match(config, /workspace-runtime\/workspace-runtime-/u)
+    assert.doesNotMatch(config, /\.whl|python(?:3|\.exe)/iu)
   }
 
   const cli = JSON.parse(await read('apps/cli/package.json'))
@@ -37,7 +39,7 @@ test('desktop installers exclude optional Python payloads while the Harness clos
   assert.doesNotMatch(optionalRuntime, /DeepSeek-Harness-office-runtime/u)
 })
 
-test('optional runtimes use separate sources instead of the desktop package workflow', async () => {
+test('Python is built into each desktop target while Office retains its official npm source', async () => {
   const lock = JSON.parse(await read('apps/desktop/scripts/primary-runtime-lock.json'))
   assert.equal(lock.pythonVersion.startsWith('3.12.'), true)
   assert.deepEqual(Object.keys(lock.targets).sort(), ['linux-x64', 'mac-arm64', 'mac-x64', 'win-x64'])
@@ -46,17 +48,8 @@ test('optional runtimes use separate sources instead of the desktop package work
   ]) assert.equal(typeof lock.pythonPackages[name], 'string', `${name} must be locked`)
 
   const workflow = await read('.github/workflows/desktop-packages.yml')
-  assert.doesNotMatch(workflow, /prepare-workspace-runtime|workspace-runtime-|assemble-workspace-runtime-manifest/u)
+  assert.match(workflow, /prepare-workspace-runtime\.ts win-x64/u)
   assert.doesNotMatch(workflow, /DeepSeek-Harness-office-runtime/u)
   assert.match(await read('apps/desktop/scripts/official-office-runtime.ts'), /registry\.npmjs\.org/u)
-  const metadataWorkflow = await read('.github/workflows/workspace-runtime-release.yml')
-  assert.match(metadataWorkflow, /hecoococ\/open-dsh-runtime-assets/u)
-  assert.doesNotMatch(metadataWorkflow, /DeepSeek-Harness-office-runtime/u)
-  assert.match(metadataWorkflow, /workspace-runtimes-\*\.v2\.json/u)
-  assert.match(metadataWorkflow, /DeepSeek-Harness-workspace-runtime-\*\.tar\.gz/u)
-  assert.match(metadataWorkflow, /workspace-runtime-release-metadata/u)
-  assert.match(metadataWorkflow, /ref: \$\{\{ inputs\.source_sha \}\}/u)
-  assert.match(metadataWorkflow, /git rev-parse HEAD/u)
-  assert.match(metadataWorkflow, /workspace-runtime-manifest-from-release\.ts dist '\$\{\{ inputs\.tag \}\}' '\$\{\{ inputs\.source_sha \}\}'/u)
-  assert.doesNotMatch(metadataWorkflow, /gh release upload|sync-cnb-desktop-releases/u)
+  await assert.rejects(read('.github/workflows/workspace-runtime-release.yml'), /ENOENT/u)
 })

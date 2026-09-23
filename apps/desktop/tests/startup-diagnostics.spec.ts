@@ -18,6 +18,19 @@ function fixture(): string {
 }
 
 describe('desktop startup diagnostics', () => {
+  it('persists a version-marker warning without exposing its path or raw contents', async () => {
+    const home = fixture()
+    await recordStartupDiagnostic(home, {
+      code: 'runtime.bundled-preset-version-marker-unavailable',
+      operation: 'bundled-preset-version-marker',
+      actions: ['diagnostics', 'open-log'],
+    })
+    const incidents = await readStartupDiagnostics(home)
+    expect(incidents).toHaveLength(1)
+    expect(incidents[0]).toMatchObject({ code: 'runtime.bundled-preset-version-marker-unavailable' })
+    expect(JSON.stringify(incidents)).not.toContain(home)
+  })
+
   it('deduplicates the same operation and package without retaining raw output', async () => {
     const home = fixture()
     await recordStartupDiagnostic(home, {

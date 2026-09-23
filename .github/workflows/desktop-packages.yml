@@ -238,6 +238,9 @@ jobs:
       - name: Build clean-checkout Host and Desktop
         run: pnpm run build:community-desktop
 
+      - name: Prepare bundled Python runtime and Office metadata
+        run: pnpm exec tsx apps/desktop/scripts/prepare-workspace-runtime.ts win-x64
+
       - name: Deploy Windows runtime
         run: node apps/desktop/scripts/prepare-windows-runtime.mjs
 
@@ -411,7 +414,7 @@ jobs:
         run: >-
           find . -maxdepth 1 -type f
           \( -name 'DeepSeek-Harness-macos-*' -o -name 'DeepSeek-Harness-windows-*' -o -name 'DeepSeek-Harness-linux-*' \)
-          -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+          -print0 | sort -z | xargs -0 sha256sum | sed 's#  \./#  #' > SHA256SUMS
 
       - uses: actions/upload-artifact@v4
         with:

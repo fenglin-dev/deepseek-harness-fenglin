@@ -124,7 +124,7 @@ The accepted jobs are:
 - SHA-256 checksum generation;
 - artifact upload.
 
-Optional workspace runtimes are deliberately outside this workflow. Python archives are built and published by the dedicated runtime-assets repository, and the official Office engine is resolved from its official npm package when requested. The desktop checksum artifact therefore describes desktop installers only; do not reintroduce runtime archives or a runtime catalog assembly step here.
+Each native job builds and verifies the Python archive for its own target before electron-builder runs. The archive is an installer resource, not a separate Actions or Release artifact, so `SHA256SUMS` continues to describe only the seven installers. The official Office engine is resolved from its official npm package when requested; do not add a runtime catalog assembly or independent Python publication step.
 
 If a run fails:
 
@@ -187,7 +187,7 @@ DeepSeek-Harness-windows-x64.exe
 SHA256SUMS
 ```
 
-GitHub displays twelve Release entries: ten project-uploaded assets (the eight-file desktop handoff plus two signed runtime-metadata files) and the automatically generated `Source code (zip)` and `Source code (tar.gz)` archives. The generated source archives and runtime metadata are not files in the local desktop handoff directory.
+GitHub displays ten Release entries: eight project-uploaded assets from the desktop handoff and the automatically generated `Source code (zip)` and `Source code (tar.gz)` archives. The generated source archives are not files in the local desktop handoff directory.
 
 The helper requires all three runs to name the same source commit and bundled-plugin snapshot. It validates each run conclusion, exact artifact ID, expected filename, and workflow checksum; validates ZIP payloads and optionally DMGs on macOS; and combines the seven checksum entries. It refuses to replace an existing release directory by default. For an intentional same-version rebuild, pass `--replace-existing` (or use an explicit orchestrator stage retry); the old exact set is moved to `release/.archive/` before the new verified directory is activated. The active directory is made read-only so Finder cannot add `.DS_Store` after verification.
 

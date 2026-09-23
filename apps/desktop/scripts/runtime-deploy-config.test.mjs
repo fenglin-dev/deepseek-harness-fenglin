@@ -11,6 +11,7 @@ for (const script of ['prepare-unix-runtime.mjs', 'prepare-windows-runtime.mjs']
 
 test('Windows installed smoke isolates Electron application data', async () => {
   const source = await readFile(new URL('smoke-windows-package.ps1', import.meta.url), 'utf8')
+  assert.doesNotMatch(source, /win-unpacked/u)
   assert.match(source, /--dsh-package-smoke-root=\$desktopAppDataRoot/u)
   assert.match(source, /--dsh-native-smoke/u)
   assert.match(source, /RedirectStandardError = \$true/u)

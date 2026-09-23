@@ -2,7 +2,7 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, normalize, posix, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -110,6 +110,10 @@ export interface OptionalRuntimeManagerOptions {
   readonly source: () => 'github' | 'cnb'
   readonly loadManifest: () => Promise<WorkspaceRuntimeManifest>
   readonly fetch: (input: string, init?: RequestInit) => Promise<Response>
+  /** Installed target-specific archives. Python uses this source before any network route. */
+  readonly bundledArtifactsRoot?: string
+  /** Treat a missing bundled Python archive as an invalid application installation. */
+  readonly requireBundledPython?: boolean
   readonly target?: WorkspaceRuntimeTarget
   readonly maxOutputBytes?: number
   readonly pythonEnvironment?: PythonEnvironmentPort
@@ -248,6 +252,9 @@ export class OptionalRuntimeManager {
     const state = await this.#readState()
     const record = state.homes[home] ?? {}
     const target = this.#target()
+    const currentArtifact = target !== undefined && this.#options.requireBundledPython === true
+      ? (await this.#options.loadManifest()).artifacts[target]
+      : undefined
     const currentJob = (capability: WorkspaceRuntimeCapability): Job | undefined => [...this.#jobs.values()].reverse()
       .find(job => job.snapshot.capabilityId === capability
         && !['succeeded', 'cancelled'].includes(job.snapshot.phase))
@@ -277,7 +284,14 @@ export class OptionalRuntimeManager {
         return { capabilityId, phase: 'needs-update' }
       }
       if (reference.state === 'pending-enable') return { capabilityId, phase: 'waiting-restart' }
-      if (reference.desktopVersion !== this.#options.desktopVersion) return { capabilityId, phase: 'needs-update' }
+      if (reference.source !== 'custom' && currentArtifact !== undefined
+        && reference.payloadDigest !== currentArtifact.payloadDigest) {
+        return { capabilityId, phase: 'needs-update' }
+      }
+      if (capabilityId === 'office' && currentArtifact !== undefined
+        && reference.officePayloadDigest !== currentArtifact.office.payloadDigest) {
+        return { capabilityId, phase: 'needs-update' }
+      }
       return { capabilityId, phase: 'enabled' }
     }
     const reference = [record.office, record.ptc].find(value => value?.state !== 'cleaning' && value?.source !== 'custom')
@@ -594,7 +608,7 @@ export class OptionalRuntimeManager {
         root => this.#validateOfficePayload(root, artifact.office, target))
     }
     job.snapshot = { ...job.snapshot, phase: 'succeeded', stage: 'ready', percent: 100 }
-    this.#append(job, 'Optional runtime downloads are verified. Choose activate, then quick restart.\n')
+    this.#append(job, 'Workspace runtime components are verified. Choose activate, then quick restart.\n')
   }
 
   async #ensureArtifact(
@@ -622,7 +636,7 @@ export class OptionalRuntimeManager {
     }
     await mkdir(join(this.#options.cacheRoot, '.downloads'), { recursive: true })
     const part = this.#partialPath(artifact, target)
-    const transferred = await this.#download(job, artifact, part, signal)
+    const transferred = await this.#stageArtifact(job, artifact, part, signal)
     signal.throwIfAborted()
     job.snapshot = { ...job.snapshot, stage: 'verifying', transferredBytes: transferred, totalBytes: artifact.size, percent: 100 }
     this.#append(job, `Verifying ${artifact.integrity === undefined ? 'SHA-256' : 'npm integrity'} and archive policy.\n`)
@@ -656,7 +670,32 @@ export class OptionalRuntimeManager {
       await rm(staging, { recursive: true, force: true })
     }
     job.snapshot = { ...job.snapshot, transferredBytes: artifact.size, totalBytes: artifact.size, percent: 100 }
-    this.#append(job, `${label} downloaded and verified.\n`)
+    this.#append(job, `${label} prepared and verified.\n`)
+  }
+
+  async #stageArtifact(job: Job, artifact: DownloadArtifact, part: string, signal: AbortSignal): Promise<number> {
+    const bundled = this.#options.bundledArtifactsRoot === undefined
+      ? undefined
+      : join(this.#options.bundledArtifactsRoot, artifact.fileName)
+    if (bundled !== undefined && await exists(bundled)) {
+      signal.throwIfAborted()
+      await mkdir(dirname(part), { recursive: true })
+      this.#append(job, `Preparing bundled ${artifact.fileName}.\n`)
+      await copyFile(bundled, part)
+      const transferred = (await stat(part)).size
+      job.snapshot = {
+        ...job.snapshot,
+        stage: 'downloading',
+        transferredBytes: transferred,
+        totalBytes: artifact.size,
+        percent: Math.min(100, Math.floor(transferred * 100 / artifact.size)),
+      }
+      return transferred
+    }
+    if (this.#options.requireBundledPython === true && artifact.sha256 !== undefined) {
+      throw new Error('desktop: bundled Python workspace runtime is missing; reinstall the application')
+    }
+    return this.#download(job, artifact, part, signal)
   }
 
   async #download(job: Job, artifact: DownloadArtifact, part: string, signal: AbortSignal): Promise<number> {
@@ -774,7 +813,6 @@ export class OptionalRuntimeManager {
     const manifest = value as Record<string, unknown>
     const [platform, arch] = artifact.target.split('-')
     if (manifest.schema !== 'dsh/workspace-runtime-payload/v1'
-      || manifest.desktopVersion !== this.#options.desktopVersion
       || manifest.platform !== platform || manifest.arch !== arch
       || manifest.payloadDigest !== artifact.payloadDigest || manifest.pythonVersion !== artifact.pythonVersion) {
       throw new Error('desktop: workspace-runtime payload identity does not match the signed catalog')

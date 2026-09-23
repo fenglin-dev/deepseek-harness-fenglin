@@ -70,6 +70,7 @@
   flex: none;
   border: 0;
   border-radius: 50%;
+  corner-shape: round;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;

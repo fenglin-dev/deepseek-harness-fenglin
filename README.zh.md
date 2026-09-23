@@ -37,7 +37,7 @@ Open DeepSeek Harness Desktop 是由社区独立维护的 [DeepSeek Harness](htt
 - [NAS 运行端（预览）](#nas-运行端预览)：社区提供的 Linux NAS 运行端，让多台桌面客户端连接同一套 Profile、会话和 Workspace。
 - [插件发现、安装与更新](#插件发现安装与更新)：真实市场目录、分类推荐、本机状态、立即安装和联网更新。
 - [0.1.6 实验能力](#官方-016-实验能力)：从设置页按需安装 Browser Use、Computer Use 与 Auto review。
-- [工作运行时按需安装](#工作运行时按需安装)：选择托管或本机 Python，按需启用 Office 工具包与实验性 Python PTC。
+- [内置工作运行时](#内置工作运行时)：使用安装包内置或本机 Python，分别启用 Office 工具包与实验性 Python PTC。
 - [超级强化的诊断检查](#超级强化的诊断检查)：启动前检查 pnpm、Cordis 和 Loader，并提供演练、隔离与恢复。
 - [设置界面自定义](#设置界面自定义)：设置类型可以滚动、拖动排序并保存用户自己的排列。
 - [桌面客户端体验](#桌面客户端体验)：原生安装、托盘、快速重启、通知、日志、应用内更新和系统集成。
@@ -329,11 +329,11 @@ Electron 不只是包住 Web 页面的外壳。桌面宿主负责运行时准备
 
 安装包已经按平台预构建完整的启动 Profile。首次进入时，客户端会把经过校验的模板事务性部署到选定配置目录，迁移路径并验证全部预设插件后才进入主界面，不再逐个联网安装。复制中断后可从已完成阶段继续；模板不匹配或用户存在明确的构建拒绝时，才回退到使用包内归档的有界安装流程。
 
-### 工作运行时按需安装
+### 内置工作运行时
 
-Python 与 LibreOffice 官方引擎不再随桌面安装包分发。“设置 → 工具与能力 → 工作运行时”把 Python 环境、Office 工具包和 Python PTC 分开：可以从独立的 [Open DSH Runtime Assets](https://github.com/hecoococ/open-dsh-runtime-assets) Release 自动下载与当前完整桌面版本匹配的托管 CPython，也可以选择本机已有的 CPython 3.10+。启用 Office 时，应用直接下载并校验 DeepSeek Harness 官方 `@deepseek-ai/libreoffice-kit-*` npm 包，不经过社区桌面版重新打包；应用不会寻找或调用用户自行安装的 LibreOffice。Office Python 依赖直接安装到用户选择的解释器；纯新增可继续，升级、降级或替换已有包前会展示变更并再次确认。仅选择 Python 不会向模型开放工具；Office 与实验性 PTC 分别启用，PTC 仍只支持 macOS 与 Linux 并保留非沙箱风险确认。
+桌面安装包包含与当前平台匹配的托管 CPython 3.12、NumPy、pandas、Pillow、lxml、python-docx、python-pptx、openpyxl、XlsxWriter 及锁定的传递依赖。“设置 → 工具与能力 → 工作运行时”仍把 Python 环境、Office 工具包和 Python PTC 分开，也允许高级用户选择本机已有的 CPython 3.10+。启用 Office 时，应用只从官方 npm 下载并校验平台对应的 `@deepseek-ai/libreoffice-kit-*` 引擎；应用不会寻找或调用用户自行安装的 LibreOffice。Office Python 依赖已包含在托管 Python 中；自定义解释器需要变更已有包时，应用会先展示变更并再次确认。仅选择 Python 不会向模型开放工具；Office 与实验性 PTC 分别启用，PTC 仍只支持 macOS 与 Linux 并保留非沙箱风险确认。
 
-经过校验的载荷在同一桌面应用中只缓存一份，Office 与 PTC 则按每个 `DSH_HOME` 独立启用。托管 Python 使用独立 GitHub 资产仓库，Office 使用 npm 官方源；两者都复用应用代理，支持暂停、续传、停止和有界日志，完成后等待用户点击“快速重启以启用”。连接 NAS 时两张卡片都会禁用，因为当前版本没有扩展 NAS 远程安装协议。最后一个引用停用并且 Profile 变更通过正常就绪验证后，才会回收共享载荷。
+应用首次启用能力时会把安装包内的 Python 归档校验并解压到应用缓存，Office 与 PTC 则按每个 `DSH_HOME` 独立启用。Office 引擎下载复用应用的 npm 网络设置，并支持暂停、续传、停止和有界日志；准备完成后等待用户点击“快速重启以启用”。连接 NAS 时两张卡片都会禁用，因为当前版本没有扩展 NAS 远程安装协议。停用能力只移除对应 Profile 配置，不会删除安装包内的 Python。
 
 ### 官方 0.1.6 实验能力
 
@@ -406,7 +406,7 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 ## 同步 DeepSeek Harness 0.1.6-alpha.2
 
-当前社区 Release 以官方 [`dsh-v0.1.6-alpha.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.2) 为核心基线。上游提供插件管理页、回合结束文件改动卡片、Office 与网页侧栏预览、Subagent 会话和计划预览、目录层级 Workspace、持久化侧栏布局，以及启动、视觉模型、Inbox、Messages API 与 Windows 命令执行修复；社区桌面继续负责环境选择、NAS 运行端、按需工作运行时、候选插件事务、诊断恢复、预置插件、安装器和 GitHub/CNB 更新渠道。
+当前社区 Release 以官方 [`dsh-v0.1.6-alpha.2`](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.6-alpha.2) 为核心基线。上游提供插件管理页、回合结束文件改动卡片、Office 与网页侧栏预览、Subagent 会话和计划预览、目录层级 Workspace、持久化侧栏布局，以及启动、视觉模型、Inbox、Messages API 与 Windows 命令执行修复；社区桌面继续负责环境选择、NAS 运行端、内置工作运行时、候选插件事务、诊断恢复、预置插件、安装器和 GitHub/CNB 更新渠道。
 
 ## 下载安装
 

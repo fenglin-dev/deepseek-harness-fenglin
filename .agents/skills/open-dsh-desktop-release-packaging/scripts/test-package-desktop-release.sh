@@ -100,7 +100,7 @@ git -C "$fixture" commit -qm fixture
 git -C "$fixture" branch -M release/9.8.7
 sha=$(git -C "$fixture" rev-parse HEAD)
 plan="$fixture/.git/odsh-release-state/9.8.7.plan.json"
-node "$scripts/release-plan.mjs" init "$plan" 9.8.7 fixture/repository fixture/cnb fixture/runtime \
+node "$scripts/release-plan.mjs" init "$plan" 9.8.7 fixture/repository fixture/cnb \
   release/9.8.7 "$sha" odsh-v9.8.6 stable 1
 node "$scripts/release-plan.mjs" set "$plan" notes.status verified network.status verified
 

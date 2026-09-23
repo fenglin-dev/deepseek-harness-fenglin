@@ -9,7 +9,7 @@
  * writes CRLF on Windows, so exact text assertions normalize line endings.
  */
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -218,6 +218,46 @@ describe('spawn construction (pure, every platform)', () => {
       }
     }
   }
+
+  it('uses a newly available Windows PowerShell location on the next command', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-pwsh-switch-'))
+    tempDirs.push(dir)
+    const legacyDir = join(dir, 'System32', 'WindowsPowerShell', 'v1.0')
+    const modernDir = join(dir, 'Program Files', 'PowerShell', '7')
+    const legacyPath = join(legacyDir, 'powershell.exe')
+    const modernPath = join(modernDir, 'pwsh.exe')
+    mkdirSync(legacyDir, { recursive: true })
+    writeFileSync(legacyPath, '')
+    const previousPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
+    const previousSystemRoot = process.env.SystemRoot
+    const previousProgramFiles = process.env.ProgramFiles
+    const previousPath = process.env.PATH
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
+    process.env.SystemRoot = dir
+    process.env.ProgramFiles = join(dir, 'Program Files')
+    process.env.PATH = join(dir, 'empty')
+    try {
+      const ctx = createContext()
+      const subprocess = new CapturingSubprocessRuntime(ctx)
+      await ctx.plugin(PwshLocalExecutor)
+      await ctx.shell.run(ctx.shell.resolve({ command: 'Write-Output first' }))
+      expect(subprocess.specs[0]?.argv[0]).toBe(legacyPath)
+
+      renameSync(legacyPath, join(legacyDir, 'retired.exe'))
+      mkdirSync(modernDir, { recursive: true })
+      writeFileSync(modernPath, '')
+      await ctx.shell.run(ctx.shell.resolve({ command: 'Write-Output second' }))
+      expect(subprocess.specs[1]?.argv[0]).toBe(modernPath)
+    } finally {
+      if (previousPlatform !== undefined) Object.defineProperty(process, 'platform', previousPlatform)
+      if (previousSystemRoot === undefined) delete process.env.SystemRoot
+      else process.env.SystemRoot = previousSystemRoot
+      if (previousProgramFiles === undefined) delete process.env.ProgramFiles
+      else process.env.ProgramFiles = previousProgramFiles
+      if (previousPath === undefined) delete process.env.PATH
+      else process.env.PATH = previousPath
+    }
+  })
 
   it('runs every command as ONE argv element under the UTF-8 encoding preamble', async () => {
     const ctx = createContext()

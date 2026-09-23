@@ -8,7 +8,7 @@ plan="$temporary/plan.json"
 rendered="$temporary/state.md"
 sha=0123456789abcdef0123456789abcdef01234567
 
-node "$script_directory/release-plan.mjs" init "$plan" 9.8.7 fixture/desktop fixture/cnb fixture/runtime \
+node "$script_directory/release-plan.mjs" init "$plan" 9.8.7 fixture/desktop fixture/cnb \
   release/9.8.7 "$sha" odsh-v9.8.6 stable 1.25
 node "$script_directory/release-plan.mjs" validate "$plan"
 [[ $(node "$script_directory/release-plan.mjs" get "$plan" identity.tag) == odsh-v9.8.7 ]]
@@ -25,13 +25,13 @@ grep -q '| Network route | verified | direct; floor 1.25 MiB/s |' "$rendered"
 [[ $(node "$script_directory/release-plan.mjs" digest "$plan" | wc -c | tr -d ' ') == 64 ]]
 
 before=$(shasum -a 256 "$plan" | awk '{ print $1 }')
-node "$script_directory/release-plan.mjs" init "$plan" 9.8.7 fixture/desktop fixture/cnb fixture/runtime \
+node "$script_directory/release-plan.mjs" init "$plan" 9.8.7 fixture/desktop fixture/cnb \
   release/9.8.7 "$sha" odsh-v9.8.6 stable 1.25
 after=$(shasum -a 256 "$plan" | awk '{ print $1 }')
 [[ "$before" == "$after" ]] || { echo 'matching init changed the existing release plan' >&2; exit 1; }
 
 set +e
-node "$script_directory/release-plan.mjs" init "$plan" 9.8.8 fixture/desktop fixture/cnb fixture/runtime \
+node "$script_directory/release-plan.mjs" init "$plan" 9.8.8 fixture/desktop fixture/cnb \
   release/9.8.8 "$sha" odsh-v9.8.7 stable 1 >"$temporary/mismatch.out" 2>&1
 mismatch_status=$?
 set -e

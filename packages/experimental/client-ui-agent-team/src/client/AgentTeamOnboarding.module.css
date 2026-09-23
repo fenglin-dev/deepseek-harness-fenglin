@@ -5,6 +5,7 @@
   max-width: min(520px, 100%);
   border: 1px solid color-mix(in srgb, var(--dsw-alias-state-business-primary) 42%, transparent);
   border-radius: 999px;
+  corner-shape: round;
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, var(--dsw-alias-bg-base));
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
@@ -46,6 +47,7 @@
   height: 28px;
   flex: none;
   border-radius: 50%;
+  corner-shape: round;
 }
 
 .dismiss:hover {

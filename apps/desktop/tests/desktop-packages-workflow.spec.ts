@@ -90,17 +90,16 @@ describe('desktop package workflow bundled plugins', () => {
     expect(workflow['run-name']).toContain('inputs.orchestration_id')
   })
 
-  it('does not build or assemble optional runtimes in the desktop workflow', () => {
+  it('builds only the native bundled Python runtime and does not publish separate runtime artifacts', () => {
     const { workflow } = readWorkflow()
     for (const job of Object.values(workflow.jobs)) {
       for (const step of job.steps ?? []) {
-        expect(step.name).not.toBe('Build optional workspace runtime')
-        expect(step.run ?? '').not.toContain('prepare-workspace-runtime.ts')
         expect(step.run ?? '').not.toContain('assemble-workspace-runtime-manifest.ts')
         expect(step.with?.name ?? '').not.toMatch(/^workspace-runtime-/u)
         expect(step.with?.pattern ?? '').not.toMatch(/^workspace-runtime-/u)
       }
     }
+    expect(workflow.jobs.windows?.steps?.some(step => step.run?.includes('prepare-workspace-runtime.ts win-x64'))).toBe(true)
     expect(workflow.jobs.checksums?.steps?.some(step => step.uses === 'pnpm/action-setup@v4')).toBe(false)
     expect(workflow.jobs.checksums?.steps?.some(step => step.uses === 'actions/setup-node@v6')).toBe(false)
   })
@@ -118,6 +117,12 @@ describe('desktop package workflow bundled plugins', () => {
         expect(step.with?.['compression-level'], step.with?.name).toBe('0')
       }
     }
+  })
+
+  it('writes canonical installer names into the checksum artifact', () => {
+    const { workflow } = readWorkflow()
+    const writeChecksums = workflow.jobs.checksums?.steps?.find(step => step.name === 'Write checksums')
+    expect(writeChecksums?.run).toContain("sed 's#  \\./#  #'")
   })
 
   it('keeps the internal snapshot out of release artifact globs', () => {
@@ -207,6 +212,7 @@ describe('desktop package workflow bundled plugins', () => {
       && step.with?.name === 'qualification-windows-x64-candidate'
       && step.with?.path?.includes('DeepSeek-Harness-windows-x64.exe')
       && step.with?.path?.includes('windows-package-candidate.json')
+      && !step.with?.path?.includes('win-unpacked')
       && step.with?.['if-no-files-found'] === 'warn'
     ))).toBe(true)
 
@@ -228,6 +234,8 @@ describe('desktop package workflow bundled plugins', () => {
     ))).toBe(true)
     expect(smoke?.steps?.some(step => step.name === 'Verify reused candidate commit')).toBe(false)
     expect(smoke?.steps?.some(step => step.with?.['run-id'] === '${{ inputs.windows_candidate_run_id || github.run_id }}')).toBe(true)
+    const installedSmoke = smoke?.steps?.find(step => step.name === 'Smoke test installed Windows package')
+    expect(installedSmoke?.run).toBe('apps/desktop/scripts/smoke-windows-package.ps1')
     expect(smoke?.steps?.some(step => (
       step.name === 'Collect Windows smoke evidence'
       && step.run === 'node apps/desktop/scripts/collect-windows-smoke-evidence.mjs'

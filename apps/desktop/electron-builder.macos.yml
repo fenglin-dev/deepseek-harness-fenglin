@@ -22,6 +22,10 @@ extraResources:
     to: prebuilt-profile.tar
   - from: ../../.artifacts/desktop-prebuilt-darwin-${arch}.tar.sha256
     to: prebuilt-profile.tar.sha256
+  - from: ../../.artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-darwin-${arch}.tar.gz
+    to: workspace-runtime/DeepSeek-Harness-workspace-runtime-darwin-${arch}.tar.gz
+  - from: ../../.artifacts/workspace-runtime/workspace-runtime-darwin-${arch}.json
+    to: workspace-runtime/workspace-runtime-darwin-${arch}.json
   - from: lib/desktop-cli-launcher.js
     to: cli/desktop-cli.mjs
 mac:

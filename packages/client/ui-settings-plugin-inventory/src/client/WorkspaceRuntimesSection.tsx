@@ -1,4 +1,4 @@
-/** On-demand Python runtime cards embedded between experimental capabilities and external tools. */
+/** Bundled Python runtime cards embedded between experimental capabilities and external tools. */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, IconCodeOutline16, Modal, TerminalBlock } from '@deepseek-ai/dsh-client-ui-primitives'

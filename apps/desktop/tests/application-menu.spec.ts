@@ -3,7 +3,7 @@ import type { MenuItemConstructorOptions } from 'electron'
 import { applicationMenuTemplate, commandEnabled, isDesktopCommand, menuCopy, type DesktopMenuState } from '../src/application-menu.ts'
 import { DESKTOP_PRODUCT_NAME, desktopWindowTitle } from '../src/product-name.ts'
 
-const state: DesktopMenuState = { platform: 'win32', locale: 'en', ready: true, busy: false, maximized: false, fullscreen: false, development: false }
+const state: DesktopMenuState = { platform: 'win32', locale: 'en', clientAvailable: true, ready: true, busy: false, maximized: false, fullscreen: false, development: false }
 function flatten(items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] {
   return items.flatMap(item => [item, ...flatten(Array.isArray(item.submenu) ? item.submenu : [])])
 }
@@ -51,6 +51,9 @@ describe('platform application menus', () => {
   })
   it('disables disconnected navigation and guarded mutations but retains recovery help', () => {
     expect(commandEnabled('new-session', { ...state, ready: false })).toBe(false)
+    expect(commandEnabled('settings', { ...state, ready: false, clientAvailable: true })).toBe(true)
+    expect(commandEnabled('settings', { ...state, ready: false, clientAvailable: false })).toBe(false)
+    expect(commandEnabled('settings', { ...state, ready: false, clientAvailable: true, busy: true })).toBe(false)
     expect(commandEnabled('zoom-in', { ...state, ready: false })).toBe(false)
     expect(commandEnabled('open-web', { ...state, ready: false })).toBe(false)
     expect(commandEnabled('open-web', { ...state, platform: 'linux' })).toBe(false)

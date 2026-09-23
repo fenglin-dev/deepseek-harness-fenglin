@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { c } from 'tar'
@@ -19,6 +19,7 @@ async function fixture(options: {
   corruptOfficeIntegrity?: boolean
   slowDownload?: boolean
   pythonEnvironment?: PythonEnvironmentPort
+  bundledPython?: boolean
 } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workspace-runtime-'))
   roots.push(root)
@@ -29,7 +30,7 @@ async function fixture(options: {
   await mkdir(join(source, 'python', 'lib', 'python3.12', 'site-packages'), { recursive: true })
   await writeFile(join(source, 'python', 'bin', 'python3'), '#!/bin/sh\n')
   await writeFile(join(source, 'runtime.json'), JSON.stringify({
-    schema: 'dsh/workspace-runtime-payload/v1', desktopVersion: '0.1.6-alpha.2',
+    schema: 'dsh/workspace-runtime-payload/v1', desktopVersion: '0.1.6-alpha.2.1',
     platform: 'darwin', arch: 'arm64', payloadDigest: digest, pythonVersion: '3.12.14', pythonPackages: {},
   }))
   const archive = join(root, 'archive.tar.gz')
@@ -61,7 +62,7 @@ async function fixture(options: {
     },
   }
   const manifest = {
-    schema: 'dsh/desktop-workspace-runtimes/v2', desktopVersion: '0.1.6-alpha.2',
+    schema: 'dsh/desktop-workspace-runtimes/v2', desktopVersion: '0.1.6-alpha.2.1',
     issuedAt: new Date(Date.now() - 1_000).toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
     artifacts: { 'darwin-arm64': artifact },
   } as unknown as WorkspaceRuntimeManifest
@@ -70,7 +71,7 @@ async function fixture(options: {
   let fetchCount = 0
   const manager = new OptionalRuntimeManager({
     cacheRoot: join(root, 'user-data', 'optional-runtimes'), stateFile,
-    desktopVersion: '0.1.6-alpha.2', platform: options.platform ?? 'darwin', arch: options.arch ?? 'arm64',
+    desktopVersion: '0.1.6-alpha.2.1', platform: options.platform ?? 'darwin', arch: options.arch ?? 'arm64',
     target: 'darwin-arm64', getHome: () => home, isNas: () => options.nas === true,
     source: () => 'github', loadManifest: () => Promise.resolve(manifest),
     fetch: (url, init) => {
@@ -95,10 +96,19 @@ async function fixture(options: {
       })
       return Promise.resolve(new Response(stream, { status: 200, headers }))
     },
+    ...(options.bundledPython === true
+      ? { bundledArtifactsRoot: join(root, 'bundled'), requireBundledPython: true }
+      : {}),
     ...(options.pythonEnvironment === undefined ? {} : { pythonEnvironment: options.pythonEnvironment }),
   })
+  if (options.bundledPython === true) {
+    await mkdir(join(root, 'bundled'), { recursive: true })
+    await copyFile(archive, join(root, 'bundled', artifact.fileName))
+  }
   return {
     manager, root, digest, officeDigest, stateFile, fetchCount: () => fetchCount,
+    setPythonDigest: (value: string) => { artifact.payloadDigest = value },
+    setOfficeDigest: (value: string) => { artifact.office.payloadDigest = value },
     setHome: (name: string) => { home = join(root, name) },
   }
 }
@@ -113,6 +123,34 @@ async function settle(manager: OptionalRuntimeManager, jobId: string) {
 }
 
 describe('OptionalRuntimeManager', () => {
+  it('prepares bundled Python without fetching it from a release', async () => {
+    const { manager, fetchCount } = await fixture({ bundledPython: true })
+    const job = await manager.start('ptc')
+    await expect(settle(manager, job.jobId)).resolves.toMatchObject({ phase: 'succeeded', stage: 'ready' })
+    expect(fetchCount()).toBe(0)
+    await manager.activate('ptc')
+    await manager.commitPending()
+    expect((await manager.get()).capabilities.ptc.phase).toBe('enabled')
+  })
+
+  it('keeps unchanged bundled runtimes enabled and flags only changed payloads', async () => {
+    const { manager, setPythonDigest, setOfficeDigest } = await fixture({ bundledPython: true })
+    const ptcJob = await manager.start('ptc')
+    await settle(manager, ptcJob.jobId)
+    await manager.activate('ptc')
+    const officeJob = await manager.start('office')
+    await settle(manager, officeJob.jobId)
+    await manager.activate('office')
+    await manager.commitPending()
+    expect((await manager.get()).capabilities.ptc.phase).toBe('enabled')
+    expect((await manager.get()).capabilities.office.phase).toBe('enabled')
+    setPythonDigest('d'.repeat(64))
+    expect((await manager.get()).capabilities.ptc.phase).toBe('needs-update')
+    setPythonDigest('b'.repeat(64))
+    setOfficeDigest('e'.repeat(64))
+    expect((await manager.get()).capabilities.office.phase).toBe('needs-update')
+  })
+
   it('downloads one verified shared payload and keeps Office/PTC references independent', async () => {
     const { manager, root, digest, setHome } = await fixture()
     const job = await manager.start('office')
@@ -216,7 +254,7 @@ describe('OptionalRuntimeManager', () => {
     await writeFile(stateFile, JSON.stringify({
       schema: 'open-dsh-desktop/workspace-runtimes/v1',
       homes: { [join(root, 'home-one')]: { office: {
-        payloadDigest: '../escape', desktopVersion: '0.1.6-alpha.2', state: 'enabled',
+        payloadDigest: '../escape', desktopVersion: '0.1.6-alpha.2.1', state: 'enabled',
       } } },
       pendingCleanup: [],
     }))
@@ -229,7 +267,7 @@ describe('OptionalRuntimeManager', () => {
     await writeFile(stateFile, JSON.stringify({
       schema: 'open-dsh-desktop/workspace-runtimes/v1',
       homes: { [join(root, 'home-one')]: { office: {
-        payloadDigest: digest, desktopVersion: '0.1.6-alpha.2', state: 'enabled', source: 'managed',
+        payloadDigest: digest, desktopVersion: '0.1.6-alpha.2.1', state: 'enabled', source: 'managed',
       } } },
       pendingCleanup: [],
     }))

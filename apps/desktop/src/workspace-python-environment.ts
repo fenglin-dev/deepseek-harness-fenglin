@@ -101,8 +101,8 @@ export class PythonEnvironment implements PythonEnvironmentPort {
     const descriptor = await stat(executable)
     if (!descriptor.isFile()) throw new Error('desktop: selected Python path is not a file')
     const [{ stdout }, pip] = await Promise.all([
-      this.#run(executable, ['-I', '-B', '-c', PROBE]),
-      this.#run(executable, ['-I', '-B', '-m', 'pip', '--version']),
+      this.#run(executable, ['-X', 'utf8', '-I', '-B', '-c', PROBE]),
+      this.#run(executable, ['-X', 'utf8', '-I', '-B', '-m', 'pip', '--version']),
     ])
     const value = jsonObject(stdout, 'Python probe')
     if (value.implementation !== 'CPython' || typeof value.version !== 'string'
@@ -142,7 +142,7 @@ export class PythonEnvironment implements PythonEnvironmentPort {
     if (!probe.writable) throw new Error('desktop: selected Python environment is not writable')
     const coordinates = Object.entries(required).map(([name, version]) => `${name}==${version}`)
     const dryRun = await this.#run(probe.executable, [
-      '-I', '-B', '-m', 'pip', 'install', '--dry-run', '--quiet', '--report', '-', ...coordinates,
+      '-X', 'utf8', '-I', '-B', '-m', 'pip', 'install', '--dry-run', '--quiet', '--report', '-', ...coordinates,
     ], { timeout: 5 * 60_000 })
     const report = jsonObject(dryRun.stdout, 'pip dry-run report')
     const installs = Array.isArray(report.install) ? report.install : []
@@ -159,7 +159,7 @@ export class PythonEnvironment implements PythonEnvironmentPort {
     }
     if (plan.changes.length > 0) {
       await this.#run(probe.executable, [
-        '-I', '-B', '-m', 'pip', 'install',
+        '-X', 'utf8', '-I', '-B', '-m', 'pip', 'install',
         ...coordinates,
       ], { timeout: 15 * 60_000 })
     }

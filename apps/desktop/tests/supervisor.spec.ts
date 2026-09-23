@@ -12,6 +12,39 @@ afterEach(async () => {
 })
 
 describe('Harness supervisor startup failures', () => {
+  it('contains a Windows Job range failure while stopping instead of retrying termination', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-stop-owner-failure-'))
+    roots.push(root)
+    const done = Promise.withResolvers<{ exitCode: number | null; signal: NodeJS.Signals | null }>()
+    const rangeFailure = new Error('Windows Job runner exited with exit code 1073807364 before proving its managed range empty')
+    const terminate = vi.fn()
+    const stdout = new PassThrough()
+    const stderr = new PassThrough()
+    const supervisor = new HarnessSupervisor({
+      launch: { command: 'node', args: [] }, environment: {}, logPath: join(root, 'harness.log'),
+      onReady: () => {}, onDiagnosticReady: () => {}, onState: () => {}, onFailure: () => {},
+      stopTimeoutMs: 25,
+      managedRuntime: {
+        register: () => 'owner', preserve: async () => {}, stopAll: async () => {}, stop: async () => {},
+        stopRecovered: async () => {}, list: () => [],
+        launch: () => ({ containment: 'windows-job', handle: {
+          stdin: undefined, stdout, stderr, done: done.promise,
+          waitForExit: async () => { throw rangeFailure }, terminate,
+        } }),
+      },
+    })
+    try {
+      supervisor.start()
+      const stopping = supervisor.stop()
+      done.resolve({ exitCode: 0, signal: null })
+      await expect(stopping).rejects.toBe(rangeFailure)
+      expect(terminate).toHaveBeenCalledTimes(1)
+    } finally {
+      stdout.destroy()
+      stderr.destroy()
+    }
+  })
+
   it.each([true, false])('reports rejected range observation without losing the original failure (direct rejection: %s)', async (directRejected) => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-owner-failure-'))
     roots.push(root)

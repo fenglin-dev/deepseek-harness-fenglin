@@ -60,3 +60,30 @@ test('rejects changed plugin and installer bytes', async () => {
   await writeFile(item.installer, 'installer-v2')
   assert.throws(() => run(process.execPath, [script, 'verify', item.root, item.installer, item.plugins, item.manifest], item.root), /installer/u)
 })
+
+test('creates a candidate identity when the Git index exceeds the default child-process buffer', async () => {
+  const item = await fixture()
+  const object = run('git', ['rev-parse', 'HEAD:apps/desktop/main.ts'], item.root).trim()
+  const records = Array.from({ length: 15_000 }, (_, index) => {
+    const suffix = String(index).padStart(5, '0')
+    return `100644 ${object}\tpackages/runtime/generated-${suffix}-${'x'.repeat(40)}.js\n`
+  }).join('')
+  const update = spawnSync('git', ['update-index', '--index-info'], {
+    cwd: item.root,
+    encoding: 'utf8',
+    input: records,
+    maxBuffer: 8 * 1024 * 1024,
+  })
+  assert.equal(update.status, 0, update.stderr)
+  const listing = spawnSync('git', ['ls-files', '-s'], {
+    cwd: item.root,
+    encoding: 'utf8',
+    maxBuffer: 8 * 1024 * 1024,
+  })
+  assert.equal(listing.status, 0, listing.stderr)
+  assert.ok(listing.stdout.length > 1024 * 1024)
+
+  run(process.execPath, [script, 'create', item.root, item.installer, item.plugins, item.manifest], item.root)
+  const document = JSON.parse(await readFile(item.manifest, 'utf8'))
+  assert.match(document.packagingInputDigest, /^[0-9a-f]{64}$/u)
+})

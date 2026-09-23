@@ -35,6 +35,8 @@
           "to": "runtime",
           "filter": ["**/*"]
         },
+        { "from": "../../.artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz", "to": "workspace-runtime/DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz" },
+        { "from": "../../.artifacts/workspace-runtime/workspace-runtime-win32-x64.json", "to": "workspace-runtime/workspace-runtime-win32-x64.json" },
         {
           "from": "build/cli-bin",
           "to": "cli-bin",
@@ -52,6 +54,8 @@
         { "from": "../../.artifacts/desktop-runtime-darwin-${arch}.tar.sha256", "to": "harness-runtime.tar.sha256" },
         { "from": "../../.artifacts/desktop-prebuilt-darwin-${arch}.tar", "to": "prebuilt-profile.tar" },
         { "from": "../../.artifacts/desktop-prebuilt-darwin-${arch}.tar.sha256", "to": "prebuilt-profile.tar.sha256" },
+        { "from": "../../.artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-darwin-${arch}.tar.gz", "to": "workspace-runtime/DeepSeek-Harness-workspace-runtime-darwin-${arch}.tar.gz" },
+        { "from": "../../.artifacts/workspace-runtime/workspace-runtime-darwin-${arch}.json", "to": "workspace-runtime/workspace-runtime-darwin-${arch}.json" },
         { "from": "lib/desktop-cli-launcher.js", "to": "cli/desktop-cli.mjs" }
       ]
     },
@@ -61,7 +65,9 @@
         { "from": "../../.artifacts/desktop-runtime-linux-${arch}.tar", "to": "harness-runtime.tar" },
         { "from": "../../.artifacts/desktop-runtime-linux-${arch}.tar.sha256", "to": "harness-runtime.tar.sha256" },
         { "from": "../../.artifacts/desktop-prebuilt-linux-${arch}.tar", "to": "prebuilt-profile.tar" },
-        { "from": "../../.artifacts/desktop-prebuilt-linux-${arch}.tar.sha256", "to": "prebuilt-profile.tar.sha256" }
+        { "from": "../../.artifacts/desktop-prebuilt-linux-${arch}.tar.sha256", "to": "prebuilt-profile.tar.sha256" },
+        { "from": "../../.artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-linux-${arch}.tar.gz", "to": "workspace-runtime/DeepSeek-Harness-workspace-runtime-linux-${arch}.tar.gz" },
+        { "from": "../../.artifacts/workspace-runtime/workspace-runtime-linux-${arch}.json", "to": "workspace-runtime/workspace-runtime-linux-${arch}.json" }
       ]
     }
   }

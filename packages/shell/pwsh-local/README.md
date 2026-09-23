@@ -106,7 +106,7 @@ The foreground deadline starts before argv preparation and retains the same sign
 
 - The `graceMs` budget must be positive, finite, and no greater than `MAX_TIMER_DELAY_MS` so Node can represent it with one timer; invalid values are refused where they are written.
 - Environment layering is fixed: terminal overrides first, then the caller's `env`, then the trusted `dshEnv` snapshot last; the subprocess service scrubs ambient credentials and inherited `DSH_*` names independently.
-- Executable resolution is a pure function of `(configured, env, platform)` and re-probes the filesystem only when the stored `pwshPath` differs from the one the current executable was resolved from.
+- Executable resolution is a pure function of `(configured, env, platform)`. Automatic selection re-probes available locations for each new command, so a replacement PowerShell installation can serve the next call; an explicit `pwshPath` stays exact. A failed command is never replayed automatically because a provider failure may not prove whether the target started.
 - A background process belongs to the subprocess service: it survives an executor-only reload and is killed and joined when the service disposes.
 
 </details>

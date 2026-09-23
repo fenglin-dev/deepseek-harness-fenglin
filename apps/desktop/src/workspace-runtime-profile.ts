@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto'
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { parseDocument } from 'yaml'
+import { isMap, isSeq, parseDocument } from 'yaml'
 
 export type WorkspaceRuntimeCapability = 'office' | 'ptc'
 
@@ -53,6 +53,47 @@ function block(capability: WorkspaceRuntimeCapability, paths: WorkspaceRuntimePr
   return `${start}\n${rows.join('\n')}\n${end}`
 }
 
+function removeOrphanedManagedBlock(text: string, capability: WorkspaceRuntimeCapability): string | undefined {
+  const [start, end] = markers(capability)
+  const parsed = parseDocument(text)
+  if (parsed.errors.length > 0 || !isSeq(parsed.contents)) return undefined
+  const ownedId = `community-desktop.workspace-runtime.${capability}`
+  const matches = parsed.contents.items.filter((item) => {
+    if (!isMap(item)) return false
+    const insert = item.get('insert', true)
+    return isSeq(insert) && insert.items.length === 1
+      && isMap(insert.items[0]) && insert.items[0].get('id') === ownedId
+  })
+  const hasStart = text.includes(start)
+  const hasEnd = text.includes(end)
+  if (hasStart === hasEnd) return undefined
+  if (matches.length === 0 && !text.includes(ownedId)) {
+    const marker = hasStart ? start : end
+    const position = text.indexOf(marker)
+    if (position < 0 || (position !== 0 && text[position - 1] !== '\n')) return undefined
+    const rest = text.slice(position + marker.length)
+    const newlineLength = rest.startsWith('\r\n') ? 2 : rest.startsWith('\n') ? 1 : 0
+    if (newlineLength === 0 && rest !== '') return undefined
+    return text.slice(0, position) + rest.slice(newlineLength)
+  }
+  if (matches.length !== 1) return undefined
+  const range = matches[0]?.range
+  if (range === undefined) return undefined
+  const lineStart = text.lastIndexOf('\n', range[0] - 1) + 1
+  const before = text.slice(0, lineStart)
+  const after = text.slice(range[2])
+  if (hasStart) {
+    const markerStart = before.lastIndexOf(start)
+    if (markerStart < 0 || (markerStart !== 0 && before[markerStart - 1] !== '\n')
+      || !/^\r?\n$/u.test(before.slice(markerStart + start.length))) return undefined
+    return text.slice(0, markerStart) + after
+  }
+  if (!after.startsWith(end) || !/^(?:\r?\n|$)/u.test(after.slice(end.length))) return undefined
+  const newlineLength = after.slice(end.length).startsWith('\r\n') ? 2
+    : after.slice(end.length).startsWith('\n') ? 1 : 0
+  return text.slice(0, lineStart) + after.slice(end.length + newlineLength)
+}
+
 function replaceBlock(
   text: string,
   capability: WorkspaceRuntimeCapability,
@@ -62,6 +103,8 @@ function replaceBlock(
   const startIndex = text.indexOf(start)
   const endIndex = text.indexOf(end)
   if ((startIndex < 0) !== (endIndex < 0) || (startIndex >= 0 && endIndex < startIndex)) {
+    const repaired = removeOrphanedManagedBlock(text, capability)
+    if (repaired !== undefined) return replaceBlock(repaired, capability, next)
     throw new Error(`desktop: malformed managed ${capability} workspace-runtime block`)
   }
   if (startIndex < 0) {
