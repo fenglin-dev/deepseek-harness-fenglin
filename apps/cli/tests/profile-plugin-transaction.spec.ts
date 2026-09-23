@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, existsSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, realpathSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join, relative, win32 } from 'node:path'
 import { tmpdir } from 'node:os'
 import { load } from 'js-yaml'
@@ -349,6 +349,30 @@ describe('staged Profile activation', () => {
     settleProfilePluginTransaction(f.home, 'web', f.record.id, true)
     expect(existsSync(join(f.home, 'plugin-snapshots', 'v1', f.record.snapshotId))).toBe(false)
     expect(readProfilePluginTransaction(f.home, 'web')).toBeUndefined()
+  })
+
+  it('drops the journal before recursive delete so a slow cleanup cannot force recovery', () => {
+    const f = fixture()
+    readyProfilePluginTransaction(f.home, 'web', f.record.id)
+    activateProfilePluginTransaction(f.home, 'web', f.record.id)
+    const owned = join(f.home, 'plugin-transactions', 'web', f.record.id)
+    expect(existsSync(join(owned, 'previous-node_modules'))).toBe(true)
+    settleProfilePluginTransaction(f.home, 'web', f.record.id, true)
+    expect(readProfilePluginTransaction(f.home, 'web')).toBeUndefined()
+    expect(existsSync(join(f.home, 'plugin-transactions', 'web', 'pending.json'))).toBe(false)
+    expect(existsSync(owned)).toBe(false)
+    expect(readdirSync(join(f.home, 'plugin-transactions', 'web')).some(name => name.endsWith('.cleanup'))).toBe(false)
+  })
+
+  it('sweeps settled transaction trash on the next prepare', () => {
+    const f = fixture()
+    settleProfilePluginTransaction(f.home, 'web', f.record.id, false)
+    const trash = join(f.home, 'plugin-transactions', 'web', `${f.record.id}.cleanup`)
+    mkdirSync(join(trash, 'previous-node_modules'), { recursive: true })
+    writeFileSync(join(trash, 'previous-node_modules', 'leftover.txt'), 'x')
+    const next = prepareProfilePluginTransaction(f.home, 'web')
+    expect(existsSync(trash)).toBe(false)
+    settleProfilePluginTransaction(f.home, 'web', next.id, false)
   })
 
   it('refuses stale candidates without overwriting a changed active manifest', () => {

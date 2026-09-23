@@ -129,6 +129,33 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
   }
   await pruneForeignNodePtyPrebuilds(destination, target)
   const workspace = parseYaml(await readFile(join(destination, 'profiles/web/pnpm-workspace.yaml'), 'utf8'))
+  // Fenglin: ignore wrong-arch optional platform binaries (agently-cli / sharp).
+  // pnpm 11 can fail a whole market add/update with unsupported_platform when
+  // it evaluates `@tencent-qqmail/agently-cli-win32-arm64` on win32-x64.
+  {
+    const pnpmWorkspacePath = join(destination, 'profiles', 'web', 'pnpm-workspace.yaml')
+    const document = parseYaml(await readFile(pnpmWorkspacePath, 'utf8'))
+    const ignore = new Set([
+      ...(Array.isArray(document?.ignoredOptionalDependencies) ? document.ignoredOptionalDependencies.map(String) : []),
+      '@tencent-qqmail/agently-cli-darwin-arm64',
+      '@tencent-qqmail/agently-cli-darwin-x64',
+      '@tencent-qqmail/agently-cli-linux-arm64',
+      '@tencent-qqmail/agently-cli-linux-x64',
+      '@tencent-qqmail/agently-cli-win32-arm64',
+      'sharp-darwin-arm64',
+      'sharp-darwin-x64',
+      'sharp-linux-arm',
+      'sharp-linux-arm64',
+      'sharp-linux-x64',
+      'sharp-linuxmusl-arm64',
+      'sharp-linuxmusl-x64',
+      'sharp-win32-arm64',
+    ])
+    const yamlText = await readFile(pnpmWorkspacePath, 'utf8')
+    const doc = parseDocument(yamlText)
+    doc.set('ignoredOptionalDependencies', [...ignore])
+    await writeFile(pnpmWorkspacePath, String(doc), 'utf8')
+  }
   // Never deliver package-manager stores, logs, locks, snapshots, or user settings.
   for (const name of await readdir(destination)) {
     if (!['profiles', 'bundled-plugins', '.agent-presets'].includes(name)) {

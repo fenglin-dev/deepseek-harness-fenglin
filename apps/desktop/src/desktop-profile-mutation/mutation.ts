@@ -6,6 +6,7 @@ import {
   parsePluginCommandJson,
   prepareDesktopCandidate,
 } from '../candidate-preparation.ts'
+import { ensureIgnoredOptionalDependencies } from '../profile-pnpm-compat.ts'
 import { inspectProfileMutationLock } from '../menu-mutation-guard.ts'
 import {
   ProfileActivationRolledBackError,
@@ -352,6 +353,11 @@ export class DesktopProfileMutation {
     })
     await this.#options.log(`Plugin candidate prepared in ${Date.now() - startedAt}ms.`)
     this.#selectCandidate(id)
+    try {
+      await ensureIgnoredOptionalDependencies(join(this.mutationHome, 'profiles', 'web'))
+    } catch (error) {
+      await this.#options.log(`pnpm optional-deps compat skipped: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   async #cleanupPreparation(id: string): Promise<void> {
@@ -381,7 +387,7 @@ export class DesktopProfileMutation {
       { ...environment, ...(leased ? { DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN: id } : {}) },
       ['transaction', 'rollback', id],
       'plugin-candidate-abort',
-      60_000,
+      this.#options.timeouts.installMs,
       [0],
       true,
     )
@@ -448,7 +454,7 @@ export class DesktopProfileMutation {
       environment,
       ['transaction', 'rollback', id],
       'plugin-candidate-discard',
-      60_000,
+      this.#options.timeouts.installMs,
       [0],
       true,
     )
@@ -575,7 +581,10 @@ export class DesktopProfileMutation {
       DSH_PLUGIN_TRANSACTION_ORIGIN: undefined,
     }
     if (token !== undefined) environment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = token
-    return this.#options.commands.run(environment, args, 'profile-transaction', 60_000).then(() => undefined)
+    // Commit/rollback can recursively delete a previous-node_modules backup
+    // (tens of MB, thousands of files). 60s is not enough on Windows and used
+    // to surface as profile-transaction-rollback-failed after a successful commit.
+    return this.#options.commands.run(environment, args, 'profile-transaction', this.#options.timeouts.installMs).then(() => undefined)
   }
 
   #assertAvailable(): void {

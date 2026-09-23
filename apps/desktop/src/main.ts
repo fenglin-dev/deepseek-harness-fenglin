@@ -106,6 +106,7 @@ import {
 import { parseStartupBuildApproval } from './startup-build-approval.ts'
 import { ensureLegacySessionCompatibility } from './session-legacy-compatibility.ts'
 import { ensureFenglinLiangShenPreset } from './liangshen-preset-ensure.ts'
+import { ensureIgnoredOptionalDependencies } from './profile-pnpm-compat.ts'
 import {
   readDesktopDataHomeSetup,
   resolveDesktopApplicationDataRoot,
@@ -3146,6 +3147,13 @@ async function startApplication(): Promise<void> {
   ): Promise<T> => {
     if (desktopMutations.recoveryRequired) {
       throw new Error('desktop: bundled plugin startup stopped after rollback failure')
+    }
+    // Fenglin: keep marketplace add/update from dying on wrong-arch optional
+    // platform packages (dsh-im → agently-cli → win32-arm64 on x64).
+    try {
+      await ensureIgnoredOptionalDependencies(join(desktopMutations.mutationHome, 'profiles', 'web'))
+    } catch (error) {
+      await appendDesktopStartupLog(`pnpm optional-deps compat skipped: ${error instanceof Error ? error.message : String(error)}`)
     }
     return desktopMutations.applyAtStartup({ operation: `bundled-plugin:${packageName}`, run: () => operation() })
   }

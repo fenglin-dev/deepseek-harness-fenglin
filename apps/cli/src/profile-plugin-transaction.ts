@@ -381,6 +381,7 @@ export function prepareProfilePluginTransaction(
   if (!ID.test(transactionId)) throw new Error('dsh: invalid transaction ID')
   if (!Number.isSafeInteger(producerPid) || producerPid <= 0) throw new Error('dsh: invalid transaction producer')
   if (readProfilePluginTransaction(home, profile) !== undefined) throw new Error('dsh: a plugin transaction needs recovery first')
+  sweepProfilePluginTransactionTrash(home, profile)
   const paths = locations(home, profile)
   inside(home, paths.profile)
   const modules = join(paths.profile, 'node_modules')
@@ -531,11 +532,33 @@ export function settleProfilePluginTransaction(home: string, profile: string, id
   if (existsSync(join(home, 'plugin-snapshots', 'v1', record.snapshotId))) {
     settleProfilePluginSafetySnapshot({ home, profile, snapshotId: record.snapshotId })
   }
+  // Publish the terminal phase first, then detach the large dependency backup
+  // before recursive delete. A slow rmSync of previous-node_modules must not
+  // keep pending.json alive and force desktop recovery mode.
+  let trash: string | undefined
   if (existsSync(owned)) {
     if (!lstatSync(owned).isDirectory()) throw new Error('dsh: unsafe transaction cleanup directory')
-    rmSync(owned, { recursive: true })
+    trash = join(paths.root, `${id}.cleanup`)
+    inside(home, trash)
+    if (existsSync(trash)) rmSync(trash, { recursive: true, force: true })
+    renameSync(owned, trash)
   }
   rmSync(paths.journal)
+  if (trash !== undefined) {
+    try { rmSync(trash, { recursive: true, force: true }) } catch { /* inert leftover; next prepare sweeps it */ }
+  }
+}
+
+/** Remove settled transaction trash left by an interrupted recursive delete. */
+export function sweepProfilePluginTransactionTrash(home: string, profile: string): void {
+  const { root } = locations(home, profile)
+  if (!existsSync(root)) return
+  for (const entry of readdirSync(root)) {
+    if (!entry.endsWith('.cleanup')) continue
+    const path = join(root, entry)
+    inside(home, path)
+    try { rmSync(path, { recursive: true, force: true }) } catch { /* retry on a later prepare */ }
+  }
 }
 
 /**
