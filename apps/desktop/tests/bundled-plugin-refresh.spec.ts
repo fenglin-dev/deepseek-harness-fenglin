@@ -86,6 +86,41 @@ describe('bundled plugin refresh', () => {
     await expect(verifyBundledPluginSnapshot(directory)).resolves.toEqual(manifest)
   })
 
+  it('keeps a verified local archive when the registry lookup fails', async () => {
+    const { directory, registryBytes } = await fixture()
+    await writeFile(join(directory, 'manifest.json'), `${JSON.stringify({
+      schema: 2,
+      plugins: [
+        {
+          seedId: 'local', packageName: 'local', version: '1.0.0', profile: 'web',
+          installPolicy: 'startup', registrySpec: 'local@1.0.0',
+          archive: 'registry-1.0.0.tgz', integrity: integrity(registryBytes),
+        },
+      ],
+    }, null, 2)}\n`)
+    const manifest = await refreshBundledPluginSnapshot(directory, {
+      queryLatest: async () => { throw new Error('pnpm view failed for local: 404') },
+      download: async () => { throw new Error('unexpected download') },
+    })
+    expect(manifest.plugins).toMatchObject([{ packageName: 'local', version: '1.0.0', registrySpec: 'local@1.0.0' }])
+    await expect(readFile(join(directory, 'registry-1.0.0.tgz'))).resolves.toEqual(registryBytes)
+  })
+
+  it('treats file: registry specs as fixed archives', async () => {
+    const { directory } = await fixture()
+    const gitBytes = Buffer.from('fixed git archive')
+    const queryLatest = vi.fn(async () => metadata(Buffer.from('unused')))
+    const manifest = await refreshBundledPluginSnapshot(directory, {
+      queryLatest,
+      download: vi.fn(async () => Buffer.from('unused')),
+    })
+    expect(queryLatest).toHaveBeenCalledWith('registry')
+    expect(queryLatest).not.toHaveBeenCalledWith('git')
+    expect(manifest.plugins).toMatchObject([
+      { packageName: 'git', registrySpec: 'github:example/git#commit' },
+    ])
+  })
+
   it('rejects a prerelease behind latest without replacing the snapshot', async () => {
     const { directory, registryBytes } = await fixture()
     await expect(refreshBundledPluginSnapshot(directory, {

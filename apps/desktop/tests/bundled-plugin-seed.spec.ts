@@ -177,7 +177,9 @@ describe('bundled plugin seed', () => {
       ['@dsh-diagnostic-lab/immutable-agent-input-mutation', 'diagnostic'],
     ])
     for (const entry of manifest.plugins.filter(candidate => (
-      candidate.installPolicy !== 'diagnostic' && !candidate.registrySpec?.startsWith('github:')
+      candidate.installPolicy !== 'diagnostic'
+      && !candidate.registrySpec?.startsWith('github:')
+      && !candidate.registrySpec?.startsWith('file:')
     ))) {
       expect(entry.registrySpec).toBe(`${entry.packageName}@${entry.version}`)
     }

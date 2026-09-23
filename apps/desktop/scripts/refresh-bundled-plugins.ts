@@ -41,6 +41,10 @@ function isStableVersion(version: string): boolean {
 }
 
 function isRegistryTracked(entry: BundledPluginManifestEntry): boolean {
+  // Local-only and Git archives keep their checked tarball; only `name@version`
+  // specs are treated as live npm dist-tags.
+  if (entry.registrySpec === undefined) return false
+  if (entry.registrySpec.startsWith('file:') || entry.registrySpec.startsWith('github:')) return false
   return entry.registrySpec === `${entry.packageName}@${entry.version}`
 }
 
@@ -108,7 +112,17 @@ export async function refreshBundledPluginSnapshot(
         plugins.push(entry)
         continue
       }
-      const metadata = await dependencies.queryLatest(entry.packageName)
+      let metadata: LatestPluginMetadata
+      try {
+        metadata = await dependencies.queryLatest(entry.packageName)
+      } catch (error) {
+        // Fenglin-local archives and transient registry gaps keep the verified tarball.
+        const reason = error instanceof Error ? error.message : String(error)
+        console.warn(`bundled-plugin refresh: keeping ${entry.packageName}@${entry.version} (${reason})`)
+        await copyFile(join(directory, entry.archive), join(staging, entry.archive))
+        plugins.push(entry)
+        continue
+      }
       assertLatestMetadata(entry.packageName, metadata)
       const bytes = await dependencies.download(metadata.tarball)
       if (integrityFor(bytes) !== metadata.integrity) {
