@@ -184,6 +184,11 @@ export class AgentPresetRegistry extends TypertRemoteService {
    * @param id Explicit preset or the current default.
    * @returns Current metadata, including failure when activation failed.
    */
+  /** Upstream-compatible alias of {@link resolve}. */
+  async prepare(id?: string): Promise<AgentPreset> {
+    return this.resolve(id)
+  }
+
   async resolve(id?: string): Promise<AgentPreset> {
     const wanted = id ?? this.defaultId
     const record = this.definitions.get(wanted)

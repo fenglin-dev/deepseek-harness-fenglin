@@ -22,6 +22,15 @@
     },
     {
       "path": "../../packages/client/ui-sidebar-browser/tsconfig.host.json"
+    },
+    {
+      "path": "../../packages/nas/nas-protocol"
+    },
+    {
+      "path": "../../packages/subprocess/subprocess"
+    },
+    {
+      "path": "../../packages/util/http-proxy"
     }
   ],
   "exclude": [

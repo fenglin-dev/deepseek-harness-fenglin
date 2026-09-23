@@ -33,7 +33,7 @@ function setProfilePackageBuildAllowance(
   const source = readFileSync(workspacePath, 'utf8')
   const document = parseDocument(source)
   if (document.errors.length > 0) {
-    throw new Error(`dsh: cannot update ${workspacePath}: ${document.errors.map(error => error.message).join('; ')}`)
+    throw new Error(`dsh: cannot update ${workspacePath}: ${document.errors.map((error: { message?: string }) => error.message).join('; ')}`)
   }
   let allowBuilds = document.get('allowBuilds', true)
   if (allowBuilds === undefined) {

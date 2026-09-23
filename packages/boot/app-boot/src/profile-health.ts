@@ -820,7 +820,7 @@ export function inspectProfileLoaderEntryCollisions(
       shippedById.set(entry.id, {
         packageName: layer.packageName,
         moduleName: entry.name,
-        patchPath: layer.patchPath,
+        patchPath: layer.patchPaths[0] ?? "",
       })
     }
   }
@@ -838,7 +838,7 @@ export function inspectProfileLoaderEntryCollisions(
         rootPackage: layer.packageName,
         entryId: entry.id,
         moduleName: entry.name,
-        patchPath: layer.patchPath,
+        patchPath: layer.patchPaths[0] ?? "",
         installationPackage: shipped.packageName,
         installationModuleName: shipped.moduleName,
         installationPatchPath: shipped.patchPath,
@@ -943,7 +943,7 @@ function profileBundleEntryOwnership(
       if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
       const key = `${entry.id}\0${entry.name}`
       const candidates = origins.get(key) ?? []
-      candidates.push({ rootPackage: layer.packageName, patchPath: layer.patchPath })
+      candidates.push({ rootPackage: layer.packageName, patchPath: layer.patchPaths[0] ?? "" })
       origins.set(key, candidates)
     }
   }
@@ -1049,7 +1049,7 @@ function writeSharedHostOverrides(profileDir: string): void {
   const source = readFileSync(workspacePath, 'utf8')
   const document = parseDocument(source)
   if (document.errors.length > 0) {
-    throw new Error(`dsh: cannot update ${workspacePath}: ${document.errors.map(error => error.message).join('; ')}`)
+    throw new Error(`dsh: cannot update ${workspacePath}: ${document.errors.map((error: { message?: string }) => error.message).join('; ')}`)
   }
   let overrides = document.get('overrides', true)
   if (overrides === undefined) {
@@ -1074,13 +1074,13 @@ function writeProfilePnpmCompatibility(profileDir: string): void {
   let source: string
   try {
     source = readFileSync(workspacePath, 'utf8')
-  } catch (error) {
+  } catch (error: unknown) {
     if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error
     source = ''
   }
   const document = parseDocument(source)
   if (document.errors.length > 0) {
-    throw new Error(`dsh: cannot update ${workspacePath}: ${document.errors.map(error => error.message).join('; ')}`)
+    throw new Error(`dsh: cannot update ${workspacePath}: ${document.errors.map((error: { message?: string }) => error.message).join('; ')}`)
   }
   document.set('dedupePeerDependents', false)
   const rendered = document.toString()
@@ -1093,7 +1093,7 @@ function staleLockfileImporterDependencies(profileDir: string, remove: boolean):
   const source = readFileSync(lockfilePath, 'utf8')
   const document = parseDocument(source)
   if (document.errors.length > 0) {
-    throw new Error(`dsh: cannot update ${lockfilePath}: ${document.errors.map(error => error.message).join('; ')}`)
+    throw new Error(`dsh: cannot update ${lockfilePath}: ${document.errors.map((error: { message?: string }) => error.message).join('; ')}`)
   }
   const importer = document.getIn(['importers', '.'], true)
   if (importer === undefined) return []
@@ -1654,7 +1654,7 @@ export function quarantineProfilePluginAfterLoadFailure(
       ...remainingCollisions.map(collision => `${collision.rootPackage}:${collision.entryId}`),
       ...remainingResidue.map(residue => residue.packageName),
     ].join(', ')}`
-  } catch (error) {
+  } catch (error: unknown) {
     cleanupDiagnostic = error instanceof Error ? error.message : String(error)
   }
 
@@ -1825,7 +1825,7 @@ function recoverInterruptedQuarantine(
   if (cleanup.exitCode !== 0) {
     try {
       removeInterruptedQuarantineResidue(options, home, profileDir, pending)
-    } catch (error) {
+    } catch (error: unknown) {
       return retainMaterialReport(home, report(
         options.profile,
         'failed',

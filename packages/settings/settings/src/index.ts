@@ -15,8 +15,27 @@ import type { SettingsNamespace } from './types.ts'
 export { redactSecrets } from './redact.ts'
 export type { RedactedSecret, RedactedValue } from './redact.ts'
 export type { SettingsNamespace } from './types.ts'
+export type SettingsUpdateSource = 'update' | 'provider'
 
 /** One Loader entry's live Config fields. */
+
+export interface SettingsScope<T> {
+  readonly namespace: string
+  get(): T
+  watch(callback: (next: T, prev: T, source: SettingsUpdateSource) => void | Promise<void>): () => void
+  update(patch: object): Promise<void>
+  replace(section: object): Promise<void>
+}
+
+export type SettingsApplies = 'live' | 'restart'
+
+export interface SettingsRegisterOptions<T> {
+  base?: Partial<T>
+  applies?: SettingsApplies
+  validate?: (value: T) => void
+  acceptUnserviceableStored?: boolean
+}
+
 export interface SettingsDescriptor {
   ns: SettingsNamespace
   /** Whether the UI may generate a page when no custom page exists. */
@@ -344,6 +363,40 @@ export class SettingsForms extends Service {
    * @param patch Fields to merge.
    * @param expectedRevision Revision returned by describe.
    */
+  /**
+   * Upstream-compatible namespace registration. Returns a lightweight owner
+   * scope over the forms update/replace surface.
+   */
+  register<const Namespace extends string, T>(
+    ns: Namespace,
+    _schema: unknown,
+    options?: SettingsRegisterOptions<T>,
+  ): SettingsScope<T> {
+    const self = this
+    const current = (): T => {
+      try {
+        const row = self.describe().find(entry => String(entry.ns) === String(ns))
+        const value = (row as { value?: unknown } | undefined)?.value
+        return (value ?? options?.base ?? {}) as T
+      } catch {
+        return (options?.base ?? {}) as T
+      }
+    }
+    return {
+      namespace: ns,
+      get: current,
+      watch() {
+        return () => {}
+      },
+      async update(patch: object) {
+        await self.update(ns, patch)
+      },
+      async replace(section: object) {
+        await self.replace(ns, section)
+      },
+    }
+  }
+
   async update(ns: string, patch: object, expectedRevision?: number): Promise<void> {
     const input = cloneJsonShaped(patch)
     await this.write(ns, current => mergeLayers(current, input) as Record<string, unknown>, expectedRevision)
@@ -427,5 +480,8 @@ export class SettingsForms extends Service {
     return schema !== undefined && 'toJSON' in schema ? schema as z : undefined
   }
 }
+
+/** Compatibility alias: upstream providers extend SettingsProvider. */
+export const SettingsProvider = SettingsForms
 
 export default SettingsForms

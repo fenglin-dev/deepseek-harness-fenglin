@@ -1,3 +1,13 @@
+export type PluginInstallId = string
+export type PluginInstallPhase =
+  | 'preparing'
+  | 'running'
+  | 'cancelled'
+  | 'succeeded'
+  | 'repaired'
+  | 'quarantined'
+  | 'failed'
+
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
 
@@ -72,4 +82,48 @@ export interface PluginInventorySnapshot {
    * composed in this deployment.
    */
   readonly agentPresets?: readonly AgentPresetPluginGroup[]
+}
+
+/** User-visible stage within one running package-manager operation. */
+export type PluginInstallProgressStage = 'preparing' | 'resolving' | 'downloading' | 'installing' | 'verifying'
+
+/** Determinate progress is published only after pnpm has established a stable total. */
+export interface PluginInstallProgress {
+  readonly stage: PluginInstallProgressStage
+  /** Integer percentage from 0 through 100; absent means indeterminate. */
+  readonly percent?: number
+  /** Completed dependency units when pnpm exposes a stable total. */
+  readonly completed?: number
+  /** Total dependency units paired with {@link completed}. */
+  readonly total?: number
+}
+
+/** Cursor request for bounded live installer output. */
+export interface PluginInstallOutputRequest {
+  readonly installId: PluginInstallId
+  /** Byte offset returned by the previous read; zero starts at retained output. */
+  readonly offset: number
+}
+
+/** Incremental, sanitized terminal output for one installer job. */
+export interface PluginInstallOutputRead {
+  readonly text: string
+  readonly nextOffset: number
+  /** True when output before the requested offset is no longer retained. */
+  readonly lossy: boolean
+  readonly settled: boolean
+}
+
+/** External experimental capability recipe projected to the host inventory. */
+export interface ExperimentalCapabilityRecipe {
+  readonly id: string
+  readonly name: string
+  readonly description?: string
+}
+
+/** Structured plugin install request. */
+export interface PluginInstallRequest {
+  readonly profile: string
+  readonly packageSpec: string
+  readonly extraArgs?: readonly string[]
 }

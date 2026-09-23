@@ -11,8 +11,9 @@
  */
 
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
@@ -32,6 +33,7 @@ import {
   type RuntimeResolution,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { composeEntries, type ProfileDiagnostic } from '@deepseek-ai/dsh-app-boot'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { provideCmdline, type AppReady } from '@deepseek-ai/dsh-cmdline'
@@ -321,4 +323,218 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     }
     throw error
   }
+}
+
+export function diagnosticProfileModuleBaseUrl(profileDir: string): string {
+  return pathToFileURL(join(profileDir, '..', 'package.json')).href
+}
+
+export function quarantineDuplicateSingletonLoaderEntries(
+  patchLayers: readonly (readonly PatchOptions[])[],
+): PatchOptions[] {
+  const firstByModule = new Map<string, string>()
+  const recovered: PatchOptions[] = []
+  for (const row of composeEntries(patchLayers.map(layer => [...layer]))) {
+    if (typeof row.id !== 'string' || typeof row.name !== 'string'
+      || !SINGLETON_PLUGIN_MODULES.has(row.name) || row.disabled === true) continue
+    const first = firstByModule.get(row.name)
+    if (first === undefined) {
+      firstByModule.set(row.name, row.id)
+      continue
+    }
+    if (first === row.id) continue
+    recovered.push({ id: row.id, disabled: true })
+    process.stderr.write(
+      `${NAME}: temporarily disabled duplicate singleton loader entry ${JSON.stringify(row.id)} (${row.name}); `
+      + `entry ${JSON.stringify(first)} already owns this plugin. Remove the legacy duplicate from cordis.patch.yml.\n`,
+    )
+  }
+  return recovered
+}
+
+/**
+ * Return temporary disable patches for stale user loader rows that name an
+ * in-box package no longer supplied by this Harness installation.
+ *
+ * A development checkout can be upgraded while its private profile survives
+ * between runs.  In that case an old user `cordis.patch.yml` can insert a
+ * removed client module (for example a retired UI package).  Letting that one
+ * row reach Loader makes the complete Host fail to boot.  We deliberately
+ * constrain this recovery to user-introduced `@deepseek-ai/dsh-*` rows:
+ * third-party packages and shipped bundle rows retain their ordinary
+ * fail-loud behaviour, and fixing or restoring the package re-enables the
+ * row on the next launch without rewriting user configuration.
+ *
+ * @param bundlePatches - patches owned by the current installation.
+ * @param userPatches - profile and home patches owned by the user.
+ * @param profileDir - module-resolution anchor for the active profile.
+ * @param resolveModule - injectable resolver for focused tests.
+ * @returns id-targeted disable patches safe to append as the highest layer.
+ */
+
+const SINGLETON_PLUGIN_MODULES = new Set<string>([
+  '@deepseek-ai/dsh-client-ui-slots',
+  '@deepseek-ai/dsh-host-webserver',
+])
+
+const IN_BOX_PACKAGE_PREFIX = '@deepseek-ai/dsh-'
+
+
+const LOADER_IMPORT_FAILURE = /failed to import loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/giu
+const LOADER_ENTRY_FAILURE = /failed to (import|apply) loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/giu
+const CLIENT_MODULE_UNAVAILABLE = new RegExp(
+  String.raw`client-modules:\s*require\([^\r\n]+\).*?`
+  + String.raw`(?:missed the module table|not a materialized module|no registered package factory)`,
+  'isu',
+)
+const MISSING_IMPORTED_EXPORT = /The requested module\s+["']([^"']+)["']\s+does not provide an export named\s+["']([^"']+)["']/iu
+
+function boundedLoaderToken(value: string | undefined, maxLength: number): string | undefined {
+  return value === undefined || value === '' || /[\0\r\n]/u.test(value)
+    ? undefined
+    : value.slice(0, maxLength)
+}
+
+function startupErrorChain(error: unknown): string {
+  const messages: string[] = []
+  const seen = new Set<unknown>()
+  const visit = (current: unknown): void => {
+    if (current === undefined || seen.has(current)) return
+    seen.add(current)
+    if (current instanceof Error) {
+      messages.push(current.message)
+      if (current instanceof AggregateError) {
+        for (const nested of current.errors) visit(nested)
+      }
+      visit(current.cause)
+      return
+    }
+    if (typeof current === 'string') messages.push(current)
+  }
+  visit(error)
+  return messages.join('\n')
+}
+
+function loaderEntryFailures(error: unknown): readonly {
+  stage: 'import' | 'apply'
+  entryId: string
+  moduleName: string
+}[] {
+  const found = new Map<string, { stage: 'import' | 'apply'; entryId: string; moduleName: string }>()
+  for (const match of startupErrorChain(error).matchAll(LOADER_ENTRY_FAILURE)) {
+    const stage = match[1]
+    const entryId = boundedLoaderToken(match[2], 512)
+    const moduleName = boundedLoaderToken(match[3], 512)
+    if ((stage !== 'import' && stage !== 'apply') || entryId === undefined || moduleName === undefined) continue
+    found.set(`${stage}\0${entryId}\0${moduleName}`, { stage, entryId, moduleName })
+  }
+  return [...found.values()]
+}
+
+/**
+ * Attribute the deepest Loader import or apply wrapper in a startup failure.
+ * The recorded patch owner must still prove the owning bundle before recovery mutates
+ * the Profile; the plugin's own exception text is never trusted for identity.
+ * @param error - startup exception and optional cause chain.
+ * @returns Stable Loader identity and lifecycle stage, when present.
+ */
+export function loaderEntryFailure(
+  error: unknown,
+): {
+  readonly stage: 'import' | 'apply'
+  readonly entryId: string
+  readonly moduleName: string
+} | undefined {
+  return loaderEntryFailures(error).at(-1)
+}
+
+/**
+ * Attribute the deepest synchronous Loader module-resolution failure.
+ * @param error - startup exception and optional cause chain.
+ * @returns the Loader identity only when the cause chain proves a missing module.
+ */
+export function loaderClientModuleFailure(
+  error: unknown,
+): {
+  readonly entryId: string
+  readonly moduleName: string
+  readonly dependencyModule?: string
+  readonly missingExport?: string
+} | undefined {
+  const diagnostic = startupErrorChain(error)
+  if (!CLIENT_MODULE_UNAVAILABLE.test(diagnostic)
+    && !/ERR_MODULE_NOT_FOUND|Cannot find (?:package|module)/iu.test(diagnostic)
+    && !MISSING_IMPORTED_EXPORT.test(diagnostic)) return undefined
+  const match = [...diagnostic.matchAll(LOADER_IMPORT_FAILURE)].at(-1)
+  if (match?.[1] === undefined || match[2] === undefined) return undefined
+  const missingExport = diagnostic.match(MISSING_IMPORTED_EXPORT)
+  const dependencyModule = boundedLoaderToken(missingExport?.[1], 512)
+  const missingExportName = boundedLoaderToken(missingExport?.[2], 256)
+  if (missingExport !== null && (dependencyModule === undefined || missingExportName === undefined)) return undefined
+  return {
+    entryId: match[1],
+    moduleName: match[2],
+    ...(dependencyModule === undefined ? {} : { dependencyModule }),
+    ...(missingExportName === undefined ? {} : { missingExport: missingExportName }),
+  }
+}
+
+/** Decide whether a failed normal Profile can improve by omitting user-owned layers. */
+export function isDeterministicDiagnosticModeFailure(issue: ProfileDiagnostic): boolean {
+  return issue.code !== 'pnpm.network'
+    && issue.code !== 'pnpm.registry-auth'
+    && issue.code !== 'pnpm.minimum-release-age'
+    && issue.code !== 'profile.unknown'
+    && issue.code !== 'runtime.launch-invalid'
+}
+
+/**
+ * Return temporary disable patches for stale user loader rows that name an
+ * in-box package no longer supplied by this Harness installation.
+ *
+ * A development checkout can be upgraded while its private profile survives
+ * between runs.  In that case an old user `cordis.patch.yml` can insert a
+ * removed client module (for example a retired UI package).  Letting that one
+ * row reach Loader makes the complete Host fail to boot.  We deliberately
+ * constrain this recovery to user-introduced `@deepseek-ai/dsh-*` rows:
+ * third-party packages and shipped bundle rows retain their ordinary
+ * fail-loud behaviour, and fixing or restoring the package re-enables the
+ * row on the next launch without rewriting user configuration.
+ *
+ * @param bundlePatches - patches owned by the current installation.
+ * @param userPatches - profile and home patches owned by the user.
+ * @param profileDir - module-resolution anchor for the active profile.
+ * @param resolveModule - injectable resolver for focused tests.
+ * @returns id-targeted disable patches safe to append as the highest layer.
+ */
+
+/**
+ * Temporarily disable stale user Loader rows that name in-box packages the
+ * running Harness no longer provides.
+ */
+export function quarantineStaleInBoxLoaderEntries(
+  bundlePatches: readonly PatchOptions[],
+  userPatches: readonly PatchOptions[],
+  profileDir: string,
+  resolveModule: (name: string) => void = (name) => { createRequire(join(profileDir, 'package.json')).resolve(name) },
+): PatchOptions[] {
+  const bundleRows = new Map<string, { name?: string }>()
+  for (const row of composeEntries([[...bundlePatches]])) {
+    if (typeof row.id === 'string') bundleRows.set(row.id, row)
+  }
+  const recovered: PatchOptions[] = []
+  for (const row of composeEntries([[...bundlePatches], [...userPatches]])) {
+    if (typeof row.id !== 'string' || typeof row.name !== 'string' || !row.name.startsWith(IN_BOX_PACKAGE_PREFIX)) continue
+    if (bundleRows.get(row.id)?.name === row.name) continue
+    try {
+      resolveModule(row.name)
+    } catch {
+      recovered.push({ id: row.id, disabled: true })
+      process.stderr.write(
+        `${NAME}: temporarily disabled stale user loader entry ${JSON.stringify(row.id)} (${row.name}); `
+        + 'the running Harness no longer provides that in-box module. Restore or update the user patch to re-enable it.\n',
+      )
+    }
+  }
+  return recovered
 }

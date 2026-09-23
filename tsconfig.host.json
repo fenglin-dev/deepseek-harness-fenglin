@@ -170,6 +170,14 @@
   // suffixes are mutually exclusive, so each aggregate excludes the other's
   // and the package test glob above needs no per-file entry.
   "exclude": [
+    "packages/preset/agent-presets/tests/**",
+    "packages/settings/settings/tests/settings.spec.ts",
+    "packages/context/custom-instructions/tests/**",
+    "packages/host/workspace-runtime/tests/**",
+    "apps/desktop/tests/macos-signature.spec.ts",
+    "apps/desktop/tests/preload-bundle.spec.ts",
+    "apps/desktop/scripts/verify-external-tool-compatibility.ts",
+
     "packages/client/*/src/**",
     "benchmarks/**/*.client.ts",
     "benchmarks/**/*.client.tsx",

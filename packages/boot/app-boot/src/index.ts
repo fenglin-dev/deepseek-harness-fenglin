@@ -62,13 +62,18 @@ export {
   bundlePatchPaths,
   initProfile,
   removeLinkProjections,
+  loadDiagnosticProfile,
   loadProfile,
   loadProfileDirectory,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   PROFILES_DIR,
   readProfileManifest,
+  healProfilesModuleFallback,
+  healIsolatedProfileModuleFallback,
+  unlinkProfileModuleFallback,
   resolveBundleDir,
+  resolveProfileLoaderModule,
   resolveProfileDir,
   writeProfileManifest,
   type Profile,
@@ -80,6 +85,114 @@ export {
   type RuntimeResolution,
   type ProfileTemplate,
 } from './profile.ts'
+
+export {
+  allowProfilePackageBuild,
+  allowProfileRegistryPackageBuild,
+  type ProfilePackageBuildAllowance,
+} from './profile-package-builds.ts'
+
+export {
+  approveQuarantinedProfilePluginHostVersion,
+  clearQuarantinedProfilePlugin,
+  clearLastProfileRepairReport,
+  inspectProfileDependencies,
+  inspectProfileHostCompatibility,
+  inspectProfileImmutableAgentInputMutation,
+  inspectProfileLegacySessionApi,
+  inspectProfileLoaderEntryCollisions,
+  inspectOrphanedProfileBundles,
+  inspectProfileBundleEntryOwnership,
+  inspectUnresolvableProfileBundleEntries,
+  inspectQuarantineRemovalResidue,
+  listQuarantinedProfilePlugins,
+  PROFILE_QUARANTINE_SCHEMA,
+  quarantineProfilePluginAfterLoadFailure,
+  reconcileRestoredQuarantinedProfilePlugins,
+  repairProfileDependencies,
+  retryQuarantinedProfilePlugin,
+  readLastProfileRepairReport,
+  SHARED_HOST_PACKAGES,
+  uninstallQuarantinedProfilePlugin,
+  type ProfileDependencyConflict,
+  type ProfileHostCompatibilityIssue,
+  type OrphanedProfileBundle,
+  type ProfileBundleEntryOwnership,
+  type ProfileLoaderEntryCollision,
+  type ProfileQuarantineReason,
+  type ProfileDependencyOptions,
+  type ProfilePackageManagerResult,
+  type ProfileRepairOptions,
+  type UnresolvableProfileBundleEntry,
+  type ProfileRepairReport,
+  type ProfileQuarantineRetryOptions,
+  type QuarantineRemovalResidue,
+  type QuarantinedProfilePlugin,
+} from './profile-health.ts'
+
+export {
+  classifyProfileDiagnostic,
+  clearProfileDiagnosticReport,
+  createProfileDiagnosticReport,
+  extractProfileBuildApprovalKey,
+  orphanedBundleDiagnostic,
+  PROFILE_DIAGNOSTIC_SCHEMA,
+  profileDiagnosticRuleCatalog,
+  profileDependencyConflictDiagnostic,
+  profileHostCompatibilityDiagnostic,
+  profileLoaderEntryCollisionDiagnostic,
+  quarantineRemovalResidueDiagnostic,
+  quarantinedPluginDiagnostic,
+  readProfileDiagnosticReport,
+  sanitizeProfileDiagnostic,
+  writeProfileDiagnosticReport,
+  type ClassifyProfileDiagnosticOptions,
+  type ProfileDiagnostic,
+  type ProfileDiagnosticAction,
+  type ProfileDiagnosticAttribution,
+  type ProfileDiagnosticCode,
+  type ProfileDiagnosticPhase,
+  type ProfileDiagnosticReport,
+  type ProfileDiagnosticRuleSummary,
+  type ProfileDiagnosticSeverity,
+  type ProfileDiagnosticSource,
+} from './profile-diagnostics.ts'
+
+export {
+  backupAndResetInvalidSettings,
+  prepareDiagnosticRuntimeDirectories,
+  prepareDiagnosticSettingsDocument,
+  type DiagnosticRuntimeDirectories,
+  type ResetInvalidSettingsResult,
+} from './settings-diagnostics.ts'
+
+export {
+  acquireProfilePluginMutationLock,
+  assertProfilePluginMutationLease,
+  beginProfilePluginMutationLease,
+  createProfilePluginSnapshot,
+  finalizeProfilePluginSnapshot,
+  endProfilePluginMutationLease,
+  listProfilePluginSnapshots,
+  PROFILE_PLUGIN_SNAPSHOT_SCHEMA,
+  removeProfilePluginSnapshot,
+  restoreProfilePluginSnapshotFiles,
+  settleProfilePluginSafetySnapshot,
+  withAutomaticProfilePluginSnapshot,
+  type CreateProfilePluginSnapshotOptions,
+  type CreatedProfilePluginSnapshot,
+  type ProfilePluginSnapshotDifference,
+  type ProfilePluginSnapshotFile,
+  type ProfilePluginSnapshotKind,
+  type ProfilePluginSnapshotOptions,
+  type ProfilePluginSnapshotPackage,
+  type ProfilePluginSnapshotRecord,
+  type ProfilePluginSnapshotSummary,
+  type ProfilePluginSnapshotTrigger,
+  type ProfilePluginSnapshotVersionChange,
+  type RestoredProfilePluginSnapshot,
+} from './profile-plugin-snapshot.ts'
+
 export {
   PluginPackages,
   type PluginPackage,
@@ -330,6 +443,36 @@ export function loadOptionalPatches(binName: string, file: string): PatchOptions
  * @param file - absolute path of the overlay file.
  * @returns the parsed patch list.
  */
+
+export interface UserPatchWatchOptions {
+  /** Diagnostic prefix used when loading or applying the patch file. */
+  binName: string
+  /** Absolute path to the optional patch-list file. */
+  filename: string
+  /** Rebuild the complete generation from the freshly read user layer. */
+  compose?: (userPatches: PatchOptions[]) => PatchOptions[]
+}
+
+/**
+ * Register one exact profile patch path with the shared HMR transaction queue.
+ */
+export async function watchUserPatches(
+  ctx: Context, options: UserPatchWatchOptions,
+): Promise<() => Promise<void>> {
+  const hmr = ctx.get('hmr') as undefined | {
+    watchConfig(filename: string, refresh: () => Promise<void>): Promise<() => Promise<void>>
+  }
+  if (hmr === undefined) throw new Error(`${options.binName}: profile reload requires the Cordis HMR service`)
+  if (bootstrapIncludes.get(ctx) === undefined) {
+    throw new Error(`${options.binName}: profile reload requires the root Include entry`)
+  }
+  const compose = options.compose ?? ((patches: PatchOptions[]) => patches)
+  return hmr.watchConfig(options.filename, async () => {
+    const userPatches = loadOptionalPatches(options.binName, options.filename) ?? []
+    await reconcileProfilePatches(ctx, compose(userPatches), options.binName)
+  })
+}
+
 export function loadOverlayPatches(binName: string, file: string): PatchOptions[] {
   let content: string
   try {
@@ -796,6 +939,8 @@ interface StartupLogRecord {
 }
 
 /** Startup audit failure with non-enumerable metadata and original failures as its cause. */
+export const OPTIONAL_STARTUP_FAILURES_MARKER = 'dsh: optional startup failures '
+
 export class StartupError extends Error {
   /** Root configuration and startup logs, attached by boot after disposal. */
   startup?: { configurationPath: string; messages: readonly StartupLogRecord[] }

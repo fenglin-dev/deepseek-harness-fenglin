@@ -39,7 +39,10 @@
     "js-yaml": "^4.2.0",
     "node-addon-require-builtin": "^0.1.6",
     "resolve.exports": "^2.0.3",
-    "semver": "^7.8.5"
+    "semver": "^7.8.5",
+    "yaml": "^2.9.0",
+    "es-module-lexer": "^2.1.0",
+    "chokidar": "4.0.3"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis-plugin-group": "workspace:~",

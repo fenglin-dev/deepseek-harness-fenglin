@@ -80,7 +80,7 @@ export function apply(ctx: Context): void {
     agent.ctx.systemPrompt.context({
       name: 'custom-instructions:global',
       order: 10_000,
-      text: () => renderCustomInstruction('global', activeVersion(settings.get().global)),
+      text: () => renderCustomInstruction('global', activeVersion((settings.get() as { global?: unknown }).global)),
     })
     if (workspaceId === undefined) return
     agent.ctx.systemPrompt.context({
@@ -88,7 +88,7 @@ export function apply(ctx: Context): void {
       order: 10_010,
       text: () => renderCustomInstruction(
         workspaceId,
-        activeVersion(settings.get().workspaces[workspaceId]),
+        activeVersion(((settings.get() as { workspaces?: Record<string, unknown> }).workspaces ?? {})[workspaceId]),
       ),
     })
   })

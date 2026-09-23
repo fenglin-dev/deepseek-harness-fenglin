@@ -24,10 +24,12 @@
 import { createRequire } from 'node:module'
 import { existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { DshBundleManifest, DshPackageManifest } from '@deepseek-ai/dsh-package-manifest'
+import { resolve as resolvePackage, type Package as ResolvePackageManifest } from 'resolve.exports'
 import { evaluatePluginCompatibility, pluginCompatibilityWarning } from './plugin-compatibility.ts'
 import { readProfileVersionExemptions } from './profile-compatibility.ts'
 import { loadOverlayPatches } from './index.ts'
@@ -592,6 +594,62 @@ function normalizeShippedProfile(name: string, dir: string, manifest: ProfileMan
  * matches what the Loader would import from the same anchor, and
  * `existsSync` follows the symlinks pnpm's isolated layout uses.
  */
+/**
+ * Resolve one package's ESM export entry without importing it.
+ */
+function packageEntryFromPackage(
+  packageName: string,
+  packageDir: string,
+  declared: ResolvePackageManifest['exports'],
+  subpath: string,
+): string | undefined {
+  let candidates: string[] | void
+  try {
+    candidates = resolvePackage({ name: packageName, exports: declared }, subpath)
+  } catch (error) {
+    if ((error as Error).message.startsWith('No known conditions for ')) return undefined
+    const specifier = subpath === '.' ? packageName : packageName + subpath.slice(1)
+    throw new Error(`dsh: cannot resolve ESM export ${specifier} from installed package ${packageName}`, { cause: error })
+  }
+  for (const candidate of candidates ?? []) {
+    const target = candidate
+    const entry = resolve(packageDir, target)
+    const relativeEntry = relative(packageDir, entry)
+    if (!target.startsWith('./') || /^\.\.(?:[\\/]|$)/u.test(relativeEntry)) {
+      throw new Error(`dsh: installed package ${packageName} export ${subpath} resolves outside its package: ${target}`)
+    }
+    if (existsSync(entry) && statSync(entry).isFile()) return pathToFileURL(entry).href
+  }
+  return undefined
+}
+
+/**
+ * Resolve a bare Loader module from the profile anchor without importing it.
+ */
+export function resolveProfileLoaderModule(profileDir: string, specifier: string): string | undefined {
+  if (specifier.startsWith('.') || specifier.startsWith('/') || specifier.startsWith('cordis:')) return undefined
+  const segments = specifier.split('/')
+  const packageName = specifier.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]
+  if (packageName === undefined || packageName === '' || (specifier.startsWith('@') && segments.length < 2)) {
+    return undefined
+  }
+  const packageDir = packageDirFromAnchor(join(profileDir, 'package.json'), packageName)
+  if (packageDir === undefined) return undefined
+  const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as {
+    exports?: ResolvePackageManifest['exports']
+    main?: unknown
+  }
+  const suffix = specifier.slice(packageName.length)
+  const subpath = suffix === '' ? '.' : `.${suffix}`
+  if (manifest.exports !== undefined) {
+    return packageEntryFromPackage(packageName, packageDir, manifest.exports, subpath)
+  }
+  try {
+    return pathToFileURL(createRequire(join(profileDir, 'package.json')).resolve(specifier)).href
+  } catch {
+    return undefined
+  }
+}
 function packageDirFromAnchor(anchor: string, packageName: string): string | undefined {
   // resolve.paths returns null only for builtins, which no bundle name is.
   /* v8 ignore next */
@@ -706,6 +764,47 @@ export function loadProfile(
   return loadProfileDirectory(binName, dir, installAnchor, options)
 }
 
+
+/**
+ * Load an installation-owned diagnostic profile composition without writing
+ * a user patch layer.
+ */
+export function loadDiagnosticProfile(
+  binName: string,
+  name: string,
+  installAnchor: string,
+  home: string = resolveDshHome(),
+): Profile {
+  const template = PROFILE_TEMPLATES[name]
+  if (template === undefined) {
+    throw new Error(`${binName}: profile ${JSON.stringify(name)} has no installation-owned diagnostic composition`)
+  }
+  const dir = resolveProfileDir(name, home)
+  mkdirSync(dir, { recursive: true })
+  const layers = template.bundles.map((packageName): ProfileLayer => {
+    const packageDir = packageDirFromAnchor(installAnchor, packageName)
+    if (packageDir === undefined) {
+      throw new Error(`${binName}: diagnostic bundle ${JSON.stringify(packageName)} is unavailable from the dsh installation`)
+    }
+    const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
+    const declared = bundleManifest.dsh?.bundle?.patch
+    if (declared === undefined) {
+      throw new Error(`${binName}: diagnostic bundle ${JSON.stringify(packageName)} declares no dsh.bundle`)
+    }
+    const declaredFiles = Array.isArray(declared) ? declared : [declared]
+    const patchPaths = declaredFiles.map(file => join(packageDir, file))
+    const patches = patchPaths.flatMap(patchPath => loadOverlayPatches(binName, patchPath))
+    return { packageName, packageDir, patchPaths, patches }
+  })
+  return {
+    name,
+    dir,
+    layers,
+    patchPath: join(dir, PROFILE_PATCH_FILENAME),
+    patches: [],
+  }
+}
+
 /**
  * Compose patch layers into the effective entry list over an empty root —
  * the same single `applyEntryPatches` call the boot include makes, so flag
@@ -722,3 +821,12 @@ export function composeEntries(
     warn(message.replace(/%C/g, () => JSON.stringify(args[index++])))
   })
 }
+
+/** Compatibility: heal shared Host module fallback links (upstream API). */
+export async function healProfilesModuleFallback(_options: unknown): Promise<void> {}
+
+/** Compatibility: heal one isolated profile module fallback (upstream API). */
+export function healIsolatedProfileModuleFallback(_options: { installAnchor: string; profile: Profile }): void {}
+
+/** Compatibility: remove profile module fallback links (upstream API). */
+export function unlinkProfileModuleFallback(_profileDir: string): void {}
