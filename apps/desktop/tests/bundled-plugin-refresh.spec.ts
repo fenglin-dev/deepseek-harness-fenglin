@@ -108,7 +108,6 @@ describe('bundled plugin refresh', () => {
 
   it('treats file: registry specs as fixed archives', async () => {
     const { directory } = await fixture()
-    const gitBytes = Buffer.from('fixed git archive')
     const queryLatest = vi.fn(async () => metadata(Buffer.from('unused')))
     const manifest = await refreshBundledPluginSnapshot(directory, {
       queryLatest,
