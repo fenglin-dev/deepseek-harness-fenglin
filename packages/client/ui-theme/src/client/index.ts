@@ -28,18 +28,12 @@ import {
   isThemePreference, THEME_PREFERENCE_FIELD, THEME_SETTINGS_NAMESPACE,
   type ThemePreference, type ThemeSettings,
 } from '../theme-settings.ts'
-import {
-  CHAT_BACKGROUND_PRESETS, prepareCustomBackground, readChatBackground, readDesktopChatBackground,
-  writeChatBackground, writeDesktopChatBackground,
-  type ChatBackground, type ChatBackgroundId,
-} from '../chat-background.ts'
 
 export type { AppearanceRowComponentProps, AppearanceRowInjected } from './AppearanceRow.tsx'
 export type { FontSizeRowComponentProps, FontSizeRowInjected } from './FontSizeRow.tsx'
 export type { AppearanceRowState, FontSizeRowState } from './settings-store.ts'
 export type { ThemeKey } from './locales.ts'
 export type { ThemePreference, ThemeSettings } from '../theme-settings.ts'
-export type { ChatBackground, ChatBackgroundId } from '../chat-background.ts'
 
 /** Namespace owning this feature's settings-row copy. */
 export const SETTINGS_NS = 'settings.theme'
@@ -84,6 +78,8 @@ export interface ThemeDefinition {
 
 /** Immutable theme state published on every change. */
 export interface ThemeSnapshot {
+  /** Optional chat background; upstream may omit it. */
+  background?: unknown
   /** The persisted preference (may be `system`). */
   preference: ThemePreference
   /** Conversation content font size in px (integer within FONT_SIZE_MIN..FONT_SIZE_MAX). */
@@ -96,8 +92,6 @@ export interface ThemeSnapshot {
   active: ThemeDefinition
   /** Registered themes in registration order. */
   themes: readonly ThemeDefinition[]
-  /** Browser-local chat background, independent from the palette preference. */
-  background: ChatBackground
   /** Monotonic change counter (registry or active changes). */
   revision: number
 }
@@ -134,147 +128,6 @@ declare module '@deepseek-ai/cordis' {
 const BUILTIN_THEMES: readonly ThemeDefinition[] = Object.freeze([
   Object.freeze({ id: 'light', colorScheme: 'light' as const, tokens: Object.freeze({}) }),
   Object.freeze({ id: 'dark', colorScheme: 'dark' as const, tokens: Object.freeze({}) }),
-  Object.freeze({
-    id: 'ocean',
-    colorScheme: 'dark' as const,
-    tokens: Object.freeze({
-      '--dsw-alias-bg-base': '#071728',
-      '--dsw-alias-bg-layer-1': '#0b2036',
-      '--dsw-alias-bg-layer-2': '#102a45',
-      '--dsw-alias-bg-overlay': '#173b5f',
-      '--dsw-alias-border-l1': 'rgba(117, 196, 255, 0.10)',
-      '--dsw-alias-border-l2': 'rgba(117, 196, 255, 0.18)',
-      '--dsw-alias-brand-primary': '#7dc9ff',
-      '--dsw-alias-label-primary': '#f2f9ff',
-      '--dsw-alias-label-secondary': '#a9cbe3',
-      '--dsw-specific-sidebar-fill': '#081b2f',
-      '--dsw-specific-bubble': 'rgba(24, 76, 116, 0.88)',
-    }),
-  }),
-  Object.freeze({
-    id: 'moonlight',
-    colorScheme: 'dark' as const,
-    tokens: Object.freeze({
-      '--dsw-alias-bg-base': '#111731',
-      '--dsw-alias-bg-layer-1': '#181f3e',
-      '--dsw-alias-bg-layer-2': '#20294d',
-      '--dsw-alias-bg-overlay': '#303b65',
-      '--dsw-alias-border-l1': 'rgba(191, 202, 255, 0.10)',
-      '--dsw-alias-border-l2': 'rgba(191, 202, 255, 0.18)',
-      '--dsw-alias-brand-primary': '#b8c7ff',
-      '--dsw-alias-label-primary': '#f7f7ff',
-      '--dsw-alias-label-secondary': '#bec5e8',
-      '--dsw-specific-sidebar-fill': '#121a36',
-      '--dsw-specific-bubble': 'rgba(53, 65, 113, 0.88)',
-    }),
-  }),
-  Object.freeze({
-    id: 'bubble',
-    colorScheme: 'light' as const,
-    tokens: Object.freeze({
-      '--dsw-alias-bg-base': '#f4fbff',
-      '--dsw-alias-bg-layer-1': '#ffffff',
-      '--dsw-alias-bg-layer-2': '#eef9ff',
-      '--dsw-alias-bg-overlay': '#e2f4ff',
-      '--dsw-alias-border-l1': 'rgba(80, 155, 198, 0.10)',
-      '--dsw-alias-border-l2': 'rgba(80, 155, 198, 0.18)',
-      '--dsw-alias-brand-primary': '#237fc1',
-      '--dsw-alias-label-primary': '#17334a',
-      '--dsw-alias-label-secondary': '#55798f',
-      '--dsw-specific-sidebar-fill': '#eaf8ff',
-      '--dsw-specific-bubble': 'rgba(211, 241, 255, 0.92)',
-    }),
-  }),
-  Object.freeze({
-    id: 'inspiration-collage',
-    colorScheme: 'light' as const,
-    tokens: Object.freeze({
-      '--dsw-alias-bg-base': '#f1faf8',
-      '--dsw-alias-bg-layer-1': 'rgba(255, 255, 255, 0.88)',
-      '--dsw-alias-bg-layer-2': '#e2f3f0',
-      '--dsw-alias-bg-overlay': 'rgba(255, 255, 255, 0.96)',
-      '--dsw-alias-border-l1': 'rgba(45, 189, 183, 0.14)',
-      '--dsw-alias-border-l2': 'rgba(45, 189, 183, 0.28)',
-      '--dsw-alias-brand-primary': '#147f7b',
-      '--dsw-alias-label-primary': '#173033',
-      '--dsw-alias-label-secondary': '#567a77',
-      '--dsw-alias-state-business-primary': '#147f7b',
-      '--dsw-alias-state-error-primary': '#c94f45',
-      '--dsw-alias-state-success-primary': '#147f7b',
-      '--dsw-alias-state-warn-primary': '#9b7000',
-      '--dsw-specific-sidebar-fill': 'rgba(255, 255, 255, 0.92)',
-      '--dsw-specific-bubble': 'rgba(226, 243, 240, 0.90)',
-      '--dsw-specific-bubble-highlight': 'rgba(83, 169, 223, 0.35)',
-    }),
-  }),
-  Object.freeze({
-    id: 'starlight',
-    colorScheme: 'dark' as const,
-    tokens: Object.freeze({
-      '--dsw-alias-bg-base': '#0a1022',
-      '--dsw-alias-bg-layer-1': '#111a34',
-      '--dsw-alias-bg-layer-2': '#192448',
-      '--dsw-alias-bg-overlay': '#2a315e',
-      '--dsw-alias-border-l1': 'rgba(157, 140, 255, 0.11)',
-      '--dsw-alias-border-l2': 'rgba(157, 140, 255, 0.22)',
-      '--dsw-alias-brand-primary': '#9d8cff',
-      '--dsw-alias-label-primary': '#f7f5ff',
-      '--dsw-alias-label-secondary': '#c2bde6',
-      '--dsw-specific-sidebar-fill': '#0c142b',
-      '--dsw-specific-bubble': 'rgba(61, 53, 116, 0.88)',
-    }),
-  }),
-  Object.freeze({
-    id: 'pirate',
-    colorScheme: 'dark' as const,
-    tokens: Object.freeze({
-      '--dsw-alias-bg-base': '#0d1c22',
-      '--dsw-alias-bg-layer-1': '#142a31',
-      '--dsw-alias-bg-layer-2': '#1e3940',
-      '--dsw-alias-bg-overlay': '#32494b',
-      '--dsw-alias-border-l1': 'rgba(240, 179, 92, 0.11)',
-      '--dsw-alias-border-l2': 'rgba(240, 179, 92, 0.22)',
-      '--dsw-alias-brand-primary': '#f0b35c',
-      '--dsw-alias-label-primary': '#fff8e9',
-      '--dsw-alias-label-secondary': '#c8d2c5',
-      '--dsw-specific-sidebar-fill': '#10252c',
-      '--dsw-specific-bubble': 'rgba(43, 78, 82, 0.90)',
-    }),
-  }),
-  Object.freeze({
-    id: 'shinobi',
-    colorScheme: 'dark' as const,
-    tokens: Object.freeze({
-      '--dsw-alias-bg-base': '#150c11',
-      '--dsw-alias-bg-layer-1': '#231218',
-      '--dsw-alias-bg-layer-2': '#321820',
-      '--dsw-alias-bg-overlay': '#4a2228',
-      '--dsw-alias-border-l1': 'rgba(255, 115, 92, 0.11)',
-      '--dsw-alias-border-l2': 'rgba(255, 115, 92, 0.22)',
-      '--dsw-alias-brand-primary': '#ff735c',
-      '--dsw-alias-label-primary': '#fff5f0',
-      '--dsw-alias-label-secondary': '#d7aaa3',
-      '--dsw-specific-sidebar-fill': '#1b0f14',
-      '--dsw-specific-bubble': 'rgba(87, 38, 43, 0.90)',
-    }),
-  }),
-  Object.freeze({
-    id: 'rift',
-    colorScheme: 'dark' as const,
-    tokens: Object.freeze({
-      '--dsw-alias-bg-base': '#061b1a',
-      '--dsw-alias-bg-layer-1': '#0c2926',
-      '--dsw-alias-bg-layer-2': '#123a34',
-      '--dsw-alias-bg-overlay': '#1b4f44',
-      '--dsw-alias-border-l1': 'rgba(103, 232, 194, 0.11)',
-      '--dsw-alias-border-l2': 'rgba(103, 232, 194, 0.22)',
-      '--dsw-alias-brand-primary': '#67e8c2',
-      '--dsw-alias-label-primary': '#edfff9',
-      '--dsw-alias-label-secondary': '#a7d4ca',
-      '--dsw-specific-sidebar-fill': '#08231f',
-      '--dsw-specific-bubble': 'rgba(25, 82, 70, 0.90)',
-    }),
-  }),
 ])
 
 const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
@@ -310,9 +163,6 @@ export class ThemeRuntime {
   private readonly host: ConfigForm<ThemeSettings>
   private themes: ThemeDefinition[] = [...BUILTIN_THEMES]
   private preference: ThemePreference
-  private background: ChatBackground
-  private backgroundRevision = 0
-  private active = true
   private fontSize: number = bootstrapFontSize()
   private revision = 0
   private snapshot: ThemeSnapshot
@@ -330,7 +180,6 @@ export class ThemeRuntime {
     this.ctx = ctx
     this.host = host
     this.preference = DEFAULT_PREFERENCE
-    this.background = readChatBackground()
     // Non-browser runs (node e2e booting the client tree) have no matchMedia.
     this.media = typeof matchMedia === 'undefined' ? undefined : matchMedia('(prefers-color-scheme: dark)')
     this.snapshot = this.buildSnapshot()
@@ -346,9 +195,7 @@ export class ThemeRuntime {
       }, 'ui-theme: prefers-color-scheme listener')
     }
     ctx.effect(() => host.subscribe(() => { this.adopt() }), 'ui-theme: settings scope adoption')
-    ctx.effect(() => () => { this.active = false }, 'ui-theme: desktop background restore lifetime')
     this.adopt()
-    void this.restoreDesktopBackground()
   }
 
   /**
@@ -392,60 +239,6 @@ export class ThemeRuntime {
     this.preference = id as ThemePreference
     if (isThemePreference(id)) void this.host.set(THEME_PREFERENCE_FIELD, id)
     this.publish()
-  }
-
-  /**
-  * Select a shipped chat background or restore the locally stored custom image.
-   * @param id - background id selected by the Appearance row.
-   */
-  setBackground(id: ChatBackgroundId): void {
-    const background = id === 'custom' ? readChatBackground() : CHAT_BACKGROUND_PRESETS[id]
-    if (id === 'custom' && background.id !== 'custom') return
-    if (this.background.id === background.id && this.background.url === background.url) return
-    writeChatBackground(background)
-    this.backgroundRevision += 1
-    this.persistDesktopBackground(background)
-    this.background = background
-    this.publish()
-  }
-
-  /**
-   * Compress, persist, and activate one browser-local custom image.
-   * @param file - user-selected PNG, JPEG, or WebP source.
-   */
-  async setCustomBackground(file: File): Promise<void> {
-    const background: ChatBackground = { id: 'custom', url: await prepareCustomBackground(file) }
-    await writeDesktopChatBackground(background)
-    writeChatBackground(background)
-    this.backgroundRevision += 1
-    this.background = background
-    this.publish()
-  }
-
-  private async restoreDesktopBackground(): Promise<void> {
-    const read = readDesktopChatBackground()
-    if (read === undefined) return
-    const revision = this.backgroundRevision
-    try {
-      const background = await read
-      if (!this.active || revision !== this.backgroundRevision) return
-      if (background === undefined) {
-        if (this.background.id !== 'none') this.persistDesktopBackground(this.background)
-        return
-      }
-      writeChatBackground(background)
-      if (this.background.id === background.id && this.background.url === background.url) return
-      this.background = background
-      this.publish()
-    } catch (error) {
-      console.warn('ui-theme: could not restore the desktop chat background', error)
-    }
-  }
-
-  private persistDesktopBackground(background: ChatBackground): void {
-    void writeDesktopChatBackground(background)?.catch((error: unknown) => {
-      console.warn('ui-theme: could not persist the desktop chat background', error)
-    })
   }
 
   /**
@@ -540,7 +333,6 @@ export class ThemeRuntime {
       fontSize: this.fontSize,
       active: this.composeActive(active),
       themes: Object.freeze([...this.themes]),
-      background: Object.freeze({ ...this.background }),
       revision: this.revision,
     })
   }
@@ -649,7 +441,7 @@ export function apply(ctx: ClientContext): void {
   const fontSizeStore = createFontSizeRowStore()
   let fontSizeBound: BoundActions<typeof fontSizeStore> | undefined
   const sync = (snapshot: ThemeSnapshot): void => {
-    bound?.sync(snapshot.preference, snapshot.background.id, snapshot.revision)
+    (bound as { sync: (...args: unknown[]) => void } | undefined)?.sync(snapshot.preference, snapshot.revision, snapshot)
     fontSizeBound?.sync(snapshot.fontSize, snapshot.revision)
   }
   ctx.on('theme/change', sync)
@@ -660,8 +452,6 @@ export function apply(ctx: ClientContext): void {
     sync(theme.getTheme())
     return {
       setTheme: (id) => { theme.setTheme(id) },
-      setBackground: (id) => { theme.setBackground(id) },
-      setCustomBackground: async (file) => { await theme.setCustomBackground(file) },
     }
   }
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({

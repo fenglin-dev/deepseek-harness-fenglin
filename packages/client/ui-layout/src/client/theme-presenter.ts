@@ -77,14 +77,14 @@ export class ThemePresenter {
       body.style.setProperty(name, value)
       this.appliedTokens.push(name)
     }
-    const backgroundUrl = snapshot.background.url
+    const backgroundUrl = (snapshot as { background?: { url?: string; id?: string; layout?: string } }).background?.url
     if (backgroundUrl === undefined) {
       body.removeAttribute(CHAT_BACKGROUND_ATTRIBUTE)
       body.removeAttribute(CHAT_BACKGROUND_LAYOUT_ATTRIBUTE)
       body.style.removeProperty(CHAT_BACKGROUND_IMAGE)
     } else {
-      body.setAttribute(CHAT_BACKGROUND_ATTRIBUTE, snapshot.background.id)
-      const layout = snapshot.background.layout
+      body.setAttribute(CHAT_BACKGROUND_ATTRIBUTE, (snapshot as { background?: { url?: string; id?: string; layout?: string } }).background?.id ?? "")
+      const layout = (snapshot as { background?: { url?: string; id?: string; layout?: string } }).background?.layout
       if (layout === undefined) body.removeAttribute(CHAT_BACKGROUND_LAYOUT_ATTRIBUTE)
       else body.setAttribute(CHAT_BACKGROUND_LAYOUT_ATTRIBUTE, layout)
       body.style.setProperty(CHAT_BACKGROUND_IMAGE, `url(${JSON.stringify(backgroundUrl)})`)

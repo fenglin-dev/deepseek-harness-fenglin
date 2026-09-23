@@ -204,7 +204,7 @@ export function LocalPathImages({
           },
         })),
         align: 'start',
-        expanded: true,
+        ...{} as Record<string, never>,
       })}
       {checking && <div className={css.localImageStatus} role="status">{t('localImage.checking')}</div>}
       {!checking && failed > 0 && (

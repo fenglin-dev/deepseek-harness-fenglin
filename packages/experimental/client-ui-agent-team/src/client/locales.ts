@@ -5,6 +5,10 @@ export const NS = 'agent-team'
 
 /** Simplified Chinese dictionary and key source. */
 export const zh = {
+  useUnavailable: "不可用",
+  useNow: "立即使用",
+  composerHint: "输入消息…",
+  onboardingDismiss: "关闭",
   trigger: '智能体团队',
   loading: '正在加载团队…',
   unavailable: 'Team 暂不可用',
@@ -37,6 +41,10 @@ export type TeamKey = keyof typeof zh
 
 /** English dictionary checked against the Chinese key set. */
 export const en = {
+  useUnavailable: "Unavailable",
+  useNow: "Use now",
+  composerHint: "Message…",
+  onboardingDismiss: "Dismiss",
   trigger: 'Agent Team',
   loading: 'Loading Team…',
   unavailable: 'Team is unavailable',

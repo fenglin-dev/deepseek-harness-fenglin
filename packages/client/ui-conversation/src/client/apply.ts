@@ -278,7 +278,6 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'session-maybe' },
-      'conversation.hero.pluginDiscovery': { kind: 'single', scope: 'root' },
     },
     slots: {
       views: { scope: 'session' },

@@ -1629,3 +1629,15 @@ export const IconMicrophoneOutlineRegular = (props: IconProps) => (
 export const IconMicrophoneOutlineMedium = (props: IconProps) => (
   <IconMicrophoneOutlineArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />
 )
+
+/** Compatibility aliases for upstream icon names (N suffix = 16px default). */
+export const IconCheckOutline16 = IconCheckOutlineRegular
+export const IconCloseOutline16 = IconCloseOutlineRegular
+export const IconCodeOutline16 = IconCodeOutlineRegular
+export const IconCopyOutline16 = IconCopyOutlineRegular
+export const IconDataOutline16 = IconDataOutlineRegular
+export const IconLinkOutline16 = IconLinkOutlineRegular
+export const IconTrashOutline16 = IconTrashOutlineRegular
+export const IconUserOutline16 = IconUserOutlineRegular
+export const IconChevronDownOutline14 = IconChevronDownOutlineRegular
+export const IconPersonalizationOutline16 = IconPersonalizationOutlineMedium

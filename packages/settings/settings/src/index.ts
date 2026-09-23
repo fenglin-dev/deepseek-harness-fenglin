@@ -36,6 +36,22 @@ export interface SettingsRegisterOptions<T> {
   acceptUnserviceableStored?: boolean
 }
 
+/**
+ * Validate and brand a settings namespace supplied outside the registration API.
+ */
+function parseSettingsNamespace(value: string): SettingsNamespace {
+  if (!/^[a-z][a-z0-9-]*$/u.test(value)) {
+    throw new TypeError('settings namespace "' + value + '" must match /^[a-z][a-z0-9-]*$/u')
+  }
+  return value as SettingsNamespace
+}
+
+export function settingsNamespace<const Value extends string>(
+  value: Value,
+): SettingsNamespace {
+  return parseSettingsNamespace(value)
+}
+
 export interface SettingsDescriptor {
   ns: SettingsNamespace
   /** Whether the UI may generate a page when no custom page exists. */

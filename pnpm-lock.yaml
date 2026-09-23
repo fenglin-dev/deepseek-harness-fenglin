@@ -578,7 +578,7 @@ importers:
         version: 7.8.5
       sigstore:
         specifier: ^3.0.0
-        version: 3.0.0
+        version: 3.0.0(supports-color@9.4.0)
       ws:
         specifier: ^8.21.0
         version: 8.21.0
@@ -9926,6 +9926,73 @@ importers:
       '@types/js-yaml':
         specifier: ^4.0.9
         version: 4.0.9
+
+  packages/preset/agent-presets:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.3.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-group':
+        specifier: workspace:^
+        version: link:../../../vendor/group
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-agent-loop':
+        specifier: workspace:^
+        version: link:../../core/agent-loop
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:^
+        version: link:../../boot/app-boot
+      '@deepseek-ai/dsh-atomic-write':
+        specifier: workspace:^
+        version: link:../../util/atomic-write
+      '@deepseek-ai/dsh-home-paths':
+        specifier: workspace:^
+        version: link:../../util/home-paths
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-scope':
+        specifier: workspace:^
+        version: link:../../core/scope
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@deepseek-ai/dsh-session-projection':
+        specifier: workspace:^
+        version: link:../../session/session-projection
+      '@deepseek-ai/dsh-settings':
+        specifier: workspace:^
+        version: link:../../settings/settings
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
 
   packages/preset/persona:
     dependencies:
@@ -23347,13 +23414,13 @@ snapshots:
 
   '@nodable/entities@3.0.0': {}
 
-  '@npmcli/agent@3.0.0':
+  '@npmcli/agent@3.0.0(supports-color@9.4.0)':
     dependencies:
       agent-base: 7.1.4
       http-proxy-agent: 7.0.2
       https-proxy-agent: 7.0.6
       lru-cache: 10.4.3
-      socks-proxy-agent: 8.0.3
+      socks-proxy-agent: 8.0.3(supports-color@9.4.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -23958,21 +24025,21 @@ snapshots:
 
   '@sigstore/protobuf-specs@0.3.2': {}
 
-  '@sigstore/sign@3.0.0':
+  '@sigstore/sign@3.0.0(supports-color@9.4.0)':
     dependencies:
       '@sigstore/bundle': 3.0.0
       '@sigstore/core': 2.0.0
       '@sigstore/protobuf-specs': 0.3.2
-      make-fetch-happen: 14.0.1
+      make-fetch-happen: 14.0.1(supports-color@9.4.0)
       proc-log: 5.0.0
       promise-retry: 2.0.1
     transitivePeerDependencies:
       - supports-color
 
-  '@sigstore/tuf@3.0.0':
+  '@sigstore/tuf@3.0.0(supports-color@9.4.0)':
     dependencies:
       '@sigstore/protobuf-specs': 0.3.2
-      tuf-js: 3.0.1
+      tuf-js: 3.0.1(supports-color@9.4.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -27185,9 +27252,9 @@ snapshots:
     dependencies:
       semver: 7.8.5
 
-  make-fetch-happen@14.0.1:
+  make-fetch-happen@14.0.1(supports-color@9.4.0):
     dependencies:
-      '@npmcli/agent': 3.0.0
+      '@npmcli/agent': 3.0.0(supports-color@9.4.0)
       cacache: 19.0.1
       http-cache-semantics: 4.2.0
       minipass: 7.1.3
@@ -28613,13 +28680,13 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
-  sigstore@3.0.0:
+  sigstore@3.0.0(supports-color@9.4.0):
     dependencies:
       '@sigstore/bundle': 3.0.0
       '@sigstore/core': 2.0.0
       '@sigstore/protobuf-specs': 0.3.2
-      '@sigstore/sign': 3.0.0
-      '@sigstore/tuf': 3.0.0
+      '@sigstore/sign': 3.0.0(supports-color@9.4.0)
+      '@sigstore/tuf': 3.0.0(supports-color@9.4.0)
       '@sigstore/verify': 2.0.0
     transitivePeerDependencies:
       - supports-color
@@ -28642,7 +28709,7 @@ snapshots:
 
   smol-toml@1.7.1: {}
 
-  socks-proxy-agent@8.0.3:
+  socks-proxy-agent@8.0.3(supports-color@9.4.0):
     dependencies:
       agent-base: 7.1.4
       debug: 4.4.3(supports-color@9.4.0)
@@ -28982,11 +29049,11 @@ snapshots:
     optionalDependencies:
       fsevents: 2.3.3
 
-  tuf-js@3.0.1:
+  tuf-js@3.0.1(supports-color@9.4.0):
     dependencies:
       '@tufjs/models': 3.0.1
       debug: 4.4.3(supports-color@9.4.0)
-      make-fetch-happen: 14.0.1
+      make-fetch-happen: 14.0.1(supports-color@9.4.0)
     transitivePeerDependencies:
       - supports-color
 

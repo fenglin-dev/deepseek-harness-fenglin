@@ -1,6 +1,7 @@
 {
   "extends": "../../../tsconfig.base.client.json",
   "compilerOptions": {
+    "composite": true,
     "rootDir": "src",
     "outDir": "lib/types",
     "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"

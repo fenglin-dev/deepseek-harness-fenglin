@@ -19,7 +19,7 @@
     { "path": "../../client/locale/tsconfig.client.json" },
     { "path": "../../client/store" },
     { "path": "../../client/ui-commands" },
-    { "path": "../../client/ui-conversation/tsconfig.client.json" },
+    { "path": "../../client/ui-conversation" },
     { "path": "../../client/ui-message-feedback" },
     { "path": "../../client/ui-primitives" },
     { "path": "../../client/ui-renderer" },

@@ -120,9 +120,9 @@ export interface SidebarOwnerProps {
   /** Rendered column or drawer width in px. */
   width: number
   /** Responsive presentation selected by the AppFrame. */
-  presentation: 'column' | 'drawer'
+  presentation?: 'column' | 'drawer'
   /** Close the transient phone drawer without changing desktop width preferences. */
-  dismiss: () => void
+  dismiss?: () => void
 }
 
 /** Right column owner share: resolved normal geometry and opening eligibility. */

@@ -33,9 +33,6 @@ import type { SettingsDescribeFace, ConfigForms } from '@deepseek-ai/dsh-client-
 import type { ConfigLedger } from './config-ledger.ts'
 import { shortName } from './presentation.ts'
 
-const AGENT_TEAM_BUNDLE = '@deepseek-ai/dsh-experimental-agent-team-profile'
-const AGENT_TEAM_WEB_BUNDLE = '@deepseek-ai/dsh-experimental-agent-team-web-profile'
-
 /** The action a failed notice names. */
 export type FailedAction = 'enable' | 'disable' | 'uninstall' | 'rowEnable' | 'rowDisable'
 
@@ -291,7 +288,7 @@ export interface PluginManagerFace {
   enableInstalled: () => void
   /** Drop the list mark once it has been shown. */
   clearHighlight: () => void
-  /** Put a bundle into, or take it out of, the profile's layer list, including known companion prerequisites. */
+  /** Put a bundle into, or take it out of, the profile's layer list. */
   setEnabled: (packageName: string, enabled: boolean) => void
   /** Ask before removing a package from the profile. */
   uninstall: (packageName: string) => void
@@ -563,14 +560,8 @@ export class PluginManagerController {
       enableInstalled: () => { void this.enableInstalled() },
       clearHighlight: () => { if (this.getSnapshot().highlight !== null) this.patch({ highlight: null }) },
       setEnabled: (packageName, enabled) => {
-        const changes = this.bundleChanges(packageName, enabled)
-        void this.run(changes.map(change => change.packageName), { packageName, action: enabled ? 'enable' : 'disable' }, async () => {
-          for (const change of changes) {
-            this.applied(
-              await this.ctx.remote.pluginManager.setBundleEnabled(change.packageName, change.enabled),
-              change.packageName,
-            )
-          }
+        void this.run(packageName, { packageName, action: enabled ? 'enable' : 'disable' }, async () => {
+          this.applied(await this.ctx.remote.pluginManager.setBundleEnabled(packageName, enabled), packageName)
         })
       },
       uninstall: (packageName) => {
@@ -715,27 +706,6 @@ export class PluginManagerController {
 
   private shouldRerun(): boolean {
     return this.rerun
-  }
-
-  /**
-   * Keep the optional Agent Teams UI behind its Host capability. Other
-   * bundles remain one independent operation.
-   */
-  private bundleChanges(packageName: string, enabled: boolean): readonly { packageName: string; enabled: boolean }[] {
-    const active = new Set(this.getSnapshot().packages.filter(pkg => pkg.enabled).map(pkg => pkg.name))
-    if (packageName === AGENT_TEAM_WEB_BUNDLE && enabled && !active.has(AGENT_TEAM_BUNDLE)) {
-      return [
-        { packageName: AGENT_TEAM_BUNDLE, enabled: true },
-        { packageName: AGENT_TEAM_WEB_BUNDLE, enabled: true },
-      ]
-    }
-    if (packageName === AGENT_TEAM_BUNDLE && !enabled && active.has(AGENT_TEAM_WEB_BUNDLE)) {
-      return [
-        { packageName: AGENT_TEAM_WEB_BUNDLE, enabled: false },
-        { packageName: AGENT_TEAM_BUNDLE, enabled: false },
-      ]
-    }
-    return [{ packageName, enabled }]
   }
 
   private async confirm(): Promise<void> {
@@ -1006,20 +976,19 @@ export class PluginManagerController {
    * re-read the Host afterwards whatever happened.
    */
   private async run(
-    keys: string | readonly string[],
+    key: string,
     subject: { action: FailedAction; packageName?: string },
     action: () => Promise<void>,
   ): Promise<void> {
-    const busyKeys = typeof keys === 'string' ? [keys] : [...new Set(keys)]
-    if (this.disposed || busyKeys.some(key => this.getSnapshot().busy.includes(key))) return
-    this.patch({ busy: [...this.getSnapshot().busy, ...busyKeys], notice: null })
+    if (this.disposed || this.getSnapshot().busy.includes(key)) return
+    this.patch({ busy: [...this.getSnapshot().busy, key], notice: null })
     try {
       await action()
     } catch (error) {
       // `patch` drops the notice after disposal.
       this.patch({ notice: failedNotice(error, subject, ++this.noticeSeq) })
     } finally {
-      this.patch({ busy: this.getSnapshot().busy.filter(entry => !busyKeys.includes(entry)) })
+      this.patch({ busy: this.getSnapshot().busy.filter(entry => entry !== key) })
     }
     await this.load()
   }
