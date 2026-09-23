@@ -7,7 +7,7 @@ import { defineConfig } from 'tsdown'
  */
 export default defineConfig([
   {
-    entry: ['lib/types/index.js'],
+    entry: ['src/index.ts'],
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',
@@ -19,7 +19,7 @@ export default defineConfig([
   {
     // The artifact is lib/worker.cjs (the ./worker export the workspace
     // constraint keys on), bundled from the descriptive source entry.
-    entry: { worker: 'lib/types/win32-dialog-worker.js' },
+    entry: { worker: 'src/win32-dialog-worker.ts' },
     outDir: 'lib',
     format: ['cjs'],
     platform: 'node',

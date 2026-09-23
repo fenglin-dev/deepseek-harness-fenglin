@@ -6,7 +6,7 @@ import { defineConfig } from 'tsdown'
  * pin the bundled extensions explicitly so the package retains both formats.
  */
 export default defineConfig({
-  entry: ['lib/types/index.js'],
+  entry: ['src/index.ts'],
   outDir: 'lib',
   format: ['esm', 'cjs'],
   platform: 'node',

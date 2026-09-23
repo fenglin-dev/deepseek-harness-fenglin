@@ -5,7 +5,7 @@ import { defineConfig } from 'tsdown'
  * under `py/` (whitelisted in package.json `files`) — no build step needed.
  */
 export default defineConfig({
-  entry: ['lib/types/index.js'],
+  entry: ['src/index.ts'],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

@@ -2,7 +2,7 @@ import { defineConfig } from 'tsdown'
 
 /** Build the static catalog library. */
 export default defineConfig({
-  entry: ['lib/types/index.js'],
+  entry: ['src/index.ts'],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

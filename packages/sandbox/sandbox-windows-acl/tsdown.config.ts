@@ -5,7 +5,7 @@ import { defineConfig } from 'tsdown'
 // koffi stays an external native require — the same shape as
 // directory-picker-native's worker entry.
 export default defineConfig({
-  entry: { index: 'lib/types/index.js', runner: 'lib/types/runner.js' },
+  entry: { index: 'src/index.ts', runner: 'src/runner.ts' },
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

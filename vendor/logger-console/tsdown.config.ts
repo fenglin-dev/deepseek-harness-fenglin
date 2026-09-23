@@ -19,6 +19,6 @@ const shared = {
 } as const
 
 export default defineConfig([
-  { ...shared, entry: ['lib/types/index.js'] },
-  { ...shared, entry: ['lib/types/browser.js'] },
+  { ...shared, entry: ['src/index.ts'] },
+  { ...shared, entry: ['src/browser.ts'] },
 ])

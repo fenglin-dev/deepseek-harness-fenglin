@@ -3,7 +3,7 @@ import { defineConfig } from 'tsdown'
 /** Build the backend and its path-loaded verifier as separate bundles. */
 export default defineConfig(({ env }) => env?.DSH_BUILD_FACE === 'client' ? [] : [
   {
-    entry: ['lib/types/index.js'],
+    entry: ['src/index.ts'],
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',
@@ -13,7 +13,7 @@ export default defineConfig(({ env }) => env?.DSH_BUILD_FACE === 'client' ? [] :
     clean: false,
   },
   {
-    entry: ['lib/types/worker.js'],
+    entry: ['src/worker.ts'],
     // Fresh verifiers need no host singleton identity. Inline their JavaScript
     // closure to avoid resolving and compiling workspace packages on every open.
     deps: { alwaysBundle: [/^@deepseek-ai\/(?!node-addon-system)/] },

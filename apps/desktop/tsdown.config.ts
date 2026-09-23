@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises'
 
 export default defineConfig([
   {
-    entry: ['lib/types/main.js'],
+    entry: ['src/main.ts'],
     onSuccess: async () => {
       await build({
         configFile: false,
@@ -48,7 +48,7 @@ export default defineConfig([
   },
   ...(['preload-app', 'preload-welcome', 'preload-platform-account', 'preload-mandatory', 'preload-update-dialog'] as const).map(name => ({
     // Sandboxed Electron preloads run as CommonJS even though the application package is ESM.
-    entry: { [name]: `lib/types/${name}.js` },
+    entry: { [name]: `src/${name}.js` },
     outDir: 'lib',
     format: 'cjs' as const,
     codeSplitting: false,

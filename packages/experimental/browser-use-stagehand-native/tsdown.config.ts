@@ -2,7 +2,7 @@ import { defineConfig } from 'tsdown'
 
 /** Separate bundles keep the attachment Worker loadable without source files. */
 export default defineConfig(['index', 'worker'].map(entry => ({
-  entry: [`lib/types/${entry}.js`],
+  entry: [`src/${entry}.ts`],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

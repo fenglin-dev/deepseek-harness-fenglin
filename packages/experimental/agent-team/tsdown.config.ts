@@ -3,7 +3,7 @@ import { defineConfig } from 'tsdown'
 /** Build the runtime and invariant companion as independent package exports. */
 export default defineConfig([
   {
-    entry: ['lib/types/index.js'],
+    entry: ['src/index.ts'],
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',
@@ -13,7 +13,7 @@ export default defineConfig([
     clean: false,
   },
   {
-    entry: ['lib/types/invariant.js'],
+    entry: ['src/invariant.ts'],
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

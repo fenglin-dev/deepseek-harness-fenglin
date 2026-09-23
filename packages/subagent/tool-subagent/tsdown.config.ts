@@ -13,7 +13,7 @@ const entry = (path: string) => ({
 
 /** Build self-contained Loader entries so the package needs no private chunks. */
 export default defineConfig([
-  entry('lib/types/index.js'),
-  entry('lib/types/model-selection-settings.js'),
-  entry('lib/types/invariant.js'),
+  entry('src/index.ts'),
+  entry('src/model-selection-settings.ts'),
+  entry('src/invariant.ts'),
 ])

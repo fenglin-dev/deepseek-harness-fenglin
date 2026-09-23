@@ -6,7 +6,7 @@ import { defineConfig } from 'tsdown'
  */
 export default defineConfig([
   {
-    entry: ['lib/types/index.js'],
+    entry: ['src/index.ts'],
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',
@@ -19,7 +19,7 @@ export default defineConfig([
     },
   },
   {
-    entry: { 'worker/profile-resolution-bootstrap': 'lib/types/profile-resolution/worker-bootstrap.js' },
+    entry: { 'worker/profile-resolution-bootstrap': 'src/profile-resolution/worker-bootstrap.ts' },
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',

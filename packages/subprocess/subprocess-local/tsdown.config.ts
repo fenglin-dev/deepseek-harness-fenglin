@@ -2,10 +2,10 @@ import { defineConfig } from 'tsdown'
 
 export default defineConfig({
   entry: {
-    index: 'lib/types/index.js',
-    runner: 'lib/types/bin.js',
-    'process-control': 'lib/types/process-control.js',
-    output: 'lib/types/output.js',
+    index: 'src/index.ts',
+    runner: 'src/bin.ts',
+    'process-control': 'src/process-control.ts',
+    output: 'src/output.ts',
   },
   outDir: 'lib',
   format: ['esm'],
