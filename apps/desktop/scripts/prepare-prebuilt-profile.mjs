@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, writeFil
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { existsSync } from 'node:fs'
 import { basename, delimiter, dirname, join } from 'node:path'
-import { parse as parseYaml } from 'yaml'
+import { parse as parseYaml, parseDocument } from 'yaml'
 import { parseBundledPluginManifest } from '../lib/bundled-plugin-installer.js'
 import { seedBundledPlugin } from '../lib/bundled-plugin-seed.js'
 import { deployPrebuiltProfile, readPrebuiltProfile, sealPrebuiltProfile } from '../lib/prebuilt-profile.js'
