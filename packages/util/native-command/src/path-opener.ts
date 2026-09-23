@@ -11,7 +11,6 @@
 
 import { release as osRelease } from 'node:os'
 import { dirname, extname, win32 } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { runNativeCommand, type NativeCommandRunner } from './runner.ts'
 
 /** Testable command boundary; native implementations never invoke a shell. */
@@ -117,6 +116,52 @@ async function openWindowsPath(
 function windowsPowerShellPath(env: NodeJS.ProcessEnv): string {
   const systemRoot = env.SystemRoot ?? env.WINDIR ?? 'C:\\Windows'
   return win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+}
+
+/** Select an existing Windows Shell item and propagate its HRESULT as a process failure. */
+async function revealWindowsPath(
+  path: string, signal: AbortSignal, run: PathOpenerRunner, powershell: string,
+): Promise<void> {
+  const script = `$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class DshNativeFolderReveal {
+  [DllImport("ole32.dll", ExactSpelling = true)]
+  private static extern int CoInitializeEx(IntPtr reserved, uint model);
+  [DllImport("ole32.dll", ExactSpelling = true)]
+  private static extern void CoUninitialize();
+  [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, PreserveSig = true)]
+  private static extern int SHParseDisplayName(string name, IntPtr context, out IntPtr item, uint attributes, IntPtr result);
+  [DllImport("shell32.dll", ExactSpelling = true, PreserveSig = true)]
+  private static extern int SHOpenFolderAndSelectItems(IntPtr folder, uint count, IntPtr items, uint flags);
+  public static void Reveal(string path) {
+    int initialized = CoInitializeEx(IntPtr.Zero, 2);
+    if (initialized < 0) Marshal.ThrowExceptionForHR(initialized);
+    IntPtr item = IntPtr.Zero;
+    try {
+      int parsed = SHParseDisplayName(path, IntPtr.Zero, out item, 0, IntPtr.Zero);
+      if (parsed < 0) Marshal.ThrowExceptionForHR(parsed);
+      if (item == IntPtr.Zero) throw new System.IO.FileNotFoundException("Windows Shell could not resolve the item", path);
+      int selected = SHOpenFolderAndSelectItems(item, 0, IntPtr.Zero, 0);
+      if (selected != 0) throw new COMException("Windows Shell did not select the item", selected);
+    } finally {
+      if (item != IntPtr.Zero) Marshal.FreeCoTaskMem(item);
+      CoUninitialize();
+    }
+  }
+}
+'@
+[DshNativeFolderReveal]::Reveal(${powershellLiteral(path)})`
+  try {
+    await run(powershell, [
+      '-NoProfile', '-NonInteractive', '-Sta', '-EncodedCommand',
+      Buffer.from(script, 'utf16le').toString('base64'),
+    ], signal)
+  } catch (error) {
+    signal.throwIfAborted()
+    throw error
+  }
 }
 
 /** Translate a WSL path before handing it to the Windows desktop. */
@@ -245,7 +290,7 @@ export function nativeFileManager(internals: PathOpenerInternals = {}): NativeFi
  * @param path - absolute file path already authorized by the caller.
  * @param signal - caller lifetime; abort terminates the native command.
  * @param internals - platform, environment, and command runner for adapter tests.
- * @returns after command completion; Explorer exit 1 is accepted as a delegated handoff, not proof of selection.
+ * @returns after the native file manager accepts the selection; Windows Shell failures reject.
  */
 export async function revealNativePath(
   path: string, signal: AbortSignal, internals: PathOpenerInternals = {},
@@ -266,15 +311,8 @@ export async function revealNativePath(
       windowsPath = translated.stdout.replace(/[\r\n]+$/, '')
       if (windowsPath === '') throw new Error('wslpath returned no Windows path')
     }
-    // Explorer parses commas itself; a file URI preserves commas and whitespace in the path.
-    const target = pathToFileURL(windowsPath, { windows: true }).href.replaceAll(',', '%2C')
-    try {
-      await run('explorer.exe', ['/select,', target], signal)
-    } catch (error) {
-      signal.throwIfAborted()
-      // Explorer can exit 1 after delegating to the existing desktop process.
-      if (!(error instanceof Error) || !('code' in error) || error.code !== 1) throw error
-    }
+    await revealWindowsPath(windowsPath, signal, run,
+      platform === 'win32' ? windowsPowerShellPath(internals.env ?? process.env) : 'powershell.exe')
     return
   }
   if (manager === 'directory') {
