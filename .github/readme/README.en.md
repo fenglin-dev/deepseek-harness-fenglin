@@ -37,7 +37,7 @@ Installers include Node.js, pnpm, and the Harness runtime, so users do not need 
 - [NAS runtime (preview)](#nas-runtime-preview): a community-provided Linux runtime that lets multiple desktop clients use one Profile, conversation store, and Workspace set.
 - [Plugin discovery, installation, and updates](#plugin-discovery-installation-and-updates): live market data, categories, local status, direct installation, and online updates.
 - [Official 0.1.6 experiments](#official-016-experiments): install Browser Use, Computer Use, and Auto review on demand from Settings.
-- [Work runtimes on demand](#work-runtimes-on-demand): choose managed or local Python, then enable the Office toolkit or experimental Python PTC separately.
+- [Bundled work runtimes](#bundled-work-runtimes): use bundled or local Python, then enable the Office toolkit or experimental Python PTC separately.
 - [Supercharged diagnostics](#supercharged-diagnostics): inspect pnpm, Cordis, and Loader state before startup, then exercise, quarantine, or recover plugins.
 - [Customizable Settings navigation](#customizable-settings-navigation): scroll, reorder, and preserve the user's Settings layout.
 - [Desktop enhancements](#desktop-enhancements-to-the-upstream-web-experience): native installers, tray operation, quick restart, notifications, logs, updates, and system integration.
@@ -284,9 +284,11 @@ When the current session is waiting for a choice, confirmation, or answer, or wh
 
 ## On-demand work runtimes and official 0.1.6 experiments
 
-### Work runtimes on demand
+### Bundled work runtimes
 
-Python and the official LibreOffice engine are not embedded in the desktop installer. **Settings → Tools & capabilities → Work runtimes** separates Python selection, the Office toolkit, and Python PTC. Users can download a release-matched managed CPython from [Open DSH Runtime Assets](https://github.com/hecoococ/open-dsh-runtime-assets) or select an existing CPython 3.10+ installation. Office downloads and verifies the official platform-specific `@deepseek-ai/libreoffice-kit-*` package, then prepares its Python dependencies; selecting Python alone exposes no model tool. Office and experimental PTC are activated independently, and PTC remains available only on macOS and Linux with a separate non-sandbox execution warning.
+Each desktop installer contains managed CPython 3.12 for its platform together with NumPy, pandas, Pillow, lxml, python-docx, python-pptx, openpyxl, XlsxWriter, and their locked transitive dependencies. **Settings → Tools & capabilities → Work runtimes** still separates Python selection, the Office toolkit, and Python PTC, and advanced users may select an existing CPython 3.10+ installation. Office downloads and verifies only the official platform-specific `@deepseek-ai/libreoffice-kit-*` engine from npm; it does not discover or invoke a system LibreOffice installation. The managed Python already contains the Office Python dependencies, while changes to existing packages in a custom interpreter require confirmation. Selecting Python alone exposes no model tool. Office and experimental PTC are activated independently, and PTC remains available only on macOS and Linux with a separate non-sandbox execution warning.
+
+On first activation, the app verifies and extracts the bundled Python archive into its application cache. Office and PTC remain independently enabled per `DSH_HOME`. Office engine downloads use the app's npm network settings and support pause, resume, cancellation, and bounded logs. The user then chooses **Quick restart to enable**. Both cards are disabled in NAS mode because this release does not extend the NAS remote-install protocol. Disabling a capability removes only its managed Profile configuration and never removes Python from the installed application.
 
 Verified payloads are cached once per desktop installation while Office and PTC are enabled independently for each `DSH_HOME`. Downloads use the application's network and proxy settings and support progress, pause, resume, stop, and bounded terminal output. Activation waits for **Quick Restart**; both cards remain unavailable in NAS mode because this release does not implement remote runtime installation.
 

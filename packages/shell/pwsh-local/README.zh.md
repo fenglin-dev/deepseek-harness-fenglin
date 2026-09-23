@@ -106,7 +106,7 @@ if (result.timedOut) console.log('timed out after', result.timeoutMs)
 
 - `graceMs` 预算必须为正有限值且不大于 `MAX_TIMER_DELAY_MS`，这样 Node 就能用一个定时器表示它；无效值在写入处被拒绝。
 - 环境分层固定：先是终端覆盖值，然后是调用方的 `env`，最后才是受信任的 `dshEnv` 快照；subprocess 服务独立清除环境中的凭据与继承的 `DSH_*` 名称。
-- 可执行文件解析是 `(configured, env, platform)` 的纯函数，仅当存储的 `pwshPath` 与当前可执行文件所依据的值不同时才重新探测文件系统。
+- 可执行文件解析是 `(configured, env, platform)` 的纯函数。自动选择模式会在每次新命令前重新探测可用位置，因此替换安装的 PowerShell 可供下一次调用使用；显式 `pwshPath` 始终保持原值。提供方故障未必能证明目标进程是否已启动，因此不会自动重放失败命令。
 - 后台进程属于 subprocess 服务：它能在仅重载执行器后存活，并在服务 dispose 时被终止并 join。
 
 </details>
