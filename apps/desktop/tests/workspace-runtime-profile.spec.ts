@@ -40,11 +40,72 @@ describe('workspace runtime Profile composition', () => {
     expect(text).toContain('@deepseek-ai/dsh-experimental-ptc-runtime-python')
   })
 
-  it('refuses malformed owned markers without rewriting the file', async () => {
+  it('repairs a lone Office marker without removing unrelated YAML', async () => {
     const { home, patch } = await fixture()
     const original = '# BEGIN community-desktop:workspace-runtime:office\n[]\n'
     await writeFile(patch, original)
+    expect(configureWorkspaceRuntimeCapability(home, 'office', false, paths)).toBe(true)
+    await expect(readFile(patch, 'utf8')).resolves.toBe('[]\n')
+  })
+
+  it('refuses ambiguous managed entries without rewriting the file', async () => {
+    const { home, patch } = await fixture()
+    const original = [
+      '# BEGIN community-desktop:workspace-runtime:office',
+      '- insert:',
+      '    - id: community-desktop.workspace-runtime.office',
+      '      name: first',
+      '- insert:',
+      '    - id: community-desktop.workspace-runtime.office',
+      '      name: second',
+      '',
+    ].join('\n')
+    await writeFile(patch, original)
     expect(() => configureWorkspaceRuntimeCapability(home, 'office', false, paths)).toThrow(/malformed managed office/u)
     await expect(readFile(patch, 'utf8')).resolves.toBe(original)
+  })
+
+  it('repairs an orphaned Office marker without changing other Profile entries', async () => {
+    const { home, patch } = await fixture()
+    const original = [
+      '# user comment',
+      '- insert:',
+      '    - id: user.plugin',
+      '      name: example',
+      '# BEGIN community-desktop:workspace-runtime:office',
+      '- insert:',
+      '    - id: community-desktop.workspace-runtime.office',
+      "      name: '@deepseek-ai/dsh-host-workspace-runtime'",
+      '      config: { office: true }',
+      '',
+    ].join('\n')
+    await writeFile(patch, original)
+    expect(configureWorkspaceRuntimeCapability(home, 'office', false, paths)).toBe(true)
+    const repaired = await readFile(patch, 'utf8')
+    expect(repaired).toContain('# user comment')
+    expect(repaired).toContain('user.plugin')
+    expect(repaired).not.toContain('community-desktop.workspace-runtime.office')
+    expect(repaired).not.toContain('workspace-runtime:office')
+  })
+
+  it('replaces an Office entry with only its ending marker and preserves following entries', async () => {
+    const { home, patch } = await fixture()
+    await writeFile(patch, [
+      '- insert:',
+      '    - id: community-desktop.workspace-runtime.office',
+      "      name: '@deepseek-ai/dsh-host-workspace-runtime'",
+      '      config: { office: true }',
+      '# END community-desktop:workspace-runtime:office',
+      '- insert:',
+      '    - id: user.after',
+      '      name: example',
+      '',
+    ].join('\n'))
+    expect(configureWorkspaceRuntimeCapability(home, 'office', true, paths)).toBe(true)
+    const repaired = await readFile(patch, 'utf8')
+    expect(repaired.match(/^    - id: community-desktop\.workspace-runtime\.office$/gmu)).toHaveLength(1)
+    expect(repaired).toContain('user.after')
+    expect(repaired).toContain('# BEGIN community-desktop:workspace-runtime:office')
+    expect(repaired).toContain('# END community-desktop:workspace-runtime:office')
   })
 })

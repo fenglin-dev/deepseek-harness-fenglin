@@ -79,7 +79,12 @@ function httpsUrl(source: Record<string, unknown>, key: string): string {
   return parsed.href
 }
 
-function artifact(value: unknown, target: WorkspaceRuntimeTarget, schema: WorkspaceRuntimeManifest['schema']): WorkspaceRuntimeArtifact {
+/** Parse one target artifact from trusted packaged metadata or a signed release catalog. */
+export function parseWorkspaceRuntimeArtifact(
+  value: unknown,
+  target: WorkspaceRuntimeTarget,
+  schema: WorkspaceRuntimeManifest['schema'] = 'dsh/desktop-workspace-runtimes/v2',
+): WorkspaceRuntimeArtifact {
   const source = record(value, `workspace-runtime ${target} artifact`)
   const expectedFileName = `DeepSeek-Harness-workspace-runtime-${target}.tar.gz`
   if (source.target !== target || !Number.isSafeInteger(source.size) || (source.size as number) <= 0
@@ -169,7 +174,7 @@ export function parseWorkspaceRuntimeManifest(value: unknown): WorkspaceRuntimeM
     issuedAt,
     expiresAt,
     artifacts: Object.fromEntries(
-      WORKSPACE_RUNTIME_TARGETS.map(target => [target, artifact(artifacts[target], target, schema)]),
+      WORKSPACE_RUNTIME_TARGETS.map(target => [target, parseWorkspaceRuntimeArtifact(artifacts[target], target, schema)]),
     ) as unknown as Readonly<Record<WorkspaceRuntimeTarget, WorkspaceRuntimeArtifact>>,
   }
 }

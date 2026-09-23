@@ -27,6 +27,26 @@ function runner(packages: Record<string, string>, writable = true): PythonComman
 }
 
 describe('PythonEnvironment', () => {
+  it('runs Windows pip planning and installation with explicit UTF-8 mode', async () => {
+    const packages: Record<string, string> = {}
+    const root = await mkdtemp(join(tmpdir(), 'dsh-python-utf8-'))
+    const executable = join(root, 'python.exe')
+    await writeFile(executable, '')
+    const base = runner(packages)
+    const environment = new PythonEnvironment(async (executable, args, options) => {
+      if (!(args.indexOf('-X') >= 0 && args[args.indexOf('-X') + 1] === 'utf8')) {
+        throw new Error("UnicodeEncodeError: 'gbk' codec can't encode character")
+      }
+      return base(executable, args, options)
+    })
+    const probe = { requestedPath: executable, executable, implementation: 'CPython' as const,
+      version: '3.12.8', architecture: 'x64', pipVersion: 'pip 25.2', sitePackages: '/env/site-packages',
+      writable: true, packages }
+    await expect(environment.install(probe, { 'python-docx': '1.2.0' }, false)).resolves.toMatchObject({
+      packages: { 'python-docx': '1.2.0' },
+    })
+  })
+
   it('classifies add-only and replacement plans without changing the environment', () => {
     const environment = new PythonEnvironment(runner({ pandas: '2.2.0' }))
     const probe = { requestedPath: '/python', executable: '/python', implementation: 'CPython' as const,

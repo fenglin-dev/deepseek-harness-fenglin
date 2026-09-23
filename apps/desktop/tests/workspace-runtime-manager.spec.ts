@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { c } from 'tar'
@@ -19,6 +19,7 @@ async function fixture(options: {
   corruptOfficeIntegrity?: boolean
   slowDownload?: boolean
   pythonEnvironment?: PythonEnvironmentPort
+  bundledPython?: boolean
 } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workspace-runtime-'))
   roots.push(root)
@@ -95,10 +96,19 @@ async function fixture(options: {
       })
       return Promise.resolve(new Response(stream, { status: 200, headers }))
     },
+    ...(options.bundledPython === true
+      ? { bundledArtifactsRoot: join(root, 'bundled'), requireBundledPython: true }
+      : {}),
     ...(options.pythonEnvironment === undefined ? {} : { pythonEnvironment: options.pythonEnvironment }),
   })
+  if (options.bundledPython === true) {
+    await mkdir(join(root, 'bundled'), { recursive: true })
+    await copyFile(archive, join(root, 'bundled', artifact.fileName))
+  }
   return {
     manager, root, digest, officeDigest, stateFile, fetchCount: () => fetchCount,
+    setPythonDigest: (value: string) => { artifact.payloadDigest = value },
+    setOfficeDigest: (value: string) => { artifact.office.payloadDigest = value },
     setHome: (name: string) => { home = join(root, name) },
   }
 }
@@ -113,6 +123,34 @@ async function settle(manager: OptionalRuntimeManager, jobId: string) {
 }
 
 describe('OptionalRuntimeManager', () => {
+  it('prepares bundled Python without fetching it from a release', async () => {
+    const { manager, fetchCount } = await fixture({ bundledPython: true })
+    const job = await manager.start('ptc')
+    await expect(settle(manager, job.jobId)).resolves.toMatchObject({ phase: 'succeeded', stage: 'ready' })
+    expect(fetchCount()).toBe(0)
+    await manager.activate('ptc')
+    await manager.commitPending()
+    expect((await manager.get()).capabilities.ptc.phase).toBe('enabled')
+  })
+
+  it('keeps unchanged bundled runtimes enabled and flags only changed payloads', async () => {
+    const { manager, setPythonDigest, setOfficeDigest } = await fixture({ bundledPython: true })
+    const ptcJob = await manager.start('ptc')
+    await settle(manager, ptcJob.jobId)
+    await manager.activate('ptc')
+    const officeJob = await manager.start('office')
+    await settle(manager, officeJob.jobId)
+    await manager.activate('office')
+    await manager.commitPending()
+    expect((await manager.get()).capabilities.ptc.phase).toBe('enabled')
+    expect((await manager.get()).capabilities.office.phase).toBe('enabled')
+    setPythonDigest('d'.repeat(64))
+    expect((await manager.get()).capabilities.ptc.phase).toBe('needs-update')
+    setPythonDigest('b'.repeat(64))
+    setOfficeDigest('e'.repeat(64))
+    expect((await manager.get()).capabilities.office.phase).toBe('needs-update')
+  })
+
   it('downloads one verified shared payload and keeps Office/PTC references independent', async () => {
     const { manager, root, digest, setHome } = await fixture()
     const job = await manager.start('office')

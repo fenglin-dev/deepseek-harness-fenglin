@@ -152,8 +152,11 @@ export class PwshLocalExecutor extends ShellExecutor {
     return this.source()
   }
 
-  /** The pwsh executable every command runs through. */
+  /** The executable selected for the next command; automatic selection rechecks installed locations. */
   get pwshPath(): string {
+    if (this.declaredPwshPath === undefined || this.declaredPwshPath.length === 0) {
+      this.resolvedPwshPath = resolvePwshPath()
+    }
     return this.resolvedPwshPath
   }
 
