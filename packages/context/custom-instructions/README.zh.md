@@ -13,6 +13,8 @@ kind: "package-reference"
 
 只有第一方设置页与 Workspace 控件可以编辑该命名空间；Agent 和插件不会获得提示词管理 API。
 
+**运行时不变量：**不发布配套组件。Settings 命名空间保存各版本，请求上下文适配器只读取当前启用的版本。
+
 ## 目录
 
 - [使用本包](#use-this-package)

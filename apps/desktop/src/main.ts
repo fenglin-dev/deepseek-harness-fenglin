@@ -54,6 +54,7 @@ import { readRecoveryFailureSummary, type RecoveryFailureSummary } from './recov
 import { parseClientBootFailure } from './client-boot-failure.ts'
 import { clearDeadModuleFallbackLock, inspectModuleFallbackLock } from './module-fallback-lock.ts'
 import { DesktopProfileMutation } from './desktop-profile-mutation/index.ts'
+import { ensureWorkspacePtcPlugin, hasManagedWorkspacePtcBlock, isWorkspacePtcPluginInstalled, PTC_PLUGIN_NAME } from './workspace-ptc-plugin.ts'
 import { DESKTOP_IPC } from './desktop-ipc-protocol.ts'
 import { terminateWindowsProcessTree } from './windows-process-tree.ts'
 import { revealHarnessLog, type OpenLogResult } from './log-reveal.ts'
@@ -3262,7 +3263,19 @@ async function startApplication(): Promise<void> {
   harnessEnvironment.DSH_PLUGIN_SNAPSHOT_BATCH = '1'
   const runtimePending = await workspaceRuntimeManager.pending(dshHome)
   const hasRuntimePending = Object.values(runtimePending).some(value => value !== undefined)
-  const applyRuntimePending = hasRuntimePending && startupProfileMutationAllowed && !preserveCopiedPlugins
+  const ptcWanted = runtimePending.ptc === 'enable'
+    || (runtimePending.ptc !== 'remove' && await hasManagedWorkspacePtcBlock(dshHome))
+  let ptcVersion: string | undefined
+  let ptcNeedsInstall = false
+  if (ptcWanted) {
+    const harnessBin = resolveHarnessInvocation(harnessEnvironment, [], launchOptions).args[1]
+    if (harnessBin === undefined) throw new Error('desktop: Harness entry is unavailable for optional PTC plugin')
+    const manifest = JSON.parse(await readFile(join(dirname(dirname(harnessBin)), 'package.json'), 'utf8')) as { version?: unknown }
+    if (typeof manifest.version !== 'string') throw new Error('desktop: Harness version is unavailable for optional PTC plugin')
+    ptcVersion = manifest.version
+    ptcNeedsInstall = !await isWorkspacePtcPluginInstalled(dshHome, ptcVersion)
+  }
+  const applyRuntimePending = (hasRuntimePending || ptcNeedsInstall) && startupProfileMutationAllowed && !preserveCopiedPlugins
   let presetUpgradeNeeded = false
   let presetVersionMarkerUnavailable = false
   if (!firstStartPending && (startupProfileMutationAllowed || preserveCopiedPlugins)) {
@@ -3367,6 +3380,18 @@ async function startApplication(): Promise<void> {
       : join(DEFAULT_SOURCE_ROOT, 'node_modules')
     const pnpm = launchOptions.packageManagerBin ?? resolveDevelopmentLaunchOptions(DEFAULT_SOURCE_ROOT).packageManagerBin
     if (pnpm === undefined) throw new Error('desktop: pnpm entry is unavailable for workspace-runtime activation')
+    if (ptcNeedsInstall && ptcVersion !== undefined) {
+      await desktopMutations.applyAtStartup({
+        operation: 'workspace-runtime-ptc-plugin-install',
+        run: async (context) => {
+          await ensureWorkspacePtcPlugin(context.home, ptcVersion, async (packageSpec) => {
+            await context.write({ kind: 'add', packageSpecs: [packageSpec], exact: true,
+              operation: 'workspace-runtime-ptc-plugin-install', timeoutMs: BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS })
+          })
+          await appendDesktopStartupLog(`Optional PTC plugin ${PTC_PLUGIN_NAME}@${ptcVersion} installed after user opt-in.`)
+        },
+      })
+    }
     for (const capability of WORKSPACE_RUNTIME_CAPABILITIES) {
       const action = runtimePending[capability]
       if (action === undefined) continue
@@ -3400,7 +3425,7 @@ async function startApplication(): Promise<void> {
         )),
       })
     }
-    runtimePendingApplied = true
+    runtimePendingApplied = hasRuntimePending
   }
   const officeNodeModules = await workspaceRuntimeManager.officeNodeModules(dshHome)
   if (officeNodeModules === undefined) delete harnessEnvironment.NODE_PATH

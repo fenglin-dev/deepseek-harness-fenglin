@@ -70,6 +70,7 @@ describe('ExternalToolsSection download progress', () => {
     expect(screen.getByRole('heading', { name: en['external.runtime.title'] })).toBeTruthy()
     expect(screen.getByRole('heading', { name: en['external.runtime.office.title'] })).toBeTruthy()
     expect(screen.getByRole('heading', { name: en['external.runtime.ptc.title'] })).toBeTruthy()
+    expect(screen.getByText(/Quick restart downloads the experimental adapter from npm/u)).toBeTruthy()
     expect(capabilityGrid.compareDocumentPosition(runtimeGrid) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
     expect(runtimeGrid.compareDocumentPosition(externalGrid) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
     expect(capabilityGrid.compareDocumentPosition(externalGrid) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)

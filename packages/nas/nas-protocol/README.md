@@ -11,6 +11,8 @@ English | [中文](README.zh.md)
 
 `dsh-nas-protocol` is the single source for NAS Wire Protocol v1: fixed HTTP methods and routes, health and pairing documents, Paired Device management messages, construction, and runtime validation. The NAS Runtime host and Desktop network code are adapters at this seam. The package has no transport, TLS, credential, Electron, or React behavior.
 
+**Runtime invariant:** No companion is published. Both adapters validate the fixed v1 wire documents through this package; transport security remains adapter-owned.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

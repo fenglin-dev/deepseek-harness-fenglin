@@ -13,6 +13,8 @@ English | [中文](README.zh.md)
 
 Only first-party Settings and Workspace controls can edit this namespace. Agents and plugins receive no prompt-management API.
 
+**Runtime invariant:** No companion is published. The Settings namespace owns revisions and the request-context adapter reads only the active revisions.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

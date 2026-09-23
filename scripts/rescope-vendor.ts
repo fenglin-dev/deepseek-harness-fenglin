@@ -76,6 +76,11 @@ interface GenericSkip {
 }
 
 const GENERIC_SKIPS: readonly GenericSkip[] = [
+  // Client locale namespaces are runtime ids, not package specifiers.
+  ...['de', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'ru'].map(locale => ({
+    file: `packages/client/ui-desktop-shell/src/client/community-translations/${locale}.ts`,
+    upstream: ['cordis'],
+  })),
   // Runtime staging spells the scoped package as path segments; the basename
   // is a directory component, not a bare package specifier.
   { file: 'apps/desktop/src/packaged-runtime.ts', upstream: ['cosmokit'] },

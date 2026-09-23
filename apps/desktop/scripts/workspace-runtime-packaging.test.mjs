@@ -23,8 +23,12 @@ test('desktop installers embed one native Python payload while the Harness closu
   for (const name of [
     '@deepseek-ai/dsh-host-workspace-runtime',
     '@deepseek-ai/dsh-skill-office',
-    '@deepseek-ai/dsh-experimental-ptc-runtime-python',
   ]) assert.equal(typeof cli.dependencies[name], 'string', `${name} must remain in the production closure`)
+  assert.equal(cli.dependencies['@deepseek-ai/dsh-experimental-ptc-runtime-python'], undefined,
+    'PTC must not enter the default CLI production closure')
+  const desktopMain = await read('apps/desktop/src/main.ts')
+  assert.match(desktopMain, /ensureWorkspacePtcPlugin\(context\.home, ptcVersion/u)
+  assert.match(desktopMain, /kind: 'add', packageSpecs: \[packageSpec\]/u)
 
   assert.doesNotMatch(await read('apps/desktop-host/src/index.ts'), /primary-runtime|desktopOffice/u)
 
