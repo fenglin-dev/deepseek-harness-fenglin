@@ -133,7 +133,8 @@ function pwshDescription(backgroundEnabled: boolean, escalationModes: readonly S
     + 'marker rather than assuming the denial. When a command is denied and a wider mode would let it '
     + 'succeed, escalate immediately in the same turn — the one sanctioned exception to a denial: retry '
     + 'the exact same command once with `sandbox_permissions` (the narrowest wider mode that suffices) '
-    + 'plus a one-sentence `justification`. Do not detour through chat to ask permission first — the '
+    + 'plus a plain-language `justification` that states what the command does, what files/data/services '
+    + 'it may affect, the main risk, and whether its changes are reversible. Do not detour through chat to ask permission first — the '
     + 'approval prompt raised by that retry is how the user consents. If the session states approval '
     + 'prompts are disabled, there is no exception: a denial is final — do not set `sandbox_permissions`. '
     + 'Never escalate speculatively: ground the request in a real denial — normally the one this command '
@@ -257,7 +258,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         type: 'string',
         required: true,
         description: 'Clear, concise description of what this command does in active voice, '
-          + '5-10 words (shown in the UI). Examples: "ls" → "List files in current directory"; '
+          + '5-10 words (shown in the UI). Use the language of the user\'s latest request unless the user explicitly asks for another language. Examples: "ls" → "List files in current directory"; '
           + '"git status" → "Show working tree status"; "Get-Process" → "List running processes".',
       },
       timeoutMs: { type: 'number', description: 'Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry.' },
@@ -273,7 +274,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         },
         justification: {
           type: 'string' as const,
-          description: 'Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access.',
+          description: 'Required with sandbox_permissions and shown to the user before approval: use the language of the user\'s latest request unless the user explicitly asks for another language, and explain in plain language what this exact command will do, what files, data, or services it may affect, its main risk, and whether its changes are reversible.',
         },
       } : {},
     },

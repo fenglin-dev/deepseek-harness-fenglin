@@ -185,6 +185,12 @@
   --tool-accent: var(--dsw-alias-state-success-primary);
 }
 
+.toolMark[data-tool='workspace-runtime'] {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
 .status[data-state='planned'] {
   opacity: 0.78;
 }
@@ -461,6 +467,15 @@
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
   line-height: 19px;
+}
+
+.runtimeNotice {
+  margin-top: 8px !important;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  font-size: 12px !important;
+  line-height: 18px !important;
 }
 
 .capabilityHint {

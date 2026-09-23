@@ -33,7 +33,7 @@ import css from './PluginManagerPage.module.css'
 export type PluginManagerPageProps =
   PropsRuntime<'main'>
   & PropsLocale<'pluginManager'>
-  & PropsRenderSlots<'plugins.item' | 'plugins.bundle.config' | 'plugins.row.config'>
+  & PropsRenderSlots<'plugins.item' | 'plugins.bundle.action' | 'plugins.bundle.config' | 'plugins.row.config'>
   & InjectFace<PluginManagerFace>
 
 /** The page's slot renderer, narrowed to the configuration slots. */
@@ -292,13 +292,14 @@ function DetailTop({ crumbLabel, crumbText, onBack, icon, actions }: {
 }
 
 /** One package as a card that opens its page: its name, its one-liner, its tags, and its bundle switch. */
-function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
+function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled, renderSlot }: {
   readonly pkg: PackageView
   readonly t: Translate
   readonly busy: boolean
   readonly highlighted: boolean
   readonly onOpen: () => void
   readonly onSetEnabled: (enabled: boolean) => void
+  readonly renderSlot: RenderConfig
 }): ReactNode {
   const { title, description, beta } = packageText(pkg, t)
   const status = packageStatus(pkg)
@@ -320,7 +321,12 @@ function PackageCard({ pkg, t, busy, highlighted, onOpen, onSetEnabled }: {
           </>
         )}
         description={description}
-        end={<EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />}
+        end={(
+          <>
+            {renderSlot('plugins.bundle.action', { enabled: pkg.enabled }, { entryKey: pkg.name })}
+            <EnableSwitch pkg={pkg} title={title} t={t} busy={busy} onSetEnabled={onSetEnabled} />
+          </>
+        )}
       />
     </li>
   )
@@ -432,6 +438,7 @@ function PackageDetail({
         onBack={onBack}
         actions={(
           <div className={css.detailActions}>
+            {renderSlot('plugins.bundle.action', { enabled: pkg.enabled }, { entryKey: pkg.name })}
             {pkg.installed
               ? (
                 <Button
@@ -885,6 +892,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
       highlighted={state.highlight === pkg.name}
       onOpen={() => { setView({ kind: 'package', name: pkg.name }) }}
       onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
+      renderSlot={renderSlot}
     />
   )
   // The Official group: the bundles the installation ships, then the plugins that registered their configuration.

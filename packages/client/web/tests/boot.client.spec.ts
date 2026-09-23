@@ -78,12 +78,12 @@ describe('bootstrap failure rendering', () => {
     const target = installFacade()
     win.__DSH_BOOT__ = {
       rev: 'graph',
-      entries: [{ id: 'broken', url: '/broken.js', rev: '1' }],
-      batches: [{ phase: 'application', url: '/application.js', rev: '1', entries: ['broken'] }],
+      entries: [{ id: '@deepseek-ai/broken', url: '/broken.js', rev: '1' }],
+      batches: [{ phase: 'application', url: '/application.js', rev: '1', entries: ['@deepseek-ai/broken'] }],
     }
     const entry = new AppWebEntry(container, {
       loadBundle: async () => {
-        target.load({ id: 'broken', factory: () => ({ apply() { throw new Error('plugin activation failed') } }) })
+        target.load({ id: '@deepseek-ai/broken', factory: () => ({ apply() { throw new Error('plugin activation failed') } }) })
       },
     })
     const report = vi.fn<(reason: unknown) => void>()

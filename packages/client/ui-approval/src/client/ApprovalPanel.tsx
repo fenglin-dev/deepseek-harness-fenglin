@@ -4,6 +4,14 @@ import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ApprovalComposerProps, PendingApproval } from './contract/slots.ts'
 import css from './ApprovalPanel.module.css'
 
+const ESCALATION_AUDIT_PREFIX = /^escalate sandbox to [^:]+:\s*/u
+
+function approvalExplanation(reason: string | undefined, fallback: string): string {
+  if (reason === undefined) return fallback
+  const explanation = reason.replace(ESCALATION_AUDIT_PREFIX, '').trim()
+  return explanation.length > 0 ? explanation : fallback
+}
+
 /**
  * Render one pending approval and its optional Tool-owned detail.
  * @param props - selector-matched request and standard Slot props.
@@ -38,8 +46,18 @@ function ApprovalFlow({ pending, detail, t }: {
           role="group"
           aria-label={t('detail.aria')}
         >
-          <div className={css.headline}>{pending.reason ?? t('escalation', { toolName: pending.toolName })}</div>
-          {detail !== null && <div className={css.command}>{detail}</div>}
+          <div className={css.explanation}>
+            <div className={css.explanationLabel}>{t('explanation')}</div>
+            <div className={css.headline}>
+              {approvalExplanation(pending.reason, t('escalation', { toolName: pending.toolName }))}
+            </div>
+          </div>
+          {detail !== null && (
+            <details className={css.commandDisclosure}>
+              <summary>{t('command.show')}</summary>
+              <div className={css.command}>{detail}</div>
+            </details>
+          )}
         </div>
         <div className={css.actionRow}>
           <Button variant="outline" className={css.reject} disabled={answered} onClick={() => { answer('rejected') }}>

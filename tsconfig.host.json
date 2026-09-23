@@ -49,6 +49,7 @@
     "apps/web/tests/plugin-install-approve.e2e.ts",
     "apps/web/tests/client-plugin-live.e2e.ts",
     "apps/web/tests/settings-chrome.e2e.ts",
+    "apps/web/tests/desktop-updates.e2e.ts",
     "apps/web/tests/models-settings.e2e.ts",
     "apps/web/tests/deepseek-messages-settings.e2e.ts",
     "apps/web/tests/deepseek-messages-chat.e2e.ts",
@@ -163,6 +164,7 @@
   "references": [
     { "path": "./packages/client/connection/tsconfig.host.json" },
     { "path": "./packages/skill/skill-office" },
+    { "path": "./packages/host/workspace-runtime" },
     { "path": "./packages/browser-use/browser-use" },
     { "path": "./packages/experimental/browser-use-runtime" },
     { "path": "./packages/experimental/browser-use-playwright-mcp" },
@@ -281,6 +283,7 @@
     { "path": "./packages/skill/tool-skill" },
     { "path": "./packages/interaction/tool-ask-user" },
     { "path": "./packages/context/agent-instructions" },
+    { "path": "./packages/context/custom-instructions/tsconfig.host.json" },
     { "path": "./packages/core/agent-loop" },
     { "path": "./packages/llm/llm-retry" },
     { "path": "./packages/subprocess/subprocess" },

@@ -1150,6 +1150,36 @@ export interface Config {
 
 来源：[`packages/host/webserver/src/index.ts:59`](../packages/host/webserver/src/index.ts)
 
+<a id="deepseek-aidsh-host-workspace-runtime"></a>
+
+## `@deepseek-ai/dsh-host-workspace-runtime`
+
+需要：`tools`
+
+```ts config-catalog
+/** Application-owned paths. Renderer input never reaches these fields. */
+export interface Config {
+  /** Absolute root of the verified managed payload containing `runtime.json`. */
+  readonly runtimeRoot: string
+  /** Absolute executable path for an optional user-selected Python interpreter. */
+  readonly python?: string
+  /** Absolute site-packages directory belonging to the user-selected interpreter. */
+  readonly pythonPackages?: string
+  /** Installed distribution versions belonging to the user-selected interpreter. */
+  readonly pythonDistributions?: Readonly<Record<string, string>>
+  /** Absolute executable path for the application-packaged Node.js runtime. */
+  readonly node: string
+  /** Absolute entry-point path for the application-packaged pnpm runtime. */
+  readonly pnpm: string
+  /** Absolute node_modules directory exposed to Workspace dependency consumers. */
+  readonly nodePackages: string
+  /** Whether to register the packaged Office skills for this Profile. */
+  readonly office?: boolean
+}
+```
+
+来源：[`packages/host/workspace-runtime/src/index.ts:31`](../packages/host/workspace-runtime/src/index.ts)
+
 <a id="deepseek-aidsh-invariants"></a>
 
 ## `@deepseek-ai/dsh-invariants`
@@ -2215,7 +2245,7 @@ export interface Config {
 export type SessionLogCompressionLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
 ```
 
-来源：[`packages/session-query/session-log-export/src/index.ts:46`](../packages/session-query/session-log-export/src/index.ts)
+来源：[`packages/session-query/session-log-export/src/index.ts:47`](../packages/session-query/session-log-export/src/index.ts)
 
 <a id="deepseek-aidsh-session-persistence-jsonl"></a>
 
@@ -2955,7 +2985,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/core/system-prompt/src/index.ts:248`](../packages/core/system-prompt/src/index.ts)
+来源：[`packages/core/system-prompt/src/index.ts:251`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -3896,6 +3926,7 @@ export interface Config {
 - `@deepseek-ai/dsh-compaction-image-offload`，需要 `agents` 和 `sessions`（[`packages/compaction/compaction-image-offload/src/index.ts`](../packages/compaction/compaction-image-offload/src/index.ts)）
 - `@deepseek-ai/dsh-computer-use` ([`packages/computer-use/computer-use/src/index.ts`](../packages/computer-use/computer-use/src/index.ts))
 - `@deepseek-ai/dsh-cordis-client-runner`（[`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts)）
+- `@deepseek-ai/dsh-custom-instructions` — 需要 `settings` · `systemPrompt` · `workspaceRegistry`（[`packages/context/custom-instructions/src/index.ts`](../packages/context/custom-instructions/src/index.ts)）
 - `@deepseek-ai/dsh-deepseek-llm-api-extensions`（[`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../packages/llm/deepseek-llm-api-extensions/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-auto-review` — 需要 `llm` · `permissionPresets` · `sessions` · `tools`（[`packages/experimental/auto-review/src/index.ts`](../packages/experimental/auto-review/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-client-ui-agent-team`（[`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts)）

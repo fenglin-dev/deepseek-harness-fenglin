@@ -7,8 +7,9 @@ cleanup() { rm -rf "$temporary"; }
 trap cleanup EXIT
 
 release_directory="$temporary/0.1.2-rc.9"
+metadata_directory="$temporary/metadata"
 fake_bin="$temporary/bin"
-mkdir -p "$release_directory" "$fake_bin"
+mkdir -p "$release_directory" "$metadata_directory" "$fake_bin"
 installers=(
   DeepSeek-Harness-linux-x64.deb
   DeepSeek-Harness-linux-x64.rpm
@@ -32,6 +33,8 @@ for filename in "${installers[@]}"; do
 done | sed "s#$release_directory/##" > "$release_directory/SHA256SUMS"
 notes_file="$temporary/notes.md"
 printf '# 中文说明\n\n# English notes\n' > "$notes_file"
+printf '{"schemaVersion":2}\n' > "$metadata_directory/workspace-runtimes-0.1.2-rc.9.v2.json"
+printf '{"mediaType":"application/vnd.dev.sigstore.bundle+json;version=0.3"}\n' > "$metadata_directory/workspace-runtimes.v2.sigstore.json"
 
 cat > "$fake_bin/gh" <<'FAKE_GH'
 #!/usr/bin/env bash
@@ -92,7 +95,7 @@ export FAKE_RELEASE_DIRECTORY="$release_directory"
 mkdir -p "$FAKE_ASSETS_DIRECTORY"
 export ODSH_VERIFY_DMG=0
 sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-common=(test/repository "$sha" odsh-v0.1.2-rc.9 "v0.1.2-rc.9" "$notes_file" "$release_directory")
+common=(--metadata-directory "$metadata_directory" test/repository "$sha" odsh-v0.1.2-rc.9 "v0.1.2-rc.9" "$notes_file" "$release_directory")
 
 "$script_directory/publish-desktop-release.sh" --release-state stable "${common[@]}" > "$temporary/dry-run.log"
 [[ ! -e "$FAKE_GH_PUBLISHED" ]]
@@ -103,7 +106,7 @@ grep -q 'release state: stable' "$temporary/dry-run.log"
 : > "$FAKE_GH_LOG"
 "$script_directory/publish-desktop-release.sh" --publish --release-state stable "${common[@]}" > "$temporary/publish.log"
 grep -q 'release create' "$FAKE_GH_LOG"
-[[ $(grep -c 'release upload' "$FAKE_GH_LOG") == 8 ]]
+[[ $(grep -c 'release upload' "$FAKE_GH_LOG") == 10 ]]
 grep -q 'release edit' "$FAKE_GH_LOG"
 grep -q -- '--latest' "$FAKE_GH_LOG"
 ! grep -q -- '--prerelease' "$FAKE_GH_LOG"
@@ -120,6 +123,7 @@ grep -q 'release state: prerelease' "$temporary/prerelease.log"
 
 stable_directory="$temporary/0.1.3"
 cp -R "$release_directory" "$stable_directory"
+mv "$metadata_directory/workspace-runtimes-0.1.2-rc.9.v2.json" "$metadata_directory/workspace-runtimes-0.1.3.v2.json"
 rm -f "$FAKE_GH_CREATED" "$FAKE_GH_PUBLISHED" "$FAKE_ASSETS_DIRECTORY"/*
 : > "$FAKE_GH_LOG"
 FAKE_TAG=odsh-v0.1.3 \
@@ -127,12 +131,14 @@ FAKE_TITLE='v0.1.3' \
 FAKE_PRERELEASE=false \
 FAKE_RELEASE_DIRECTORY="$stable_directory" \
   "$script_directory/publish-desktop-release.sh" --publish --release-state stable \
+  --metadata-directory "$metadata_directory" \
   test/repository "$sha" odsh-v0.1.3 'v0.1.3' "$notes_file" "$stable_directory" > "$temporary/stable.log"
 grep -q -- '--latest' "$FAKE_GH_LOG"
 ! grep -q -- '--prerelease' "$FAKE_GH_LOG"
 grep -q 'published verified Release' "$temporary/stable.log"
 
 rm -f "$FAKE_GH_PUBLISHED"
+mv "$metadata_directory/workspace-runtimes-0.1.3.v2.json" "$metadata_directory/workspace-runtimes-0.1.2-rc.9.v2.json"
 if "$script_directory/publish-desktop-release.sh" "${common[@]}" >/dev/null 2>&1; then
   echo "missing release state should have been rejected" >&2
   exit 1
@@ -155,7 +161,7 @@ cp "$release_directory/DeepSeek-Harness-linux-x64.deb" "$FAKE_ASSETS_DIRECTORY/"
 : > "$FAKE_GH_LOG"
 FAKE_GH_EXISTING=1 "$script_directory/publish-desktop-release.sh" --publish --resume-draft \
   --release-state stable "${common[@]}" > "$temporary/resume.log"
-[[ $(grep -c 'release upload' "$FAKE_GH_LOG") == 7 ]]
+[[ $(grep -c 'release upload' "$FAKE_GH_LOG") == 9 ]]
 grep -q 'already uploaded with matching SHA-256 and size' "$temporary/resume.log"
 grep -q 'published verified Release' "$temporary/resume.log"
 
@@ -192,6 +198,7 @@ fi
 mv "$temporary/checksums.good" "$release_directory/SHA256SUMS"
 
 if "$script_directory/publish-desktop-release.sh" --release-state stable \
+  --metadata-directory "$metadata_directory" \
   test/repository "$sha" odsh-v9.9.9 "v0.1.2-rc.9" "$notes_file" "$release_directory" >/dev/null 2>&1; then
   echo "mismatched tag should have been rejected" >&2
   exit 1

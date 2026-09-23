@@ -19,8 +19,8 @@ function store(): DownloadNetworkSettingsStore {
   })
 }
 
-function request(proxy: PluginDownloadProxy, authority: string, authorization?: string): Promise<string> {
-  const url = new URL(proxy.pluginUrl)
+function requestUrl(proxyUrl: string, authority: string, authorization?: string): Promise<string> {
+  const url = new URL(proxyUrl)
   return new Promise((resolve, reject) => {
     const socket = connect(Number(url.port), url.hostname)
     let response = ''
@@ -37,11 +37,55 @@ function request(proxy: PluginDownloadProxy, authority: string, authorization?: 
   })
 }
 
+function request(proxy: PluginDownloadProxy, authority: string, authorization?: string): Promise<string> {
+  return requestUrl(proxy.pluginUrl, authority, authorization)
+}
+
 describe('desktop plugin download proxy', () => {
   it('rejects requests without its operation credential', async () => {
     const proxy = await startPluginDownloadProxy(store(), {})
     proxies.push(proxy)
-    await expect(request(proxy, '127.0.0.1:9')).resolves.toMatch(/^HTTP\/1\.1 407/u)
+    const response = await request(proxy, '127.0.0.1:9')
+    expect(response).toMatch(/^HTTP\/1\.1 407/u)
+    expect(response).toContain('\r\nProxy-Authenticate: Basic realm="dsh-plugin-downloads"\r\n')
+  })
+
+  it('routes proxy authentication by endpoint without a WebContents identity', async () => {
+    const proxy = await startPluginDownloadProxy(store(), {})
+    proxies.push(proxy)
+    expect(proxy.pluginProxyRules).not.toBe(proxy.applicationProxyRules)
+    const pluginPort = Number(new URL(proxy.pluginProxyRules).port)
+    const applicationPort = Number(new URL(proxy.applicationProxyRules).port)
+    expect(proxy.credentialsForProxyAuth('127.0.0.1', pluginPort)).toEqual(proxy.pluginProxyCredentials)
+    expect(proxy.credentialsForProxyAuth('127.0.0.1', applicationPort)).toEqual(proxy.applicationProxyCredentials)
+    expect(proxy.credentialsForProxyAuth('127.0.0.1', 9)).toBeUndefined()
+    expect(proxy.credentialsForProxyAuth('localhost', pluginPort)).toBeUndefined()
+  })
+
+  it('keeps application and plugin credentials scoped to their own endpoints', async () => {
+    const target = createServer((socket) => { socket.on('error', () => {}); socket.end() })
+    await new Promise<void>((resolve, reject) => {
+      target.once('error', reject)
+      target.listen(0, '127.0.0.1', () => { target.off('error', reject); resolve() })
+    })
+    try {
+      const address = target.address()
+      if (address === null || typeof address === 'string') throw new Error('fixture server unavailable')
+      const proxy = await startPluginDownloadProxy(store(), {})
+      proxies.push(proxy)
+      const pluginCredentials = Buffer.from(
+        `${proxy.pluginProxyCredentials.username}:${proxy.pluginProxyCredentials.password}`,
+      ).toString('base64')
+      const applicationCredentials = Buffer.from(
+        `${proxy.applicationProxyCredentials.username}:${proxy.applicationProxyCredentials.password}`,
+      ).toString('base64')
+      await expect(requestUrl(proxy.applicationProxyRules, `127.0.0.1:${address.port}`, `Basic ${pluginCredentials}`))
+        .resolves.toMatch(/^HTTP\/1\.1 407/u)
+      await expect(requestUrl(proxy.applicationProxyRules, `127.0.0.1:${address.port}`, `Basic ${applicationCredentials}`))
+        .resolves.toMatch(/^HTTP\/1\.1 200/u)
+    } finally {
+      await new Promise<void>((resolve) => { target.close(() => { resolve() }) })
+    }
   })
 
   it('opens an authenticated direct CONNECT tunnel on loopback', async () => {

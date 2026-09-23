@@ -2,6 +2,8 @@
 
 # Open DeepSeek Harness Desktop
 
+<p align="center"><strong>🎉 Parabéns! A interface deste projeto agora está disponível em português do Brasil.</strong></p>
+
 <p align="center"><strong>A edição desktop comunitária do DeepSeek Harness, pronta para usar e com segurança reforçada de dependências</strong></p>
 
 Idiomas: [简体中文](../../README.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · Português

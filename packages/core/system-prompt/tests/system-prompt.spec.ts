@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt, {
-  AssembleContext, PromptAssembly, renderContextSnapshot, renderPrompt,
+  AssembleContext, HARNESS_IDENTITY_TEXT, PromptAssembly, renderContextSnapshot, renderPrompt,
 } from '@deepseek-ai/dsh-system-prompt'
 import type { PromptContextOrderName, PromptSectionOrderName } from '@deepseek-ai/dsh-system-prompt'
 
@@ -12,7 +12,7 @@ import type { PromptContextOrderName, PromptSectionOrderName } from '@deepseek-a
  * their own sections; the built-ins' behavior is pinned by its own describe.
  */
 const BUILT_IN = ['harness:identity', 'deployment:persona-prefix', 'deployment:persona-suffix']
-const IDENTITY = 'You are an AI agent powered by DeepSeek Harness.'
+const IDENTITY = HARNESS_IDENTITY_TEXT
 const SECTION_ORDER_NAMES = [
   'HARNESS_IDENTITY', 'DEPLOYMENT_PERSONA_PREFIX',
   'PLAN_POLICY', 'TEAM_POLICY', 'PTC_ONLY', 'FILE_REFERENCE', 'TOOL_BASH',
@@ -83,6 +83,15 @@ describe('SystemPrompt', () => {
   })
 
   describe('built-in sections', () => {
+    it('requires every model-authored user-visible field to follow the latest user request language', async () => {
+      const ctx = new Context()
+      await ctx.plugin(SystemPrompt, {})
+
+      expect(renderPrompt(await ctx.systemPrompt.assemble())).toContain(
+        'tool descriptions, and approval justifications',
+      )
+    })
+
     it('renders the environment after guidance and reports its strict interpolation errors', async () => {
       const ctx = new Context()
       try {

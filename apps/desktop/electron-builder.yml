@@ -7,6 +7,7 @@ directories:
   output: ../../.artifacts/desktop-windows
 files:
   - lib/**/*
+  - scripts/primary-runtime-lock.json
   - package.json
   # pnpm peerDependencies are not packed automatically; desktop main imports
   # dsh-subprocess which requires these at runtime.

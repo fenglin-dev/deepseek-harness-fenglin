@@ -31,6 +31,8 @@ kind: "package-reference"
 
 打开 panel 会调用 `agentTeams/view`。Roster row 展示持久 name、运行时 status、model 与 diagnostics。选择健康 teammate 时，系统刷新既有直接 child catalog，并打开普通的 `{ parentSessionId, childSessionId, mode: 'continuable' }` address。History 与后续人类提示词继续使用稳定 addressed-subagent 会话路径；本包不会添加 Team 专用 address 字段。
 
+首次开启可选界面后，第一个非空普通会话标题栏中的 Agent Team 按钮会出现有限次数的边缘动效和位置说明，输入框旁也会显示一条请求示例。确认记录只保存在当前浏览器，遵循“减少动态效果”设置，也不会出现在空白会话或 teammate 会话中。界面组合包开启时，插件页还会显示**去使用**：它打开最近更新的非空普通会话，并重新显示这组提示。点击示例只会在现有草稿为空时填入“请使用 Agent Team 完成……”，不会覆盖用户已经输入的内容。
+
 ### 管理任务板
 
 任务板展示 task identity、owner、blocker、readiness、提示性 write scope 与重叠 warning。用户可以通过 `agentTeams/createTask` 与 `agentTeams/updateTask` 创建、编辑、分配或取消分配、完成、重开和删除任务。每次 update 都发送当前显示的 revision，create 或 update rejection 都保留为显式 business result。

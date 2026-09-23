@@ -54,10 +54,16 @@ const READY: PluginManagerState = {
 
 /** Configuration entries a test supplies: what each slot cell renders, by `<slot>:<cell>` and the view asked for. */
 type SlotBodies = Record<string, (view: 'summary' | 'page') => ReactNode>
+type ActionBodies = Record<string, (enabled: boolean) => ReactNode>
 
 const NO_CONFIG: ConfigLedger = { items: [], bundles: new Set(), rows: new Set() }
 
-function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<ConfigLedger> = {}, bodies: SlotBodies = {}) {
+function renderTab(
+  state: Partial<PluginManagerState> = {},
+  config: Partial<ConfigLedger> = {},
+  bodies: SlotBodies = {},
+  actionBodies: ActionBodies = {},
+) {
   const store = createSnapshotStore<PluginManagerState>({ ...READY, ...state })
   const ledger = createSnapshotStore<ConfigLedger>({ ...NO_CONFIG, ...config })
   const actions = {
@@ -85,8 +91,11 @@ function renderTab(state: Partial<PluginManagerState> = {}, config: Partial<Conf
     ...actions,
     usePluginManager: bindSnapshotSelector(store),
     useConfigLedger: bindSnapshotSelector(ledger),
-    renderSlot: (name: string, owner: { view: 'summary' | 'page' }, opts: { only?: string; entryKey?: string }) =>
-      bodies[`${name}:${opts.only ?? opts.entryKey ?? ''}`]?.(owner.view) ?? null,
+    renderSlot: (name: string, owner: { view?: 'summary' | 'page'; enabled?: boolean }, opts: { only?: string; entryKey?: string }) => {
+      const key = `${name}:${opts.only ?? opts.entryKey ?? ''}`
+      if (name === 'plugins.bundle.action') return actionBodies[key]?.(owner.enabled === true) ?? null
+      return owner.view === undefined ? null : bodies[key]?.(owner.view) ?? null
+    },
   } as unknown as PluginManagerPageProps
   const { rerender } = render(<PluginManagerPage {...props} />)
   return {
@@ -198,6 +207,21 @@ describe('PluginManagerPage', () => {
     expect(within(detail).queryByRole('button', { name: en.uninstallLabel.replace('{name}', en.builtinAgentTeamTitle) })).toBeNull()
     fireEvent.click(within(detail).getByRole('switch', { name: en.enableToggle.replace('{name}', en.builtinAgentTeamTitle) }))
     expect(actions.setEnabled).toHaveBeenCalledExactlyOnceWith('@deepseek-ai/dsh-experimental-agent-team-profile', true)
+  })
+
+  it('renders a bundle-owned action beside the switch on its card and detail page', () => {
+    const action = vi.fn((enabled: boolean) => <button type="button">{enabled ? 'Use now' : 'Unavailable'}</button>)
+    renderTab(
+      { packages: [pkg({ name: '@deepseek-ai/dsh-experimental-agent-team-web-profile', enabled: true })] },
+      {},
+      {},
+      { 'plugins.bundle.action:@deepseek-ai/dsh-experimental-agent-team-web-profile': action },
+    )
+    expect(screen.getByRole('button', { name: 'Use now' })).toBeTruthy()
+    expect(action).toHaveBeenLastCalledWith(true)
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', en.builtinAgentTeamWebTitle) }))
+    expect(screen.getByRole('button', { name: 'Use now' })).toBeTruthy()
+    expect(action).toHaveBeenLastCalledWith(true)
   })
 
   it.each([

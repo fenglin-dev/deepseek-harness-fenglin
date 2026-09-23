@@ -19,7 +19,7 @@ Release state is a separate reviewed field. An `alpha`, `beta`, or `rc` version 
 
 ## Establish the release delta
 
-Select the previous published, non-draft Release that was eligible for normal client updates; do not compare only with an upstream tag or an earlier build attempt of the same version. Collect:
+Select the immediately previous published, non-draft desktop Release by publication time, including a prerelease when it was genuinely public; do not compare only with an upstream tag, skip a public alpha/RC, or use an earlier build attempt of the same version. Collect:
 
 - commits and changed files from the previous Release tag to the final source SHA;
 - merged upstream tag and upstream notes, when an upstream synchronization is present;
@@ -27,6 +27,18 @@ Select the previous published, non-draft Release that was eligible for normal cl
 - bundled plugin snapshot versions from the accepted package workflows compared with the previous published snapshot;
 - platform qualification actually completed for the seven installers;
 - confirmed upgrade limitations, unsigned-package instructions, data migration boundaries, and known issues.
+
+Repeat this derivation whenever the user asks to rebuild or repackage, including another build of the same version. Resolve the latest release-branch commit again and regenerate the notes from the previous published Release to that commit. An unpublished Draft, an earlier workflow run, and an earlier notes draft for the same version are preparation state, not the comparison baseline.
+
+Before the Doctor accepts the notes, run:
+
+```sh
+node .agents/skills/open-dsh-desktop-release-packaging/scripts/validate-release-notes.mjs \
+  <version> <previous-public-tag> <full-source-sha> \
+  .artifacts/release-notes/odsh-v<version>.md
+```
+
+The validator checks that the previous public tag exists and is an ancestor of the exact source SHA, the range contains committed changes, both language sections are substantive and uniquely present, the heading matches the version, and no fill-in placeholders remain. It validates the tag-to-source-SHA ancestry and document completeness; the maintainer must still review that each user-visible claim is supported and faithfully translated.
 
 Group commits by user-visible outcome. Omit refactors, test-only work, generated-file churn, reverted changes, and implementation details unless they materially affect compatibility or recovery. Do not infer a fix from an issue title alone.
 
@@ -115,6 +127,7 @@ Choose two to six update themes that describe user outcomes, such as startup and
 
 - Produce one coherent final document. Do not preserve upload diaries, numbered retry notes, `原部分`, emergency headings, or statements such as “third upload” and “please reinstall” that describe the maintainer's publishing process rather than the software.
 - Describe the delta once. Do not paste the previous Release body beneath new changes or repeat an older feature merely because it remains available.
+- Describe delivery from the user's previous published version. When a capability first appears as an optional download, call it a newly added on-demand capability. Say that something was removed from installers only when the previous published installers actually contained it.
 - Put urgent confirmed warnings in a concise blockquote after the summaries or in the compatibility section. Do not turn a temporary diagnosis, speculation, or future promise into a heading.
 - State the upstream baseline exactly when it changed. Separate upstream changes from community desktop changes without implying that FLAQ authored upstream work.
 - List bundled plugin versions only from accepted workflow snapshots. Do not say “latest” or copy registry state observed outside the package run.

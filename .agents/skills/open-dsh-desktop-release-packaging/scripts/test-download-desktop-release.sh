@@ -4,7 +4,7 @@ set -euo pipefail
 script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repository_root=$(cd "$script_directory/../../../.." && pwd)
 fixture_root=$(mktemp -d "${TMPDIR:-/tmp}/odsh-download-test.XXXXXX")
-cleanup() { rm -rf "$fixture_root"; }
+cleanup() { chmod -R u+w "$fixture_root" 2>/dev/null || true; rm -rf "$fixture_root"; }
 trap cleanup EXIT
 
 for command_name in node shasum unzip zip; do
@@ -108,16 +108,24 @@ set -euo pipefail
 header_file=
 url=
 metrics=0
+output=
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dump-header) header_file=$2; shift 2 ;;
+    --output) output=$2; shift 2 ;;
     --write-out) metrics=1; shift 2 ;;
-    http*) url=$1; shift ;;
+    http*|fixture://*) url=$1; shift ;;
     *) shift ;;
   esac
 done
 if [[ "$metrics" == 1 ]]; then
   printf '8388608\t4.000000\t2097152\t206\n'
+  exit 0
+fi
+if [[ "$url" == fixture://* && -z "$header_file" ]]; then
+  name=${url#fixture://}
+  [[ -z ${ODSH_FIXTURE_CURL_OUTPUT_LOG:-} ]] || printf '%s\n' "$output" >> "$ODSH_FIXTURE_CURL_OUTPUT_LOG"
+  cp "$ODSH_FIXTURE_ARTIFACT_STORE/$name.zip" "$output"
   exit 0
 fi
 artifact_id=${url%/zip}
@@ -138,6 +146,9 @@ cat > "$fake_bin/aria2c" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ -n ${ODSH_FIXTURE_ARIA_ARGUMENTS:-} ]]; then printf '%s\n' "$*" >> "$ODSH_FIXTURE_ARIA_ARGUMENTS"; fi
+if [[ -n ${ODSH_FIXTURE_ARIA_ENVIRONMENT:-} ]]; then
+  printf 'ALL_PROXY=%s all_proxy=%s\n' "${ALL_PROXY:-}" "${all_proxy:-}" >> "$ODSH_FIXTURE_ARIA_ENVIRONMENT"
+fi
 directory=
 output=
 url=
@@ -166,12 +177,25 @@ if [[ -n "${ODSH_FIXTURE_FAIL_ONCE_FILE:-}" && ! -e "$ODSH_FIXTURE_FAIL_ONCE_FIL
   printf 'partial\n' > "$directory/$output.aria2"
   exit 1
 fi
+if [[ -n ${ODSH_FIXTURE_FAIL_COUNT_FILE:-} ]]; then
+  failure_count=0
+  [[ ! -f "$ODSH_FIXTURE_FAIL_COUNT_FILE" ]] || failure_count=$(cat "$ODSH_FIXTURE_FAIL_COUNT_FILE")
+  if [[ "$failure_count" -lt ${ODSH_FIXTURE_FAIL_COUNT:-0} ]]; then
+    printf '%s\n' "$((failure_count + 1))" > "$ODSH_FIXTURE_FAIL_COUNT_FILE"
+    size=$(wc -c < "$ODSH_FIXTURE_ARTIFACT_STORE/$name.zip" | tr -d ' ')
+    partial_size=$((size / 2))
+    dd if="$ODSH_FIXTURE_ARTIFACT_STORE/$name.zip" of="$directory/$output" bs=1 count="$partial_size" 2>/dev/null
+    printf 'partial\n' > "$directory/$output.aria2"
+    exit 1
+  fi
+fi
 cp "$ODSH_FIXTURE_ARTIFACT_STORE/$name.zip" "$directory/$output"
 rm -f "$directory/$output.aria2"
 EOF
 
 chmod +x "$fake_bin/gh" "$fake_bin/curl" "$fake_bin/aria2c"
 aria_arguments_log="$fixture_root/aria-arguments.log"
+aria_environment_log="$fixture_root/aria-environment.log"
 
 low_staging_root="$fixture_root/low-staging"
 set +e
@@ -199,6 +223,42 @@ find "$low_staging_root" -name '*.aria2' -type f | grep -q . || {
   exit 1
 }
 echo "low-speed download fixture stopped with resumable state"
+
+degraded_staging_root="$fixture_root/degraded-staging"
+degraded_release_directory="$fixture_root/degraded-release"
+degraded_failure_count="$fixture_root/degraded-failure-count"
+curl_output_log="$fixture_root/curl-output.log"
+ALL_PROXY=socks5h://127.0.0.1:7890 \
+all_proxy=socks5h://127.0.0.1:7890 \
+PATH="$fake_bin:$PATH" \
+ODSH_FIXTURE_ARTIFACT_STORE="$artifact_store" \
+ODSH_FIXTURE_FAIL_COUNT_FILE="$degraded_failure_count" \
+ODSH_FIXTURE_FAIL_COUNT=3 \
+ODSH_FIXTURE_ARIA_ARGUMENTS="$aria_arguments_log" \
+ODSH_FIXTURE_ARIA_ENVIRONMENT="$aria_environment_log" \
+ODSH_FIXTURE_CURL_OUTPUT_LOG="$curl_output_log" \
+ODSH_RELEASE_DOWNLOAD_STAGING_ROOT="$degraded_staging_root" \
+ODSH_RELEASE_OUTPUT_DIRECTORY="$degraded_release_directory" \
+ODSH_ALLOW_RELEASE_OUTPUT_OVERRIDE=1 \
+ODSH_SPEED_MONITOR_MIN_BYTES=999999999 \
+ODSH_VERIFY_DMG=0 \
+  "$script_directory/download-desktop-release.sh" fixture/repository 101 202 303
+ODSH_VERIFY_DMG=0 "$script_directory/verify-release-directory.sh" "$degraded_release_directory"
+grep -q -- '--max-connection-per-server=16' "$aria_arguments_log"
+grep -q -- '--max-connection-per-server=4' "$aria_arguments_log" || {
+  echo "download did not reduce aria2 concurrency after a transport failure" >&2
+  exit 1
+}
+if grep -Eq 'ALL_PROXY=[^ ]|all_proxy=[^ ]' "$aria_environment_log"; then
+  echo "aria2 inherited an incompatible all_proxy setting" >&2
+  cat "$aria_environment_log" >&2
+  exit 1
+fi
+grep -q '\.curl$' "$curl_output_log" || {
+  echo "curl fallback reused the aria2 sparse output instead of an independent serial file" >&2
+  exit 1
+}
+echo "transport failures reduced concurrency without leaking the SOCKS proxy to aria2"
 
 fail_once_file="$fixture_root/failed-once"
 if PATH="$fake_bin:$PATH" \
@@ -235,6 +295,29 @@ grep -q -- '--summary-interval=10' "$aria_arguments_log"
   exit 1
 }
 echo "download-desktop-release fixture test passed"
+
+chmod u+w "$release_directory"
+touch "$release_directory/.DS_Store"
+if ODSH_VERIFY_DMG=0 "$script_directory/verify-release-directory.sh" "$release_directory" >/dev/null 2>&1; then
+  echo "exact handoff verification accepted .DS_Store" >&2
+  exit 1
+fi
+rm "$release_directory/.DS_Store"
+chmod a-w "$release_directory"
+
+PATH="$fake_bin:$PATH" \
+ODSH_FIXTURE_ARTIFACT_STORE="$artifact_store" \
+ODSH_RELEASE_DOWNLOAD_STAGING_ROOT="$fixture_root/replacement-staging" \
+ODSH_RELEASE_OUTPUT_DIRECTORY="$release_directory" \
+ODSH_ALLOW_RELEASE_OUTPUT_OVERRIDE=1 \
+ODSH_VERIFY_DMG=0 \
+  "$script_directory/download-desktop-release.sh" --replace-existing fixture/repository 101 202 303
+ODSH_VERIFY_DMG=0 "$script_directory/verify-release-directory.sh" "$release_directory"
+[[ $(find "$(dirname "$release_directory")/.archive" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ') == 1 ]] || {
+  echo "same-version replacement did not archive the previous handoff" >&2
+  exit 1
+}
+echo "same-version replacement archived the previous exact handoff"
 
 PATH="$fake_bin:$PATH" \
 ODSH_FIXTURE_ARTIFACT_STORE="$artifact_store" \

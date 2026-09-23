@@ -2208,6 +2208,7 @@ describe('per-program execution controls', () => {
       const schema = tools.schemas().find(tool => tool.name === RUN_CODE_NAME)!
       expect(JSON.stringify(schema.parameters)).toContain('Default 120000; capped at 600000')
       expect(JSON.stringify(schema.parameters)).toContain('sandbox_permissions')
+      expect(JSON.stringify(schema.parameters)).toContain("language of the user's latest request")
       expect(schema.description).toContain('Nested tools retain their own policies')
       expect(schema.description).toContain('Programs start with an empty environment.')
       expect(schema.description).toContain("The working directory is the Session's current directory.")

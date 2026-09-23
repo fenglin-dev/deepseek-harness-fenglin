@@ -524,7 +524,7 @@ ask_user_question 会暂停工具调用，直到当前 UI 提供方返回人类�
     },
     "description": {
       "type": "string",
-      "description": "Clear, concise description of what this program does in active voice, 5-10 words (shown in the UI). Examples: \"Count TODO markers across packages\"; \"Read failing test and its fixture\"; \"Rename config key in every cordis.yml\"."
+      "description": "Clear, concise description of what this program does in active voice, 5-10 words (shown in the UI). Use the language of the user's latest request unless the user explicitly asks for another language. Examples: \"Count TODO markers across packages\"; \"Read failing test and its fixture\"; \"Rename config key in every cordis.yml\"."
     },
     "timeoutMs": {
       "type": "number",
@@ -540,7 +540,7 @@ ask_user_question 会暂停工具调用，直到当前 UI 提供方返回人类�
     },
     "justification": {
       "type": "string",
-      "description": "Reason this complete program needs wider access, shown to the user for approval."
+      "description": "Shown to the user before approval: use the language of the user's latest request unless the user explicitly asks for another language, and explain in plain language what this complete program will do, what files, data, or services it may affect, its main risk, and whether its changes are reversible."
     }
   },
   "required": [
@@ -599,7 +599,7 @@ ask_user_question 会暂停工具调用，直到当前 UI 提供方返回人类�
     },
     "description": {
       "type": "string",
-      "description": "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"npm install\" → \"Install package dependencies\"."
+      "description": "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Use the language of the user's latest request unless the user explicitly asks for another language. Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"npm install\" → \"Install package dependencies\"."
     },
     "timeoutMs": {
       "type": "number",
@@ -686,7 +686,7 @@ bash 工具是 bash 执行器 seam 面向模型的消费方。使用 `run_in_bac
     },
     "description": {
       "type": "string",
-      "description": "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"Get-Process\" → \"List running processes\"."
+      "description": "Clear, concise description of what this command does in active voice, 5-10 words (shown in the UI). Use the language of the user's latest request unless the user explicitly asks for another language. Examples: \"ls\" → \"List files in current directory\"; \"git status\" → \"Show working tree status\"; \"Get-Process\" → \"List running processes\"."
     },
     "timeoutMs": {
       "type": "number",

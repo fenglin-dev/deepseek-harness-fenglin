@@ -17,7 +17,7 @@
 使用 Node `^22.19.0 || >=24.0.0`，先构建仓库，再启动桌面应用：
 
 ```sh
-pnpm install
+node scripts/install-dependencies.mjs
 pnpm run build:community-desktop
 pnpm run dev:desktop
 ```
@@ -80,9 +80,13 @@ Windows 辅助卸载向导默认保留本地配置和数据。用户可以主动
 
 诊断页的“插件快照”会在插件安装、更新、卸载、构建授权、隔离和修复前自动保存 Web Profile 的依赖声明、精确锁文件、有序 Bundle、`allowBuilds`、隔离状态、预置 seed 状态与导入恢复状态。它不复制 `node_modules`，也不保存或回退会话、凭据、`settings.yaml`、用户 Patch、插件业务数据、主题或背景。写入自动快照载荷前，桌面版会先比较受管文件指纹；若已有内容相同且载荷健康的回退点，就直接复用而不保存重复副本。客户端与事件分发均成功就绪且应用稳定运行三十秒后，当前状态才会成为唯一的“最近成功启动”点；内容相同时只更新验证时间。另保留最近十个不同的自动状态，手动命名快照只由用户删除。卡片常态只展示最近三个回退点，其余内容可通过展开/收起按钮查看。恢复会先创建不可淘汰的安全点，优先通过内置 pnpm 离线冻结重建并运行只读 Doctor；缓存不足时先撤销操作，再由用户明确确认联网重试。恢复后的客户端无法就绪时会自动回到安全点。Harness 完全无法进入主界面时，独立启动失败页也能直接列出和恢复这些快照。
 
-打包版本在 `bundled-plugins/manifest.json` 中携带八个固定版本、经过完整性校验的启动预设归档，以及六个仅供诊断使用的资源。启动集合包含用于展示 Token 用量、Provider 账户、会话费用估算、预算与导出的 `@ychris12138/dsh-usage-stats`、提供平滑流式渲染与滚动的 `dsh-smooth-stream`，以及离线渲染 Mermaid 图表的 `dsh-mermaid`。本地打包开始前，pnpm 会通过 registry 启动条目的 `latest` 稳定 dist-tag 解析版本，从 npm 官方 registry 下载 tarball，核对 registry 提供的 SHA-512，并原子替换整套快照；固定 Git 与诊断条目继续保留经过审核的归档。GitHub 打包只解析一次快照，并让所有平台复用同一组文件。对于已有 Profile，Harness 启动前只预设包括 Better Sidebar 在内的八个插件，且始终把安装包内的本地归档交给 pnpm，不会从 registry 解析或下载该插件包；普通传递依赖仍由 Profile 的 pnpm store 与解析规则管理。首次强制准备以外，有效 seed marker 与一致版本会直接跳过 CLI。构建授权的期限为十五秒，单个归档安装为十分钟。已有 Profile 的预装阶段总预算为两分钟；首次强制准备部署模板或一次批量安装全部预设。已有 Profile 的路径会在每次插件变更前创建隐藏安全点；失败时恢复受管文件并离线冻结安装，随后跳过或继续，不写虚假的成功 marker，并记录短期重试冷却。回滚失败会停止后续 Profile 变更并进入隔离的诊断模式；正常 Profile 仍保持启动失败。只有诊断演练中心可以安装 `dsh-font`、`@dsh-diagnostic-lab/scoped-loader-mismatch`、`@dsh-diagnostic-lab/loader-dependency-unavailable`、`@dsh-diagnostic-lab/loader-export-unavailable` 、`@dsh-diagnostic-lab/legacy-session-api` 和 `@dsh-diagnostic-lab/immutable-agent-input-mutation`；依赖类样本分别验证“聚合 Loader 可以解析、但内部 Host 导入缺失”和“依赖已安装、但插件要求的命名导出不存在”时仍能正确归属并隔离，无副作用 Session 样本则验证风险提示不会触发自动隔离。配套的损坏设置场景无需另一个插件归档，会验证真实诊断模式入口和设置的精确恢复。所有平台安装包都不携带 Codex 和 Claude Code：用户在“外部工具”中点击安装后，客户端才从 npm 下载经过审核的兼容版本与平台依赖，因此这一步需要联网。打包前门禁会逐项确认两个精确 Provider 版本、原生运行时坐标、所有已声明的平台包，以及经过审核的 SHA-512 都真实存在于 npm 官方 registry。另一份兼容清单通过 GitHub Actions OIDC 和 Sigstore 签名发布；已发布客户端只有在仓库、工作流、分支、in-toto 主体摘要、完整桌面版本、有效期、schema 与安装包内置精确坐标全部匹配时才会采用。经过验证的缓存可供之后离线使用；网络、签名、有效期、身份、解析、版本或坐标任一不匹配时，客户端只回退到安装包内置的精确已知可用版本。两条路径都不会跟随可变 dist-tag，也不会根据桌面版本拼接 Provider 版本。开发版使用仓库固定的 pnpm，安装版使用内置 pnpm，两者都不依赖系统 pnpm。持久种子标记在用户卸载后继续保留，因此启动不会擅自装回插件，而用户明确点击发现页或导入插件恢复操作时仍可重新安装。后续应用安装包携带严格更高版本的预设时，启动会替换由桌面管理的旧归档或旧版桌面留下且已解析版本更低的 registry 依赖。用户管理和自定义来源、相同或更高的已解析版本、快照版本保持与卸载墓碑都会保留，系统也不会降级插件。桌面端继续保留精确白名单的延后安装任务和进度能力，供明确的恢复流程复用，但 Better Sidebar 不再自动触发进入后的延后任务。打包不会复制开发电脑 Web profile 中已经安装或更新过的插件。
+打包版本在 `bundled-plugins/manifest.json` 中携带九个固定版本、经过完整性校验的启动预设归档，以及六个仅供诊断使用的资源。启动集合包含用于展示 Token 用量、Provider 账户、会话费用估算、预算与导出的 `@ychris12138/dsh-usage-stats`、提供平滑流式渲染与滚动的 `dsh-smooth-stream`、离线渲染 Mermaid 图表的 `dsh-mermaid`，以及显示余额和用量挂件的 `dsh-whale-widget`。本地打包开始前，pnpm 会通过 registry 启动条目的 `latest` 稳定 dist-tag 解析版本，从 npm 官方 registry 下载 tarball，核对 registry 提供的 SHA-512，并原子替换整套快照；固定 Git 与诊断条目继续保留经过审核的归档。GitHub 打包只解析一次快照，并让所有平台复用同一组文件。对于已有 Profile，Harness 启动前只预设包括 Better Sidebar 在内的九个插件，且始终把安装包内的本地归档交给 pnpm，不会从 registry 解析或下载该插件包；普通传递依赖仍由 Profile 的 pnpm store 与解析规则管理。首次强制准备以外，有效 seed marker 与一致版本会直接跳过 CLI。构建授权的期限为十五秒，单个归档安装为十分钟。已有 Profile 的预装阶段总预算为两分钟；首次强制准备部署模板或一次批量安装全部预设。已有 Profile 的路径会在每次插件变更前创建隐藏安全点；失败时恢复受管文件并离线冻结安装，随后跳过或继续，不写虚假的成功 marker，并记录短期重试冷却。回滚失败会停止后续 Profile 变更并进入隔离的诊断模式；正常 Profile 仍保持启动失败。只有诊断演练中心可以安装 `dsh-font`、`@dsh-diagnostic-lab/scoped-loader-mismatch`、`@dsh-diagnostic-lab/loader-dependency-unavailable`、`@dsh-diagnostic-lab/loader-export-unavailable` 、`@dsh-diagnostic-lab/legacy-session-api` 和 `@dsh-diagnostic-lab/immutable-agent-input-mutation`；依赖类样本分别验证“聚合 Loader 可以解析、但内部 Host 导入缺失”和“依赖已安装、但插件要求的命名导出不存在”时仍能正确归属并隔离，无副作用 Session 样本则验证风险提示不会触发自动隔离。配套的损坏设置场景无需另一个插件归档，会验证真实诊断模式入口和设置的精确恢复。所有平台安装包都不携带 Codex 和 Claude Code：用户在“外部工具”中点击安装后，客户端才从 npm 下载经过审核的兼容版本与平台依赖，因此这一步需要联网。打包前门禁会逐项确认两个精确 Provider 版本、原生运行时坐标、所有已声明的平台包，以及经过审核的 SHA-512 都真实存在于 npm 官方 registry。另一份兼容清单通过 GitHub Actions OIDC 和 Sigstore 签名发布；已发布客户端只有在仓库、工作流、分支、in-toto 主体摘要、完整桌面版本、有效期、schema 与安装包内置精确坐标全部匹配时才会采用。经过验证的缓存可供之后离线使用；网络、签名、有效期、身份、解析、版本或坐标任一不匹配时，客户端只回退到安装包内置的精确已知可用版本。两条路径都不会跟随可变 dist-tag，也不会根据桌面版本拼接 Provider 版本。开发版使用仓库固定的 pnpm，安装版使用内置 pnpm，两者都不依赖系统 pnpm。持久种子标记在用户卸载后继续保留，因此启动不会擅自装回插件，而用户明确点击发现页或导入插件恢复操作时仍可重新安装。后续应用安装包携带严格更高版本的预设时，启动会替换由桌面管理的旧归档或旧版桌面留下且已解析版本更低的 registry 依赖。用户管理和自定义来源、相同或更高的已解析版本、快照版本保持与卸载墓碑都会保留，系统也不会降级插件。桌面端继续保留精确白名单的延后安装任务和进度能力，供明确的恢复流程复用，但 Better Sidebar 不再自动触发进入后的延后任务。打包不会复制开发电脑 Web profile 中已经安装或更新过的插件。
 
 每次外部工具安装请求都会读取以应用完整桌面版本命名的不可变清单；同时发起的请求共享进行中的查询。后续请求可以从此前的网络失败中恢复，但不能采用为其他桌面构建发布的 Provider 坐标，也不能采用本构建后来发生变化的修订版。发布门禁要求记录的源码审核基线及运行时版本与工作区一致，因此任一坐标变化都需要新的桌面版本和新清单。桌面端从 `https://flaqai.github.io/open-deepseek-harness-desktop/metadata/external-tools/v2/` 获取带版本文件和共用的多主体证明。仅允许 master 的发布工作流会保留所有带版本的源清单，拒绝用不同内容覆盖同一公开 URL 上已经存在的文档，签名完整保留集合，并且只通过 GitHub Pages 部署这些文档，不具备 Release 写入权限。发布要求仓库的 Pages 来源设为 GitHub Actions，且 `github-pages` 环境允许 master 部署。本仓库的 Pages 专用于元数据；文档部署在这里被排除，避免覆盖元数据站点。使用旧滚动地址编译的客户端在该地址不可用后会回退到自身内置的精确坐标；此工作流既不删除，也不重建 GitHub Release。
+
+工作区 Python 是独立的可选 Release 载荷，不属于外部工具插件，也不属于安装包资源。打包工作流从 Python 3.12 锁定文件分别生成 `win32-x64`、`darwin-arm64`、`darwin-x64` 与 `linux-x64` 归档，包含 NumPy、pandas、Pillow、lxml、python-docx、python-pptx、openpyxl、XlsxWriter 及锁定的传递依赖。仅允许 master 的工作流会根据 Release 中四份不可变归档重新生成版本化清单，通过 GitHub OIDC/Sigstore 为其摘要签名，把清单和证明附加到同一 Release，并请求刷新 CNB 镜像。已发布客户端只接受与完整桌面版本、原生目标、预期文件名、大小上限、SHA-256、载荷摘要和签名身份全部匹配的内容。只有未打包的开发版可以指定测试元数据 URL；正式构建不接受任意 URL 覆盖。
+
+`OptionalRuntimeManager` 统一拥有断点续传、有界输出、归档策略、原子解压、共享的 `userData/optional-runtimes` 缓存，以及按规范化 `DSH_HOME` 保存的独立引用。渲染层 IPC 只能提交 `office` 或 `ptc`，不能提交 URL、路径或包坐标。它的签名 v2 清单把托管 Python 指向版本化的 [Open DSH Runtime Assets](https://github.com/hecoococ/open-dsh-runtime-assets) Release，并用压缩包大小、npm SHA-512 integrity、包名和版本把每个平台的 Office 引擎固定到官方 `@deepseek-ai/libreoffice-kit-*` npm 归档。启用操作通过现有启动 Profile 事务写入受管块；只有普通客户端与事件分发都正常就绪并提交事务后，状态才会从等待重启变为已启用。Office 加载 `@deepseek-ai/dsh-host-workspace-runtime`，由它发布 `load_workspace_dependencies` 和内置 Office Skill，并显式指向经过校验的载荷以及安装包 Node/pnpm。PTC 使用独立受管块，Windows 不支持。停用一项不会影响另一项；无人引用的载荷只会在停用事务提交后回收。NAS 模式中的两张卡片仅展示不可用状态。
 
 桌面端只为官方 Codex Provider 解析系统代理，显式代理设置优先。插件下载保留 pnpm 与 Git 自身配置，不继承面向 ChatGPT 的专用路由。网络失败会附带有长度边界的分类与耗时提示；不会仅凭环境变量推断实际路由。详见[代理作用范围与验证限制](../../.agents/notes/implemented/bug-fix/2026-09-03-desktop-codex-proxy-scope.zh.md)。
 
@@ -120,7 +124,7 @@ npm run package:desktop:macos:arm64
 npm run package:desktop:macos:x64
 ```
 
-产物写入 `.artifacts/desktop-macos/`。原生安装包携带展开后的 Harness 生产依赖、Node 24.21.0、pnpm 11.7.0，以及独立的预构建 Profile 模板。复制 `.app` 时一并安装这些资源，首次启动不再解压嵌套运行时归档。Linux deb/rpm 使用相同的展开布局，Windows 保留 NSIS 资源部署。安装程序不执行用户插件脚本，也不选择配置目录。旧布局测试包仍可读取原有运行时归档。准备阶段验证固定 Node 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
+产物写入 `.artifacts/desktop-macos/`。原生安装包携带展开后的 Harness 生产依赖、Node 24.21.0、pnpm 11.7.0、小型工作运行时适配模块、内置 Office Skill 资源，以及独立的预构建 Profile 模板；不携带 Python 解释器、wheel、LibreOffice 引擎或可选运行时归档。打包在生成 Harness 闭包后删除全部 `@deepseek-ai/libreoffice-kit-*` 引擎，残留任一引擎都会使校验失败。Python 归档发布在独立运行时仓库，Office 引擎保持为官方 npm 归档，Desktop Release 不再重新打包它们。复制 `.app` 时一并安装核心资源，首次启动不再解压嵌套 Harness 运行时归档。Linux deb/rpm 使用相同的展开布局，Windows 保留 NSIS 资源部署。安装程序不执行用户插件脚本，也不选择配置目录。旧布局测试包仍可读取原有运行时归档。准备阶段验证固定 Node 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
 
 在 Windows 上使用下列命令构建未签名的 Windows x64 NSIS 安装程序：
 
@@ -173,7 +177,7 @@ Electron 主进程不经过 shell，直接启动 `node apps/cli/lib/bin.js web -
 
 ## 下载源与代理
 
-“通用设置”提供应用更新及 Desktop 发起的 npm 包安装下载策略。应用更新可以使用 GitHub 或固定的 `hecoococ/open-deepseek-harness-desktop` CNB 索引，并可选择系统代理、直接连接或带认证的 HTTP(S) 代理。由 Desktop 管理的 npm 安装默认使用 `npmmirror`，也可选择 npm 官方源或自定义 registry 与代理。官方市场尚未为其自行执行的目录、README、源码归档和 Git 操作提供宿主管理网络策略，因此这些操作继续使用市场原有网络配置。这些设置不会改变模型、MCP、Git SSH 或其他应用流量。系统支持时，Electron 安全存储保存代理密码；否则密码只在本次运行的内存中保留，渲染层和日志均无法取得密码。
+“通用设置”提供应用更新及 Desktop 发起的 npm 包安装下载策略。应用更新可以使用 GitHub 或固定的 `hecoococ/open-deepseek-harness-desktop` CNB 索引，并可选择系统代理、直接连接或带认证的 HTTP(S) 代理。由 Desktop 管理的 npm 安装默认使用 `npmmirror`，也可选择 npm 官方源或自定义 registry 与代理。应用下载和插件下载分别使用经过认证的回环端点，因此 Electron 可以在主进程发起请求时回应代理认证质询，且无需向渲染进程暴露凭据或混用两类策略。官方市场尚未为其自行执行的目录、README、源码归档和 Git 操作提供宿主管理网络策略，因此这些操作继续使用市场原有网络配置。这些设置不会改变模型、MCP、Git SSH 或其他应用流量。系统支持时，Electron 安全存储保存代理密码；否则密码只在本次运行的内存中保留，渲染层和日志均无法取得密码。
 
 预装的 `dshmarket` 使用其上游维护者发布的未修改归档。市场列表、README、源码归档和自身更新请求使用市场自己的网络配置。CNB 发现只接受未过期的匿名索引，且其中的附件必须匹配精确文件名、大小和 SHA-256；只有同时配置仓库变量 `CNB_SYNC_ENABLED` 和 Secret `CNB_TOKEN` 后，休眠的同步工作流才会镜像附件并发布该索引。
 
@@ -203,6 +207,8 @@ Profile 插件属于可信的可执行代码。内置包管理运行时让插件
 | Linux x64 | `ubuntu-24.04` | DEB 与 RPM |
 
 Windows 任务会把最终 NSIS 产物静默安装到包含空格和中文字符的路径，检查安装后的运行时，使用隔离的应用数据启动已安装程序，并在上传产物前要求 Harness 输出就绪行，同时确认六个启动预设的依赖、bundle 条目、Profile 锁文件和持久化 seed 标记均已生成。Better Sidebar 必须在 Harness 就绪前完成安装，而 Codex 与 Claude Code 在用户操作前必须保持未安装。其他平台仍需完成原生安装、首次启动、退出、子进程清理、目录选择、文件打开、PTY 与沙箱行为的发布验证。只有在发布签名与回滚可用后才添加已签名的更新元数据。
+
+Windows 验证会在构建前检查 runner 协议，再在未压缩的应用目录中分别探测受管 client 和 CLI task 启动。client 探针启动一个嵌套子进程，并要求确认进程范围已清理。首次安装启动和升级后启动一旦发现 supervisor 记录的终止性错误，就立即结束等待；可恢复的插件错误不会中止验证。进程管理者失败时，同时保留原始错误和清理状态观测错误。
 
 不得通过把整个工作区源码复制进 Electron 来打包仓库。发布产物必须只包含已发布的运行时闭包、生成的第三方声明，且不得包含开发凭证。
 

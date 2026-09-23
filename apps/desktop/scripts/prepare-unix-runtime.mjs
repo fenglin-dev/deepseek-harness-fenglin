@@ -11,6 +11,7 @@ import { parseArgs } from 'node:util'
 import { preparePrebuiltProfile } from './prepare-prebuilt-profile.mjs'
 import { nodeRuntimeArchivesByTarget, nodeVersion } from './node-runtime-pins.mjs'
 import { createPackagedArchive } from './create-packaged-archive.mjs'
+import { preservePnpmWorkspaceState } from '../../../scripts/preserve-pnpm-workspace-state.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = resolve(desktopRoot, '../..')
@@ -177,6 +178,31 @@ async function injectWorkspaceClosure() {
   console.log(`prepare-unix-runtime: injected ${injected.size} workspace packages`)
 }
 
+async function removeOptionalOfficeEngines(directory = join(staging, 'node_modules')) {
+  if (!existsSync(directory)) return 0
+  let removed = 0
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const candidate = join(directory, entry.name)
+    const manifestPath = join(candidate, 'package.json')
+    if (!existsSync(manifestPath)) {
+      removed += await removeOptionalOfficeEngines(candidate)
+      continue
+    }
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    if (typeof manifest.name === 'string' && manifest.name.startsWith('@deepseek-ai/libreoffice-kit-')) {
+      await rm(candidate, { recursive: true, force: true })
+      removed += 1
+      continue
+    }
+    removed += await removeOptionalOfficeEngines(join(candidate, 'node_modules'))
+  }
+  if (directory === join(staging, 'node_modules')) {
+    console.log(`prepare-unix-runtime: removed ${removed} optional LibreOffice engine packages from the installer runtime`)
+  }
+  return removed
+}
+
 async function verifyRuntime() {
   const entry = join(staging, 'lib', 'bin.js')
   if (!existsSync(entry)) throw new Error(`desktop package runtime is missing ${entry}`)
@@ -189,6 +215,10 @@ async function verifyRuntime() {
   ]) require.resolve(packagePath)
   for (const secretName of ['.env', 'auth.json']) {
     if (existsSync(join(staging, secretName))) throw new Error(`desktop package runtime contains forbidden ${secretName}`)
+  }
+  const officeScope = join(staging, 'node_modules', '@deepseek-ai')
+  if (existsSync(officeScope) && (await readdir(officeScope)).some(name => name.startsWith('libreoffice-kit-'))) {
+    throw new Error('desktop package runtime contains an optional LibreOffice engine')
   }
   const manifest = JSON.parse(await readFile(join(staging, 'package.json'), 'utf8'))
   for (const runtimePath of [
@@ -209,7 +239,7 @@ if (staging === repositoryRoot || repositoryRoot.startsWith(staging + sep)) {
 }
 await rm(staging, { recursive: true, force: true })
 await rm(archive, { force: true })
-await run('pnpm', [
+await preservePnpmWorkspaceState(repositoryRoot, () => run('pnpm', [
   // This deploy intentionally selects only the CLI closure. Root-only patches
   // (for example Electron signing) cannot match that subset and must not make
   // the portable runtime build fail as long as patches in the closure still apply.
@@ -222,8 +252,9 @@ await run('pnpm', [
   '--config.node-linker=hoisted',
   '--config.auto-install-peers=false',
   staging,
-])
+]))
 await injectWorkspaceClosure()
+await removeOptionalOfficeEngines()
 await stagePackageRuntime()
 await verifyRuntime()
 await preparePrebuiltProfile({

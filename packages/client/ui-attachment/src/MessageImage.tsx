@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { IconLoadingOutline16, IconRefreshOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ImageLightbox } from './ImageLightbox.tsx'
 import type { ImageLightboxLabels } from './ImageLightbox.tsx'
@@ -11,20 +12,7 @@ export type ImageLoader = ((attachment: ImageAttachmentRef) => Promise<string>) 
 }
 
 /** One gallery entry: a durable admitted reference, or a submission echo's local preview. */
-export type MessageImageSpec =
-  | {
-    readonly attachment: ImageAttachmentRef
-    /** Presentation-only name for the thumbnail and lightbox; loading uses the original reference. */
-    readonly label?: string
-  }
-  | {
-    readonly preview: {
-      readonly url: string
-      readonly name?: string
-      readonly width?: number
-      readonly height?: number
-    }
-  }
+export type MessageImageSpec = MessageImageSource
 
 /** Message-image strings the owner resolves from its own locale namespace. */
 export interface MessageImageLabels {
@@ -85,7 +73,7 @@ function dimensionsOf(image: MessageImageSpec): { readonly width: number; readon
 export function MessageImage({ image, load, variant, labels }: {
   image: MessageImageSpec
   load: ImageLoader
-  variant: 'single' | 'tile' | 'thumbnail'
+  variant: 'single' | 'tile' | 'thumbnail' | 'expanded'
   labels: MessageImageLabels
 }) {
   const preview = 'preview' in image ? image.preview : undefined
@@ -120,6 +108,10 @@ export function MessageImage({ image, load, variant, labels }: {
     void load(attachment).then((url) => { if (live) setLoaded(url) }).catch(() => { if (live) setError(true) })
     return () => { live = false }
   }, [attachment, load, attempt])
+
+  useEffect(() => {
+    if (preview !== undefined) setError(false)
+  }, [attempt, preview])
 
   const src = preview?.url ?? loaded
   const label = ('attachment' in image ? image.label : undefined)
@@ -157,27 +149,47 @@ export function MessageImage({ image, load, variant, labels }: {
               {loadingThumbnail ? <IconLoadingOutline16 className={css.spinner} /> : labels.loading}
             </span>
           )
-          : <img src={src} alt={label} style={fit === undefined ? undefined : { objectPosition: fit.objectPosition }} />}
+          : <img
+            key={attempt}
+            src={src}
+            alt={label}
+            style={fit === undefined ? undefined : { objectPosition: fit.objectPosition }}
+            onError={() => { setError(true) }}
+          />}
       </button>
-      {open && src !== null && <ImageLightbox src={src} alt={label} labels={labels.lightbox} onClose={close} />}
+      {open && src !== null && (
+        <ImageLightbox
+          src={src}
+          alt={label}
+          labels={labels.lightbox}
+          actions={preview?.actions}
+          onClose={close}
+        />
+      )}
     </>
   )
 }
 
 /** Wrapping image group shared by user and assistant history: a lone image
  * renders large unless its owner requests compact tiles or contained list thumbnails. */
-export function ImageGallery({ images, load, align, compact = false, thumbnail = false, labels }: {
+export function ImageGallery({ images, load, align, compact = false, thumbnail = false, expanded = false, labels }: {
   images: readonly MessageImageSpec[]
   load: ImageLoader
   align: 'start' | 'end'
   compact?: boolean
   thumbnail?: boolean
+  expanded?: boolean
   labels: MessageImageLabels
 }) {
   if (images.length === 0) return null
-  const variant = thumbnail ? 'thumbnail' : compact || images.length > 1 ? 'tile' : 'single'
+  const variant = thumbnail ? 'thumbnail' : expanded ? 'expanded' : compact || images.length > 1 ? 'tile' : 'single'
   return (
-    <div className={css.gallery} data-align={align}>
+    <div
+      className={css.gallery}
+      data-align={align}
+      data-expanded={expanded || undefined}
+      data-count={expanded ? Math.min(images.length, 3) : undefined}
+    >
       {images.map((image, index) => (
         <MessageImage
           key={`${'attachment' in image ? image.attachment.attachmentId : image.preview.url}:${index}`}

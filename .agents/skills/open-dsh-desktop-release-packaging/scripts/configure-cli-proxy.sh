@@ -16,11 +16,22 @@ odsh_configure_cli_proxy() {
   odsh_sync_proxy_pair HTTPS_PROXY https_proxy
   odsh_sync_proxy_pair ALL_PROXY all_proxy
   odsh_sync_proxy_pair NO_PROXY no_proxy
-  if [[ -n ${HTTP_PROXY:-}${HTTPS_PROXY:-}${ALL_PROXY:-} ]]; then return 0; fi
+  if [[ -n ${HTTP_PROXY:-}${HTTPS_PROXY:-}${ALL_PROXY:-} ]]; then
+    ODSH_RELEASE_ROUTE_NAME=explicit-proxy-environment
+    export ODSH_RELEASE_ROUTE_NAME
+    return 0
+  fi
 
-  [[ ${ODSH_USE_SYSTEM_PROXY:-1} != 0 ]] || return 0
-  [[ $(uname -s 2>/dev/null || true) == Darwin ]] || return 0
-  command -v scutil >/dev/null || return 0
+  if [[ ${ODSH_USE_SYSTEM_PROXY:-1} == 0 ]]; then
+    ODSH_RELEASE_ROUTE_NAME=direct
+    export ODSH_RELEASE_ROUTE_NAME
+    return 0
+  fi
+  if [[ $(uname -s 2>/dev/null || true) != Darwin ]] || ! command -v scutil >/dev/null; then
+    ODSH_RELEASE_ROUTE_NAME=direct
+    export ODSH_RELEASE_ROUTE_NAME
+    return 0
+  fi
 
   local settings http_enable http_host http_port
   local https_enable https_host https_port socks_enable socks_host socks_port
@@ -56,7 +67,11 @@ odsh_configure_cli_proxy() {
     [[ -z $adopted ]] || adopted="$adopted, "
     adopted="${adopted}SOCKS $socks_host:$socks_port"
   fi
-  [[ -n $adopted ]] || return 0
+  if [[ -z $adopted ]]; then
+    ODSH_RELEASE_ROUTE_NAME=direct
+    export ODSH_RELEASE_ROUTE_NAME
+    return 0
+  fi
 
   if [[ -z ${NO_PROXY:-}${no_proxy:-} ]]; then
     NO_PROXY='localhost,127.0.0.1,::1'
@@ -64,6 +79,8 @@ odsh_configure_cli_proxy() {
     export NO_PROXY no_proxy
   fi
   printf 'release network: adopted macOS system proxy for CLI tools (%s)\n' "$adopted" >&2
+  ODSH_RELEASE_ROUTE_NAME=macos-system-proxy
+  export ODSH_RELEASE_ROUTE_NAME
 }
 
 odsh_configure_cli_proxy

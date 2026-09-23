@@ -340,7 +340,6 @@ describe('canOpenNativePath', () => {
 describe('native file manager', () => {
   it.each([
     ['darwin', 'finder', '/tmp/my report.txt', 'open', ['-R', '/tmp/my report.txt']],
-    ['win32', 'explorer', 'C:\\work\\my report.txt', 'explorer.exe', ['/select,', 'file:///C:/work/my%20report.txt']],
     ['linux', 'directory', '/tmp/a $b; report.txt', 'xdg-open', ['/tmp']],
   ] as const)('reveals through %s without opening the file association', async (platform, manager, path, command, args) => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
@@ -350,14 +349,35 @@ describe('native file manager', () => {
     expect(run).toHaveBeenCalledExactlyOnceWith(command, args, expect.any(AbortSignal))
   })
 
+  it('asks the Windows Shell to select the item and checks its result', async () => {
+    const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
+    const requestSignal = signal()
+    await revealNativePath('C:\\work\\my report.txt', requestSignal, {
+      platform: 'win32', env: { SystemRoot: 'D:\\Windows' }, run,
+    })
+    expect(nativeFileManager({ platform: 'win32' })).toBe('explorer')
+    expect(run).toHaveBeenCalledOnce()
+    const [command, args, passedSignal] = run.mock.calls[0]!
+    expect(command).toBe('D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe')
+    expect(passedSignal).toBe(requestSignal)
+    expect(args.slice(0, 4)).toEqual(['-NoProfile', '-NonInteractive', '-Sta', '-EncodedCommand'])
+    const script = Buffer.from(args[4]!, 'base64').toString('utf16le')
+    expect(script).toContain("[DshNativeFolderReveal]::Reveal('C:\\work\\my report.txt')")
+    expect(script).toContain('SHOpenFolderAndSelectItems(item, 0, IntPtr.Zero, 0)')
+    expect(script).toContain('if (selected != 0) throw new COMException')
+  })
+
   it('selects a translated WSL path in Explorer and never starts a Linux file manager', async () => {
     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: 'C:\\work\\报告.txt\r\n', stderr: '' }))
     const internals = { platform: 'linux' as const, env: { WSL_DISTRO_NAME: 'Ubuntu' }, run }
     expect(nativeFileManager(internals)).toBe('explorer')
     await revealNativePath('/mnt/c/work/报告.txt', signal(), internals)
-    expect(run.mock.calls.map(([cmd, args]) => [cmd, args])).toEqual([
-      ['wslpath', ['-w', '/mnt/c/work/报告.txt']], ['explorer.exe', ['/select,', 'file:///C:/work/%E6%8A%A5%E5%91%8A.txt']],
-    ])
+    expect(run.mock.calls[0]?.slice(0, 2)).toEqual(['wslpath', ['-w', '/mnt/c/work/报告.txt']])
+    const [command, args] = run.mock.calls[1]!
+    expect(command).toBe('powershell.exe')
+    expect(args.slice(0, 4)).toEqual(['-NoProfile', '-NonInteractive', '-Sta', '-EncodedCommand'])
+    expect(Buffer.from(args[4]!, 'base64').toString('utf16le'))
+      .toContain("[DshNativeFolderReveal]::Reveal('C:\\work\\报告.txt')")
   })
 
   it('refuses empty WSL translations and cancelled translation without launching Explorer', async () => {
@@ -389,36 +409,40 @@ it('uses the native runner for a file-manager handoff when none is injected', as
 })
 
 
-it.each(['win32', 'linux'] as const)('accepts Explorer delegate exit 1 through the native runner on %s', async (platform) => {
+it.each(['win32', 'linux'] as const)('reports Windows selection failure through the native runner on %s', async (platform) => {
   execFileMock.mockImplementation((command, _args, _options, callback) => {
     if (command === 'wslpath') callback(null, 'C:\\work\\report.txt', '')
-    else callback(Object.assign(new Error('delegated'), { code: 1 }), '', '')
+    else callback(Object.assign(new Error('selection failed'), { code: 1 }), '', '')
   })
   await expect(revealNativePath(platform === 'win32' ? 'C:\\work\\report.txt' : '/mnt/c/work/report.txt', signal(),
-    { platform, env: { WSL_DISTRO_NAME: 'Ubuntu' } })).resolves.toBeUndefined()
+    { platform, env: { WSL_DISTRO_NAME: 'Ubuntu' } })).rejects.toMatchObject({ code: 1 })
 })
 
-it.each([2, 'ENOENT', undefined])('preserves Explorer failure %s', async (code) => {
+it.each([2, 'ENOENT', undefined])('preserves Windows Shell invocation failure %s', async (code) => {
   const failure = Object.assign(new Error('launch failed'), code === undefined ? {} : { code })
   execFileMock.mockImplementation((_command, _args, _options, callback) => { callback(failure, '', '') })
   await expect(revealNativePath('C:\\file.txt', signal(), { platform: 'win32' })).rejects.toMatchObject({ code })
 })
 
-it('preserves cancellation even when Explorer returns delegate exit 1', async () => {
+it('preserves cancellation when Windows selection also fails', async () => {
   const abort = new AbortController()
   const reason = new Error('cancelled')
   const run = vi.fn<PathOpenerRunner>(async () => {
     abort.abort(reason)
-    throw Object.assign(new Error('delegated'), { code: 1 })
+    throw Object.assign(new Error('selection failed'), { code: 1 })
   })
   await expect(revealNativePath('C:\\file.txt', abort.signal, { platform: 'win32', run })).rejects.toBe(reason)
 })
 
 it.each([
-  ['C:\\my files\\报告,#%.txt', 'file:///C:/my%20files/%E6%8A%A5%E5%91%8A%2C%23%25.txt'],
-  ['\\\\server\\share\\a,b.txt', 'file://server/share/a%2Cb.txt'],
-])('preserves special characters in the Explorer target %s', async (path, target) => {
+  'C:\\my files\\报告,#%.txt',
+  '\\\\server\\share\\a,b.txt',
+  "C:\\my files\\it's ready.txt",
+])('passes the literal Windows target to the Shell %s', async (path) => {
   const run = vi.fn<PathOpenerRunner>().mockResolvedValue({ stdout: '', stderr: '' })
   await revealNativePath(path, signal(), { platform: 'win32', run })
-  expect(run).toHaveBeenCalledWith('explorer.exe', ['/select,', target], expect.any(AbortSignal))
+  const [command, args] = run.mock.calls[0]!
+  expect(command).toContain('powershell.exe')
+  const script = Buffer.from(args[4]!, 'base64').toString('utf16le')
+  expect(script).toContain(`[DshNativeFolderReveal]::Reveal('${path.replace(/'/g, "''")}')`)
 })

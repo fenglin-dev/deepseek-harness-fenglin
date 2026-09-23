@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { preparePrebuiltProfile } from './prepare-prebuilt-profile.mjs'
 import { nodeRuntimeArchivesByTarget, nodeVersion } from './node-runtime-pins.mjs'
 import { createPackagedArchive } from './create-packaged-archive.mjs'
+import { preservePnpmWorkspaceState } from '../../../scripts/preserve-pnpm-workspace-state.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = resolve(desktopRoot, '../..')
@@ -306,6 +307,11 @@ async function pruneNodeModules(directory, counters) {
       continue
     }
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    if (typeof manifest.name === 'string' && manifest.name.startsWith('@deepseek-ai/libreoffice-kit-')) {
+      await rm(candidate, { recursive: true, force: true })
+      counters.foreignPackages += 1
+      continue
+    }
     if (!packageSupportsWindowsX64(manifest)) {
       await rm(candidate, { recursive: true, force: true })
       counters.foreignPackages += 1
@@ -447,6 +453,10 @@ async function verifyRuntime() {
   for (const secretName of ['.env', 'auth.json']) {
     if (existsSync(join(harnessRoot, secretName))) throw new Error(`prepare-windows-runtime: contains forbidden ${secretName}`)
   }
+  const officeScope = join(harnessRoot, 'node_modules', '@deepseek-ai')
+  if (existsSync(officeScope) && (await readdir(officeScope)).some(name => name.startsWith('libreoffice-kit-'))) {
+    throw new Error('prepare-windows-runtime: optional LibreOffice engine remained in the installer runtime')
+  }
   await run(nodeExecutable, ['--version'])
   await run(nodeExecutable, [stagedPnpmEntry, '--version'])
   await smokeBundledPlugins()
@@ -461,18 +471,19 @@ if (outputRoot === repositoryRoot || repositoryRoot.startsWith(outputRoot + sep)
 }
 await rm(outputRoot, { recursive: true, force: true })
 await mkdir(outputRoot, { recursive: true })
-await run(process.execPath, [
+await preservePnpmWorkspaceState(repositoryRoot, () => run(process.execPath, [
   pnpmEntry,
   '--filter',
   '@deepseek-ai/dsh',
   'deploy',
   '--prod',
+  '--config.allow-unused-patches=true',
   '--legacy',
   '--config.node-linker=hoisted',
   '--config.auto-install-peers=false',
   '--config.link-workspace-packages=true',
   harnessRoot,
-])
+]))
 await materializeLinks()
 await injectWorkspaceClosure()
 await injectVendoredDependencies()

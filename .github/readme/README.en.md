@@ -1,26 +1,26 @@
-<p align="center">
+﻿<p align="center">
   <img src="../../apps/desktop/src/icon.png" width="112" alt="DeepSeek Harness Desktop Fenglin edition icon">
 </p>
 
-# DeepSeek Harness Desktop 3.0.3 (Fenglin Edition)
+# DeepSeek Harness Desktop 3.1.0 (Fenglin Edition)
 
 <p align="center">
   <strong>A ready-to-use, dependency-safe independent desktop edition of DeepSeek Harness</strong>
 </p>
 
-Languages: [简体中文](../../README.zh.md) · English
+Languages: [绠€浣撲腑鏂嘳(../../README.zh.md) 路 English
 
 > [!IMPORTANT]
 >
-> **[v3.0.3 is now available](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.0.3).**
+> **[v3.1.0 is now available](https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/tag/dsh-v3.1.0).**
 >
 > Rebuilt from the upstream `0.1.6-alpha.2` baseline with Fenglin exclusive features and recent stability fixes. This is a large version jump: a **clean install is recommended** (remove the old install directory; optionally clear `%APPDATA%\open-deepseek-harness-desktop` before reinstalling).
 >
 > Language support: **Simplified Chinese / English** only.
 
-### What's new in 3.0.3
+### What's new in 3.1.0
 
-- **LiangShen preset**: clean-install “load failed” fixed. Package `presets/liangshen` and `$DSH_HOME/.agent-presets/liangshen` both ship the Fenglin-verified composition so host sync cannot drop `./minimal-prompt.mjs` resolution; startup restores missing preset files.
+- **LiangShen preset**: clean-install 鈥渓oad failed鈥?fixed. Package `presets/liangshen` and `$DSH_HOME/.agent-presets/liangshen` both ship the Fenglin-verified composition so host sync cannot drop `./minimal-prompt.mjs` resolution; startup restores missing preset files.
 
 ### What's new in 3.0.2
 
@@ -37,8 +37,8 @@ Languages: [简体中文](../../README.zh.md) · English
 
 ### What's new in 3.0.0
 
-- **Branding**: version 3.0.0, About page “maintained independently by Fenglin”, whale-girl icon, update checks pointed at this repository, `Ctrl+R` reload, attachment entry on the composer.
-- **Plugins**: Skill Center enabled by default with unified sidebar UI; LiangShen switchable while idle (locked only while a reply is running); Better Sidebar bottom workbench works and does not auto-expand after refresh; bundled music enabled by default; “Add plugin” remains clickable on local desktop.
+- **Branding**: version 3.0.0, About page 鈥渕aintained independently by Fenglin鈥? whale-girl icon, update checks pointed at this repository, `Ctrl+R` reload, attachment entry on the composer.
+- **Plugins**: Skill Center enabled by default with unified sidebar UI; LiangShen switchable while idle (locked only while a reply is running); Better Sidebar bottom workbench works and does not auto-expand after refresh; bundled music enabled by default; 鈥淎dd plugin鈥?remains clickable on local desktop.
 - **Stability**: LiangShen `no session id` / dual-mount / burst crash; bottom and side terminal `sessionId`; new-chat React #130; `mkt-music` loader diagnostic; Windows packaging and prebuilt-seal allowlist fixes.
 - **Release CI**: `dsh-v*` tags auto-build Linux and Windows installers and attach them to GitHub Releases.
 
@@ -76,7 +76,7 @@ The desktop client includes the complete DeepSeek Harness conversation experienc
 
 Question history uses readable question-and-answer cards with completed, cancelled, and interrupted states. Switching sessions preserves an unsubmitted question card. While a session is still running, users can continue typing; the primary action becomes Send and the new message enters the send queue.
 
-Archiving a session does not delete its contents. Open **Settings → Archived sessions** to search and filter by Workspace, restore one session or restore them all. Restored sessions return to their original Workspace with their message history intact.
+Archiving a session does not delete its contents. Open **Settings 鈫?Archived sessions** to search and filter by Workspace, restore one session or restore them all. Restored sessions return to their original Workspace with their message history intact.
 
 Images appear immediately while compression and upload continue in the background. Long screenshots balance size and clarity, image usage participates in context-compaction accounting, and the trace can display images from users, assistants, and tool results. Local-filesystem mode can locate uploaded images, and editing adjacent text does not invalidate file or session references in the composer.
 
@@ -134,7 +134,7 @@ Both **Import into an independent environment** and **Start fresh** offer a choi
   <sub>Start fresh: place the new independent data root in a user-selected location</sub>
 </p>
 
-After initial setup, the data directory can still be changed from **Settings → General settings**. Return to the client-managed directory, use the official `~/.dsh`, select another existing DSH directory, or create a new configuration in an empty folder. Switching only selects the directory used after restart; it does not copy, move, merge, or delete data in the original directory. An empty folder starts the first-install flow again after restart.
+After initial setup, the data directory can still be changed from **Settings 鈫?General settings**. Return to the client-managed directory, use the official `~/.dsh`, select another existing DSH directory, or create a new configuration in an empty folder. Switching only selects the directory used after restart; it does not copy, move, merge, or delete data in the original directory. An empty folder starts the first-install flow again after restart.
 
 <p align="center">
   <img src="../../assets/readme/data-home-switch-after-start-zh.png" width="900" alt="Switch the data directory from General settings after entering the client">
@@ -166,7 +166,7 @@ Each entry receives a source status:
 
 If an online source is unavailable, users may select a local source directory or `.tgz` archive. The client validates the package name, archive paths, manifest size, and total size. Source directories are repacked with lifecycle scripts disabled before entering the existing plugin installation flow, and a version mismatch requires a second confirmation.
 
-Online and local restoration both continue through build approval, shared-dependency diagnostics, and quarantine when necessary. The client never scans, copies, or adopts the old `node_modules`, and it does not directly execute credential-bearing, local-path, or unrecognized dependency specifications. External tools such as Codex and Claude Code cannot be replaced with local plugin packages and remain available through **Settings → External tools**.
+Online and local restoration both continue through build approval, shared-dependency diagnostics, and quarantine when necessary. The client never scans, copies, or adopts the old `node_modules`, and it does not directly execute credential-bearing, local-path, or unrecognized dependency specifications. External tools such as Codex and Claude Code cannot be replaced with local plugin packages and remain available through **Settings 鈫?External tools**.
 
 <p align="center">
   <img src="../../assets/readme/imported-plugin-restore-zh.png" width="900" alt="Plugin source status and safe local restoration after importing a DSH configuration">
@@ -219,7 +219,7 @@ The inspection therefore does not stop at `package.json`. Starting from each dir
 
 ### Why repair does not simply reinstall everything
 
-The fixed order is **read-only inspection → lossless convergence → install only necessary dependencies → real-path recheck → quarantine if required**. A healthy Profile does not run pnpm just because diagnostics exist and is not reinstalled at every launch.
+The fixed order is **read-only inspection 鈫?lossless convergence 鈫?install only necessary dependencies 鈫?real-path recheck 鈫?quarantine if required**. A healthy Profile does not run pnpm just because diagnostics exist and is not reinstalled at every launch.
 
 - Orphaned shared singletons can be relinked to the canonical Host packages owned by the currently running installation.
 - When a plugin's declared range is compatible, managed `link:` overrides converge only reserved shared packages while preserving user Workspace configuration, comments, and unrelated overrides.
@@ -286,7 +286,7 @@ This distribution preserves the upstream DeepSeek Harness Web client while addin
 
 ### A complete desktop host
 
-Electron is more than a wrapper around a Web page. The desktop host supervises the Harness child process, closes to the tray by default, waits for orderly cleanup on every true quit path, delivers system notifications, supports launch at login on macOS, exposes the log, and checks this client's releases. If Harness takes unusually long to start, the startup page offers the log while continuing to wait. Three consecutive early exits instead produce an explicit failure state with retry and log actions rather than an endless “starting” screen.
+Electron is more than a wrapper around a Web page. The desktop host supervises the Harness child process, closes to the tray by default, waits for orderly cleanup on every true quit path, delivers system notifications, supports launch at login on macOS, exposes the log, and checks this client's releases. If Harness takes unusually long to start, the startup page offers the log while continuing to wait. Three consecutive early exits instead produce an explicit failure state with retry and log actions rather than an endless 鈥渟tarting鈥?screen.
 
 The tray can reopen the window, reveal the log, toggle notifications and launch at login, and quit safely. Abnormal exits, repeated startup failures, and recovery produce throttled native notifications. Every bridge is capability-scoped: Web content may manage these desktop preferences, reveal the fixed `harness.log`, or query this project's Releases, but it receives no generic shell, filesystem, or arbitrary-URL capability.
 
@@ -353,7 +353,7 @@ This capability must belong to the desktop client's boot layer rather than anoth
 
 ### User-triggered official Codex and Claude Code connections
 
-Platform installers carry neither the official DeepSeek Harness [`@deepseek-ai/dsh-subagent-codex`](../../packages/subagent/subagent-codex/README.md) nor [`@deepseek-ai/dsh-subagent-claude-code`](../../packages/subagent/subagent-claude-code/README.md) Bundle. Onboarding and **Settings → External tools** expose explicit install actions; only after the user clicks one does the desktop client download the reviewed package and platform dependencies from npm. The same page can install the community-maintained `dsh-workbuddy-connect@0.5.0` connector for an already signed-in WorkBuddy or WorkBuddy AI desktop app. None of these packages is silently restored after removal.
+Platform installers carry neither the official DeepSeek Harness [`@deepseek-ai/dsh-subagent-codex`](../../packages/subagent/subagent-codex/README.md) nor [`@deepseek-ai/dsh-subagent-claude-code`](../../packages/subagent/subagent-claude-code/README.md) Bundle. Onboarding and **Settings 鈫?External tools** expose explicit install actions; only after the user clicks one does the desktop client download the reviewed package and platform dependencies from npm. The same page can install the community-maintained `dsh-workbuddy-connect@0.5.0` connector for an already signed-in WorkBuddy or WorkBuddy AI desktop app. None of these packages is silently restored after removal.
 
 The installer view reports resolution, download, and import progress and can show sanitized live output. Pause ends the current package-manager transaction safely and Resume reuses pnpm's cache; Stop leaves an explicit stopped state for a fresh retry. Closing the progress view does not cancel the operation. Desktop-managed public npm downloads default to npmmirror while explicit registry, proxy, build-approval, and Profile transaction settings remain authoritative.
 
@@ -367,7 +367,7 @@ The official connector currently treats every delegation as an independent, ephe
 
 ### External coding tools connection center
 
-**Settings → External tools** brings Codex, Claude Code, WorkBuddy, and placeholders for future Hermes and Trae Providers into one discoverable surface. After a supported Provider is connected, existing and new full-mode sessions receive its tool at the next safe turn boundary; an already running turn is never rewritten, and minimal mode stays intentionally lean. Disconnecting withdraws the tool without deleting Harness sessions or data owned by the external product.
+**Settings 鈫?External tools** brings Codex, Claude Code, WorkBuddy, and placeholders for future Hermes and Trae Providers into one discoverable surface. After a supported Provider is connected, existing and new full-mode sessions receive its tool at the next safe turn boundary; an already running turn is never rewritten, and minimal mode stays intentionally lean. Disconnecting withdraws the tool without deleting Harness sessions or data owned by the external product.
 
 <p align="center">
   <img src="../../assets/readme/codex-connection-center-zh.png" width="760" alt="Codex connection state in the external coding tools center">
@@ -377,7 +377,7 @@ The official connector currently treats every delegation as an independent, ephe
 
 ### Dynamic tool projection: connection becomes capability
 
-Conventional Agent compositions pin tools to a particular preset: users must choose the right specialized preset in advance, while existing sessions often cannot receive a product connected later. This client treats an external-product connection as independent, durable Host capability state, then dynamically projects `subagent_codex` into each eligible Agent scope at a safe model-request boundary. Users therefore do not need to recreate a conversation or switch to a dedicated “external tools” preset: new and historical sessions both receive the currently connected capability from their next turn.
+Conventional Agent compositions pin tools to a particular preset: users must choose the right specialized preset in advance, while existing sessions often cannot receive a product connected later. This client treats an external-product connection as independent, durable Host capability state, then dynamically projects `subagent_codex` into each eligible Agent scope at a safe model-request boundary. Users therefore do not need to recreate a conversation or switch to a dedicated 鈥渆xternal tools鈥?preset: new and historical sessions both receive the currently connected capability from their next turn.
 
 - **Turn safety:** A connection change never mutates the tool schema in the middle of a request. Connections take effect on the next turn; disconnections wait until the Agent is idle before removing the tool safely.
 - **Mode isolation:** Projection is limited to full modes such as `standard`, `code`, and `cordis`; `minimal` remains lean to prevent capability inflation and accidental delegation.
@@ -436,7 +436,7 @@ The Release also includes `SHA256SUMS`. Verify downloads before installation; on
 
 1. Download the package matching your Mac processor and open the `.dmg`.
 2. Drag `Open DeepSeek Harness Desktop.app` into the Applications folder.
-3. Current open-source builds use ad-hoc signing and are not notarized. If Gatekeeper blocks the first launch, use **System Settings → Privacy & Security → Open Anyway**. Alternatively, after confirming the download came from this repository, run:
+3. Current open-source builds use ad-hoc signing and are not notarized. If Gatekeeper blocks the first launch, use **System Settings 鈫?Privacy & Security 鈫?Open Anyway**. Alternatively, after confirming the download came from this repository, run:
 
    ```bash
    xattr -dr com.apple.quarantine "/Applications/Open DeepSeek Harness Desktop.app"
@@ -444,7 +444,7 @@ The Release also includes `SHA256SUMS`. Verify downloads before installation; on
 
 > [!CAUTION]
 >
-> Removing the quarantine attribute bypasses a macOS security check. Use the command only for this exact application path and only for a package downloaded from the official Releases page. You can also try Apple's [Open Anyway](https://support.apple.com/102445) flow under **System Settings → Privacy & Security**.
+> Removing the quarantine attribute bypasses a macOS security check. Use the command only for this exact application path and only for a package downloaded from the official Releases page. You can also try Apple's [Open Anyway](https://support.apple.com/102445) flow under **System Settings 鈫?Privacy & Security**.
 
 ### Windows
 
@@ -519,8 +519,8 @@ API keys remain owned by the Harness credentials service. Do not commit credenti
 
 Users who want to try Harness before purchasing model credits can evaluate these OpenAI-compatible options. They are independent third-party services, are not bundled or selected by default, and may change their free quotas, model names, rate limits, logging policies, or availability at any time.
 
-- **[Agnes AI](https://agnes-ai.com/)** — offers an API-key application and free-access entry for its multimodal gateway. Add it as an OpenAI-compatible provider with Base URL `https://apihub.agnes-ai.com/v1`; `agnes-2.5-flash` is the current general choice for coding, reasoning, tool calling, and Agent workflows. Confirm the account's current Token Plan and limits in the Agnes console before relying on it.
-- **[OpenRouter · Ox Alpha](https://openrouter.ai/stealth/ox-alpha?view=api)** — use Base URL `https://openrouter.ai/api/v1` and model ID `stealth/ox-alpha`. Its current catalog price is zero for input and output tokens, but stealth/alpha models are previews and may be renamed, withdrawn, rate-limited, or repriced. OpenRouter's account-level free-model limits still apply.
+- **[Agnes AI](https://agnes-ai.com/)** 鈥?offers an API-key application and free-access entry for its multimodal gateway. Add it as an OpenAI-compatible provider with Base URL `https://apihub.agnes-ai.com/v1`; `agnes-2.5-flash` is the current general choice for coding, reasoning, tool calling, and Agent workflows. Confirm the account's current Token Plan and limits in the Agnes console before relying on it.
+- **[OpenRouter 路 Ox Alpha](https://openrouter.ai/stealth/ox-alpha?view=api)** 鈥?use Base URL `https://openrouter.ai/api/v1` and model ID `stealth/ox-alpha`. Its current catalog price is zero for input and output tokens, but stealth/alpha models are previews and may be renamed, withdrawn, rate-limited, or repriced. OpenRouter's account-level free-model limits still apply.
 
 Create keys only on the providers' official sites and save them through Harness credentials. Never paste API tokens into issues, screenshots, README files, or committed configuration.
 
@@ -569,4 +569,4 @@ Open DeepSeek Harness Desktop is available under the [MIT License](../../LICENSE
 
 ## Friends
 
-- [DSHFind](https://dshfind.com/zh) — a Chinese DeepSeek Harness learning and sharing community with tutorials, plugins, and community resources.
+- [DSHFind](https://dshfind.com/zh) 鈥?a Chinese DeepSeek Harness learning and sharing community with tutorials, plugins, and community resources.

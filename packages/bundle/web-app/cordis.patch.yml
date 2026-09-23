@@ -72,6 +72,11 @@
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
+    # Versioned global and Workspace-scoped user guidance. Its client half
+    # contributes the trusted editor and Workspace menu entry.
+    - id: custom-instructions
+      name: '@deepseek-ai/dsh-custom-instructions'
+
     - id: session-reference
       name: '@deepseek-ai/dsh-session-reference'
 

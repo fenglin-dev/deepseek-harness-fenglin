@@ -159,6 +159,14 @@ applyIndexTaps(html: string): string
 collectIndexInjections(): IndexInjection[]
 
 /**
+ * Gather rows for a static page and project legacy external-script index
+ * taps into that table. Inline scripts and arbitrary HTML transforms remain
+ * server-only because they cannot be transported as trusted data safely.
+ * @returns structured rows executable by a static page bootstrap.
+ */
+collectStaticIndexInjections(): IndexInjection[]
+
+/**
  * Render one index.html body: the structured injection table first, then
  * the raw `tapIndex` transforms over the result.
  * @param html - the raw index.html body.

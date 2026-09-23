@@ -2,13 +2,14 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 [--publish] [--resume-draft] --release-state <stable|prerelease> <owner/repo> <source-sha> <tag> <title> <notes-file> <release-directory>" >&2
+  echo "usage: $0 [--publish] [--resume-draft] --release-state <stable|prerelease> --metadata-directory <directory> <owner/repo> <source-sha> <tag> <title> <notes-file> <release-directory>" >&2
   exit 2
 }
 
 publish=0
 resume_draft=0
 release_state=
+metadata_directory=
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --publish)
@@ -24,6 +25,11 @@ while [[ $# -gt 0 ]]; do
       release_state=$2
       shift 2
       ;;
+    --metadata-directory)
+      [[ $# -ge 2 ]] || usage
+      metadata_directory=$2
+      shift 2
+      ;;
     --)
       shift
       break
@@ -34,6 +40,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ $# -eq 6 ]] || usage
 [[ "$release_state" == stable || "$release_state" == prerelease ]] || usage
+[[ -n "$metadata_directory" ]] || usage
 
 repository=$1
 source_sha=$2
@@ -54,7 +61,23 @@ installers=(
   DeepSeek-Harness-macos-x64.zip
   DeepSeek-Harness-windows-x64.exe
 )
-assets=("${installers[@]}" SHA256SUMS)
+metadata_assets=(
+  "workspace-runtimes-$version.v2.json"
+  workspace-runtimes.v2.sigstore.json
+)
+assets=("${installers[@]}" SHA256SUMS "${metadata_assets[@]}")
+
+asset_path() {
+  local filename=$1
+  case "$filename" in
+    workspace-runtimes-*.v2.json|workspace-runtimes.v2.sigstore.json)
+      printf '%s/%s\n' "$metadata_directory" "$filename"
+      ;;
+    *)
+      printf '%s/%s\n' "$release_directory" "$filename"
+      ;;
+  esac
+}
 
 for command_name in gh shasum wc awk; do
   command -v "$command_name" >/dev/null || { echo "missing command: $command_name" >&2; exit 1; }
@@ -67,6 +90,14 @@ done
 [[ -f "$notes_file" && -s "$notes_file" && ! -L "$notes_file" ]] || { echo "notes file must be a non-empty regular file: $notes_file" >&2; exit 1; }
 
 "$script_directory/verify-release-directory.sh" "$release_directory"
+[[ -d "$metadata_directory" && ! -L "$metadata_directory" ]] || { echo "metadata directory must be a real directory: $metadata_directory" >&2; exit 1; }
+metadata_entries=()
+while IFS= read -r entry; do metadata_entries+=("$entry"); done < <(find "$metadata_directory" -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)
+[[ ${#metadata_entries[@]} -eq ${#metadata_assets[@]} ]] || { echo "metadata directory must contain exactly ${#metadata_assets[@]} files" >&2; exit 1; }
+for filename in "${metadata_assets[@]}"; do
+  metadata_path="$metadata_directory/$filename"
+  [[ -f "$metadata_path" && -s "$metadata_path" && ! -L "$metadata_path" ]] || { echo "missing or invalid release metadata: $metadata_path" >&2; exit 1; }
+done
 
 remote_sha=$(gh api "repos/$repository/commits/$source_sha" --jq .sha)
 [[ "$remote_sha" == "$source_sha" ]] || { echo "remote commit does not match $source_sha" >&2; exit 1; }
@@ -121,7 +152,8 @@ echo "Release publication plan"
 printf '  repository: %s\n  source SHA: %s\n  tag: %s\n  title: %s\n  release state: %s\n  notes: %s\n  assets:\n' \
   "$repository" "$source_sha" "$tag" "$title" "$release_state" "$notes_file"
 for filename in "${assets[@]}"; do
-  printf '    %s  %s\n' "$(shasum -a 256 "$release_directory/$filename" | awk '{ print $1 }')" "$release_directory/$filename"
+  path=$(asset_path "$filename")
+  printf '    %s  %s\n' "$(shasum -a 256 "$path" | awk '{ print $1 }')" "$path"
 done
 if [[ $existing_release -eq 1 ]]; then printf '  recovery: resume verified Draft %s\n' "$existing_url"; fi
 if [[ $existing_release -eq 1 ]]; then
@@ -136,8 +168,9 @@ if [[ $existing_release -eq 1 ]]; then
     [[ $expected -eq 1 ]] || { echo "Draft contains an unexpected asset: $remote_name" >&2; exit 1; }
   done <<< "$draft_assets"
   for filename in "${assets[@]}"; do
-    expected_hash=$(shasum -a 256 "$release_directory/$filename" | awk '{ print $1 }')
-    expected_size=$(wc -c < "$release_directory/$filename" | tr -d ' ')
+    path=$(asset_path "$filename")
+    expected_hash=$(shasum -a 256 "$path" | awk '{ print $1 }')
+    expected_size=$(wc -c < "$path" | tr -d ' ')
     named=$(awk -F '\t' -v name="$filename" '$1 == name { count++ } END { print count + 0 }' <<< "$draft_assets")
     matches=$(awk -F '\t' -v name="$filename" -v size="$expected_size" -v digest="sha256:$expected_hash" \
       '$1 == name && $2 == size && $3 == digest { count++ } END { print count + 0 }' <<< "$draft_assets")
@@ -187,8 +220,9 @@ while IFS=$'\t' read -r remote_name _; do
 done < "$remote_assets"
 
 for filename in "${assets[@]}"; do
-  expected_hash=$(shasum -a 256 "$release_directory/$filename" | awk '{ print $1 }')
-  expected_size=$(wc -c < "$release_directory/$filename" | tr -d ' ')
+  path=$(asset_path "$filename")
+  expected_hash=$(shasum -a 256 "$path" | awk '{ print $1 }')
+  expected_size=$(wc -c < "$path" | tr -d ' ')
   named=$(awk -F '\t' -v name="$filename" '$1 == name { count++ } END { print count + 0 }' "$remote_assets")
   matches=$(awk -F '\t' -v name="$filename" -v size="$expected_size" -v digest="sha256:$expected_hash" \
     '$1 == name && $2 == size && $3 == digest { count++ } END { print count + 0 }' "$remote_assets")
@@ -200,7 +234,7 @@ for filename in "${assets[@]}"; do
   [[ "$named" == 0 ]] || { echo "Draft asset identity mismatch for $filename; refusing to clobber it" >&2; exit 1; }
   started_at=$(date +%s)
   echo "$filename: upload started"
-  if ! gh release upload "$tag" "$release_directory/$filename" -R "$repository"; then
+  if ! gh release upload "$tag" "$path" -R "$repository"; then
     report_retained_draft
     exit 1
   fi
@@ -211,7 +245,7 @@ for filename in "${assets[@]}"; do
   elapsed=$(( $(date +%s) - started_at ))
   echo "$filename: upload verified in ${elapsed}s"
 done
-[[ $(wc -l < "$remote_assets" | tr -d ' ') == 8 ]] || { echo "Draft does not contain exactly eight verified assets" >&2; exit 1; }
+[[ $(wc -l < "$remote_assets" | tr -d ' ') == ${#assets[@]} ]] || { echo "Draft does not contain exactly ${#assets[@]} verified assets" >&2; exit 1; }
 
 edit_args=(release edit "$tag" -R "$repository" --draft=false --title "$title" --notes-file "$notes_file")
 if [[ $prerelease -eq 1 ]]; then edit_args+=(--prerelease --latest=false)
@@ -229,10 +263,11 @@ IFS=$'\t' read -r is_draft is_prerelease published_title release_url <<< "$publi
 [[ "$published_title" == "$title" ]] || { echo "Release title mismatch" >&2; exit 1; }
 [[ "$is_prerelease" == "$expected_prerelease" ]] || { echo "Release prerelease state mismatch" >&2; exit 1; }
 refresh_remote_assets
-[[ $(wc -l < "$remote_assets" | tr -d ' ') == 8 ]] || { echo "published Release does not contain exactly eight uploaded assets" >&2; exit 1; }
+[[ $(wc -l < "$remote_assets" | tr -d ' ') == ${#assets[@]} ]] || { echo "published Release does not contain exactly ${#assets[@]} uploaded assets" >&2; exit 1; }
 for filename in "${assets[@]}"; do
-  expected_hash=$(shasum -a 256 "$release_directory/$filename" | awk '{ print $1 }')
-  expected_size=$(wc -c < "$release_directory/$filename" | tr -d ' ')
+  path=$(asset_path "$filename")
+  expected_hash=$(shasum -a 256 "$path" | awk '{ print $1 }')
+  expected_size=$(wc -c < "$path" | tr -d ' ')
   matches=$(awk -F '\t' -v name="$filename" -v size="$expected_size" -v digest="sha256:$expected_hash" \
     '$1 == name && $2 == size && $3 == digest { count++ } END { print count + 0 }' "$remote_assets")
   [[ "$matches" == 1 ]] || { echo "remote asset identity mismatch for $filename" >&2; exit 1; }

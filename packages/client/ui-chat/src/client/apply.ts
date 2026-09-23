@@ -138,6 +138,10 @@ export function apply(ctx: Context): void {
             else ctx.sidebarRight.openResource(url, { params: { line: options.line } })
             await Promise.resolve()
           },
+          revealFile: async (path) => {
+            const result = await ctx.remote.session.openWorkspacePath({ path, action: 'reveal' })
+            if (!result.ok) throw result.error
+          },
           openSkill: (name) => {
             const scope = ctx.sessions.scope(sessionId)
             if (scope === undefined) return

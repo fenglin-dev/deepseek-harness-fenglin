@@ -706,6 +706,18 @@ describe('Windows Job runner protocol owner', () => {
     expect(missingSend.exitCode).toBe(127)
   })
 
+  it.each([true, false])('preserves explicit child breakaway %s through the Windows runner', async (allowChildBreakaway) => {
+    const host = new FakeRunnerHost()
+    const native = internals()
+    await runWindows(host, native, {
+      type: 'start', cwd: 'C:\\target', env: {}, allowChildBreakaway,
+    })
+    expect(native.spawnCurrentTokenJobProcess).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      allowChildBreakaway,
+    }))
+    expect(host.exitCode).toBe(0)
+  })
+
   it('sends target-exit only after suspended Job launch and closes runner stdio', async () => {
     const host = new FakeRunnerHost()
     const closeFileDescriptor = vi.fn()

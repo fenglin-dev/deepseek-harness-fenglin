@@ -14,7 +14,7 @@ Web 插件页只管理用户装进 profile 的组合包。像 Agent Teams 这样
 
 默认产品隔离的规则保持不变，只声明一个例外：可选组合包的依赖图在默认产品之外。静态门禁跳过从 `@deepseek-ai/dsh` 到列表中组合包的 `dependencies` 边，仍然拒绝运行时 import、随附组合、preset 或默认模板对它的引用，拒绝列表没有点名的实验依赖，也拒绝不是运行时依赖或不是组合包的列表项。workspace 约束检查接受同样的 `dependencies` 边而不接受其他运行时依赖段；发布时的 packed-install 检查对已安装入口包跳过这些边，并要求列表中的每个组合包都已安装。
 
-Agent Teams 以这种方式交付，即 `@deepseek-ai/dsh-experimental-agent-team-profile` 与 `@deepseek-ai/dsh-experimental-agent-team-web-profile`。Auto review 是一个已发布的实验包，插件页的安装引导拿它作示例，它不是可选组合包。
+Agent Teams 以这种方式交付，即 `@deepseek-ai/dsh-experimental-agent-team-profile` 与 `@deepseek-ai/dsh-experimental-agent-team-web-profile`。插件页把它们视为一条依赖链：开启 UI 时会先开启 Host 能力，关闭 Host 时会先关闭 UI。无论开关顺序如何，Host 都按照本列表中的顺序保留可选组合包。Auto review 是一个已发布的实验包，插件页的安装引导拿它作示例，它不是可选组合包。
 
 ## 考虑过的替代方案
 
@@ -26,4 +26,4 @@ Agent Teams 以这种方式交付，即 `@deepseek-ai/dsh-experimental-agent-tea
 
 ## 影响
 
-可选组合包随产品一起下载，选中前保持不活动；运行时隔离 smoke 在默认组合中仍观察不到任何实验模块。开启一个可选 Web 层会通过实时客户端模块图加载它的客户端插件。需要配套层的组合包，例如 Agent Teams Web 层依赖其 Host 层，会在描述里说明；管理器不会自动选中配套层。
+可选组合包随产品一起下载，选中前保持不活动；运行时隔离 smoke 在默认组合中仍观察不到任何实验模块。开启一个可选 Web 层会通过实时客户端模块图加载它的客户端插件。Agent Teams 是插件页当前唯一会协调的配套关系；其他可选组合包仍然独立选择。

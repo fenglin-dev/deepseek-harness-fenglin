@@ -3,10 +3,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
   TeamTaskId, TeamTaskView as TeamTask, TeamView,
 } from '@deepseek-ai/dsh-experimental-agent-team/client'
-import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import {
   TeamAction, type TeamActionInjected, type TeamActionProps, type TeamActionResult,
@@ -69,15 +70,31 @@ function remoteFailure(message: string): TeamActionResult<never> {
 }
 
 function props(actions: TeamActionInjected, sessionId: SessionId = SESSION): TeamActionProps {
+  const { hooks, ...face } = actions
   return {
     sessionId,
-    ...actions,
+    ...face,
+    useAgentTeamOnboarding: bindSnapshotSelector(hooks.agentTeamOnboarding),
+    useSessions: bindSnapshotSelector(createSnapshotStore({
+      ids: [sessionId],
+      byId: {
+        [sessionId]: {
+          id: sessionId, displayTitle: 'Session', running: false, retainedBy: { mainView: 1 }, blank: false, updatedAt: 1,
+        },
+      },
+      phase: 'ready' as const,
+      subagentsByParent: {},
+      jobsBySession: {},
+    })),
     t: makeTranslate(zh, commonZh),
   } as unknown as TeamActionProps
 }
 
 function actions(overrides: Partial<TeamActionInjected> = {}): TeamActionInjected {
   return {
+    hooks: { agentTeamOnboarding: createSnapshotStore({ sequence: 0 }) },
+    offerOnboarding: () => {},
+    dismissOnboarding: () => {},
     load: () => Promise.resolve({ ok: true, value: view }),
     createTask: () => Promise.resolve(taskSuccess({ ...task, id: TASK_2, subject: 'New task' })),
     updateTask: () => Promise.resolve({
@@ -90,6 +107,23 @@ function actions(overrides: Partial<TeamActionInjected> = {}): TeamActionInjecte
 }
 
 describe('TeamAction', () => {
+  it('points out the header action in a nonblank conversation and dismisses the cue on use', () => {
+    const dismissOnboarding = vi.fn()
+    const offerOnboarding = vi.fn()
+    const injected = actions({
+      hooks: { agentTeamOnboarding: createSnapshotStore({ targetSessionId: SESSION, sequence: 1 }) },
+      dismissOnboarding,
+      offerOnboarding,
+    })
+    render(<TeamAction {...props(injected)} />)
+    expect(offerOnboarding).toHaveBeenCalledExactlyOnceWith(SESSION, false)
+    expect(screen.getByText(zh.onboardingLocation)).toBeTruthy()
+    const trigger = screen.getByRole('button', { name: /^Agent Team$/u })
+    expect(trigger.hasAttribute('data-agent-team-onboarding')).toBe(true)
+    fireEvent.click(trigger)
+    expect(dismissOnboarding).toHaveBeenCalledExactlyOnceWith(SESSION)
+  })
+
   it('ignores a stale Team load after the conversation switches sessions', async () => {
     const nextSession = 'next-lead' as SessionId
     const firstLoad = Promise.withResolvers<{ ok: true; value: TeamView }>()

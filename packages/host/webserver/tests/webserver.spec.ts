@@ -355,6 +355,25 @@ describe('real Loader composition', () => {
       + '<script>(globalThis.__DSH_BOOT_READY__ ??= Promise.withResolvers()).resolve()</script>')
   })
 
+  it('projects legacy external-script index taps into the static boot table', async () => {
+    const loaded = await loadComposition()
+    const server = loaded.webServer
+    loaded.on('webserver/index-inject', (table) => {
+      table.push({ kind: 'global', name: '__DSH_STATIC__', value: true })
+    })
+    server.tapIndex(html => html.replace(
+      '</body>',
+      '<script defer src="/legacy-widget.js?rev=1&amp;mode=pet"></script></body>',
+    ))
+    server.tapIndex(html => html.replace('</head>', '<script>window.__LEGACY_INLINE__=1</script></head>'))
+
+    expect(server.collectStaticIndexInjections()).toEqual([
+      { kind: 'global', name: '__DSH_STATIC__', value: true },
+      { kind: 'script-src', placement: 'body', src: '/legacy-widget.js?rev=1&mode=pet' },
+    ])
+    expect(server.renderIndex('<html><head></head><body></body></html>').match(/legacy-widget\.js/gu)).toHaveLength(1)
+  })
+
   it('fails the fiber when the port is already taken (fail-loud at activation)', { timeout: 60_000 }, async () => {
     const first = await loadComposition()
     const takenPort = first.webServer.port

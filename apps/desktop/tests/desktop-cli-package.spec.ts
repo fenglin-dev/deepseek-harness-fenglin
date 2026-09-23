@@ -34,6 +34,7 @@ describe('packaged desktop CLI inputs', () => {
     expect(installer).toContain('File /oname=$PLUGINSDIR\\manage-path.ps1')
     expect(installer).toContain('-File "$PLUGINSDIR\\manage-path.ps1" -Action remove -Directory "$2"')
     expect(installer).toContain('ReadRegStr $2 HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_DIRECTORY_VALUE}"')
+    expect(windowsSmoke).toContain("$cliStart.Environment['APPDATA'] = $desktopAppDataRoot")
     expect(windowsSmoke).toContain('$uninstallDeadline = (Get-Date).AddMinutes(2)')
     expect(windowsSmoke).toContain('$pathRestored -and $registrationRemoved -and $installationRemoved')
     expect(installer).not.toContain('dangerouslyAllowAllBuilds')

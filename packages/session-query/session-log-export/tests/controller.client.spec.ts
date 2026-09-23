@@ -25,6 +25,7 @@ describe('SessionLogDownloadController', () => {
     expect(url.pathname).toBe('/api/session.export')
     expect(url.searchParams.get('sessionId')).toBe(SID)
     expect(url.searchParams.get('includeDescendants')).toBe('true')
+    expect(url.searchParams.get('includeCustomInstructions')).toBe('false')
     expect(init.method).toBe('HEAD')
     expect(init.signal).toBeInstanceOf(AbortSignal)
     expect(save).toHaveBeenCalledWith(
@@ -34,6 +35,32 @@ describe('SessionLogDownloadController', () => {
     expect(controller.store.getSnapshot().bySession[SID]).toEqual({
       open: true, status: 'success', error: null,
     })
+  })
+
+  it('asks once and remembers either disclosure choice exactly', async () => {
+    let preference: 'ask' | 'include' | 'exclude' = 'ask'
+    const savePreference = vi.fn(async (next: 'include' | 'exclude') => { preference = next })
+    const fetcher = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response('zip'))
+    const controller = new SessionLogDownloadController(fetcher, vi.fn(), {
+      getPreference: () => preference,
+      setPreference: savePreference,
+    })
+
+    await controller.download(SID)
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(controller.store.getSnapshot().bySession[SID]?.status).toBe('confirming')
+    controller.setIncludeCustomInstructions(SID, true)
+    controller.setRemember(SID, true)
+    await controller.confirm(SID)
+    expect(savePreference).toHaveBeenCalledWith('include')
+    expect(fetcher.mock.calls[0]?.[0]).toBeInstanceOf(URL)
+    expect((fetcher.mock.calls[0]![0] as URL).searchParams.get('includeCustomInstructions')).toBe('true')
+
+    preference = 'ask'
+    await controller.download('second' as SessionId)
+    controller.setRemember('second' as SessionId, true)
+    await controller.confirm('second' as SessionId)
+    expect(savePreference).toHaveBeenLastCalledWith('exclude')
   })
 
   it('collapses concurrent gestures and preserves a dismissed dialog', async () => {

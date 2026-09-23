@@ -117,8 +117,11 @@ async function bench(options: {
   ctx.provide('locale', new LocaleRuntime(ctx))
   await ctx.plugin(SlotRegistry).await()
   const collapseHeader = ctx.slots.register({
-    name: 'root',
-    children: { 'conversation.session.header.actions': { kind: 'list', scope: 'session' } },
+    name: 'root', children: {
+      'conversation.session.header.actions': { kind: 'list', scope: 'session' },
+      'conversation.composer.dock': { kind: 'list', scope: 'session' },
+      'plugins.bundle.action': { kind: 'keyed', scope: 'root' },
+    },
   } as never, () => null)
   if (options.registrationFailure === true) {
     vi.spyOn(ctx.slots, 'inject').mockImplementationOnce(() => { throw new Error('slot registration failed') })
@@ -152,7 +155,7 @@ async function bench(options: {
 describe('ui-team browser plugin', () => {
   it('registers one disposable header action with RPC-backed task operations', async () => {
     const b = await bench()
-    expect(inject).toEqual(['sessions', 'uiWorkspace', 'remote', 'slots', 'locale'])
+    expect(inject).toEqual(['sessions', 'uiWorkspace', 'conversation', 'remote', 'slots', 'locale'])
     expect(b.entry()).toMatchObject({
       options: { id: 'agent-team', order: 20 },
       locale: 'agent-team',
@@ -295,8 +298,11 @@ describe('ui-team browser plugin', () => {
     b.collapseHeader()
     expect(b.entry()).toBeUndefined()
     b.ctx.slots.register({
-      name: 'root',
-      children: { 'conversation.session.header.actions': { kind: 'list', scope: 'session' } },
+      name: 'root', children: {
+        'conversation.session.header.actions': { kind: 'list', scope: 'session' },
+        'conversation.composer.dock': { kind: 'list', scope: 'session' },
+        'plugins.bundle.action': { kind: 'keyed', scope: 'root' },
+      },
     } as never, () => null)
     await Promise.resolve()
     expect(b.entry()).toBeDefined()

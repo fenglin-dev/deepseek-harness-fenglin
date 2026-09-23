@@ -55,7 +55,9 @@ The Web bundle mounts the package with Connection, `dsh-commands`, `dsh-client-u
 
 ### What to expect
 
-The dialog reports three phases: preparing, download started, or failed. Closing the dialog does not cancel an in-flight download, and the dialog does not reopen when that operation later settles. One session admits one active download at a time; repeated gestures share that operation. The export includes the live session's newest events: the host endpoint flushes a live root session before reading, so a slash-triggered ZIP includes the `command/run` and `command/done` pair that started the download; cold persisted sessions need no flush. Each logical log uses the current generation's canonical filename inside the archive (`session.jsonl` for v0, otherwise `session.vN.jsonl`), including beneath each sub-session directory. Images use `media/<attachmentId>.<ext>`, and generic files use `files/<digest-prefix>/<digest>/<name>`. Generic-file bytes are read and compressed as bounded chunks, so exporting a large upload does not buffer it in full.
+The dialog reports preparing, privacy confirmation, download started, or failed. Custom-prompt plaintext is excluded by default. When no preference is remembered, the user chooses whether this export includes it and may remember that exact include or exclude choice. Remembering inclusion displays a warning because later exports will include plaintext without asking; **Settings → Custom prompts** can restore ask-every-time behavior. Closing the dialog does not cancel an in-flight download, and the dialog does not reopen when that operation later settles. One session admits one active download at a time; repeated gestures share that operation.
+
+The export includes the live session's newest events: the host endpoint flushes a live root session before reading, so a slash-triggered ZIP includes the `command/run` and `command/done` pair that started the download; cold persisted sessions need no flush. Each logical log uses the current generation's canonical filename inside the archive (`session.jsonl` for v0, otherwise `session.vN.jsonl`), including beneath each sub-session directory. Images use `media/<attachmentId>.<ext>`, and generic files use `files/<digest-prefix>/<digest>/<name>`. Generic-file bytes are read and compressed as bounded chunks, so exporting a large upload does not buffer it in full. When prompt plaintext is excluded, runtime-context snapshot sections are replaced with a redaction marker that retains their revision ids; persisted Session data is not modified.
 
 ### Failures
 
@@ -78,6 +80,8 @@ The package has two halves. The Host half ([`src/index.ts`](src/index.ts)) regis
 ### Download flow
 
 Both entry paths issue a `HEAD` preflight to `/api/session.export?...`, then hand the GET URL to the browser download manager without buffering the ZIP in JavaScript. One controller owns one in-flight download per session, collapses concurrent gestures into that operation, and cancels the preflight on plugin disposal. Modal state lives in a snapshot store keyed by session, so the button and the command share one dialog per session.
+
+The browser appends `includeCustomInstructions=true` only after an explicit or remembered include choice; the Host otherwise redacts those runtime-context sections while constructing each exported logical log. The preference is stored in the trusted `custom-instructions` Settings namespace rather than in Session content.
 
 The Host route is a feature-owned exact Fetch contribution. Connection applies its Host/Origin and browser-session checks and bridges the streaming `Response`; this package owns query validation, live-session flushes, handle-based log reads and attachment reads, ZIP generation, and HTTP status semantics.
 

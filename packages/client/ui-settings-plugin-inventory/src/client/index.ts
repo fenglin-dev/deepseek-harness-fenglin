@@ -15,6 +15,7 @@ import { PluginDiscovery } from './PluginDiscovery.tsx'
 import type { PluginDiscoveryInjected } from './PluginDiscovery.tsx'
 import { ExternalToolsSection, type ExternalToolsSectionInjected } from './ExternalToolsSection.tsx'
 import { resolveExternalToolInstallRequest } from './external-tool-compatibility-bridge.ts'
+import { workspaceRuntimeInjected } from './workspace-runtime-bridge.ts'
 import { DiagnosticLabProgressCard } from './DiagnosticLabProgressCard.tsx'
 import { QuarantineNotice, type QuarantineNoticeInjected } from './QuarantineNotice.tsx'
 import {
@@ -198,6 +199,7 @@ export function apply(ctx: ClientContext): void {
     openDiagnostics: () => { ctx.settingsNavigation.open({ sectionId: 'diagnostics' }) },
   })
   const externalToolsInjected = (): ExternalToolsSectionInjected => ({
+    ...workspaceRuntimeInjected(),
     list,
     restart: restartDesktopApplication,
     getInstall,

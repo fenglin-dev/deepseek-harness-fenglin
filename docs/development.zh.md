@@ -28,18 +28,42 @@
 在仓库根目录安装依赖：
 
 ```sh
-pnpm install
+node scripts/install-dependencies.mjs
 ```
+
+公开 npm 包可以通过 `registry.npmjs.org` 或 `registry.npmmirror.com` 解析。安装器先尝试当前配置的公共 registry；该次失败后，会切换到另一个公共 registry 重试一次。自定义 registry 可能承载私有包或认证，因此不会被自动替换。锁文件保留精确包版本和 SHA-512 integrity，但省略来自两个公共 registry 的普通 tarball URL，使任一公共 registry 都可以提供通过同一内容校验的文件。非标准 tarball 主机仍需显式记录并固定 integrity；内容不一致时，pnpm 会在运行生命周期脚本前失败。`pnpm run verify-lockfile-registry-portability` 负责检查这项规则。
 
 安装过程还会通过 `scripts/install-lefthook.mjs` 配置 worktree 本地的 Lefthook 钩子和 `dsh-translation-pairing` Git 合并驱动。[worktree 本地钩子 Agent Note](../.agents/notes/implemented/process/2026-07-27-worktree-local-lefthook.zh.md) 负责钩子路径的安全约定；[自动配对合并 Agent Note](../.agents/notes/implemented/process/2026-08-08-automatic-translation-pairing-merges.zh.md) 负责合并驱动。
 
-如果依赖是从缓存恢复或 `postinstall` 被跳过而导致任一集成缺失，请手动安装：
+如果手动执行依赖操作后缺少任一 Git 集成，请单独安装：
 
 ```sh
 node scripts/install-lefthook.mjs
 ```
 
 如果包装脚本拒绝现有 Git 配置或报告陈旧锁，请遵循其诊断和所链接的 Agent Note，不要凭猜测编辑 worktree 元数据。移动检出目录后，请重新运行包装脚本以重新生成自有路径。
+
+### 链接 worktree 的依赖
+
+Git 链接 worktree 拥有独立且被忽略的 `node_modules` 布局，但 pnpm 会复用共享的内容寻址 store。使用冻结的锁文件初始化该布局，并避免再次运行依赖生命周期脚本：
+
+```sh
+node scripts/setup-worktree.mjs
+```
+
+默认的 worktree 搭建会优先使用本地 store，并在需要获取内容或元数据时使用相同的公共 registry 回退。无法访问 registry 时可使用严格离线模式；它会把 pnpm 的所有 registry 与代理请求指向已关闭的本机回环端点，并关闭重试。pnpm 11 的锁文件策略复核原本仍需要 registry 元数据，因此这个显式模式会信任仓库已提交且冻结的锁文件，并仅从本地 store 物化依赖；默认搭建模式的安全策略不会因此降低。只有全部所需依赖包都已存在于本地 store 中时，离线搭建才会成功：
+
+```sh
+node scripts/setup-worktree.mjs --offline
+```
+
+如果 workspace 布局变化导致 pnpm 拒绝运行，请执行仅依赖 Node 的诊断脚本。它会读取检出目录、锁文件、pnpm workspace 状态、当前工具版本与本地 store 路径，不修改 Git 或依赖：
+
+```sh
+node scripts/worktree-doctor.mjs
+```
+
+两种 worktree 搭建模式都会在依赖链接成功后配置本 worktree 的 Git 集成。不要在 worktree 之间共享或软链接 `node_modules`，因为 workspace 包链接必须解析到实际执行命令的检出目录。
 
 新克隆后请先运行一次类型检查：
 

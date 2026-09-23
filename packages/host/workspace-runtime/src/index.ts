@@ -1,0 +1,163 @@
+/** Profile adapter for a verified, application-managed Python runtime and bundled Office skills. */
+
+import { readFile, stat } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { Context } from '@deepseek-ai/cordis'
+import * as officeSkills from '@deepseek-ai/dsh-skill-office'
+import { defineTool } from '@deepseek-ai/dsh-tools'
+
+/** Metadata stored at the root of each verified optional runtime payload. */
+export interface WorkspaceRuntimePayloadManifest {
+  readonly schema: 'dsh/workspace-runtime-payload/v1'
+  readonly desktopVersion: string
+  readonly platform: NodeJS.Platform
+  readonly arch: string
+  readonly payloadDigest: string
+  readonly pythonVersion: string
+  readonly pythonPackages: Readonly<Record<string, string>>
+}
+
+/** Absolute paths exposed to model-facing Office workflows. */
+export interface WorkspaceDependencies {
+  readonly python: string
+  readonly node: string
+  readonly pnpm: string
+  readonly pythonPackages: string
+  readonly nodePackages: string
+  readonly pythonDistributions: Readonly<Record<string, string>>
+}
+
+/** Application-owned paths. Renderer input never reaches these fields. */
+export interface Config {
+  /** Absolute root of the verified managed payload containing `runtime.json`. */
+  readonly runtimeRoot: string
+  /** Absolute executable path for an optional user-selected Python interpreter. */
+  readonly python?: string
+  /** Absolute site-packages directory belonging to the user-selected interpreter. */
+  readonly pythonPackages?: string
+  /** Installed distribution versions belonging to the user-selected interpreter. */
+  readonly pythonDistributions?: Readonly<Record<string, string>>
+  /** Absolute executable path for the application-packaged Node.js runtime. */
+  readonly node: string
+  /** Absolute entry-point path for the application-packaged pnpm runtime. */
+  readonly pnpm: string
+  /** Absolute node_modules directory exposed to Workspace dependency consumers. */
+  readonly nodePackages: string
+  /** Whether to register the packaged Office skills for this Profile. */
+  readonly office?: boolean
+}
+
+function requireString(record: Record<string, unknown>, key: string, pattern?: RegExp): string {
+  const value = record[key]
+  if (typeof value !== 'string' || value === '' || (pattern !== undefined && !pattern.test(value))) {
+    throw new TypeError(`workspace runtime: invalid ${key}`)
+  }
+  return value
+}
+
+/**
+ * Read and validate payload metadata before exposing any executable path.
+ * @param root - Verified payload root selected by the Desktop manager.
+ * @returns Parsed immutable payload identity and installed distributions.
+ */
+export async function readWorkspaceRuntimePayload(root: string): Promise<WorkspaceRuntimePayloadManifest> {
+  const value: unknown = JSON.parse(await readFile(join(root, 'runtime.json'), 'utf8'))
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('workspace runtime: metadata must be an object')
+  }
+  const record = value as Record<string, unknown>
+  if (record.schema !== 'dsh/workspace-runtime-payload/v1'
+    || (record.platform !== 'win32' && record.platform !== 'darwin' && record.platform !== 'linux')
+    || (record.arch !== 'x64' && record.arch !== 'arm64')
+    || record.pythonPackages === null || typeof record.pythonPackages !== 'object'
+    || Array.isArray(record.pythonPackages)) {
+    throw new TypeError('workspace runtime: invalid metadata')
+  }
+  const packages = record.pythonPackages as Record<string, unknown>
+  if (!Object.entries(packages).every(([name, version]) => /^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(name)
+    && typeof version === 'string' && /^\d[\w.!+-]*$/u.test(version))) {
+    throw new TypeError('workspace runtime: invalid Python distribution metadata')
+  }
+  const normalized = new Set(Object.keys(packages).map(name => name.toLowerCase().replace(/[-_.]+/gu, '-')))
+  if (normalized.size !== Object.keys(packages).length) {
+    throw new TypeError('workspace runtime: duplicate normalized Python distribution name')
+  }
+  return {
+    schema: record.schema,
+    desktopVersion: requireString(record, 'desktopVersion', /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u),
+    platform: record.platform,
+    arch: record.arch,
+    payloadDigest: requireString(record, 'payloadDigest', /^[a-f0-9]{64}$/u),
+    pythonVersion: requireString(record, 'pythonVersion', /^\d+\.\d+\.\d+$/u),
+    pythonPackages: packages as Readonly<Record<string, string>>,
+  }
+}
+
+/**
+ * Resolve and verify every executable or library path used by the adapter.
+ * @param config - Application-owned payload and packaged Node paths.
+ * @returns Paths safe to return from `load_workspace_dependencies`.
+ */
+export async function resolveWorkspaceDependencies(config: Config): Promise<WorkspaceDependencies> {
+  if (config.python !== undefined) {
+    if (config.pythonPackages === undefined || config.pythonDistributions === undefined) {
+      throw new Error('workspace runtime: custom Python metadata is incomplete')
+    }
+    for (const path of [config.python, config.pythonPackages, config.node, config.pnpm, config.nodePackages]) await stat(path)
+    return {
+      python: config.python, node: config.node, pnpm: config.pnpm,
+      pythonPackages: config.pythonPackages, nodePackages: config.nodePackages,
+      pythonDistributions: config.pythonDistributions,
+    }
+  }
+  const manifest = await readWorkspaceRuntimePayload(config.runtimeRoot)
+  if (manifest.platform !== process.platform || manifest.arch !== process.arch) {
+    throw new Error('workspace runtime: payload does not match this platform')
+  }
+  const pythonRoot = join(config.runtimeRoot, 'python')
+  const python = process.platform === 'win32' ? join(pythonRoot, 'python.exe') : join(pythonRoot, 'bin', 'python3')
+  const pythonPackages = process.platform === 'win32'
+    ? join(pythonRoot, 'Lib', 'site-packages')
+    : join(pythonRoot, 'lib', `python${manifest.pythonVersion.split('.').slice(0, 2).join('.')}`, 'site-packages')
+  for (const path of [python, pythonPackages, config.node, config.pnpm, config.nodePackages]) await stat(path)
+  return {
+    python,
+    node: config.node,
+    pnpm: config.pnpm,
+    pythonPackages,
+    nodePackages: config.nodePackages,
+    pythonDistributions: manifest.pythonPackages,
+  }
+}
+
+export const name = 'host-workspace-runtime'
+export const inject = ['tools']
+
+/**
+ * Register the dependency-path tool and, when requested, the bundled Office skill provider.
+ * @param ctx - Profile scope that owns tools and skills.
+ * @param config - Paths selected by the trusted Desktop main process.
+ */
+export async function apply(ctx: Context, config: Config): Promise<void> {
+  const dependencies = await resolveWorkspaceDependencies(config)
+  ctx.tools.register(defineTool({
+    name: 'load_workspace_dependencies',
+    description: 'Get absolute paths to the installed Python, packaged Node.js and pnpm runtimes, plus their library directories and Python distribution versions. Use these paths explicitly; this tool does not change PATH or package-manager settings.',
+    parameters: {},
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          python: { type: 'string', required: true }, node: { type: 'string', required: true },
+          pnpm: { type: 'string', required: true }, pythonPackages: { type: 'string', required: true },
+          nodePackages: { type: 'string', required: true },
+          pythonDistributions: { type: 'object', additionalProperties: true, required: true },
+        },
+      },
+      render: (_args, output) => [{ type: 'text', text: JSON.stringify(output, undefined, 2) }],
+    },
+    execute: () => Promise.resolve(dependencies),
+    presentCall: () => ({ card: 'generic', title: 'Load workspace dependencies', kind: 'read' }),
+  }))
+  if (config.office === true) await ctx.plugin(officeSkills)
+}

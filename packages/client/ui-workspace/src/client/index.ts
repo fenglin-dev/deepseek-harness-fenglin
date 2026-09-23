@@ -26,6 +26,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contract/slots.ts'
 import { UiWorkspaceService } from './navigation.ts'
 import { createWorkspaceViewStore } from './stores.ts'
+
+interface OptionalCustomInstructions {
+  openWorkspace: (workspaceId: import('@deepseek-ai/dsh-api-workspace-controller/client').WorkspaceId) => void
+  workspaceDeleted: (workspaceId: import('@deepseek-ai/dsh-api-workspace-controller/client').WorkspaceId) => Promise<void>
+}
+
+function customInstructionsOf(ctx: Context): OptionalCustomInstructions | undefined {
+  return ctx.get('customInstructions') as OptionalCustomInstructions | undefined
+}
 import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
@@ -127,7 +136,13 @@ export function apply(ctx: Context): void {
         })
     },
     renameWorkspace: async (workspaceId, title) => { await workspaces.rename(workspaceId, title) },
-    deleteWorkspace: async (workspaceId) => { await workspaces.delete(workspaceId) },
+    deleteWorkspace: async (workspaceId) => {
+      await workspaces.delete(workspaceId)
+      await customInstructionsOf(ctx)?.workspaceDeleted(workspaceId)
+    },
+    ...customInstructionsOf(ctx) === undefined
+      ? {}
+      : { openWorkspaceInstructions: (workspaceId) => { customInstructionsOf(ctx)?.openWorkspace(workspaceId) } },
     insertWorkspaceBefore: async (workspaceId, beforeWorkspaceId) => {
       await workspaces.insertBefore(workspaceId, beforeWorkspaceId)
     },

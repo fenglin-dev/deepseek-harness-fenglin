@@ -355,6 +355,9 @@ describe('registration', () => {
       run_in_background: { type: 'boolean' },
     })
     expect(schema?.parameters.required).toEqual(['command', 'description'])
+    const properties = schema?.parameters.properties as Record<string, { description?: string }>
+    expect(properties['description']?.description)
+      .toContain("language of the user's latest request")
     const prompt = renderPrompt(await ctx.systemPrompt.assemble())
     expect(prompt).toContain('Non-zero exits are reported as `[exit code: N]` markers')
     expect(prompt).toContain('without a signal marker')
@@ -597,8 +600,9 @@ describe('sandbox escalation through ctx.approval', () => {
   it('advertises the sandbox fields, the escalation clause, and the confined-mode contracts', async () => {
     const { ctx } = await setupSandboxed()
     const schema = ctx.tools.schemas().find(item => item.name === 'pwsh')!
-    const properties = schema.parameters.properties as Record<string, { enum?: string[] }>
+    const properties = schema.parameters.properties as Record<string, { description?: string; enum?: string[] }>
     expect(properties['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access'])
+    expect(properties['justification']?.description).toContain("language of the user's latest request")
     expect(schema.description).toContain('approval prompt')
     expect(schema.description).toContain('ConstrainedLanguage')
     expect(schema.description).toContain('workspace-write stays in FullLanguage')

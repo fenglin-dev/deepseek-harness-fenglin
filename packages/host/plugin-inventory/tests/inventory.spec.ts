@@ -14,7 +14,7 @@ import type {
 } from '@deepseek-ai/dsh-subprocess'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AgentPresets } from '@deepseek-ai/dsh-agent-presets'
-import PluginInventoryGateway from '../src/index.ts'
+import PluginInventoryGateway, { readPluginInventory } from '../src/index.ts'
 import type { PluginDiagnosticExport } from '../src/types.ts'
 
 const contexts: Context[] = []
@@ -142,6 +142,14 @@ describe('PluginInventoryGateway', () => {
       { method: 'pauseInstall', invocation: { kind: 'direct' } },
       { method: 'cancelInstall', invocation: { kind: 'direct' } },
     ])
+  })
+
+  it('reports profile management when the plugin manager is composed', async () => {
+    const { ctx, inventory } = await harness()
+    ctx.provide('pluginManager', {} as never)
+
+    await expect(readPluginInventory(ctx)).resolves.toMatchObject({ managementAvailable: true })
+    await expect(inventory.list()).resolves.toMatchObject({ managementAvailable: true })
   })
 
   it('runs the guarded client Loader quarantine and restarts only after durable success', async () => {

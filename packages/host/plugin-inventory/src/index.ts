@@ -567,24 +567,19 @@ export class PluginInventoryGateway extends TypertRemoteService {
    * When an agent-preset roster is composed, the snapshot also carries each
    * preset's composition rows, because those rows — not the Loader's own
    * entries — are where a deployment that mounts the roster runs its
-   * model-facing plugins.
+   * model-facing plugins. A composed Profile manager is reported explicitly
+   * so clients can distinguish a manageable profile from a read-only deployment.
    * @returns Current non-group Loader entries in Loader order, with per-preset
-   * compositions when a roster is composed.
+   * compositions, management availability, and profile diagnostics.
    */
   @Remote('list')
   async list(): Promise<PluginInventorySnapshot> {
-    const entries: PluginInventoryEntry[] = []
+    const loaderInventory = await readPluginInventory(this.ctx)
     const liveIssues: ProfileDiagnostic[] = []
     const activePackageNames = new Set<string>()
     for (const entry of this.ctx.loader.entries()) {
       if (entry.fiber?.state === FIBER_STATE.ACTIVE) activePackageNames.add(entry.options.name)
       if (entry.options.group) continue
-      entries.push({
-        entryId: pluginEntryId(entry.id),
-        moduleName: entry.options.name,
-        enabled: !entry.disabled,
-        fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
-      })
       const liveIssue = liveLoaderDiagnostic(entry)
       if (liveIssue !== undefined) liveIssues.push(liveIssue)
     }
@@ -604,19 +599,8 @@ export class PluginInventoryGateway extends TypertRemoteService {
         && candidate.attribution?.entryId === issue.attribution?.entryId)) continue
       issues.push(issue)
     }
-    const presets = this.ctx.get('agentPresets')
-    const agentPresets: AgentPresetPluginGroup[] | undefined = presets === undefined
-      ? undefined
-      : (await presets.compositionInventory()).map(composition => ({
-        ...composition,
-        rows: composition.rows.map(({ fiberState, ...row }) => ({
-          ...row,
-          fiberPhase: fiberState === undefined ? null : FIBER_PHASE[fiberState],
-        })),
-      }))
     return {
-      entries,
-      ...(agentPresets === undefined ? {} : { agentPresets }),
+      ...loaderInventory,
       dependencyHealth: {
         lastRepair: lastRepair === undefined || lastRepair.status === 'healthy' || lastRepair.status === 'repaired'
           ? null

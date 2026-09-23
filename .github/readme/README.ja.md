@@ -4,6 +4,8 @@
 
 # Open DeepSeek Harness Desktop
 
+<p align="center"><strong>🎉 おめでとうございます！本プロジェクトの画面表示が日本語に対応しました。</strong></p>
+
 <p align="center">
   <strong>すぐに使えて、依存関係の安全性を強化した DeepSeek Harness コミュニティデスクトップ版</strong>
 </p>

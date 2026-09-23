@@ -18,6 +18,12 @@ export interface PluginConfigViewProps {
   readonly view: 'summary' | 'page'
 }
 
+/** State passed to a bundle-specific action rendered beside its switch. */
+export interface PluginBundleActionProps {
+  /** Whether the bundle is currently selected in the active Profile. */
+  readonly enabled: boolean
+}
+
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /**
@@ -36,6 +42,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * (`view: 'page'` only).
      */
     'plugins.bundle.config': { kind: 'keyed'; scope: 'root'; owner: PluginConfigViewProps }
+    /**
+     * A compact action owned by one bundle, keyed by its package name. The
+     * page renders it beside that bundle's switch on both the card and detail
+     * views. The action should render null while it is not applicable.
+     */
+    'plugins.bundle.action': { kind: 'keyed'; scope: 'root'; owner: PluginBundleActionProps }
     /**
      * The configuration of one row a bundle declares, keyed by
      * `<package name>#<row id>` with the row id as the bundle's patch declares

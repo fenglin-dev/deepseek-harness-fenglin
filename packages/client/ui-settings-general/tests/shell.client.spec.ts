@@ -40,11 +40,12 @@ const CHILD_NAMES = Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>
 
 /**
  * Section ids the web-app roster registers, in nav order: this package, then
- * ui-settings-models, ui-settings-plugins, ui-agent-preset, and
- * ui-settings-unarchive-sessions. A plugin adding a section changes this list.
+ * ui-settings-models, ui-settings-plugins, ui-agent-preset, custom-instructions,
+ * and ui-settings-unarchive-sessions. A plugin adding a section changes this list.
  */
 const PRODUCT_SECTIONS: readonly string[] = [
-  'general', 'models', 'plugins', 'external-tools', 'agent-presets', 'archived-sessions', 'diagnostics',
+  'general', 'models', 'plugins', 'external-tools', 'agent-presets', 'custom-instructions',
+  'archived-sessions', 'diagnostics',
 ]
 /** Onboarding steps the web-app roster registers, in coordinator order. */
 const PRODUCT_ONBOARDING: readonly { id: string; order: number }[] = [
