@@ -13,8 +13,7 @@ function isBuildFaceClient(value: unknown): boolean {
 }
 
 /**
- * The ordinary workspace build consumes JavaScript emitted by the Host
- * TypeScript project and runs Typert. The Client pass selects packages that
+ * The ordinary workspace build bundles TypeScript sources and runs Typert. The Client pass selects packages that
  * declare a browser bundle and lets their package-local configs emit both
  * their Node loader entry and browser artifact.
  */
@@ -24,7 +23,7 @@ export default defineConfig(({ env }) => {
     workspace: workspaceBuildPackages(root, client
       ? ['vendor/*', 'packages/*/*', 'apps/cli']
       : ['vendor/*', 'packages/*/*', 'apps/cli', 'apps/desktop-host']),
-    entry: client ? '' : ['lib/types/{index,invariant,startup}.js'],
+    entry: client ? '' : ['src/{index,invariant,startup}.ts'],
     outDir: 'lib',
     format: ['esm'],
     platform: 'node',
