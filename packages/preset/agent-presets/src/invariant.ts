@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 // Imported through the package name, not `./mount.ts`: a module shared between
 // the two build entry points becomes a third chunk that the published `files`
 // list does not carry, which `verify-built-package-invariants` rejects.
-import { leakedServices, livePresetMounts } from '@deepseek-ai/dsh-agent-presets'
+import { leakedServices, livePresetMounts } from './index.ts'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-agent-presets'
 
