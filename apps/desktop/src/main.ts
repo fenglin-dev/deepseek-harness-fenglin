@@ -257,6 +257,7 @@ let menuLocale = 'en'
 let desktopLocaleStore: DesktopLocaleStore | undefined
 let persistedProfileLocale: string | undefined
 let menuClientReady = false
+let menuClientAvailable = false
 let reportedClientBootFailureOrigin: string | undefined
 let snapshotMutationActive = false
 let recoveryHarnessSuspended = false
@@ -1304,10 +1305,17 @@ function createWindow(): BrowserWindow {
   window.on('leave-full-screen', refreshMenu)
   surface.titlebarRenderer?.on('did-finish-load', () => { applicationMenu?.refresh() })
   const rendererId = surface.renderer.id
-  surface.renderer.on('destroyed', () => { iconManager?.discardOwner(rendererId); rejectPendingMenuCommands() })
+  surface.renderer.on('destroyed', () => {
+    iconManager?.discardOwner(rendererId)
+    menuClientAvailable = false
+    menuClientReady = false
+    rejectPendingMenuCommands()
+    applicationMenu?.refresh()
+  })
   surface.renderer.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) {
       iconManager?.discardOwner(rendererId)
+      menuClientAvailable = false
       menuClientReady = false
       rejectPendingMenuCommands()
       applicationMenu?.refresh()
@@ -1326,7 +1334,9 @@ async function startApplication(): Promise<void> {
   menuLocale = desktopLocaleStore.read(app.getLocale())
   applicationMenu = new ApplicationMenuController({
     surface: () => mainSurface,
-    state: () => ({ platform: process.platform, locale: menuLocale, ready: menuClientReady && harnessOrigin !== undefined,
+    state: () => ({ platform: process.platform, locale: menuLocale,
+      clientAvailable: menuClientAvailable && harnessOrigin !== undefined,
+      ready: menuClientReady && harnessOrigin !== undefined,
       busy: menuBusy(), maximized: mainWindow?.isMaximized() ?? false,
       fullscreen: mainWindow?.isFullScreen() ?? false, development: !app.isPackaged }),
     icon: () => (iconManager?.images().application ?? nativeImage.createFromPath(WINDOW_ICON))
@@ -2539,8 +2549,10 @@ async function startApplication(): Promise<void> {
   })
   ipcMain.on(DESKTOP_IPC.menuClientState, (event, state: unknown) => {
     if (event.sender !== mainSurface?.renderer || typeof state !== 'object' || state === null) return
-    const { ready, locale } = state as { ready?: unknown; locale?: unknown }
-    if (typeof ready !== 'boolean' || typeof locale !== 'string' || locale.length > 64) return
+    const { available, ready, locale } = state as { available?: unknown; ready?: unknown; locale?: unknown }
+    if (typeof available !== 'boolean' || typeof ready !== 'boolean'
+      || typeof locale !== 'string' || locale.length > 64) return
+    menuClientAvailable = available
     menuClientReady = ready
     menuLocale = resolveDesktopLocale(locale)
     if (persistedProfileLocale !== menuLocale) {
@@ -3512,7 +3524,10 @@ async function startApplication(): Promise<void> {
         desktopReturnControl?.clear()
         desktopWebAccess?.clear()
       }
-      if (state !== 'ready') menuClientReady = false
+      if (state !== 'ready') {
+        menuClientAvailable = false
+        menuClientReady = false
+      }
       applicationMenu?.refresh()
       if (state === 'starting') publishStartupProgress({ stage: 'starting-harness', progress: 92 })
       if (state === 'restarting') publishStartupProgress({ stage: 'restarting-harness', progress: 90 })

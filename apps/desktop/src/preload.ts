@@ -551,7 +551,7 @@ const remoteDesktopWebBridge: DesktopWebBridge = {
 
 const commonDesktopBridge = {
   menu: Object.freeze({
-    reportState(state: { ready: boolean; locale: string }): void {
+    reportState(state: { available: boolean; ready: boolean; locale: string }): void {
       ipcRenderer.send(DESKTOP_IPC.menuClientState, state)
     },
     onCommand(callback: (command: string) => void | Promise<void>): () => void {
