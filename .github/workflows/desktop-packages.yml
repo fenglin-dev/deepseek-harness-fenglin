@@ -247,7 +247,7 @@ jobs:
       - name: Prepare dsh runtime descriptor
         run: |
           pnpm install --frozen-lockfile
-          pnpm run release:pack -- --family dsh --out apps/desktop/.desktop-build/targets/win-x64/packed/dsh
+          pnpm run release:pack --family dsh --out apps/desktop/.desktop-build/targets/win-x64/packed/dsh
           pnpm --dir apps/desktop run prepare:runtime
           pnpm --dir apps/desktop run prepare:packages
           pnpm --dir apps/desktop run prepare:dsh
