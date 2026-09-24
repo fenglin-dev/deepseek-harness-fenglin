@@ -109,6 +109,7 @@ import {
 import { parseStartupBuildApproval } from './startup-build-approval.ts'
 import { ensureLegacySessionCompatibility } from './session-legacy-compatibility.ts'
 import { ensureFenglinLiangShenPreset } from './liangshen-preset-ensure.ts'
+import { applyFenglinRuntimeOverlays } from './fenglin-runtime-overlays.ts'
 import { ensureIgnoredOptionalDependencies } from './profile-pnpm-compat.ts'
 import {
   readDesktopDataHomeSetup,
@@ -3389,6 +3390,11 @@ async function startApplication(): Promise<void> {
           prebuiltSeedResults.filter(item => item.result === result).length
         )
         await appendDesktopStartupLog(`Post-prebuilt bundled plugin pass: verified=${prebuiltCount('verified')}; installed=${prebuiltCount('installed')}; upgraded=${prebuiltCount('upgraded')}; preserved-user-version=${prebuiltCount('preserved-user-version')}; removed=${prebuiltCount('removed')}; unresolved=${prebuiltCount('unresolved')}; failed-or-deferred=${prebuiltSeedResults.filter(r => r.result === undefined).length}.`)
+        try {
+          await appendDesktopStartupLog(await applyFenglinRuntimeOverlays(desktopMutations.mutationHome))
+        } catch (error) {
+          await appendDesktopStartupLog(`fenglin overlays skipped: ${error instanceof Error ? error.message : String(error)}`)
+        }
       } else if (firstStartPending) {
         await mergeImportedAllowBuilds(join(desktopMutations.mutationHome, 'profiles/web'), startupBuildRules)
         await seedBundledPluginsBatch(manifest.plugins.filter(entry => entry.installPolicy === 'startup'), bundledDirectory, desktopMutations.mutationHome,
@@ -3420,10 +3426,36 @@ async function startApplication(): Promise<void> {
         )
         const pending = seedResults.filter(result => result.result === undefined).length
         await appendDesktopStartupLog(`Desktop ${app.getVersion()} bundled preset pass finished: verified=${count('verified')}; installed=${count('installed')}; upgraded=${count('upgraded')}; preserved-user-version=${count('preserved-user-version')}; removed=${count('removed')}; unresolved=${count('unresolved')}; failed-or-deferred=${pending}. Activation still requires normal readiness.`)
+        try {
+          await appendDesktopStartupLog(await applyFenglinRuntimeOverlays(desktopMutations.mutationHome))
+        } catch (error) {
+          await appendDesktopStartupLog(`fenglin overlays skipped: ${error instanceof Error ? error.message : String(error)}`)
+        }
       } else {
+        // Fenglin: reconcile every startup so a newer bundled archive still
+        // upgrades an older registry-owned copy after the version gate settles.
         await appendDesktopStartupLog(presetVersionMarkerUnavailable
-          ? 'Skipped bundled plugin provisioning: the desktop version marker is unavailable; inspect startup diagnostics.'
-          : 'Skipped bundled plugin provisioning: this desktop version was already attempted for the Profile.')
+          ? 'Bundled plugin reconcile pass: desktop version marker unavailable; reconciling archives anyway.'
+          : `Bundled plugin reconcile pass for desktop ${app.getVersion()}.`)
+        const seedResults = await bundledPluginInstaller.seedStartup((progress) => {
+          const mapped = mapBundledPluginProgress(
+            progress.entry.packageName,
+            progress.index,
+            progress.total,
+            progress.stage,
+            progress.progress,
+          )
+          publishStartupProgress({ ...mapped, detail: `${progress.entry.packageName} (${progress.index + 1}/${progress.total})` })
+        })
+        const count = (result: NonNullable<(typeof seedResults)[number]['result']>): number => (
+          seedResults.filter(item => item.result === result).length
+        )
+        await appendDesktopStartupLog(`Bundled plugin reconcile finished: verified=${count('verified')}; installed=${count('installed')}; upgraded=${count('upgraded')}; preserved-user-version=${count('preserved-user-version')}; removed=${count('removed')}; unresolved=${count('unresolved')}.`)
+        try {
+          await appendDesktopStartupLog(await applyFenglinRuntimeOverlays(desktopMutations.mutationHome))
+        } catch (error) {
+          await appendDesktopStartupLog(`fenglin overlays skipped: ${error instanceof Error ? error.message : String(error)}`)
+        }
       }
     } else {
       await appendDesktopStartupLog(

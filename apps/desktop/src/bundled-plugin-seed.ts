@@ -648,6 +648,12 @@ export async function seedBundledPlugin(options: SeedBundledPluginOptions): Prom
     return 'unresolved'
   }
   const packagedAhead = packagedVersion !== null && installedVersion !== null && gt(packagedVersion, installedVersion)
+  // Fenglin: bundled startup plugins always track the packaged version unless
+  // the user already installed something newer. Registry-owned older copies
+  // (e.g. dshmarket@1.59.0) must not pin the desktop below the shipped archive.
+  const shouldUpgradeBundledAhead = packagedAhead
+    && !installedIsNewer
+    && entry.installPolicy === 'startup'
   const shouldUpgradeManagedArchive = dependency.desktopOwned
     && marker !== undefined
     && ownership === 'desktop-archive'
@@ -657,6 +663,7 @@ export async function seedBundledPlugin(options: SeedBundledPluginOptions): Prom
     && (ownership === 'desktop-registry' || exactHistoricalRegistry)
   const shouldInstall = restoreBundledVersion
     || !dependency.present
+    || shouldUpgradeBundledAhead
     || shouldUpgradeManagedArchive
     || shouldUpgradeManagedRegistry
 

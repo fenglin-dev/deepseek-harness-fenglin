@@ -177,6 +177,39 @@ async function injectWorkspaceClosure() {
     })
   }
   console.log(`prepare-windows-runtime: injected ${injected.size} workspace packages`)
+  // Fenglin: pnpm deploy --prod can drop workspace:* tool packages that agent
+  // presets resolve at mount time. Force the CLI + harness dependency closure.
+  const required = new Set()
+  for (const manifestPath of [
+    join(repositoryRoot, 'apps', 'cli', 'package.json'),
+    join(harnessRoot, 'package.json'),
+  ]) {
+    if (!existsSync(manifestPath)) continue
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    for (const name of workspaceDependencies(manifest, packages)) required.add(name)
+  }
+  for (const name of required) {
+    if (injected.has(name)) continue
+    const project = packages.get(name)
+    if (project === undefined) continue
+    injected.add(name)
+    const destination = join(harnessRoot, 'node_modules', ...name.split('/'))
+    await rm(destination, { recursive: true, force: true })
+    await cp(project.directory, destination, {
+      recursive: true,
+      dereference: true,
+      filter: path => !relative(project.directory, path).split(sep).includes('node_modules'),
+    })
+  }
+  const missing = []
+  for (const name of required) {
+    const manifestPath = join(harnessRoot, 'node_modules', ...name.split('/'), 'package.json')
+    if (!existsSync(manifestPath)) missing.push(name)
+  }
+  if (missing.length > 0) {
+    throw new Error(`prepare-windows-runtime: missing workspace packages after inject: ${missing.join(', ')}`)
+  }
+  console.log(`prepare-windows-runtime: verified ${required.size} workspace dependency packages`)
   await ensureSubprocessLocalProcessControl()
   await overlayFenglinProcessControl()
 }
