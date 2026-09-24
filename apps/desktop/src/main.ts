@@ -3372,7 +3372,23 @@ async function startApplication(): Promise<void> {
         } catch (error) {
           await appendDesktopStartupLog(`fenglin-ui-guard seed skipped: ${error instanceof Error ? error.message : String(error)}`)
         }
-        await appendDesktopStartupLog(`Prebuilt Profile deployment completed in ${Date.now() - startedAt}ms; fingerprint=${prebuilt.fingerprint}; no package installation invoked.`)
+        await appendDesktopStartupLog(`Prebuilt Profile deployment completed in ${Date.now() - startedAt}ms; fingerprint=${prebuilt.fingerprint}; verifying bundled plugins after deploy.`)
+        // Prebuilt can omit or drop individual packages across seal/relocate.
+        // seedStartup verifies every startup entry and fills only the gaps.
+        const prebuiltSeedResults = await bundledPluginInstaller.seedStartup((progress) => {
+          const mapped = mapBundledPluginProgress(
+            progress.entry.packageName,
+            progress.index,
+            progress.total,
+            progress.stage,
+            progress.progress,
+          )
+          publishStartupProgress({ ...mapped, detail: `${progress.entry.packageName} (${progress.index + 1}/${progress.total})` })
+        })
+        const prebuiltCount = (result: NonNullable<(typeof prebuiltSeedResults)[number]['result']>): number => (
+          prebuiltSeedResults.filter(item => item.result === result).length
+        )
+        await appendDesktopStartupLog(`Post-prebuilt bundled plugin pass: verified=${prebuiltCount('verified')}; installed=${prebuiltCount('installed')}; upgraded=${prebuiltCount('upgraded')}; preserved-user-version=${prebuiltCount('preserved-user-version')}; removed=${prebuiltCount('removed')}; unresolved=${prebuiltCount('unresolved')}; failed-or-deferred=${prebuiltSeedResults.filter(r => r.result === undefined).length}.`)
       } else if (firstStartPending) {
         await mergeImportedAllowBuilds(join(desktopMutations.mutationHome, 'profiles/web'), startupBuildRules)
         await seedBundledPluginsBatch(manifest.plugins.filter(entry => entry.installPolicy === 'startup'), bundledDirectory, desktopMutations.mutationHome,
