@@ -137,6 +137,8 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
   await rm(join(destination, 'profiles/web/cordis.patch.yml'), { force: true })
   // Seal after native signing. Builder must not rewrite these checksummed data resources.
   if (target.startsWith('darwin-')) await signNativeResources(destination, run)
+  // Plugin-manager operation logs are diagnostics only; never ship them.
+  await rm(join(destination, 'profiles/web/.plugin-manager'), { recursive: true, force: true })
   const sealed = await sealPrebuiltProfile(destination, {
     target, nodeVersion, pnpmVersion, runtimeVersion: runtime.version,
     pluginManifestSha256: createHash('sha256').update(source).digest('hex'),
