@@ -1,6 +1,6 @@
 /** Build preset dependencies with the packaged runtime; retain only portable, reviewed application state. */
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, writeFile, cp, lstat } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, writeFile, cp } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -114,11 +114,6 @@ const execFileAsync = promisify(execFile)
 /** pnpm file: installs may leave store symlinks that seal drops; force a real package directory. */
 async function materializeBundledPackage(resources, destination, entry) {
   const dest = join(destination, 'profiles', 'web', 'node_modules', ...entry.packageName.split('/'))
-  const entryJs = join(dest, 'lib', 'index.js')
-  try {
-    const stat = await lstat(dest)
-    if (!stat.isSymbolicLink() && existsSync(entryJs)) return
-  } catch { /* missing */ }
   const tgz = join(resources, entry.archive)
   const tmp = await mkdtemp(join(destination, 'extract-'))
   try {
@@ -129,6 +124,8 @@ async function materializeBundledPackage(resources, destination, entry) {
   } finally {
     await rm(tmp, { recursive: true, force: true })
   }
+  const entryJs = join(dest, 'lib', 'index.js')
+  if (!existsSync(entryJs)) throw new Error(`prebuilt-profile: materialized ${entry.packageName} is missing lib/index.js`)
   console.log(`prebuilt-profile: materialized ${entry.packageName}@${entry.version}`)
 }
 
@@ -370,6 +367,11 @@ dsh-better-sidebar:
   }
   // Fenglin runtime libs: copy the live-verified patched bundles over extracted
   // profile packages so the Windows installer matches the tested local build.
+  // Materialize every startup plugin as a real directory BEFORE fenglin patches,
+  // so seal/deploy keep lib entries and later overlays still apply.
+  for (const entry of manifest.plugins.filter(entry => entry.installPolicy === 'startup')) {
+    await materializeBundledPackage(resources, destination, entry)
+  }
   const runtimeLibs = join(fenglinFixes, 'runtime-libs')
   const runtimeCopies = [
     ['dsh-better-sidebar/lib/client.js', 'dsh-better-sidebar/lib/client.js'],
@@ -396,10 +398,6 @@ dsh-better-sidebar:
   // Only patch web-all client.js for lever visibility. Never rewrite the
   // plugin-bundle cordis.patch.yml — user-layer profiles/web/cordis.patch.yml
   // owns pet-off / liangshen-on overrides after bundle layers apply.
-  // Materialize every startup plugin as a real directory so seal/deploy keep lib entries.
-  for (const entry of manifest.plugins.filter(entry => entry.installPolicy === 'startup')) {
-    await materializeBundledPackage(resources, destination, entry)
-  }
   // Seal after native signing. Builder must not rewrite these checksummed data resources.
   if (target.startsWith('darwin-')) await signNativeResources(destination, run)
   const sealed = await sealPrebuiltProfile(destination, {
