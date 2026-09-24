@@ -1,7 +1,15 @@
 /** Profile package management and explicit, exact-version compatibility approvals. */
 import { runPluginCommand, setProfileVersionExemption } from '@deepseek-ai/dsh-plugin-manager/operations'
 import { INSTALL_ANCHOR } from './profile-boot.ts'
-import { DEFAULT_PROFILE_BUNDLES, initProfile, PROFILE_TEMPLATES, readProfileCompatibility, resolveProfileDir } from '@deepseek-ai/dsh-app-boot'
+import {
+  allowProfilePackageBuild,
+  allowProfileRegistryPackageBuild,
+  DEFAULT_PROFILE_BUNDLES,
+  initProfile,
+  PROFILE_TEMPLATES,
+  readProfileCompatibility,
+  resolveProfileDir,
+} from '@deepseek-ai/dsh-app-boot'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
@@ -62,6 +70,49 @@ async function versionCommand(profile: string, args: readonly string[]): Promise
 export async function runPlugin(profile: string, args: readonly string[]): Promise<number> {
   const versionResult = await versionCommand(profile, args)
   if (versionResult !== undefined) return versionResult
+
+  if (args[0] === 'approve-build-key') {
+    if (args.length !== 2 || args[1] === undefined) {
+      process.stderr.write(`dsh: usage: dsh plugin --profile ${profile} approve-build-key <exact-package-key>\n`)
+      return 1
+    }
+    const dir = resolveProfileDir(profile)
+    await mkdir(dir, { recursive: true })
+    if (!existsSync(join(dir, 'package.json'))) initProfile(dir, PROFILE_TEMPLATES[profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
+    try {
+      const result = allowProfilePackageBuild(dir, args[1])
+      if (result === 'denied') {
+        process.stderr.write(`dsh: pnpm build remains explicitly denied for ${JSON.stringify(args[1])} in ${dir}\n`)
+        return 1
+      }
+      process.stderr.write(`dsh: pnpm build ${result} for exact key ${JSON.stringify(args[1])} in ${dir}\n`)
+      return 0
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+      return 1
+    }
+  }
+  if (args[0] === 'approve-build') {
+    if (args.length !== 2 || args[1] === undefined) {
+      process.stderr.write(`dsh: usage: dsh plugin --profile ${profile} approve-build <package-name>\n`)
+      return 1
+    }
+    const dir = resolveProfileDir(profile)
+    await mkdir(dir, { recursive: true })
+    if (!existsSync(join(dir, 'package.json'))) initProfile(dir, PROFILE_TEMPLATES[profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
+    try {
+      const result = allowProfileRegistryPackageBuild(dir, args[1])
+      if (result === 'denied') {
+        process.stderr.write(`dsh: pnpm build remains explicitly denied for ${JSON.stringify(args[1])} in ${dir}\n`)
+        return 1
+      }
+      process.stderr.write(`dsh: pnpm build ${result} for ${JSON.stringify(args[1])} in ${dir}\n`)
+      return 0
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+      return 1
+    }
+  }
   const dir = resolveProfileDir(profile)
   if (existsSync(join(dir, 'package.json'))) {
     for (const warning of readProfileCompatibility(dir).warnings) process.stderr.write(`dsh: warning: ${warning}\n`)
