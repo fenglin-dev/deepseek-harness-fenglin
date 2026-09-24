@@ -9,6 +9,20 @@ import { deployPrebuiltProfile, readPrebuiltProfile, sealPrebuiltProfile } from 
 import { runHarnessInvocation, windowsTaskkillInvocation } from '../lib/harness-invocation.js'
 import { HarnessSupervisor } from '../lib/supervisor.js'
 
+/** Windows can hold directory handles briefly after child exit. */
+async function rmWithRetry(path, options) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      await rm(path, options)
+      return
+    } catch (error) {
+      if (error?.code !== 'EBUSY' && error?.code !== 'EPERM' && error?.code !== 'ENOTEMPTY') throw error
+      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)))
+    }
+  }
+  await rm(path, options)
+}
+
 async function smokeRelocatedProfile(home, harnessRoot, node, environment) {
   let supervisor
   let timer
@@ -172,7 +186,7 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
     if (removable === undefined) throw new Error('prebuilt Profile has no startup plugins')
     await command(relocated, ['remove', removable.packageName, '--config.offline=true'])
   } finally {
-    await rm(relocated, { recursive: true, force: true })
+    await rmWithRetry(relocated, { recursive: true, force: true })
   }
   await rm(published, { recursive: true, force: true })
   await rename(destination, published)
