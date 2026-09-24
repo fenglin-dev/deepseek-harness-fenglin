@@ -570,6 +570,12 @@ importers:
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
         version: link:../../packages/util/http-proxy
+      '@deepseek-ai/dsh-nas-protocol':
+        specifier: workspace:^
+        version: link:../../packages/nas/nas-protocol
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../packages/subprocess/subprocess
       electron-updater:
         specifier: ^6.8.9
         version: 6.8.9

@@ -42,7 +42,9 @@
     "@deepseek-ai/dsh-api-gateway": "workspace:*",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-http-proxy": "workspace:^",
-    "sigstore": "^3.0.0"
+    "sigstore": "^3.0.0",
+    "@deepseek-ai/dsh-subprocess": "workspace:^",
+    "@deepseek-ai/dsh-nas-protocol": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-app-boot": "workspace:*",
