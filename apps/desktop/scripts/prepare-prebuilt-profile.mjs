@@ -124,7 +124,11 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
   for (const entry of manifest.plugins.filter(entry => entry.installPolicy === 'startup')) {
     await seedBundledPlugin({ entry, resourcesDirectory: resources, dshHome: destination,
       prepare: async () => { for (const name of entry.approvedBuilds ?? []) await command(destination, ['approve-build', name]) },
-      install: archive => command(destination, ['add', '--save-exact', archive]),
+      install: archive => {
+        // Relative file: from the profile importer survives relocate and verifies cleanly.
+        const spec = `file:${relative(join(destination, 'profiles/web'), archive).split('\\\\').join('/')}`
+        return command(destination, ['add', '--save-exact', spec])
+      },
     })
   }
   // Relocatable file: URLs survive deploy; absolute paths do not.
