@@ -2,6 +2,7 @@
   "schema": "open-deepseek-harness-desktop/packaged-resource-contract/v1",
   "asarFiles": [
     "lib/**/*",
+    "dsh/**/*",
     "scripts/primary-runtime-lock.json",
     "package.json"
   ],
@@ -13,7 +14,9 @@
     {
       "from": "bundled-plugins",
       "to": "bundled-plugins",
-      "filter": ["**/*"]
+      "filter": [
+        "**/*"
+      ]
     }
   ],
   "platforms": {
@@ -23,51 +26,114 @@
         {
           "from": "../../.artifacts/desktop-runtime-win-x64/harness",
           "to": "harness",
-          "filter": ["**/*", "!node_modules{,/**/*}"]
+          "filter": [
+            "**/*",
+            "!node_modules{,/**/*}"
+          ]
         },
         {
           "from": "../../.artifacts/desktop-runtime-win-x64/harness/node_modules",
           "to": "harness/node_modules",
-          "filter": ["**/*"]
+          "filter": [
+            "**/*"
+          ]
         },
         {
           "from": "../../.artifacts/desktop-runtime-win-x64/runtime",
           "to": "runtime",
-          "filter": ["**/*"]
+          "filter": [
+            "**/*"
+          ]
         },
-        { "from": "../../.artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz", "to": "workspace-runtime/DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz" },
-        { "from": "../../.artifacts/workspace-runtime/workspace-runtime-win32-x64.json", "to": "workspace-runtime/workspace-runtime-win32-x64.json" },
+        {
+          "from": "../../.artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz",
+          "to": "workspace-runtime/DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz"
+        },
+        {
+          "from": "../../.artifacts/workspace-runtime/workspace-runtime-win32-x64.json",
+          "to": "workspace-runtime/workspace-runtime-win32-x64.json"
+        },
         {
           "from": "build/cli-bin",
           "to": "cli-bin",
-          "filter": ["**/*"]
+          "filter": [
+            "**/*"
+          ]
         },
-        { "from": "lib/desktop-cli-launcher.js", "to": "cli/desktop-cli.mjs" },
-        { "from": "../../.artifacts/desktop-prebuilt-win32-x64.tar", "to": "prebuilt-profile.tar" },
-        { "from": "../../.artifacts/desktop-prebuilt-win32-x64.tar.sha256", "to": "prebuilt-profile.tar.sha256" }
+        {
+          "from": "lib/desktop-cli-launcher.js",
+          "to": "cli/desktop-cli.mjs"
+        },
+        {
+          "from": "../../.artifacts/desktop-prebuilt-win32-x64.tar",
+          "to": "prebuilt-profile.tar"
+        },
+        {
+          "from": "../../.artifacts/desktop-prebuilt-win32-x64.tar.sha256",
+          "to": "prebuilt-profile.tar.sha256"
+        }
       ]
     },
     "macos": {
       "config": "apps/desktop/electron-builder.macos.yml",
       "resources": [
-        { "from": "../../.artifacts/desktop-runtime-darwin-${arch}.tar", "to": "harness-runtime.tar" },
-        { "from": "../../.artifacts/desktop-runtime-darwin-${arch}.tar.sha256", "to": "harness-runtime.tar.sha256" },
-        { "from": "../../.artifacts/desktop-prebuilt-darwin-${arch}.tar", "to": "prebuilt-profile.tar" },
-        { "from": "../../.artifacts/desktop-prebuilt-darwin-${arch}.tar.sha256", "to": "prebuilt-profile.tar.sha256" },
-        { "from": "../../.artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-darwin-${arch}.tar.gz", "to": "workspace-runtime/DeepSeek-Harness-workspace-runtime-darwin-${arch}.tar.gz" },
-        { "from": "../../.artifacts/workspace-runtime/workspace-runtime-darwin-${arch}.json", "to": "workspace-runtime/workspace-runtime-darwin-${arch}.json" },
-        { "from": "lib/desktop-cli-launcher.js", "to": "cli/desktop-cli.mjs" }
+        {
+          "from": "../../.artifacts/desktop-runtime-darwin-${arch}.tar",
+          "to": "harness-runtime.tar"
+        },
+        {
+          "from": "../../.artifacts/desktop-runtime-darwin-${arch}.tar.sha256",
+          "to": "harness-runtime.tar.sha256"
+        },
+        {
+          "from": "../../.artifacts/desktop-prebuilt-darwin-${arch}.tar",
+          "to": "prebuilt-profile.tar"
+        },
+        {
+          "from": "../../.artifacts/desktop-prebuilt-darwin-${arch}.tar.sha256",
+          "to": "prebuilt-profile.tar.sha256"
+        },
+        {
+          "from": "../../.artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-darwin-${arch}.tar.gz",
+          "to": "workspace-runtime/DeepSeek-Harness-workspace-runtime-darwin-${arch}.tar.gz"
+        },
+        {
+          "from": "../../.artifacts/workspace-runtime/workspace-runtime-darwin-${arch}.json",
+          "to": "workspace-runtime/workspace-runtime-darwin-${arch}.json"
+        },
+        {
+          "from": "lib/desktop-cli-launcher.js",
+          "to": "cli/desktop-cli.mjs"
+        }
       ]
     },
     "linux": {
       "config": "apps/desktop/electron-builder.linux.yml",
       "resources": [
-        { "from": "../../.artifacts/desktop-runtime-linux-${arch}.tar", "to": "harness-runtime.tar" },
-        { "from": "../../.artifacts/desktop-runtime-linux-${arch}.tar.sha256", "to": "harness-runtime.tar.sha256" },
-        { "from": "../../.artifacts/desktop-prebuilt-linux-${arch}.tar", "to": "prebuilt-profile.tar" },
-        { "from": "../../.artifacts/desktop-prebuilt-linux-${arch}.tar.sha256", "to": "prebuilt-profile.tar.sha256" },
-        { "from": "../../.artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-linux-${arch}.tar.gz", "to": "workspace-runtime/DeepSeek-Harness-workspace-runtime-linux-${arch}.tar.gz" },
-        { "from": "../../.artifacts/workspace-runtime/workspace-runtime-linux-${arch}.json", "to": "workspace-runtime/workspace-runtime-linux-${arch}.json" }
+        {
+          "from": "../../.artifacts/desktop-runtime-linux-${arch}.tar",
+          "to": "harness-runtime.tar"
+        },
+        {
+          "from": "../../.artifacts/desktop-runtime-linux-${arch}.tar.sha256",
+          "to": "harness-runtime.tar.sha256"
+        },
+        {
+          "from": "../../.artifacts/desktop-prebuilt-linux-${arch}.tar",
+          "to": "prebuilt-profile.tar"
+        },
+        {
+          "from": "../../.artifacts/desktop-prebuilt-linux-${arch}.tar.sha256",
+          "to": "prebuilt-profile.tar.sha256"
+        },
+        {
+          "from": "../../.artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-linux-${arch}.tar.gz",
+          "to": "workspace-runtime/DeepSeek-Harness-workspace-runtime-linux-${arch}.tar.gz"
+        },
+        {
+          "from": "../../.artifacts/workspace-runtime/workspace-runtime-linux-${arch}.json",
+          "to": "workspace-runtime/workspace-runtime-linux-${arch}.json"
+        }
       ]
     }
   }
