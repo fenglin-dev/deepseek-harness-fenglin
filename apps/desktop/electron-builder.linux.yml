@@ -7,6 +7,7 @@ directories:
   output: ../../.artifacts/desktop-linux
 files:
   - lib/**/*
+  - dsh/**/*
   - scripts/primary-runtime-lock.json
   - package.json
 extraResources:
