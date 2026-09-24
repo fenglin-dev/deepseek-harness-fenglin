@@ -125,10 +125,8 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
     await seedBundledPlugin({ entry, resourcesDirectory: resources, dshHome: destination,
       prepare: async () => { for (const name of entry.approvedBuilds ?? []) await command(destination, ['approve-build', name]) },
       install: (archive) => {
-        // Proper file:/// URLs; bare file:D:/... is ambiguous for pnpm on Windows.
         const paths = Array.isArray(archive) ? archive : [archive]
-        const specs = paths.map((item) => pathToFileURL(item).href)
-        return command(destination, ['add', '--save-exact', ...specs])
+        return command(destination, ['add', '--save-exact', ...paths])
       },
     })
   }

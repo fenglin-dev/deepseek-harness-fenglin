@@ -59,11 +59,17 @@ export const PROFILE_QUARANTINE_SCHEMA = 1 as const
 /** Host packages whose runtime identities must be shared by every profile plugin. */
 export const SHARED_HOST_PACKAGES = [
   '@deepseek-ai/cordis',
+  '@deepseek-ai/dsh-agent',
   '@deepseek-ai/dsh-attachment',
+  '@deepseek-ai/dsh-invariants',
   '@deepseek-ai/dsh-llm',
   '@deepseek-ai/dsh-scope',
+  '@deepseek-ai/dsh-session',
+  '@deepseek-ai/dsh-settings',
+  '@deepseek-ai/dsh-subagent',
   '@deepseek-ai/dsh-system-prompt',
   '@deepseek-ai/dsh-tools',
+  '@deepseek-ai/schemastery',
 ] as const
 
 const sharedHostPackages = new Set<string>(SHARED_HOST_PACKAGES)
@@ -1135,6 +1141,34 @@ function pruneStaleLockfileImporter(profileDir: string): string[] {
 }
 
 /** Replace undeclared profile-local Host packages left by another installation with the running installation. */
+/** Materialize shared Host packages into the profile so Loader-entry static imports resolve. */
+function ensureSharedHostPackageLinks(
+  installAnchor: string,
+  home: string,
+  profileDir: string,
+): string[] {
+  const linked: string[] = []
+  for (const packageName of SHARED_HOST_PACKAGES) {
+    const fallback = join(home, PROFILES_DIR, 'node_modules', packageName)
+    const path = existsSync(join(fallback, 'package.json'))
+      ? fallback
+      : packageDirFromAnchor(installAnchor, packageName)
+    if (path === undefined) continue
+    try {
+      const profileCopy = profilePackageDirectory(profileDir, packageName)
+      // Only fill gaps; repairUnmanagedSharedHostResidue still owns wrong copies.
+      if (existsSync(join(profileCopy, 'package.json'))) continue
+      if (existsSync(profileCopy)) rmSync(profileCopy, { recursive: true, force: true })
+      mkdirSync(dirname(profileCopy), { recursive: true })
+      symlinkSync(path, profileCopy, process.platform === 'win32' ? 'junction' : 'dir')
+      linked.push(packageName)
+    } catch {
+      // Leave unresolved; the preflight may still quarantine the root plugin.
+    }
+  }
+  return linked
+}
+
 function repairUnmanagedSharedHostResidue(
   options: ProfileDependencyOptions,
   home: string,
@@ -1882,6 +1916,7 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
   restoreMisclassifiedOptionalBundles(options, home)
   const quarantineRemovalResidue = inspectQuarantineRemovalResidue({ ...options, home })
   writeProfilePnpmCompatibility(profileDir)
+  ensureSharedHostPackageLinks(options.installAnchor, home, profileDir)
   const repairedQuarantineRemoval = repairQuarantineRemovalResidue(
     options,
     home,
@@ -1894,6 +1929,7 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
   const initialOrphans = inspectOrphanedProfileBundles({ ...options, home })
   const initialHostCompatibility = inspectProfileHostCompatibility({ ...options, home })
   if (initial.length === 0 && initialOrphans.length === 0 && initialHostCompatibility.length === 0) {
+    ensureSharedHostPackageLinks(options.installAnchor, home, profileDir)
     const loaderCollisions = inspectProfileLoaderEntryCollisions({ ...options, home })
     const loaderFailures = inspectUnresolvableProfileBundleEntries({ ...options, home })
     let loaderOutcome: ProfileRepairReport | undefined
