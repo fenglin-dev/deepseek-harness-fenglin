@@ -141,19 +141,21 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
   }
   // Relocatable file: URLs: pnpm stores absolute paths that break after deploy.
   {
-    const lockPath = join(destination, 'profiles/web/pnpm-lock.yaml')
-    try {
-      let lock = await readFile(lockPath, 'utf8')
-      const homePrefix = destination.split('\\').join('/')
-      lock = lock.replaceAll(`file:${homePrefix}/bundled-plugins/`, 'file:../../bundled-plugins/')
-      lock = lock.replaceAll(`file:${homePrefix}\\bundled-plugins\\`, 'file:../../bundled-plugins/')
-      // Windows drive-letter absolute form
-      lock = lock.replace(/file:[A-Za-z]:\\/g, (match, offset, whole) => {
-        // only rewrite if it points at our bundled-plugins
-        return match
-      })
-      await writeFile(lockPath, lock, 'utf8')
-    } catch {}
+    const homePrefix = destination.split('\\').join('/')
+    const rewrites = [
+      join(destination, 'profiles/web/pnpm-lock.yaml'),
+      join(destination, 'profiles/web/package.json'),
+    ]
+    for (const file of rewrites) {
+      try {
+        let text = await readFile(file, 'utf8')
+        text = text.split(`file:${homePrefix}/bundled-plugins/`).join('file:../../bundled-plugins/')
+        text = text.split(`file:${homePrefix}\\bundled-plugins\\`).join('file:../../bundled-plugins/')
+        // Drive-letter absolute Windows form used by pnpm on win32
+        text = text.replace(/file:[A-Za-z]:\\[\\/]?[^"']*bundled-plugins[\\/]([^"']+)/g, 'file:../../bundled-plugins/$1')
+        await writeFile(file, text, 'utf8')
+      } catch {}
+    }
   }
   await pruneForeignNodePtyPrebuilds(destination, target)
   const workspace = parseYaml(await readFile(join(destination, 'profiles/web/pnpm-workspace.yaml'), 'utf8'))
