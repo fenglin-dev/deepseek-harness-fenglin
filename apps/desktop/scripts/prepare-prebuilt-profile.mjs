@@ -127,7 +127,7 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
       install: (archive) => {
         // seed may pass one archive path or a batch array; both need profile-relative file: specs.
         const paths = Array.isArray(archive) ? archive : [archive]
-        const specs = paths.map((item) => `file:${relative(join(destination, 'profiles/web'), item).split('\\\\').join('/')}`)
+        const specs = paths.map((item) => `file:${relative(join(destination, 'profiles/web'), item).split('\\').join('/')}`)
         return command(destination, ['add', '--save-exact', ...specs])
       },
     })
