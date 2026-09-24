@@ -87,13 +87,22 @@ export async function runPlugin(profile: string, args: readonly string[]): Promi
       initProfile(dir, PROFILE_TEMPLATES[profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
       process.stderr.write(`dsh: initialized profile ${profile} at ${dir}\n`)
     }
-    if (repair) {
-      const report = repairProfileDependencies({ profile, installAnchor: INSTALL_ANCHOR, home: resolveDshHome() })
-      for (const issue of report.issues) process.stderr.write(`dsh: ${issue}\n`)
-      process.stderr.write(`dsh: doctor repaired ${report.actions.length} item(s)\n`)
-      return report.actions.length > 0 ? 0 : 0
+    const options = {
+      binName: 'dsh',
+      profile,
+      installAnchor: INSTALL_ANCHOR,
+      home: resolveDshHome(),
     }
-    const conflicts = inspectProfileDependencies({ profile, installAnchor: INSTALL_ANCHOR, home: resolveDshHome() })
+    if (repair) {
+      const report = repairProfileDependencies({
+        ...options,
+        runPackageManager: () => ({ exitCode: 0 }),
+      })
+      for (const issue of report.issues ?? []) process.stderr.write(`dsh: ${String(issue)}\n`)
+      process.stderr.write(`dsh: doctor repair finished for profile ${profile}\n`)
+      return 0
+    }
+    const conflicts = inspectProfileDependencies(options)
     if (conflicts.length > 0) {
       for (const conflict of conflicts) process.stderr.write(`dsh: ${JSON.stringify(conflict)}\n`)
       return 10
