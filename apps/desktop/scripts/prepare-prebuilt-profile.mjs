@@ -1,6 +1,6 @@
 /** Build preset dependencies with the packaged runtime; retain only portable, reviewed application state. */
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, delimiter, dirname, join, relative } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { parseBundledPluginManifest } from '../lib/bundled-plugin-installer.js'
@@ -122,12 +122,24 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
   for (const entry of manifest.plugins.filter(entry => entry.installPolicy === 'startup')) {
     await seedBundledPlugin({ entry, resourcesDirectory: resources, dshHome: destination,
       prepare: async () => { for (const name of entry.approvedBuilds ?? []) await command(destination, ['approve-build', name]) },
-      install: archive => {
-        // Relative to the profile home so the lockfile survives relocate.
-        const spec = `file:${relative(destination, archive).split('\\').join('/')}`
-        return command(destination, ['add', '--save-exact', spec])
-      },
+      install: archive => command(destination, ['add', '--save-exact', archive]),
     })
+  }
+  // Relocatable file: URLs: pnpm stores absolute paths that break after deploy.
+  {
+    const lockPath = join(destination, 'profiles/web/pnpm-lock.yaml')
+    try {
+      let lock = await readFile(lockPath, 'utf8')
+      const homePrefix = destination.split('\\').join('/')
+      lock = lock.replaceAll(`file:${homePrefix}/bundled-plugins/`, 'file:../../bundled-plugins/')
+      lock = lock.replaceAll(`file:${homePrefix}\\bundled-plugins\\`, 'file:../../bundled-plugins/')
+      // Windows drive-letter absolute form
+      lock = lock.replace(/file:[A-Za-z]:\\/g, (match, offset, whole) => {
+        // only rewrite if it points at our bundled-plugins
+        return match
+      })
+      await writeFile(lockPath, lock, 'utf8')
+    } catch {}
   }
   await pruneForeignNodePtyPrebuilds(destination, target)
   const workspace = parseYaml(await readFile(join(destination, 'profiles/web/pnpm-workspace.yaml'), 'utf8'))
