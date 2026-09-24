@@ -245,13 +245,12 @@ jobs:
         run: node apps/desktop/scripts/prepare-windows-runtime.mjs
 
       - name: Prepare dsh runtime descriptor
-        working-directory: apps/desktop
         run: |
           pnpm install --frozen-lockfile
-          pnpm run release:pack -- --family dsh --out .desktop-build/targets/win-x64/packed/dsh
-          pnpm run prepare:runtime
-          pnpm run prepare:packages
-          pnpm run prepare:dsh
+          pnpm run release:pack -- --family dsh --out apps/desktop/.desktop-build/targets/win-x64/packed/dsh
+          pnpm --dir apps/desktop run prepare:runtime
+          pnpm --dir apps/desktop run prepare:packages
+          pnpm --dir apps/desktop run prepare:dsh
 
       - name: Build Windows installer
         working-directory: apps/desktop
