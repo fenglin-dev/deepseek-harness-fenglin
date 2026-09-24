@@ -123,8 +123,8 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
     await seedBundledPlugin({ entry, resourcesDirectory: resources, dshHome: destination,
       prepare: async () => { for (const name of entry.approvedBuilds ?? []) await command(destination, ['approve-build', name]) },
       install: archive => {
-        // Relative file: specs survive relocate; absolute paths do not.
-        const spec = `file:${relative(join(destination, 'profiles/web'), archive).split('\\').join('/')}`
+        // Relative to the profile home so the lockfile survives relocate.
+        const spec = `file:${relative(destination, archive).split('\\').join('/')}`
         return command(destination, ['add', '--save-exact', spec])
       },
     })
