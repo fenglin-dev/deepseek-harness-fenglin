@@ -6,10 +6,13 @@ import {
   allowProfileRegistryPackageBuild,
   DEFAULT_PROFILE_BUNDLES,
   initProfile,
+  inspectProfileDependencies,
   PROFILE_TEMPLATES,
   readProfileCompatibility,
+  repairProfileDependencies,
   resolveProfileDir,
 } from '@deepseek-ai/dsh-app-boot'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
@@ -71,6 +74,33 @@ export async function runPlugin(profile: string, args: readonly string[]): Promi
   const versionResult = await versionCommand(profile, args)
   if (versionResult !== undefined) return versionResult
 
+
+  if (args[0] === 'doctor') {
+    const repair = args.length === 2 && args[1] === '--repair'
+    const dir = resolveProfileDir(profile)
+    if (!existsSync(join(dir, 'package.json'))) {
+      if (!repair) {
+        process.stderr.write(`dsh: profile ${profile} is not initialized at ${dir}\n`)
+        return 1
+      }
+      await mkdir(dir, { recursive: true })
+      initProfile(dir, PROFILE_TEMPLATES[profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
+      process.stderr.write(`dsh: initialized profile ${profile} at ${dir}\n`)
+    }
+    if (repair) {
+      const report = repairProfileDependencies({ profile, installAnchor: INSTALL_ANCHOR, home: resolveDshHome() })
+      for (const issue of report.issues) process.stderr.write(`dsh: ${issue}\n`)
+      process.stderr.write(`dsh: doctor repaired ${report.actions.length} item(s)\n`)
+      return report.actions.length > 0 ? 0 : 0
+    }
+    const conflicts = inspectProfileDependencies({ profile, installAnchor: INSTALL_ANCHOR, home: resolveDshHome() })
+    if (conflicts.length > 0) {
+      for (const conflict of conflicts) process.stderr.write(`dsh: ${JSON.stringify(conflict)}\n`)
+      return 10
+    }
+    process.stderr.write(`dsh: doctor found no dependency conflicts for profile ${profile}\n`)
+    return 0
+  }
   if (args[0] === 'approve-build-key') {
     if (args.length !== 2 || args[1] === undefined) {
       process.stderr.write(`dsh: usage: dsh plugin --profile ${profile} approve-build-key <exact-package-key>\n`)
