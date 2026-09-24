@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, writeFile, cp } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { existsSync } from 'node:fs'
-import { basename, delimiter, dirname, join } from 'node:path'
+import { basename, delimiter, dirname, join, relative } from 'node:path'
 import { parse as parseYaml, parseDocument } from 'yaml'
 import { parseBundledPluginManifest } from '../lib/bundled-plugin-installer.js'
 import { seedBundledPlugin } from '../lib/bundled-plugin-seed.js'
@@ -126,6 +126,23 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
       prepare: async () => { for (const name of entry.approvedBuilds ?? []) await command(destination, ['approve-build', name]) },
       install: archive => command(destination, ['add', '--save-exact', archive]),
     })
+  }
+  // Relocatable file: URLs survive deploy; absolute paths do not.
+  {
+    const rewrites = [
+      join(destination, 'profiles/web/pnpm-lock.yaml'),
+      join(destination, 'profiles/web/package.json'),
+    ]
+    for (const file of rewrites) {
+      try {
+        let text = await readFile(file, 'utf8')
+        const homePrefix = destination.split('\\').join('/')
+        text = text.split(`file:${homePrefix}/bundled-plugins/`).join('file:../../bundled-plugins/')
+        text = text.split(`file:${homePrefix}\\bundled-plugins\\`).join('file:../../bundled-plugins/')
+        text = text.replace(/file:[A-Za-z]:\\\\?[^"']*bundled-plugins[\\\\/]([^"']+)/g, 'file:../../bundled-plugins/$1')
+        await writeFile(file, text, 'utf8')
+      } catch {}
+    }
   }
   await pruneForeignNodePtyPrebuilds(destination, target)
   const workspace = parseYaml(await readFile(join(destination, 'profiles/web/pnpm-workspace.yaml'), 'utf8'))
