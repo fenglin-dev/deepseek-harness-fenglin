@@ -125,9 +125,9 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
     await seedBundledPlugin({ entry, resourcesDirectory: resources, dshHome: destination,
       prepare: async () => { for (const name of entry.approvedBuilds ?? []) await command(destination, ['approve-build', name]) },
       install: (archive) => {
-        // seed may pass one archive path or a batch array; both need profile-relative file: specs.
+        // Absolute file: URLs are unambiguous for pnpm add; lock/package rewritten after.
         const paths = Array.isArray(archive) ? archive : [archive]
-        const specs = paths.map((item) => `file:${relative(join(destination, 'profiles/web'), item).split('\\').join('/')}`)
+        const specs = paths.map((item) => `file:${item.split('\\').join('/')}`)
         return command(destination, ['add', '--save-exact', ...specs])
       },
     })
