@@ -44,14 +44,14 @@ export interface ExternalToolInstallResolution {
 export const EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY: ExternalToolCompatibilityManifest = {
   schema: 'dsh/desktop-external-tool-compatibility/v2',
   revision: 8,
-  desktopVersion: '3.0.3',
-  reviewedSourceVersion: '0.1.6-alpha.2',
+  desktopVersion: '0.1.7-rc.1',
+  reviewedSourceVersion: '0.1.7-rc.1',
   issuedAt: '2026-09-18T00:00:00.000Z',
   expiresAt: '2027-03-17T00:00:00.000Z',
   tools: {
     codex: {
       packageName: '@deepseek-ai/dsh-subagent-codex',
-      version: '0.1.6-alpha.1',
+      version: '0.1.7-rc.1',
       integrity: 'sha512-kRPJIWpFNjxvGHgCV00JakIAopCEuaUAdRzWyabAiJxWgivAtIkUOfiKPWhkZPcAjtQqHksYzNCIPZ1THrAZZQ==',
       runtimePackage: {
         packageName: '@openai/codex',
