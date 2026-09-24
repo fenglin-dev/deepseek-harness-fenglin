@@ -248,6 +248,8 @@ jobs:
         working-directory: apps/desktop
         run: |
           pnpm install --frozen-lockfile
+          pnpm run prepare:runtime
+          pnpm run prepare:packages
           pnpm run prepare:dsh
 
       - name: Build Windows installer
