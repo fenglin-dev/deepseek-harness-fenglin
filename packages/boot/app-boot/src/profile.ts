@@ -766,29 +766,44 @@ export function resolveProfileLoaderModule(profileDir: string, specifier: string
     return undefined
   }
   const packageDir = packageDirFromAnchor(join(profileDir, 'package.json'), packageName)
+    ?? (() => {
+      // Direct profile layout fallback when Node's path probe misses a sealed copy.
+      const direct = join(profileDir, 'node_modules', ...packageName.split('/'))
+      return existsSync(join(direct, 'package.json')) ? direct : undefined
+    })()
   if (packageDir === undefined) return undefined
   const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as {
     exports?: ResolvePackageManifest['exports']
-  }
-  if (manifest.exports === undefined) {
-    try { return pathToFileURL(createRequire(join(profileDir, 'package.json')).resolve(specifier)).href }
-    catch { return undefined }
+    main?: string
   }
   const suffix = specifier.slice(packageName.length)
   const subpath = suffix === '' ? '.' : `.${suffix}`
-  let candidates: string[] | void
-  try {
-    candidates = resolvePackage({ name: packageName, exports: manifest.exports }, subpath)
-  } catch (error) {
-    if ((error as Error).message.startsWith('No known conditions for ')) return undefined
-    throw error
-  }
-  for (const candidate of candidates ?? []) {
-    const entry = resolve(packageDir, candidate)
-    const relativeEntry = relative(packageDir, entry)
-    if (!candidate.startsWith('./') || /^\.\.(?:[\\/]|$)/u.test(relativeEntry)) {
-      throw new Error(`dsh: installed package ${packageName} export ${subpath} resolves outside its package`)
+  if (manifest.exports !== undefined) {
+    let candidates: string[] | void
+    try {
+      candidates = resolvePackage({ name: packageName, exports: manifest.exports }, subpath)
+    } catch (error) {
+      if (!(error as Error).message.startsWith('No known conditions for ')) throw error
+      candidates = undefined
     }
+    for (const candidate of candidates ?? []) {
+      const entry = resolve(packageDir, candidate)
+      const relativeEntry = relative(packageDir, entry)
+      if (!candidate.startsWith('./') || /^\.\.(?:[\\/]|$)/u.test(relativeEntry)) {
+        throw new Error(`dsh: installed package ${packageName} export ${subpath} resolves outside its package`)
+      }
+      if (existsSync(entry) && statSync(entry).isFile()) return pathToFileURL(entry).href
+    }
+  }
+  if (manifest.exports === undefined) {
+    try { return pathToFileURL(createRequire(join(profileDir, 'package.json')).resolve(specifier)).href }
+    catch { /* fall through to main/lib fallbacks */ }
+  }
+  for (const fallback of [manifest.main, 'lib/index.js', 'index.js']) {
+    if (fallback === undefined || fallback === '') continue
+    const entry = resolve(packageDir, fallback)
+    const relativeEntry = relative(packageDir, entry)
+    if (/^\.\.(?:[\\/]|$)/u.test(relativeEntry)) continue
     if (existsSync(entry) && statSync(entry).isFile()) return pathToFileURL(entry).href
   }
   return undefined
