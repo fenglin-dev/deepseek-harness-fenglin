@@ -139,13 +139,13 @@ async function inspectWindowsProcesses(platform, environment) {
     'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe',
   )
   const script = [
-    "$items = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.Name -match 'DeepSeek|electron|node|Un_' } | Select-Object ProcessId, ParentProcessId, Name)",
+    "$items = @(Get-Process -ErrorAction Stop | Where-Object { $_.ProcessName -match 'DeepSeek|electron|node|Un_' } | ForEach-Object { $p = $_; [pscustomobject]@{ ProcessId = $p.Id; ParentProcessId = 0; Name = $p.ProcessName } })",
     'ConvertTo-Json -InputObject $items -Compress',
   ].join('; ')
   try {
     const { stdout } = await execFileAsync(powershell, [
       '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script,
-    ], { windowsHide: true, timeout: 15_000, maxBuffer: 1024 * 1024 })
+    ], { windowsHide: true, timeout: 45_000, maxBuffer: 1024 * 1024 })
     const decoded = JSON.parse(stdout.trim() === '' ? '[]' : stdout)
     const entries = (Array.isArray(decoded) ? decoded : [decoded])
       .map(safeProcessEntry)
