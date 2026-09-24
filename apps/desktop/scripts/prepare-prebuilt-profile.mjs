@@ -1,7 +1,7 @@
 /** Build preset dependencies with the packaged runtime; retain only portable, reviewed application state. */
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
-import { basename, delimiter, dirname, join } from 'node:path'
+import { basename, delimiter, dirname, join, relative } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import { parseBundledPluginManifest } from '../lib/bundled-plugin-installer.js'
 import { seedBundledPlugin } from '../lib/bundled-plugin-seed.js'
@@ -122,7 +122,11 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
   for (const entry of manifest.plugins.filter(entry => entry.installPolicy === 'startup')) {
     await seedBundledPlugin({ entry, resourcesDirectory: resources, dshHome: destination,
       prepare: async () => { for (const name of entry.approvedBuilds ?? []) await command(destination, ['approve-build', name]) },
-      install: archive => command(destination, ['add', '--save-exact', archive]),
+      install: archive => {
+        // Relative file: specs survive relocate; absolute paths do not.
+        const spec = `file:${relative(join(destination, 'profiles/web'), archive).split('\\').join('/')}`
+        return command(destination, ['add', '--save-exact', spec])
+      },
     })
   }
   await pruneForeignNodePtyPrebuilds(destination, target)
