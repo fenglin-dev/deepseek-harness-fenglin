@@ -248,6 +248,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           pnpm install --frozen-lockfile
+          pnpm run release:pack -- --family dsh --out .desktop-build/targets/win-x64/packed/dsh
           pnpm run prepare:runtime
           pnpm run prepare:packages
           pnpm run prepare:dsh
