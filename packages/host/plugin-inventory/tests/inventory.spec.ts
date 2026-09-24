@@ -1,8 +1,10 @@
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, FiberState, type Plugin } from '@deepseek-ai/cordis'
+import { PluginPackages, readPluginMeta, type RuntimeResolution } from '@deepseek-ai/dsh-app-boot'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
@@ -13,16 +15,18 @@ import type {
   SubprocessTerminalSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
-import type { AgentPresets } from '@deepseek-ai/dsh-agent-presets'
+import type { AgentPresetRegistry } from '@deepseek-ai/dsh-agent-preset-registry'
 import PluginInventoryGateway, { readPluginInventory } from '../src/index.ts'
 import type { PluginDiagnosticExport } from '../src/types.ts'
 
 const contexts: Context[] = []
 const temporaryDirectories: string[] = []
+const roots: string[] = []
 
 afterEach(async () => {
-  await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
+  for (const ctx of contexts.splice(0).reverse()) await ctx.fiber.dispose()
   for (const path of temporaryDirectories.splice(0)) rmSync(path, { recursive: true, force: true })
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
   vi.unstubAllEnvs()
 })
 
@@ -79,7 +83,7 @@ class StubSubprocessRuntime extends SubprocessRuntime {
   }
 }
 
-async function harness(): Promise<{
+async function harness(baseUrl?: string): Promise<{
   ctx: Context
   inventory: PluginInventoryGateway
   subprocess: StubSubprocessRuntime
@@ -87,6 +91,7 @@ async function harness(): Promise<{
   if (process.env.DSH_HOME === undefined) vi.stubEnv('DSH_HOME', temporaryDirectory())
   const ctx = new Context()
   contexts.push(ctx)
+  if (baseUrl !== undefined) ctx.baseUrl = baseUrl
   await ctx.plugin(Loader)
   await ctx.plugin(StubSubprocessRuntime)
   ctx.loader.builtins.active = activePlugin
@@ -94,6 +99,32 @@ async function harness(): Promise<{
   await ctx.plugin(PluginInventoryGateway)
   const inventory = ctx.get('pluginInventory') as PluginInventoryGateway
   return { ctx, inventory, subprocess: ctx.subprocess as StubSubprocessRuntime }
+}
+
+function metadataFixture(mode: 'native' | 'runtime') {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-inventory-meta-'))
+  roots.push(root)
+  const profilesDir = join(root, 'profiles')
+  const profileDir = join(profilesDir, 'test')
+  const baseDir = mode === 'runtime' ? profileDir : root
+  mkdirSync(baseDir, { recursive: true })
+  const baseUrl = pathToFileURL(join(baseDir, 'entry.mjs')).href
+  const dir = mode === 'runtime'
+    ? join(root, 'installation', 'node_modules', 'local-plugin')
+    : join(root, 'node_modules', 'local-plugin')
+  const resolution: RuntimeResolution = {
+    profilesDir, profileDir, localPackageNames: [], linkedRoots: [],
+    entries: [{ name: 'local-plugin', packageDir: dir, version: undefined,
+      declarer: join(dir, 'package.json'), scope: 'installation' }],
+  }
+  const expectUnlinked = () => {
+    expect(lstatSync(dir).isDirectory()).toBe(true)
+    for (const path of [
+      join(profileDir, 'node_modules'), join(profilesDir, 'node_modules'),
+      join(root, 'node_modules'), join(profileDir, '.dsh-module-fallback'),
+    ]) expect(lstatSync(path, { throwIfNoEntry: false }), path).toBeUndefined()
+  }
+  return { dir, baseUrl, resolution, expectUnlinked }
 }
 
 describe('PluginInventoryGateway', () => {
@@ -113,6 +144,78 @@ describe('PluginInventoryGateway', () => {
         attribution: { rootPackage: 'fixture-plugin' } }),
     ])
     expect(subprocess.spawns).toEqual([])
+  })
+
+  it.each(['native', 'runtime'] as const)('reads local metadata while the package entry remains disabled with %s resolution', async (mode) => {
+    const { dir, baseUrl, resolution, expectUnlinked } = metadataFixture(mode)
+    mkdirSync(join(dir, 'locale'), { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({
+      name: 'local-plugin', exports: { './feature': './index.js', './feature/locale/*.json': './locale/*.json' },
+    }))
+    writeFileSync(join(dir, 'index.js'), 'throw new Error("metadata must not execute the plugin")\n')
+    writeFileSync(join(dir, 'locale', 'en.json'), '{"meta":{"title":"Local plugin","description":"Local description"}}')
+    if (mode === 'runtime') {
+      expectUnlinked()
+      expect(readPluginMeta('local-plugin/feature', baseUrl)).toBeUndefined()
+    }
+    const { ctx, inventory } = await harness(baseUrl)
+    await ctx.plugin(PluginPackages, mode === 'runtime' ? { resolution } : {})
+    await ctx.loader.create({ name: 'local-plugin/feature', disabled: true })
+    expect((await inventory.list()).entries).toMatchObject([{
+      enabled: false, fiberPhase: null, meta: { title: { en: 'Local plugin' }, description: { en: 'Local description' } },
+    }])
+    if (mode === 'runtime') {
+      expectUnlinked()
+      await ctx.fiber.dispose()
+      expect(readPluginMeta('local-plugin/feature', baseUrl)).toBeUndefined()
+      expectUnlinked()
+    }
+  })
+
+  it.each(['native', 'runtime'] as const)('resolves preset row metadata from the profile base without loading the plugins with %s resolution', async (mode) => {
+    const { dir, baseUrl, resolution, expectUnlinked } = metadataFixture(mode)
+    mkdirSync(join(dir, 'locale'), { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({
+      name: 'local-plugin', exports: { './feature': './index.js', './feature/locale/*.json': './locale/*.json' },
+    }))
+    writeFileSync(join(dir, 'index.js'), 'throw new Error("metadata must not execute the plugin")\n')
+    writeFileSync(join(dir, 'locale', 'en.json'), '{"meta":{"title":"Preset plugin","description":"Preset description"}}')
+    writeFileSync(join(dir, 'locale', 'zh.json'), '{"meta":{"title":"预设插件"}}')
+    if (mode === 'runtime') {
+      expectUnlinked()
+      expect(readPluginMeta('local-plugin/feature', baseUrl)).toBeUndefined()
+    }
+    const { ctx, inventory } = await harness(baseUrl)
+    await ctx.plugin(PluginPackages, mode === 'runtime' ? { resolution } : {})
+    ctx.provide('agentPresets', {
+      compositionInventory: async () => [{
+        id: 'local', isDefault: true,
+        rows: [
+          { entryId: 'feature', moduleName: 'local-plugin/feature', enabled: false },
+          { entryId: null, moduleName: 'local-plugin/private', enabled: false },
+        ],
+      }],
+    } as Partial<AgentPresetRegistry> as never)
+
+    expect(await inventory.list()).toMatchObject({
+      entries: [],
+      agentPresets: [{
+        id: 'local', isDefault: true,
+        rows: [
+          {
+            entryId: 'feature', moduleName: 'local-plugin/feature', enabled: false, fiberPhase: null,
+            meta: { title: { en: 'Preset plugin', zh: '预设插件' }, description: { en: 'Preset description' } },
+          },
+          { entryId: null, moduleName: 'local-plugin/private', enabled: false, fiberPhase: null },
+        ],
+      }],
+    })
+    if (mode === 'runtime') {
+      expectUnlinked()
+      await ctx.fiber.dispose()
+      expect(readPluginMeta('local-plugin/feature', baseUrl)).toBeUndefined()
+      expectUnlinked()
+    }
   })
 
   it('publishes one direct list method under the pluginInventory namespace', async () => {
@@ -428,7 +531,6 @@ describe('PluginInventoryGateway', () => {
       compositionInventory: async () => [
         {
           id: 'standard',
-          trust: 'system',
           name: '标准模式',
           isDefault: true,
           rows: [
@@ -436,15 +538,14 @@ describe('PluginInventoryGateway', () => {
             { entryId: null, moduleName: 'pkg-file', enabled: 'conditional', condition: 'x' },
           ],
         },
-        { id: 'damaged', trust: 'user', isDefault: false, broken: 'the composition file is missing', rows: [] },
+        { id: 'damaged', isDefault: false, broken: 'the composition file is missing', rows: [] },
       ],
-    } as Partial<AgentPresets> as never)
+    } as Partial<AgentPresetRegistry> as never)
 
     const snapshot = await inventory.list()
     expect(snapshot.agentPresets).toEqual([
       {
         id: 'standard',
-        trust: 'system',
         name: '标准模式',
         isDefault: true,
         rows: [
@@ -452,7 +553,7 @@ describe('PluginInventoryGateway', () => {
           { entryId: null, moduleName: 'pkg-file', enabled: 'conditional', condition: 'x', fiberPhase: null },
         ],
       },
-      { id: 'damaged', trust: 'user', isDefault: false, broken: 'the composition file is missing', rows: [] },
+      { id: 'damaged', isDefault: false, broken: 'the composition file is missing', rows: [] },
     ])
   })
 

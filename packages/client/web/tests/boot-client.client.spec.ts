@@ -125,8 +125,10 @@ describe('assertEntriesActive', () => {
     } as unknown as Context
   }
 
+  const silent = { importError: () => undefined }
+
   it('passes when every entry is active', () => {
-    expect(() => { assertEntriesActive(auditCtx([{ name: 'a', fiber: { state: FIBER_STATE.ACTIVE, inject: {} } }])) }).not.toThrow()
+    expect(() => { assertEntriesActive(auditCtx([{ name: 'a', fiber: { state: FIBER_STATE.ACTIVE, inject: {} } }]), silent) }).not.toThrow()
   })
 
   it('names import failures, missing services, and other non-active states', () => {
@@ -137,7 +139,7 @@ describe('assertEntriesActive', () => {
       { name: '@deepseek-ai/broken', fiber: { state: FIBER_STATE.FAILED, inject: {} } },
     ], { present: {} })
 
-    expect(() => { assertEntriesActive(ctx) }).toThrow([
+    expect(() => { assertEntriesActive(ctx, silent) }).toThrow([
       'web boot: 4 entries did not activate',
       '@deepseek-ai/lost: import failed (see console for the import error)',
       '@deepseek-ai/waiting: pending (waiting for services: a, b)',
@@ -160,5 +162,14 @@ describe('assertEntriesActive', () => {
 
     expect(() => { assertEntriesActive(ctx) }).not.toThrow()
     expect(warn).toHaveBeenCalledWith('web boot: optional client plugin did not activate\n@fixture/broken: failed')
+  })
+
+  it('names the recorded import error of a fiberless entry when the module system is supplied', () => {
+    const recorded = new Map([['@deepseek-ai/lost', new Error('client-modules: bundle script failed to load')]])
+    const modules = { importError: (id: string) => recorded.get(id) }
+    expect(() => { assertEntriesActive(auditCtx([{ name: '@deepseek-ai/lost' }]), modules) }).toThrow([
+      'web boot: 1 entry did not activate',
+      '@deepseek-ai/lost: import failed: client-modules: bundle script failed to load',
+    ].join('\n'))
   })
 })

@@ -5,6 +5,7 @@ export const NS = 'session-log-download'
 export const zh = {
   'header.more': '更多操作',
   'menu.download': '下载 Session 日志',
+  'menu.feedback': '反馈',
   'dialog.preparingTitle': '正在导出 Session',
   'dialog.privacyTitle': '导出会话诊断',
   'dialog.privacyDescription': '选择诊断包是否包含自定义提示词原文。版本标识会保留，原文默认不包含。',
@@ -25,6 +26,7 @@ export const zh = {
 export const en: Record<keyof typeof zh, string> = {
   'header.more': 'More actions',
   'menu.download': 'Download session log',
+  'menu.feedback': 'Feedback',
   'dialog.preparingTitle': 'Exporting Session',
   'dialog.privacyTitle': 'Export conversation diagnostics',
   'dialog.privacyDescription': 'Choose whether the diagnostic archive includes custom-prompt plaintext. Version identifiers remain; plaintext is excluded by default.',

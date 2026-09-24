@@ -19,7 +19,7 @@ import { ModelsSection } from './ModelsSection.tsx'
 import type { ModelsSectionInjected } from './ModelsSection.tsx'
 import { SetupWizard } from './SetupWizard.tsx'
 import type { SetupWizardInjected } from './SetupWizard.tsx'
-import { decodeWelcomeSection, WelcomeNoticeStore } from './welcome-store.ts'
+import { WelcomeNoticeStore } from './welcome-store.ts'
 import { ModelsSettingsStore } from './store.ts'
 import { createModelsOperations } from './operations.ts'
 import { createSettingsSchemaOperations } from './schema-operations.ts'
@@ -39,6 +39,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.models'
+
 export type {
   ModelsSettingsState, ProviderDirectoryEntry, ProviderRow,
 } from './store.ts'
@@ -61,7 +62,7 @@ export function refreshIfLoaded(controller: ModelsSettingsStore): void {
  */
 export const inject = [
   'slots', 'locale', 'remote', 'remote.credentials', 'remote.llm', 'remote.settings',
-  'settingsScope', 'settingsSchema',
+  'configForms', 'settingsSchema',
 ]
 
 /**
@@ -77,7 +78,7 @@ export function apply(ctx: ClientContext): void {
   // Bound once here, where the Remote namespaces are declared in this plugin's
   // own `inject`; the cards receive callbacks and never a context.
   const operations = createModelsOperations(ctx)
-  const controller = new ModelsSettingsStore(ctx, schema, ctx.settingsScope.describe())
+  const controller = new ModelsSettingsStore(ctx, schema, ctx.configForms.describe())
   // Registration-time text (the nav label thunk) and the inject faces share
   // one bound translate; copy freshness rides the locale revision.
   const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']
@@ -90,10 +91,7 @@ export function apply(ctx: ClientContext): void {
   })
   // The scope's own memory mode is what keeps a remote browser process-local,
   // so the store needs no isLoopback branch of its own.
-  const welcomeController = new WelcomeNoticeStore(ctx.settingsScope.bind({
-    namespace: WELCOME_NOTICE_SETTINGS_NAMESPACE,
-    decode: decodeWelcomeSection,
-  }))
+  const welcomeController = new WelcomeNoticeStore(ctx.configForms.get<Record<string, unknown>>(WELCOME_NOTICE_SETTINGS_NAMESPACE))
   const setupInjected = (): SetupWizardInjected => ({
     modelsController: controller,
     welcomeController,
@@ -107,7 +105,7 @@ export function apply(ctx: ClientContext): void {
   })
 
   // Pushed invalidations converge every open surface without polling. The
-  // settingsScope injection makes ui-settings activate first, and remote
+  // configForms injection makes ui-settings activate first, and remote
   // dispatch preserves listener order; its listener therefore starts the
   // mirror refresh before this store joins that refresh. The welcome notice
   // follows its settings scope, so it needs no subscription here.

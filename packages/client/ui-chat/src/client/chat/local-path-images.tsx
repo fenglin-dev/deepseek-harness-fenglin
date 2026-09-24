@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { isAbsoluteWorkspacePath, pathPartsOf, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import { fileMediaUrl, isAbsoluteWorkspacePath, pathPartsOf, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { AssistantBlock } from '../contract/snapshot.ts'
 import css from './AssistantMarkdown.module.css'
@@ -22,17 +22,17 @@ export interface LocalPathImage {
  * @param cwd - Session workspace root used for relative paths.
  * @returns a display URL only when the Host can receive an absolute path.
  */
-export function localPathMediaUrl(
-  protocol: string,
-  origin: string,
-  value: string,
-  cwd?: string,
-): string | undefined {
-  if (protocol !== 'http:' && protocol !== 'https:') return undefined
+export function localPathMediaUrl(first: string, second: string, third?: string, cwd?: string, base?: string): string | undefined {
+  const documentBase = third === undefined ? first : base ?? second
+  const value = third === undefined ? second : third
+  if (third !== undefined && first !== 'http:' && first !== 'https:') return undefined
   if (value.length === 0 || value.startsWith('//') || value.startsWith('\\\\')) return undefined
-  const path = resolveWorkspacePath(cwd, value)
+  let decoded: string
+  try { decoded = decodeURIComponent(value.split(/[?#]/u)[0] ?? '') }
+  catch { return undefined }
+  const path = resolveWorkspacePath(cwd, decoded)
   if (!isAbsoluteWorkspacePath(path)) return undefined
-  return `${origin}/api/file?path=${encodeURIComponent(path)}`
+  return fileMediaUrl(documentBase, path)
 }
 
 /** Remove fenced examples before scanning Assistant prose for real paths. */
@@ -81,6 +81,7 @@ export function collectLocalPathImages(
   cwd: string | undefined,
   protocol: string,
   origin: string,
+  base?: string,
 ): readonly LocalPathImage[] {
   const found: LocalPathImage[] = []
   const seen = new Set<string>()
@@ -89,7 +90,7 @@ export function collectLocalPathImages(
     if (candidate === undefined) return
     const path = resolveWorkspacePath(cwd, candidate)
     if (seen.has(path)) return
-    const url = localPathMediaUrl(protocol, origin, candidate, cwd)
+    const url = localPathMediaUrl(protocol, origin, candidate, cwd, base)
     if (url === undefined) return
     seen.add(path)
     found.push({ path, url })

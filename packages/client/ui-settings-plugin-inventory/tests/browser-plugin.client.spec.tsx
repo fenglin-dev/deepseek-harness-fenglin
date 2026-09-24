@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { Context, Service } from '@deepseek-ai/cordis'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ClientModuleLoader } from '@deepseek-ai/dsh-client-modules/client'
 import { apply, inject, NS } from '../src/client/index.ts'
 import { PluginInventorySettingsTab } from '../src/client/PluginInventorySettingsTab.tsx'
 import { PluginDiagnosticsSection } from '../src/client/PluginDiagnosticsSection.tsx'
@@ -65,6 +67,9 @@ async function bench(options: { desktopRestore?: boolean; diagnosticLab?: boolea
     ;(globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop = desktop
   }
   const ctx = new Context()
+  onTestFinished(async () => { await ctx.fiber.dispose() })
+  const retryClient = vi.fn(async () => {})
+  ctx.provide('modules', { entries: { state: createSnapshotStore({ syncing: false, failures: [] }), retry: retryClient } } as unknown as ClientModuleLoader)
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
   ctx.provide('locale', locale)
@@ -111,6 +116,7 @@ async function bench(options: { desktopRestore?: boolean; diagnosticLab?: boolea
     ctx,
     slots: ctx.get('slots') as SlotRegistry,
     locale,
+    retryClient,
     list,
     startInstall,
     getInstall,
@@ -177,6 +183,17 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(b.list).not.toHaveBeenCalled()
 
     const injected = (entry.inject as unknown as () => PluginInventorySettingsTabInjected)()
+    const text = { en: 'Local tools', zh: '本地工具' }
+    expect(injected.resolveText(text)).toBe('本地工具')
+    b.locale.setLocale('en')
+    expect(injected.resolveText(text)).toBe('Local tools')
+    b.locale.setLocale('zh')
+    injected.retryClient()
+    const retryError = vi.spyOn(b.ctx.logger, 'error').mockImplementation(() => {})
+    b.retryClient.mockRejectedValueOnce(new Error('retry unavailable'))
+    injected.retryClient()
+    await vi.waitFor(() => { expect(retryError).toHaveBeenCalled() })
+    retryError.mockRestore()
     await expect(injected.list()).resolves.toEqual(EMPTY)
     expect(b.list).toHaveBeenCalledOnce()
     b.list.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
@@ -185,8 +202,8 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     // Shipped preset names resolve over the agent-preset dictionaries the
     // real plugin registers; user-authored metadata stays untranslated.
     b.locale.register('settings.agentPreset', 'zh', { presetStandardName: '标准模式' } as never)
-    expect(injected.presetName({ id: 'standard', trust: 'system', isDefault: true, rows: [] })).toBe('标准模式')
-    expect(injected.presetName({ id: 'mine', trust: 'user', name: '我自己的', isDefault: false, rows: [] })).toBe('我自己的')
+    expect(injected.presetName({ id: 'standard', isDefault: true, rows: [] })).toBe('标准模式')
+    expect(injected.presetName({ id: 'mine', name: '我自己的', isDefault: false, rows: [] })).toBe('我自己的')
     await b.ctx.fiber.dispose()
   })
 

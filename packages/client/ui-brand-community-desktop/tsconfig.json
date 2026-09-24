@@ -4,7 +4,7 @@
   "include": ["src"],
   "references": [
     { "path": "../ui-renderer" },
-    { "path": "../ui-conversation" },
+    { "path": "../ui-conversation/tsconfig.client.json" },
     { "path": "../ui-primitives" },
     { "path": "../ui-sidebar" },
     { "path": "../ui-slots" }

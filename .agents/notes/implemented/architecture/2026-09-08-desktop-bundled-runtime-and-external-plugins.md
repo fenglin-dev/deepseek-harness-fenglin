@@ -36,7 +36,7 @@ The profile manifest records exact installed plugin dependencies separately from
 
 First launch creates profile metadata and host links without running pnpm, preserving unrelated files. Compatible release changes or application relocation refresh links and validate enabled peers in place. Node version, platform, or architecture changes reinstall the locked plugin graph and run approved native builds.
 
-Native canonical paths identify shared package directories. Windows launchers can vary path casing without moving the application; string equality would trigger unnecessary profile preparation. Profile cleanup explicitly unlinks every nested directory link before removing real directories. A Windows fixture under Electron 44 reproduces recursive `fs.rmSync` deleting files through a nested junction, while bundled upstream Node 24.17 preserves them. Cleanup qualification therefore includes the real Electron runtime; Node-only tests do not establish target preservation.
+Native canonical paths identify shared package directories. Windows launchers can vary path casing without moving the application; string equality would trigger unnecessary profile preparation.
 
 Dependency mutations install with scripts disabled, validate the plugin graph and host links, run the reviewed pending lifecycle builds, and validate again. This permits approved native dependencies to resolve host peers while preventing accidental duplicate host packages from reaching startup. The `allowBuilds` policy remains explicit; unsupported build-requiring dependencies fail the transaction.
 

@@ -12,6 +12,8 @@
 
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
+import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { join, resolve } from 'node:path'
 import {
   allowProfilePackageBuild,
@@ -44,6 +46,8 @@ import {
   quarantineProfilePluginAfterLoadFailure,
   removeProfilePluginSnapshot,
   readProfileManifest,
+  readProfileCompatibility,
+  setProfileVersionExemption,
   readProfileDiagnosticReport,
   repairProfileDependencies,
   retryQuarantinedProfilePlugin,
@@ -718,13 +722,63 @@ function pluginInvocationMutates(args: readonly string[]): boolean {
   return !['list', 'ls', 'why', 'outdated'].includes(args[0] ?? '')
 }
 
+/** Parse only DSH-owned commands; all other arguments remain pnpm's responsibility. */
+async function versionCommand(profile: string, args: readonly string[]): Promise<number | undefined> {
+  const [command, ...rest] = args
+  if (command !== 'allow-version' && command !== 'revoke-version' && command !== 'version-exemptions') return undefined
+  try {
+    let packageVersion: string | undefined
+    let runtimeVersion: string | undefined
+    let acceptRisk = false
+    const argumentsIterator = rest.values()
+    for (const argument of argumentsIterator) {
+      if (argument === '--accept-risk' && command === 'allow-version' && !acceptRisk) acceptRisk = true
+      else if (argument === '--dsh-version' && runtimeVersion === undefined) runtimeVersion = argumentsIterator.next().value
+      else if (argument.startsWith('--dsh-version=') && runtimeVersion === undefined) runtimeVersion = argument.slice('--dsh-version='.length)
+      else if (!argument.startsWith('-') && packageVersion === undefined) packageVersion = argument
+      else throw new Error(`unexpected argument ${JSON.stringify(argument)}`)
+    }
+    if (command === 'version-exemptions' && rest.length > 0) throw new Error('usage: dsh plugin version-exemptions')
+    let request: { packageVersion: string; runtimeVersion: string } | undefined
+    if (command !== 'version-exemptions') {
+      if (packageVersion === undefined || runtimeVersion === undefined) {
+        throw new Error(`usage: dsh plugin ${command} <package@version> --dsh-version <exact>${command === 'allow-version' ? ' --accept-risk' : ''}`)
+      }
+      request = { packageVersion, runtimeVersion }
+    }
+    if (command === 'allow-version') {
+      process.stderr.write('dsh: warning: allowing incompatible plugin versions can break the application or corrupt data. Approval applies only to the exact package and DSH versions.\n')
+    }
+    const dir = resolveProfileDir(profile)
+    await mkdir(dir, { recursive: true })
+    await withFileLock(join(dir, 'package.json'), async () => {
+      if (!existsSync(join(dir, 'package.json'))) initProfile(dir, PROFILE_TEMPLATES[profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
+      if (request === undefined) {
+        const { exemptions, warnings } = readProfileCompatibility(dir)
+        for (const warning of warnings) process.stderr.write(`dsh: warning: ${warning}\n`)
+        process.stdout.write(JSON.stringify(exemptions, undefined, 2) + '\n')
+      } else {
+        await setProfileVersionExemption(dir, request.packageVersion, request.runtimeVersion, command === 'allow-version', acceptRisk)
+        process.stdout.write(`dsh: ${command === 'allow-version' ? 'allowed' : 'revoked'} ${request.packageVersion} for DSH ${request.runtimeVersion}\n`)
+      }
+    }, { waitMs: 120000 })
+    return 0
+  } catch (error) {
+    process.stderr.write(`dsh: ${String(error)}\n`)
+    return 1
+  }
+}
+
 /**
  * Run one Profile package operation with a crash-safe pre-change rollback point.
  * @param profile - Profile selected by the CLI parser.
  * @param args - pnpm or Doctor arguments.
  * @returns Process exit code.
  */
-export function runPlugin(profile: string, args: readonly string[]): number {
+export function runPlugin(profile: string, args: readonly string[]): number | Promise<number> {
+  if (['allow-version', 'revoke-version', 'version-exemptions'].includes(args[0] ?? '')) {
+    return versionCommand(profile, args) as Promise<number>
+  }
   if (args[0] === 'transaction') {
     const home = resolveDshHome()
     if (args.length === 3 && args[1] === 'resume-preparation' && args[2] !== undefined) {

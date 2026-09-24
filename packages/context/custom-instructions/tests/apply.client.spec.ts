@@ -26,11 +26,11 @@ describe('custom instructions browser plugin', () => {
         base: undefined, user: undefined, revision: 1, writable: true, mode: 'host',
       }),
       subscribe: () => () => {},
-      mutate: vi.fn(async () => undefined),
-      set: vi.fn(async () => undefined),
-      unset: vi.fn(async () => undefined),
+      mutate: vi.fn(async () => true),
+      set: vi.fn(async () => true),
+      unset: vi.fn(async () => true),
     }
-    ctx.provide('settingsScope', { bind: () => scope } as never)
+    ctx.provide('configForms', { get: () => scope } as never)
     const open = vi.fn()
     ctx.provide('settingsNavigation', { open } as never)
 

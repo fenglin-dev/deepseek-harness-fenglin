@@ -8,7 +8,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the shipped preset dictionaries used by presetDisplayText.
 import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
-import { presetDisplayText } from '@deepseek-ai/dsh-agent-presets/display'
+// Inline-safe shared fold: shipped ids map to dictionary keys in one home.
+import { presetDisplayText } from '@deepseek-ai/dsh-agent-preset-registry/display'
 import { PluginInventorySettingsTab, type PluginInventorySettingsTabInjected } from './PluginInventorySettingsTab.tsx'
 import { PluginDiagnosticsSection, type PluginDiagnosticsSectionInjected } from './PluginDiagnosticsSection.tsx'
 import { PluginDiscovery } from './PluginDiscovery.tsx'
@@ -102,6 +103,9 @@ export function apply(ctx: ClientContext): void {
     getInstall,
     startUninstall,
     presetName,
+    resolveText: text => ctx.locale.resolveText(text),
+    hooks: { clientSync: ctx.modules.entries.state },
+    retryClient: () => { void ctx.modules.entries.retry().catch((error: unknown) => { ctx.logger.error(error) }) },
   })
   const diagnosticLab = desktopDiagnosticLabAvailable()
     ? {

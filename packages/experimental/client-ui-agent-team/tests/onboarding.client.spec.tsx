@@ -38,6 +38,7 @@ function sessionState() {
     phase: 'ready' as const,
     subagentsByParent: {},
     jobsBySession: {},
+    projectionsBySession: {},
   }
 }
 

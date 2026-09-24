@@ -12,7 +12,7 @@
       "path": "../../boot/app-boot"
     },
     {
-      "path": "../../preset/agent-presets"
+      "path": "../../util/package-manifest"
     },
     {
       "path": "../../../vendor/cordis"
@@ -22,6 +22,9 @@
     },
     {
       "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
     },
     {
       "path": "../../util/brand"

@@ -1,9 +1,8 @@
 /** Global and Workspace-scoped user instructions injected into every matching Agent. */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type {
@@ -13,7 +12,6 @@ import type {
 } from './types.ts'
 import {
   CUSTOM_INSTRUCTION_MAX_CHARS,
-  CUSTOM_INSTRUCTIONS_SETTINGS_NAMESPACE,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -45,7 +43,28 @@ export const SettingsSchema: z<CustomInstructionSettings> = z.object({
   }).default({ preference: 'ask' }),
 })
 
-function activeVersion(history: CustomInstructionHistory | undefined): CustomInstructionVersion | undefined {
+/** Profile-owned live values; the settings form writes only these fields. */
+export interface Config {
+  /** Live global instruction history. */
+  global: Volatile<CustomInstructionHistory>
+  /** Live instruction histories for individual Workspaces. */
+  workspaces: Volatile<Record<string, CustomInstructionHistory>>
+  /** Live diagnostic-export disclosure preference. */
+  diagnosticExport: Volatile<CustomInstructionSettings['diagnosticExport']>
+}
+
+export const Config = z.object({
+  global: HistorySchema.default({ versions: [] }).volatile(),
+  workspaces: z.dict(HistorySchema).default({}).volatile(),
+  diagnosticExport: z.object({
+    preference: z.union(['ask', 'include', 'exclude']).default('ask'),
+  }).default({ preference: 'ask' }).volatile(),
+})
+
+function activeVersion(history: {
+  readonly activeVersion?: string
+  readonly versions: readonly CustomInstructionVersion[]
+} | undefined): CustomInstructionVersion | undefined {
   if (history?.activeVersion === undefined) return undefined
   return history.versions.find(version => version.id === history.activeVersion)
 }
@@ -72,15 +91,13 @@ function workspaceIdOf(ctx: Context, agent: Agent): string | undefined {
 }
 
 /** Register live settings-backed prompt contexts for every Agent scope. */
-export function apply(ctx: Context): void {
-  const settings = ctx.settings.register(CUSTOM_INSTRUCTIONS_SETTINGS_NAMESPACE, SettingsSchema)
-
+export function apply(ctx: Context, config: Config): void {
   ctx.on('agent/created', ({ agent }) => {
     const workspaceId = workspaceIdOf(ctx, agent)
     agent.ctx.systemPrompt.context({
       name: 'custom-instructions:global',
       order: 10_000,
-      text: () => renderCustomInstruction('global', activeVersion(settings.get().global)),
+      text: () => renderCustomInstruction('global', activeVersion(config.global.get())),
     })
     if (workspaceId === undefined) return
     agent.ctx.systemPrompt.context({
@@ -88,7 +105,7 @@ export function apply(ctx: Context): void {
       order: 10_010,
       text: () => renderCustomInstruction(
         workspaceId,
-        activeVersion(settings.get().workspaces[workspaceId]),
+        activeVersion(config.workspaces.get()[workspaceId]),
       ),
     })
   })

@@ -23,6 +23,7 @@ import { initSync as initEsmLexer, parse as parseEsmImports } from 'es-module-le
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { loadOverlayPatches } from './index.ts'
 import {
   composeEntries,
   DEFAULT_PROFILE_BUNDLES,
@@ -815,13 +816,15 @@ export function inspectProfileLoaderEntryCollisions(
   }>()
   for (const layer of profile.layers) {
     if (!installationOwned.has(layer.packageName)) continue
-    for (const entry of enabledInsertedLoaderEntries(layer.patches)) {
-      if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
-      shippedById.set(entry.id, {
-        packageName: layer.packageName,
-        moduleName: entry.name,
-        patchPath: layer.patchPath,
-      })
+    for (const patchPath of layer.patchPaths) {
+      for (const entry of enabledInsertedLoaderEntries(loadOverlayPatches(options.binName, patchPath))) {
+        if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
+        shippedById.set(entry.id, {
+          packageName: layer.packageName,
+          moduleName: entry.name,
+          patchPath,
+        })
+      }
     }
   }
   const collisions = new Map<string, ProfileLoaderEntryCollision>()
@@ -829,21 +832,23 @@ export function inspectProfileLoaderEntryCollisions(
     if (installationOwned.has(layer.packageName)
       || dependencies[layer.packageName] === undefined
       || !bundles.has(layer.packageName)) continue
-    for (const entry of enabledInsertedLoaderEntries(layer.patches)) {
-      if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
-      const shipped = shippedById.get(entry.id)
-      if (shipped === undefined) continue
-      const collision: ProfileLoaderEntryCollision = {
-        profile: options.profile,
-        rootPackage: layer.packageName,
-        entryId: entry.id,
-        moduleName: entry.name,
-        patchPath: layer.patchPath,
-        installationPackage: shipped.packageName,
-        installationModuleName: shipped.moduleName,
-        installationPatchPath: shipped.patchPath,
+    for (const patchPath of layer.patchPaths) {
+      for (const entry of enabledInsertedLoaderEntries(loadOverlayPatches(options.binName, patchPath))) {
+        if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
+        const shipped = shippedById.get(entry.id)
+        if (shipped === undefined) continue
+        const collision: ProfileLoaderEntryCollision = {
+          profile: options.profile,
+          rootPackage: layer.packageName,
+          entryId: entry.id,
+          moduleName: entry.name,
+          patchPath,
+          installationPackage: shipped.packageName,
+          installationModuleName: shipped.moduleName,
+          installationPatchPath: shipped.patchPath,
+        }
+        collisions.set(`${collision.rootPackage}\0${collision.entryId}`, collision)
       }
-      collisions.set(`${collision.rootPackage}\0${collision.entryId}`, collision)
     }
   }
   return [...collisions.values()]
@@ -939,12 +944,14 @@ function profileBundleEntryOwnership(
     if (installationOwned.has(layer.packageName)
       || dependencies[layer.packageName] === undefined
       || !bundles.has(layer.packageName)) continue
-    for (const entry of insertedLoaderEntries(layer.patches)) {
-      if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
-      const key = `${entry.id}\0${entry.name}`
-      const candidates = origins.get(key) ?? []
-      candidates.push({ rootPackage: layer.packageName, patchPath: layer.patchPath })
-      origins.set(key, candidates)
+    for (const patchPath of layer.patchPaths) {
+      for (const entry of insertedLoaderEntries(loadOverlayPatches(options.binName, patchPath))) {
+        if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
+        const key = `${entry.id}\0${entry.name}`
+        const candidates = origins.get(key) ?? []
+        candidates.push({ rootPackage: layer.packageName, patchPath })
+        origins.set(key, candidates)
+      }
     }
   }
   const ownership: ProfileBundleEntryOwnership[] = []

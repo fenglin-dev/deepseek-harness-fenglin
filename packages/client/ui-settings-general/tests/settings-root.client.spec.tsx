@@ -69,9 +69,9 @@ function mount({
   const connectionListeners = new Set<() => void>()
   const reconnect = vi.fn()
   const renderSlot = vi.fn(
-    ((key: string, _owner: unknown, opts?: { only?: string }) => {
+    ((key: string, _owner: unknown, opts?: { only?: string; fallback?: import('react').ReactNode }) => {
       if (key === 'settings.section') return <div data-testid={`section-${opts?.only ?? 'all'}`} />
-      return SEAT_CONTENT[key]
+      return SEAT_CONTENT[key] ?? opts?.fallback
     }) as SettingsRootComponentProps['renderSlot'],
   )
   const useSessions = ((select: (state: unknown) => unknown) => select(onboardingActive
@@ -686,4 +686,23 @@ describe('SettingsPanel navigation', () => {
     view.unmount()
     expect(listeners.size).toBe(0)
   })
+})
+
+it('explicitly reopens one onboarding editor during an existing session', () => {
+  const { renderSlot } = mount({ onboardingActive: false })
+  const launcher = renderSlot.mock.calls.find(call => call[0] === 'settings.launcher')
+  act(() => { (launcher?.[1] as { openOnboarding: (id: string) => void }).openOnboarding('credential') })
+  const call = renderSlot.mock.calls.filter(call => call[0] === 'settings.onboarding').at(-1)
+  expect(call?.[1]).toMatchObject({ stepId: 'credential', explicit: true })
+  act(() => { (call?.[1] as { complete: () => void }).complete() })
+  renderSlot.mockClear()
+  expect(screen.queryByTestId('onboarding')).toBeNull()
+})
+
+it('opens Account from the contributed sidebar launcher', () => {
+  const { renderSlot } = mount({ rows: [{ id: 'account', order: -10, label: 'Account' }] })
+  const launcher = renderSlot.mock.calls.find(call => call[0] === 'settings.launcher')!
+  act(() => { (launcher[1] as { openSettings: () => void }).openSettings() })
+  expect(screen.getByTestId('section-account')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Account' }).querySelector('svg')).not.toBeNull()
 })

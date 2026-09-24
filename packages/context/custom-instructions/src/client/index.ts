@@ -33,13 +33,11 @@ export type { CustomInstructionsClient, CustomInstructionsLocaleKey }
 
 const NS = 'settings.customInstructions'
 
-export const inject = ['slots', 'locale', 'settingsScope', 'settingsNavigation']
+export const inject = ['slots', 'locale', 'configForms', 'settingsNavigation']
 
 /** Provide the editor service and its General/section surfaces. */
 export function apply(ctx: ClientContext): void {
-  const scope = ctx.settingsScope.bind<CustomInstructionSettings>({
-    namespace: CUSTOM_INSTRUCTIONS_SETTINGS_NAMESPACE,
-  })
+  const scope = ctx.configForms.get<CustomInstructionSettings>(CUSTOM_INSTRUCTIONS_SETTINGS_NAMESPACE)
   const client = createCustomInstructionsClient(scope, ctx.settingsNavigation)
   ctx.provide('customInstructions', client)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'custom-instructions: dictionaries')

@@ -1,25 +1,41 @@
 import { useCallback, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { IconDownloadOutline16, IconEllipsisOutline16, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConversationHeaderMenuContribution } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { IconDownloadOutlineRegular, IconEllipsisOutlineRegular, IconPaperPlaneOutlineRegular, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SessionLogDownloadDialog, type SessionLogDownloadDialogProps } from './Dialog.tsx'
+import type { SessionLogDownloadDialogInjected } from './Dialog.tsx'
 import css from './HeaderAction.module.css'
-
-type SessionLogDownloadHeaderActionProps = SessionLogDownloadDialogProps
-  & PropsRenderSlots<'conversation.session.header.menu.item'>
 
 type RegisteredMenuContribution = ConversationHeaderMenuContribution & { readonly token: symbol }
 
-const RESERVED_MENU_IDS = new Set(['download', 'extension-separator'])
+const RESERVED_MENU_IDS = new Set(['download', 'feedback', 'extension-separator'])
+
+/** Session download controls with observable feedback availability and a Session feedback action. */
+export interface SessionLogDownloadHeaderInjected extends SessionLogDownloadDialogInjected {
+  hooks: SessionLogDownloadDialogInjected['hooks'] & { feedbackAvailable: ObservableSnapshot<boolean> }
+  /**
+   * Open the existing Session feedback draft without recording feedback; no-op after the feedback plugin unloads.
+   * @param sessionId - Session whose feedback form to open.
+   */
+  openFeedback: (sessionId: SessionId) => void
+}
+
+/** Session download props plus the optional feedback action. */
+export type SessionLogDownloadHeaderProps = SessionLogDownloadDialogProps
+  & InjectFace<SessionLogDownloadHeaderInjected>
+  & PropsRenderSlots<'conversation.session.header.menu.item'>
 
 /**
- * Render the Session Header more-actions icon button, its download menu, and the shared result dialog.
+ * Render the Session Header menu with download and optional feedback actions.
  * @param props - Session runtime, download controller, and localized copy.
  * @returns the persistent Header action and Session-scoped dialog.
  */
-export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderActionProps): ReactNode {
-  const { sessionId, useSessionLogDownload, request, renderSlot, t } = props
+export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderProps): ReactNode {
+  const { sessionId, useSessionLogDownload, useFeedbackAvailable, request, openFeedback, renderSlot, t } = props
+  const feedbackAvailable = useFeedbackAvailable(value => value)
   const entry = useSessionLogDownload(state => state.bySession[String(sessionId)])
   const busy = entry?.status === 'downloading'
   const [open, setOpen] = useState(false)
@@ -54,7 +70,8 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderAc
         dense
         onClose={() => { setOpen(false) }}
         items={[
-          { id: 'download', label: t('menu.download'), icon: <IconDownloadOutline16 />, disabled: busy },
+          { id: 'download', label: t('menu.download'), icon: <IconDownloadOutlineRegular />, disabled: busy },
+          ...feedbackAvailable ? [{ id: 'feedback', label: t('menu.feedback'), icon: <IconPaperPlaneOutlineRegular /> }] : [],
           ...(extensions.length === 0 ? [] : [
             { type: 'separator' as const, id: 'extension-separator' },
             ...extensions.map(extension => extension.item),
@@ -64,6 +81,10 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderAc
           setOpen(false)
           if (id === 'download') {
             void request(sessionId)
+            return
+          }
+          if (id === 'feedback') {
+            if (feedbackAvailable) openFeedback(sessionId)
             return
           }
           const matches = extensions.filter(candidate => (
@@ -81,7 +102,7 @@ export function SessionLogDownloadHeaderAction(props: SessionLogDownloadHeaderAc
             aria-busy={busy}
             onClick={() => { setOpen(value => !value) }}
           >
-            <IconEllipsisOutline16 />
+            <IconEllipsisOutlineRegular />
           </button>
         )}
       />

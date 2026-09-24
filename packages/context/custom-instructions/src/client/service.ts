@@ -1,6 +1,6 @@
 /** Trusted browser-side editor over the custom-instruction settings namespace. */
 
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SettingsNavigation } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -32,7 +32,7 @@ export function activeCustomInstruction(
 
 /** Human-only operations exposed to first-party Settings and Workspace UI. */
 export interface CustomInstructionsClient {
-  readonly scope: SettingsScope<CustomInstructionSettings>
+  readonly scope: ConfigForm<CustomInstructionSettings>
   /** Open the global custom-instruction editor. */
   openGlobal(): void
   /**
@@ -66,7 +66,7 @@ export interface CustomInstructionsClient {
  * @returns the human-only editing and navigation service.
  */
 export function createCustomInstructionsClient(
-  scope: SettingsScope<CustomInstructionSettings>,
+  scope: ConfigForm<CustomInstructionSettings>,
   navigation: SettingsNavigation,
 ): CustomInstructionsClient {
   const open = (subsectionId: string): void => {
@@ -92,20 +92,28 @@ export function createCustomInstructionsClient(
           return { activeVersion: version.id, versions: [...history.versions, version] }
         })()
       if (target === 'global') {
-        await scope.mutate([{ op: 'set', path: ['global'], value: next as unknown as JsonValue }], expectedRevision)
+        if (!await scope.mutate([{ op: 'set', path: ['global'], value: next as unknown as JsonValue }], expectedRevision)) {
+          throw new Error('custom instructions profile edit was refused')
+        }
         return
       }
-      await scope.mutate([{ op: 'set', path: ['workspaces', String(target)], value: next as unknown as JsonValue }], expectedRevision)
+      if (!await scope.mutate([{ op: 'set', path: ['workspaces', String(target)], value: next as unknown as JsonValue }], expectedRevision)) {
+        throw new Error('custom instructions profile edit was refused')
+      }
     },
     workspaceDeleted: async (workspaceId) => {
       const settings = scope.getSnapshot().value
       if (settings === undefined || settings.workspaces[String(workspaceId)] === undefined) return
       // Every model-visible revision is copied into the Session event source,
       // so deleting the Workspace may safely discard this editor-only history.
-      await scope.mutate([{ op: 'unset', path: ['workspaces', String(workspaceId)] }])
+      if (!await scope.mutate([{ op: 'unset', path: ['workspaces', String(workspaceId)] }])) {
+        throw new Error('custom instructions profile edit was refused')
+      }
     },
     setDiagnosticExportPreference: async (preference) => {
-      await scope.mutate([{ op: 'set', path: ['diagnosticExport', 'preference'], value: preference }])
+      if (!await scope.mutate([{ op: 'set', path: ['diagnosticExport', 'preference'], value: preference }])) {
+        throw new Error('custom instructions profile edit was refused')
+      }
     },
   }
 }

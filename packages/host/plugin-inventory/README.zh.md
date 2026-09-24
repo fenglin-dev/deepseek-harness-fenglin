@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-客户端可以调用 `pluginInventory/list`，按加载顺序展示宿主的当前插件，包括每个条目的标识符、模块标识、有效启用状态与存活阶段。部署组合了 agent preset roster 时，还会报告各预设的元数据、健康状态与压平后的插件组合；没有 roster 时，预设数据缺席。每次响应都是供展示和诊断使用的只读即时快照：它不能修改插件，也不提供历史、来源信息或变更订阅。
+客户端可以调用 `pluginInventory/list`，按加载顺序展示宿主的当前插件，包括每个条目的标识符、模块标识、有效启用状态、存活阶段与可用的展示文本。部署组合了 agent preset roster 时，还会报告各预设的元数据、健康状态与压平后的插件组合；没有 roster 时，预设数据缺席。每次响应都是供展示和诊断使用的只读即时快照：它不能修改插件，也不提供历史或变更订阅。
 
 ## 目录
 
@@ -99,8 +99,8 @@ Typert 生成由 `./typert` 与 `./remote` 导出的 Host 和 Client Remote 产�
 这些限制说明即时清单无法向客户端提供哪些信息。它们是当前包约束，不是任务积压。
 
 - **仅表示调用当下**——结果不包含持久的失败历史或订阅；只要不存在存活的根 Fiber，就会报告 `null`，而不区分其原因。
-- **无来源与修改能力**——服务不识别条目由哪个 bundle、profile 或 override 引入，也不能在任一平面启用、停用、添加或移除插件。
-- **预设仅随 roster 出现**——未装 `dsh-agent-presets` 的部署只提供 Loader 条目；`agentPresets` 字段缺席而非为空。
+- **不标识引入层，也不修改插件**——服务不识别条目由哪个 bundle、profile 或 override 引入，也不能在任一平面启用、停用、添加或移除插件。
+- **预设仅随 roster 出现**——未装 `dsh-agent-preset-registry` 的部署只提供 Loader 条目；`agentPresets` 字段缺席而非为空。
 
 <a id="dev-note"></a>
 ### 开发备注

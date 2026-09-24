@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { CustomInstructionSettings } from '../src/types.ts'
 import { createCustomInstructionsClient } from '../src/client/service.ts'
 
@@ -25,8 +25,9 @@ function bench() {
       }
     }
     revision += 1
+    return true
   })
-  const snapshot = (): SettingsScopeSnapshot<CustomInstructionSettings> => ({
+  const snapshot = (): ConfigFormSnapshot<CustomInstructionSettings> => ({
     status: 'ready', value, base: undefined, user: value, revision, writable: true, mode: 'host',
   })
   const scope = {
@@ -35,7 +36,7 @@ function bench() {
     mutate,
     set: vi.fn(),
     unset: vi.fn(),
-  } as unknown as SettingsScope<CustomInstructionSettings>
+  } as unknown as ConfigForm<CustomInstructionSettings>
   const open = vi.fn()
   const client = createCustomInstructionsClient(scope, { open } as never)
   return { client, mutate, open, value: () => value }
