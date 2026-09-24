@@ -244,9 +244,13 @@ jobs:
       - name: Deploy Windows runtime
         run: node apps/desktop/scripts/prepare-windows-runtime.mjs
 
+      - name: Prepare dsh runtime descriptor
+        working-directory: apps/desktop
+        run: pnpm run prepare:dsh
+
       - name: Build Windows installer
         working-directory: apps/desktop
-        run: node node_modules/electron-builder/out/cli/cli.js --win nsis --x64 --publish never
+        run: node node_modules/electron-builder/out/cli/cli.js --config electron-builder.config.mjs --win nsis --x64 --publish never
 
       - name: Probe unpacked app.asar and Electron entries
         run: node apps/desktop/scripts/smoke-windows-unpacked.mjs
