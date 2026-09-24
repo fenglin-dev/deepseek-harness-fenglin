@@ -174,11 +174,11 @@ export function createElectronBuilderConfig(
         dshDestination = join(context.appOutDir, 'resources', 'app.asar.unpacked', 'dsh')
       }
       if (policy === undefined) return
-      const { resolveDesktopPolicyConfig } = await import('../lib/types/mandatory-update-policy.js')
+      const { resolveDesktopPolicyConfig } = await import('../lib/mandatory-update-policy.js')
       resolveDesktopPolicyConfig(policy)
     },
     afterPack: async context => {
-      const { verifyDesktopRuntime } = await import('../lib/types/runtime-tree.js')
+      const { verifyDesktopRuntime } = await import('../lib/runtime-tree.js')
       const resourcesDir = context.packager.getResourcesDir(context.appOutDir)
       if (resolvedPlatform === 'darwin' && update !== undefined) {
         await writeMacOSAppUpdateConfig(resourcesDir, resolveMacOSAppUpdateFeed(context.packager.config.publish),
