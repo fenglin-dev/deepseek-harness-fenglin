@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, writeFil
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { existsSync } from 'node:fs'
 import { basename, delimiter, dirname, join, relative } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { parse as parseYaml, parseDocument } from 'yaml'
 import { parseBundledPluginManifest } from '../lib/bundled-plugin-installer.js'
 import { seedBundledPlugin } from '../lib/bundled-plugin-seed.js'
@@ -125,9 +126,9 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
     await seedBundledPlugin({ entry, resourcesDirectory: resources, dshHome: destination,
       prepare: async () => { for (const name of entry.approvedBuilds ?? []) await command(destination, ['approve-build', name]) },
       install: (archive) => {
-        // Absolute file: URLs are unambiguous for pnpm add; lock/package rewritten after.
+        // Proper file:/// URLs; bare file:D:/... is ambiguous for pnpm on Windows.
         const paths = Array.isArray(archive) ? archive : [archive]
-        const specs = paths.map((item) => `file:${item.split('\\').join('/')}`)
+        const specs = paths.map((item) => pathToFileURL(item).href)
         return command(destination, ['add', '--save-exact', ...specs])
       },
     })
