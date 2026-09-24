@@ -284,7 +284,7 @@ export interface DesktopReleasesBridge {
 /** Complete Electron-only browser bridge consumed by this plugin. */
 export interface DesktopBridge {
   menu?: {
-    reportState(state: { ready: boolean; locale: string }): void
+    reportState(state: { available: boolean; ready: boolean; locale: string }): void
     onCommand(callback: (command: string) => void | Promise<void>): () => void
   }
   shell: DesktopShellBridge

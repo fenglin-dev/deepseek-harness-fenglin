@@ -31,7 +31,6 @@ function contentText(content: UserContent): string {
       case 'text': parts.push(block.text); break
       case 'image': parts.push('[Image]'); break
       case 'tool-call': parts.push(`[Tool: ${block.name}]`); break
-      case 'tool-result': parts.push(contentText(block.content)); break
       case 'reasoning': break
       default: parts.push('[Content]')
     }

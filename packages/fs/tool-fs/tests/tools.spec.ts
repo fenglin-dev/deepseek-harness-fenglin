@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+import SystemPrompt, { HARNESS_IDENTITY_TEXT, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type ToolResult } from '@deepseek-ai/dsh-tools'
 import { FileSystem, FsError, FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
 import type {
@@ -41,6 +41,7 @@ const testToolSignal = new AbortController().signal
 
 /** An in-memory fake provider; a test can arm a rejection on any primitive. */
 class FakeFs extends FileSystem {
+  override watch(): never { throw new Error('Fixture does not support watching') }
   files = new Map<string, string>()
   rejectWith?: FsError
   writeIntents: (FsWriteIntent | undefined)[] = []
@@ -857,7 +858,7 @@ describe('sandbox escalation API (write/edit)', () => {
   function fsSchema(ctx: Context, name: 'write' | 'edit') {
     const schema = ctx.tools.schemas().find(s => s.name === name)
     if (!schema) throw new Error(`${name} tool not registered`)
-    return schema as unknown as { parameters: { properties: Record<string, { enum?: string[] }> } }
+    return schema as unknown as { parameters: { properties: Record<string, { description?: string; enum?: string[] }> } }
   }
 
   it('fails load when a confining filesystem has no shared sandbox-policy resolver', async () => {
@@ -883,7 +884,7 @@ describe('sandbox escalation API (write/edit)', () => {
     for (const name of ['write', 'edit'] as const) {
       const props = fsSchema(ctx, name).parameters.properties
       expect(props['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access'])
-      expect(props['justification']).toBeDefined()
+      expect(props['justification']?.description).toContain("language of the user's latest request")
     }
   })
 
@@ -1055,7 +1056,7 @@ describe('scope-aware filesystem guidance', () => {
 
 /** Preserve the default persona and exact section separators in the oracle. */
 function withPersona(...sections: string[]): string {
-  return ['You are an AI agent powered by DeepSeek Harness.', ...sections].join('\n\n')
+  return [HARNESS_IDENTITY_TEXT, ...sections].join('\n\n')
 }
 
 /** Schema assembly only: these cases never execute user code. */

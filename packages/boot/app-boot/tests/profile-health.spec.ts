@@ -22,6 +22,7 @@ import {
   inspectProfileBundleEntryOwnership,
   inspectUnresolvableProfileBundleEntries,
   listQuarantinedProfilePlugins,
+  OPTIONAL_BUNDLES,
   inspectQuarantineRemovalResidue,
   quarantineProfilePluginAfterLoadFailure,
   reconcileRestoredQuarantinedProfilePlugins,
@@ -702,6 +703,141 @@ describe('profile composition inspection', () => {
         bundleIndex: 2,
         installedVersion: '0.1.1-rc.2',
       }),
+    ])
+  })
+
+  it('does not quarantine enabled installation-owned optional Agent Teams bundles', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    const bundles = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', ...OPTIONAL_BUNDLES]
+    initProfile(profileDir, bundles)
+    for (const name of OPTIONAL_BUNDLES) {
+      writeManifest(join(dirname(anchor), 'node_modules', name, 'package.json'), {
+        name, version: '0.1.6-alpha.2', dsh: { bundle: { patch: './cordis.patch.yml' } },
+      })
+    }
+    const installation = JSON.parse(readFileSync(anchor, 'utf8')) as { dependencies: Record<string, string> }
+    writeManifest(anchor, {
+      ...installation,
+      dependencies: {
+        ...installation.dependencies,
+        ...Object.fromEntries(OPTIONAL_BUNDLES.map(name => [name, '0.1.6-alpha.2'])),
+      },
+    })
+
+    expect(inspectOrphanedProfileBundles({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toEqual([])
+  })
+
+  it('still reports an optional bundle missing from the installation as orphaned', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const packageName = OPTIONAL_BUNDLES[0]!
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', packageName])
+    const installation = JSON.parse(readFileSync(anchor, 'utf8')) as { dependencies: Record<string, string> }
+    writeManifest(anchor, {
+      ...installation,
+      dependencies: { ...installation.dependencies, [packageName]: '0.1.6-alpha.2' },
+    })
+
+    expect(inspectOrphanedProfileBundles({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toEqual([expect.objectContaining({ packageName, bundleIndex: 2 })])
+  })
+
+  it('restores Agent Teams layers that an older diagnostic mistakenly quarantined', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+    const installation = JSON.parse(readFileSync(anchor, 'utf8')) as { dependencies: Record<string, string> }
+    writeManifest(anchor, {
+      ...installation,
+      dependencies: {
+        ...installation.dependencies,
+        ...Object.fromEntries(OPTIONAL_BUNDLES.map(name => [name, '0.1.6-alpha.2'])),
+      },
+    })
+    for (const name of OPTIONAL_BUNDLES) {
+      writeManifest(join(dirname(anchor), 'node_modules', name, 'package.json'), {
+        name, version: '0.1.6-alpha.2', dsh: { bundle: { patch: './cordis.patch.yml' } },
+      })
+    }
+    const quarantined = OPTIONAL_BUNDLES.map((packageName, index) => ({
+      quarantineId: `00000000-0000-4000-8000-00000000000${index + 1}`,
+      profile: 'web', packageName, packageSpec: packageName, bundleIndex: index + 2,
+      quarantinedAt: '2026-09-23T00:00:00.000Z', reason: 'orphaned-bundle', conflicts: [],
+    }))
+    writeManifest(join(home, 'quarantine', 'profile-plugins.json'), { schema: 1, plugins: quarantined })
+    writeManifest(join(home, 'profile-health', 'web.json'), {
+      schema: 'dsh/profile-dependency-repair/v1', profile: 'web', status: 'quarantined',
+      conflicts: [], quarantined,
+      orphanedBundles: OPTIONAL_BUNDLES.map((packageName, index) => ({
+        profile: 'web', packageName, bundleIndex: index + 2,
+      })),
+    })
+
+    const result = repairProfileDependencies({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+      runPackageManager: () => { throw new Error('installation-owned bundles must not use pnpm') },
+    })
+
+    expect(result.status).toBe('healthy')
+    expect(readProfileManifest('test', profileDir).dsh?.profile?.bundles).toEqual([
+      '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', ...OPTIONAL_BUNDLES,
+    ])
+    expect(listQuarantinedProfilePlugins(home)).toEqual([])
+    expect(readLastProfileRepairReport('web', home)).toBeUndefined()
+
+    const restoredManifest = readProfileManifest('test', profileDir)
+    writeProfileManifest(profileDir, {
+      ...restoredManifest,
+      dsh: { ...restoredManifest.dsh, profile: { ...restoredManifest.dsh?.profile, bundles: [
+        '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app',
+      ] } },
+    })
+    repairProfileDependencies({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+      runPackageManager: () => { throw new Error('must not run pnpm') },
+    })
+    expect(readProfileManifest('test', profileDir).dsh?.profile?.bundles).toEqual([
+      '@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app',
+    ])
+  })
+
+  it('does not restore an optional bundle quarantined for a real load failure', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const packageName = OPTIONAL_BUNDLES[0]!
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+    const installation = JSON.parse(readFileSync(anchor, 'utf8')) as { dependencies: Record<string, string> }
+    writeManifest(anchor, {
+      ...installation,
+      dependencies: { ...installation.dependencies, [packageName]: '0.1.6-alpha.2' },
+    })
+    writeManifest(join(dirname(anchor), 'node_modules', packageName, 'package.json'), {
+      name: packageName, version: '0.1.6-alpha.2', dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+    writeManifest(join(home, 'quarantine', 'profile-plugins.json'), {
+      schema: 1,
+      plugins: [{
+        quarantineId: '00000000-0000-4000-8000-000000000001',
+        profile: 'web', packageName, packageSpec: packageName, bundleIndex: 2,
+        quarantinedAt: '2026-09-23T00:00:00.000Z', reason: 'loader-lifecycle-failed', conflicts: [],
+      }],
+    })
+
+    repairProfileDependencies({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+      runPackageManager: () => { throw new Error('must not run pnpm') },
+    })
+    expect(readProfileManifest('test', profileDir).dsh?.profile?.bundles).not.toContain(packageName)
+    expect(listQuarantinedProfilePlugins(home)).toEqual([
+      expect.objectContaining({ packageName, reason: 'loader-lifecycle-failed' }),
     ])
   })
 

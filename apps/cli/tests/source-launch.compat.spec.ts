@@ -4,22 +4,24 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
+import { createRuntimeResolution } from '@deepseek-ai/dsh-app-boot'
+import { INSTALL_ANCHOR } from '../src/install-anchor.ts'
+import { testProfileResolution } from './profiles/headless/tests/profile-resolution.ts'
 
 /**
- * Keyless smoke for SOURCE `dsh` execution: run `apps/cli/src/bin.ts`
- * with the exact production runtime vector (`node --import tsx/esm`, the
- * vector the root `dsh` script invokes directly) and assert the
- * required-config diagnostic. The Node compatibility matrix runs this
- * WHOLE file, so a Node release changing module hooks or TypeScript handling
- * breaks this gate instead of every developer's `pnpm dsh`; the built-bin
- * suite covers the published `lib/` entry, not this source chain.
+ * Keyless source-launch and profile-resolution checks through the production
+ * tsx ESM-only entry. The Node compatibility matrix runs this file without a
+ * build; source tool execution with native/generated dependencies belongs to
+ * the build-backed source-tool suite.
  */
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const dshSourceBin = 'apps/cli/src/bin.ts'
 
 describe('dsh SOURCE launcher (node --import tsx/esm)', () => {
-  it('prepares installation-owned modules before diagnosing a fresh profile', async () => {
+  testProfileResolution('src')
+
+  it('resolves installation-owned modules without materializing a shared fallback', async () => {
     const home = await mkdtemp(join(tmpdir(), 'dsh-plugin-fallback-'))
     try {
       const profileDir = join(home, 'profiles', 'web')
@@ -35,7 +37,7 @@ describe('dsh SOURCE launcher (node --import tsx/esm)', () => {
         name: 'fixture-ui', version: '1.0.0', type: 'module', exports: './index.js',
         dsh: { bundle: { patch: './cordis.patch.yml' } },
       }))
-      await writeFile(join(pluginDir, 'index.js'), 'import "@deepseek-ai/dsh-settings"; export function apply() {}\n')
+      await writeFile(join(pluginDir, 'index.js'), 'import "@deepseek-ai/dsh-tools"; export function apply() {}\n')
       await writeFile(join(pluginDir, 'cordis.patch.yml'), '- insert:\n  - id: fixture-ui\n    name: fixture-ui\n')
       const result = await execa(process.execPath, [
         '--import', 'tsx/esm', dshSourceBin, 'plugin', '--profile', 'web', 'doctor',
@@ -46,8 +48,10 @@ describe('dsh SOURCE launcher (node --import tsx/esm)', () => {
       expect(result.timedOut).toBe(false)
       expect(result.signal).toBeUndefined()
       expect(result.exitCode, result.stderr).toBe(0)
-      await expect(access(join(home, 'profiles', 'node_modules', '@deepseek-ai', 'dsh-settings', 'package.json')))
-        .resolves.toBeUndefined()
+      const resolution = await createRuntimeResolution({ installAnchor: INSTALL_ANCHOR, home })
+      expect(resolution.entries.some(entry => entry.name === '@deepseek-ai/dsh-tools' && entry.scope === 'installation')).toBe(true)
+      await expect(access(join(home, 'profiles', 'node_modules', '@deepseek-ai', 'dsh-tools', 'package.json')))
+        .rejects.toMatchObject({ code: 'ENOENT' })
       expect(await readFile(join(profileDir, 'package.json'), 'utf8')).toContain('fixture-ui')
       await expect(access(join(home, 'quarantine', 'profile-plugins.json'))).rejects.toMatchObject({ code: 'ENOENT' })
     } finally {

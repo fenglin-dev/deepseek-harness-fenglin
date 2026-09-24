@@ -7,7 +7,7 @@ import type {
   Agent, AgentOptions, AgentSetup, ModelSelection as AgentModelSelection, ModelSelectionRef,
 } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
@@ -387,12 +387,19 @@ export class ApiSessionAgentController {
       return { setup: (_agentCtx, agent) => { this.installSelection(agent) } }
     }
     const requestedDefault = presetId === undefined ? presets.defaultId : undefined
+    const resolveReady = async (id: string | undefined) => {
+      const preset = await presets.resolve(id)
+      if (preset.broken !== undefined) {
+        throw new RemoteError('agent-preset/invalid', preset.broken, { agentPreset: preset.id, reason: preset.broken })
+      }
+      return preset
+    }
     let resolved
     try {
-      resolved = await presets.prepare(presetId)
+      resolved = await resolveReady(presetId)
     } catch (error: unknown) {
       if (presetId !== undefined || requestedDefault === 'standard') throw error
-      resolved = await presets.prepare('standard')
+      resolved = await resolveReady('standard')
       this.ctx.logger.warn(
         `api-session: default agent preset "${requestedDefault}" failed; using "standard": ${String(error)}`,
       )

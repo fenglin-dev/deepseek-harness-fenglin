@@ -36,10 +36,10 @@ async function checkedFetch(fetchImpl, url, init) {
 
 /**
  * Verify one published CNB desktop Release without credentials.
- * @param {{ tag: string; releaseDirectory: string; indexUrl?: string; fetchImpl?: typeof fetch; now?: Date }} options Verification inputs.
- * @returns {Promise<{ revision: number; generatedAt: string; expiresAt: string; releaseUrl: string; assets: Array<{ name: string; size: number; sha256: string; url: string }> }>} Verified public identity.
+ * @param {{ tag: string; releaseDirectory: string; metadataDirectory?: string; indexUrl?: string; fetchImpl?: typeof fetch; now?: Date }} options Verification inputs.
+ * @returns {Promise<{ revision: number; generatedAt: string; expiresAt: string; releaseUrl: string; assets: Array<{ name: string; size: number; sha256: string; url: string }>; metadata: Array<{ name: string; size: number; sha256: string; url: string }> }>} Verified public identity.
  */
-export async function verifyCnbDesktopRelease({ tag, releaseDirectory, indexUrl = CNB_UPDATE_INDEX_URL,
+export async function verifyCnbDesktopRelease({ tag, releaseDirectory, metadataDirectory, indexUrl = CNB_UPDATE_INDEX_URL,
   fetchImpl = fetch, now = new Date() }) {
   if (!/^odsh-v[0-9A-Za-z][0-9A-Za-z._-]*$/u.test(tag)) throw new Error(`invalid desktop Release tag: ${tag}`)
   const expectedVersion = tag.replace(/^odsh-v/u, '')
@@ -98,25 +98,56 @@ export async function verifyCnbDesktopRelease({ tag, releaseDirectory, indexUrl 
     }
     verifiedAssets.push({ name, size: localSize, sha256: localSha256, url: asset.url })
   }
+  const verifiedMetadata = []
+  if (metadataDirectory !== undefined) {
+    const resolvedMetadata = resolve(metadataDirectory)
+    const metadataNames = [`workspace-runtimes-${expectedVersion}.v2.json`, 'workspace-runtimes.v2.sigstore.json']
+    const metadataEntries = (await readdir(resolvedMetadata)).sort()
+    if (JSON.stringify(metadataEntries) !== JSON.stringify([...metadataNames].sort())) {
+      throw new Error('local metadata directory must contain exactly the runtime catalog and Sigstore bundle')
+    }
+    for (const name of metadataNames) {
+      const localBytes = await readFile(resolve(resolvedMetadata, name))
+      const localSha256 = createHash('sha256').update(localBytes).digest('hex')
+      const url = `https://cnb.cool/${CNB_REPOSITORY}/-/releases/download/${tag}/${name}`
+      const response = await checkedFetch(fetchImpl, url, { redirect: 'follow' })
+      const remoteBytes = Buffer.from(await response.arrayBuffer())
+      const remoteSha256 = createHash('sha256').update(remoteBytes).digest('hex')
+      if (remoteBytes.byteLength !== localBytes.byteLength || remoteSha256 !== localSha256) {
+        throw new Error(`CNB runtime metadata identity mismatch for ${name}`)
+      }
+      verifiedMetadata.push({ name, size: localBytes.byteLength, sha256: localSha256, url })
+    }
+  }
   return { revision: index.revision, generatedAt: index.generatedAt, expiresAt: index.expiresAt,
-    releaseUrl: release.releaseUrl, assets: verifiedAssets }
+    releaseUrl: release.releaseUrl, assets: verifiedAssets, metadata: verifiedMetadata }
 }
 
 function usage() {
-  console.error('usage: verify-cnb-desktop-release.mjs <tag> <release-directory> [--index-url <url>]')
+  console.error('usage: verify-cnb-desktop-release.mjs <tag> <release-directory> [--metadata-directory <directory>] [--index-url <url>]')
   process.exit(2)
 }
 
 async function main() {
   const [tag, releaseDirectory, ...rest] = process.argv.slice(2)
-  if (tag === undefined || releaseDirectory === undefined || (rest.length !== 0 && rest.length !== 2)
-    || (rest.length === 2 && rest[0] !== '--index-url')) usage()
-  const result = await verifyCnbDesktopRelease({ tag, releaseDirectory, indexUrl: rest[1] ?? CNB_UPDATE_INDEX_URL })
+  if (tag === undefined || releaseDirectory === undefined) usage()
+  let metadataDirectory
+  let indexUrl = CNB_UPDATE_INDEX_URL
+  while (rest.length > 0) {
+    const option = rest.shift()
+    const value = rest.shift()
+    if (value === undefined) usage()
+    if (option === '--metadata-directory') metadataDirectory = value
+    else if (option === '--index-url') indexUrl = value
+    else usage()
+  }
+  const result = await verifyCnbDesktopRelease({ tag, releaseDirectory, metadataDirectory, indexUrl })
   console.log(`CNB Release verified: ${tag}`)
   console.log(`  index revision: ${result.revision}`)
   console.log(`  generated: ${result.generatedAt}`)
   console.log(`  expires: ${result.expiresAt}`)
   for (const asset of result.assets) console.log(`  ${asset.name}: ${asset.size} bytes, sha256:${asset.sha256}`)
+  for (const asset of result.metadata) console.log(`  ${asset.name}: ${asset.size} bytes, sha256:${asset.sha256}`)
   console.log(`  Release: ${result.releaseUrl}`)
 }
 

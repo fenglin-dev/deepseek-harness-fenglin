@@ -243,11 +243,20 @@ describe('MessageImage preview arm', () => {
   })
 
   it('opens the lightbox from a preview thumbnail', () => {
+    const action = vi.fn()
     const view = render(
-      <MessageImage image={{ preview: { url: 'blob:box' } }} load={vi.fn(async () => '')} variant="tile" labels={labels} />,
+      <MessageImage
+        image={{ preview: { url: 'blob:box', actions: [{ label: '打开原图', onSelect: action }] } }}
+        load={vi.fn(async () => '')}
+        variant="tile"
+        labels={labels}
+      />,
     )
     fireEvent.click(view.getByRole('button', { name: '图片，点击查看原图' }))
     expect(view.getByRole('dialog', { name: '原图预览' })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: '打开原图' }))
+    expect(action).toHaveBeenCalledOnce()
+    expect(view.queryByRole('dialog')).toBeNull()
   })
 })
 
@@ -283,6 +292,12 @@ describe('ImageGallery', () => {
       <ImageGallery images={[{ attachment }, { attachment }, { attachment }]} load={load} align="end" labels={labels} />,
     )
     expect(several.container.querySelectorAll('[data-variant="tile"]')).toHaveLength(3)
+    several.unmount()
+    const expanded = render(
+      <ImageGallery images={[{ attachment }, { attachment }]} load={load} align="start" expanded labels={labels} />,
+    )
+    expect(expanded.container.querySelector('[data-expanded="true"]')?.getAttribute('data-count')).toBe('2')
+    expect(expanded.container.querySelectorAll('[data-variant="expanded"]')).toHaveLength(2)
   })
 
   it('renders the conversation slot entry with translated labels', async () => {
@@ -327,6 +342,8 @@ describe('ImageGallery', () => {
       useTrajectory,
       useInput,
       inputActions: {
+        captureInsertion: () => ({ start: 0, end: 0, draftRev: 0 }),
+        insertText: () => false,
         setDraft: vi.fn(),
         addAttachments: vi.fn(() => true),
         removeAttachment: vi.fn(),

@@ -5,7 +5,7 @@
  * @module @deepseek-ai/dsh-session-log-deepseek
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
@@ -20,7 +20,6 @@ import type {
   SurfaceOp,
 } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import type {
   DeepSeekSessionLogExtension,
   DeepSeekSessionLogWireEvent,
@@ -38,12 +37,12 @@ export const inject = ['deepseekLlmApiExtensions', 'sessions']
 /** Session-log request contribution configuration. */
 export interface Config {
   /** Contribute `dsh_session_log` to official DeepSeek requests. Defaults to `true`. */
-  enabled?: boolean
+  enabled: Volatile<boolean>
 }
 
 /** Validated Session-log request contribution configuration. */
-export const Config: z<Config> = z.object({
-  enabled: z.boolean().default(true),
+export const Config = z.object({
+  enabled: z.boolean().default(true).volatile(),
 })
 
 interface AcceptanceFold {
@@ -78,6 +77,7 @@ function wireEvent(event: SessionEvent): DeepSeekSessionLogWireEvent {
     ...event.ignorable === undefined ? {} : { ignorable: event.ignorable },
   }
   switch (event.type) {
+    case 'developer/message':
     case 'system/message':
     case 'user/message':
     case 'tool/result':
@@ -157,16 +157,9 @@ export function acceptedThrough(session: Session): SessionSeqCursor {
  * @param config - validated configuration.
  */
 export function apply(ctx: Context, config: Config): void {
-  let settings: SettingsScope<Config> | undefined
-  ctx.inject(['settings'], (settingsCtx) => {
-    settings = settingsCtx.settings.register(name, Config, {
-      base: { enabled: config.enabled ?? true },
-    })
-    settingsCtx.effect(() => () => { settings = undefined }, 'session-log-deepseek: settings scope')
-  })
   ctx.deepseekLlmApiExtensions.register('dsh_session_log', {
     prepare: (request) => {
-      if ((settings?.get().enabled ?? config.enabled) !== true) return undefined
+      if (config.enabled.get() !== true) return undefined
       // TODO: Define an explicit wire result for direct or stale-session calls if they become a supported product path.
       if (request.sessionId === undefined) return undefined
       const session = ctx.sessions.get(brandString<SessionId>(request.sessionId))

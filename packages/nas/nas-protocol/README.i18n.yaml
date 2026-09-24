@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/nas/nas-protocol/README.md
-README.md: 7a2101a65db6837f9a9be73dce82811f2ee60880
-README.zh.md: d856c7a7786a585a3d9805aad56aec396dd71010
+README.md: a4e3c3272d4e01886820d3db7f9c380859308826
+README.zh.md: 3c94efa27d2b0b34884d547211107356335b0330

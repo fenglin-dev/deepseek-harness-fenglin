@@ -8,7 +8,7 @@ import {
 } from './process-observer.ts'
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile, copyFile } from 'node:fs/promises'
 import { homedir, tmpdir, userInfo } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, Notification, safeStorage, session, shell, Tray,
@@ -18,6 +18,7 @@ import {
 import { appendBundledPluginFailure, seedBundledPluginsBatch, verifyBundledPluginArchive } from './bundled-plugin-seed.ts'
 import { BundledPluginStartupCooldown } from './bundled-plugin-cooldown.ts'
 import { FirstStartPreparation } from './first-start-preparation.ts'
+import { BundledPresetVersionGate } from './bundled-preset-version-gate.ts'
 import { applyFreshProfileDefaults } from './fresh-profile-defaults.ts'
 import { deployPrebuiltProfile, readPrebuiltProfile, readProfileBuildApprovals, type PrebuiltProfileManifest } from './prebuilt-profile.ts'
 import {
@@ -53,6 +54,7 @@ import { readRecoveryFailureSummary, type RecoveryFailureSummary } from './recov
 import { parseClientBootFailure } from './client-boot-failure.ts'
 import { clearDeadModuleFallbackLock, inspectModuleFallbackLock } from './module-fallback-lock.ts'
 import { DesktopProfileMutation } from './desktop-profile-mutation/index.ts'
+import { ensureWorkspacePtcPlugin, hasManagedWorkspacePtcBlock, isWorkspacePtcPluginInstalled, PTC_PLUGIN_NAME } from './workspace-ptc-plugin.ts'
 import { DESKTOP_IPC } from './desktop-ipc-protocol.ts'
 import { terminateWindowsProcessTree } from './windows-process-tree.ts'
 import { revealHarnessLog, type OpenLogResult } from './log-reveal.ts'
@@ -79,6 +81,15 @@ import { updateIconShortcuts } from './icon-shortcuts.ts'
 import type { IconSurfaceResult, IconTarget } from './icon-protocol.ts'
 import { ExternalToolCompatibilityManager } from './external-tool-compatibility.ts'
 import { EXTERNAL_TOOL_IDS, type DesktopExternalToolId } from './external-tool-compatibility-manifest.ts'
+import { WorkspaceRuntimeCatalog } from './workspace-runtime-catalog.ts'
+import { loadBundledWorkspaceRuntimeManifest } from './bundled-workspace-runtime.ts'
+import { OptionalRuntimeManager } from './workspace-runtime-manager.ts'
+import {
+  WORKSPACE_RUNTIME_CAPABILITIES,
+  workspaceRuntimeTarget,
+  type WorkspaceRuntimeCapability,
+} from './workspace-runtime-manifest.ts'
+import { configureWorkspaceRuntimeCapability, type WorkspaceRuntimeProfilePaths } from './workspace-runtime-profile.ts'
 import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycle.ts'
 import { ApplicationMenuController } from './application-menu-controller.ts'
 import { CLIENT_COMMANDS, menuCopy, type DesktopCommand } from './application-menu.ts'
@@ -252,6 +263,7 @@ let menuLocale = 'en'
 let desktopLocaleStore: DesktopLocaleStore | undefined
 let persistedProfileLocale: string | undefined
 let menuClientReady = false
+let menuClientAvailable = false
 let reportedClientBootFailureOrigin: string | undefined
 let snapshotMutationActive = false
 let recoveryHarnessSuspended = false
@@ -482,6 +494,7 @@ let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', prog
 let desktopThemeSource: DesktopThemeSource = 'system'
 const reportedDesktopReadiness = new Set<'client' | 'event-dispatch'>()
 let profileMutation: DesktopProfileMutation | undefined
+let workspaceRuntimeManager: OptionalRuntimeManager | undefined
 let dataHomeChooserWindow: BrowserWindow | undefined
 const desktopDataHomes = new DesktopDataHomeAuthority({
   layout: DESKTOP_DATA_HOME,
@@ -1299,10 +1312,17 @@ function createWindow(): BrowserWindow {
   window.on('leave-full-screen', refreshMenu)
   surface.titlebarRenderer?.on('did-finish-load', () => { applicationMenu?.refresh() })
   const rendererId = surface.renderer.id
-  surface.renderer.on('destroyed', () => { iconManager?.discardOwner(rendererId); rejectPendingMenuCommands() })
+  surface.renderer.on('destroyed', () => {
+    iconManager?.discardOwner(rendererId)
+    menuClientAvailable = false
+    menuClientReady = false
+    rejectPendingMenuCommands()
+    applicationMenu?.refresh()
+  })
   surface.renderer.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) {
       iconManager?.discardOwner(rendererId)
+      menuClientAvailable = false
       menuClientReady = false
       rejectPendingMenuCommands()
       applicationMenu?.refresh()
@@ -1321,7 +1341,9 @@ async function startApplication(): Promise<void> {
   menuLocale = desktopLocaleStore.read(app.getLocale())
   applicationMenu = new ApplicationMenuController({
     surface: () => mainSurface,
-    state: () => ({ platform: process.platform, locale: menuLocale, ready: menuClientReady && harnessOrigin !== undefined,
+    state: () => ({ platform: process.platform, locale: menuLocale,
+      clientAvailable: menuClientAvailable && harnessOrigin !== undefined,
+      ready: menuClientReady && harnessOrigin !== undefined,
       busy: menuBusy(), maximized: mainWindow?.isMaximized() ?? false,
       fullscreen: mainWindow?.isFullScreen() ?? false, development: !app.isPackaged }),
     icon: () => (iconManager?.images().application ?? nativeImage.createFromPath(WINDOW_ICON))
@@ -1542,13 +1564,9 @@ async function startApplication(): Promise<void> {
     await pluginDownloadSession.closeAllConnections()
     return (input, init) => pluginDownloadSession?.fetch(input, init) ?? Promise.reject(new Error('Plugin download session is unavailable'))
   }
-  app.on('login', (event, webContents, _details, authInfo, callback) => {
-    if (!authInfo.isProxy || authInfo.host !== '127.0.0.1' || downloadNetworkProxy === undefined) return
-    const credentials = webContents.session === applicationDownloadSession
-      ? downloadNetworkProxy.applicationProxyCredentials
-      : webContents.session === pluginDownloadSession
-        ? downloadNetworkProxy.pluginProxyCredentials
-        : undefined
+  app.on('login', (event, _webContents, _details, authInfo, callback) => {
+    if (!authInfo.isProxy || downloadNetworkProxy === undefined) return
+    const credentials = downloadNetworkProxy.credentialsForProxyAuth(authInfo.host, authInfo.port)
     if (credentials === undefined) return
     event.preventDefault()
     callback(credentials.username, credentials.password)
@@ -1621,6 +1639,49 @@ async function startApplication(): Promise<void> {
   externalToolCompatibility = new ExternalToolCompatibilityManager({
     cacheDirectory: join(app.getPath('userData'), 'external-tool-compatibility'),
     desktopVersion: app.getVersion(),
+  })
+  const workspaceRuntimeCatalog = new WorkspaceRuntimeCatalog({
+    cacheDirectory: join(app.getPath('userData'), 'optional-runtimes', 'catalog'),
+    desktopVersion: app.getVersion(),
+    fetch: async (input, init) => (await applicationFetch())(input, init),
+    development: !app.isPackaged,
+    metadataBaseUrls: () => {
+      const tag = `odsh-v${app.getVersion()}`
+      const github = `https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/${tag}`
+      const cnb = `https://cnb.cool/hecoococ/open-deepseek-harness-desktop/-/releases/download/${tag}`
+      return downloadNetworkStore?.read().application.source === 'cnb' ? [cnb, github] : [github, cnb]
+    },
+    ...(!app.isPackaged && process.env.DSH_WORKSPACE_RUNTIME_MANIFEST_BASE_URL !== undefined
+      ? { metadataBaseUrl: process.env.DSH_WORKSPACE_RUNTIME_MANIFEST_BASE_URL }
+      : {}),
+  })
+  const nativeWorkspaceTarget = workspaceRuntimeTarget(process.platform, process.arch)
+  const bundledWorkspaceRuntimeRoot = app.isPackaged
+    ? join(process.resourcesPath, 'workspace-runtime')
+    : join(fileURLToPath(new URL('../../..', import.meta.url)), '.artifacts', 'workspace-runtime')
+  workspaceRuntimeManager = new OptionalRuntimeManager({
+    cacheRoot: join(app.getPath('userData'), 'optional-runtimes'),
+    stateFile: join(app.getPath('userData'), 'optional-runtimes', 'state-v1.json'),
+    desktopVersion: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    getHome: () => dshHome,
+    isNas: () => bootNasRuntime() !== undefined,
+    source: () => downloadNetworkStore?.read().application.source ?? 'github',
+    loadManifest: async () => {
+      if (nativeWorkspaceTarget !== undefined) {
+        try {
+          return await loadBundledWorkspaceRuntimeManifest(bundledWorkspaceRuntimeRoot, nativeWorkspaceTarget, app.getVersion())
+        } catch (error) {
+          if (app.isPackaged) throw error
+        }
+      }
+      return workspaceRuntimeCatalog.load()
+    },
+    fetch: async (input, init) => (await applicationFetch())(input, init),
+    bundledArtifactsRoot: bundledWorkspaceRuntimeRoot,
+    requireBundledPython: app.isPackaged,
+    ...(nativeWorkspaceTarget === undefined ? {} : { target: nativeWorkspaceTarget }),
   })
   ipcMain.handle(DESKTOP_IPC.capabilities, (event) => {
     assertMainRenderer(event.sender)
@@ -2226,6 +2287,59 @@ async function startApplication(): Promise<void> {
     }
     return externalToolCompatibility.resolve(toolId as DesktopExternalToolId)
   })
+  const requireWorkspaceRuntimes = (sender: WebContents): OptionalRuntimeManager => {
+    assertMainRenderer(sender)
+    if (workspaceRuntimeManager === undefined) throw new Error('desktop: workspace-runtime manager is unavailable')
+    return workspaceRuntimeManager
+  }
+  const workspaceCapability = (value: unknown): WorkspaceRuntimeCapability => {
+    if (typeof value !== 'string' || !WORKSPACE_RUNTIME_CAPABILITIES.includes(value as WorkspaceRuntimeCapability)) {
+      throw new TypeError('desktop: invalid workspace-runtime capability id')
+    }
+    return value as WorkspaceRuntimeCapability
+  }
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesGet, event => requireWorkspaceRuntimes(event.sender).get())
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesChoosePython, async (event) => {
+    const manager = requireWorkspaceRuntimes(event.sender)
+    const title = shellMessages(app.getLocale()).choosePythonInterpreter
+    const result = mainWindow === undefined
+      ? await dialog.showOpenDialog({ title, properties: ['openFile'] })
+      : await dialog.showOpenDialog(mainWindow, { title, properties: ['openFile'] })
+    const path = result.filePaths[0]
+    return path === undefined ? undefined : manager.selectCustomPython(path)
+  })
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesManagedPython, event => (
+    requireWorkspaceRuntimes(event.sender).selectManagedPython()
+  ))
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesInstallOffice, (event, allowPackageChanges: unknown) => {
+    if (typeof allowPackageChanges !== 'boolean') throw new TypeError('desktop: invalid Office dependency confirmation')
+    return requireWorkspaceRuntimes(event.sender).installCustomOffice(allowPackageChanges)
+  })
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesStart, (event, capability: unknown) => (
+    requireWorkspaceRuntimes(event.sender).start(workspaceCapability(capability))
+  ))
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesGetJob, (event, jobId: unknown) => {
+    if (typeof jobId !== 'string') throw new TypeError('desktop: invalid workspace-runtime job id')
+    return requireWorkspaceRuntimes(event.sender).getJob(jobId)
+  })
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesOutput, (event, jobId: unknown, offset: unknown) => {
+    if (typeof jobId !== 'string' || !Number.isSafeInteger(offset)) throw new TypeError('desktop: invalid workspace-runtime output request')
+    return requireWorkspaceRuntimes(event.sender).readOutput(jobId, offset as number)
+  })
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesPause, (event, jobId: unknown) => {
+    if (typeof jobId !== 'string') throw new TypeError('desktop: invalid workspace-runtime job id')
+    return requireWorkspaceRuntimes(event.sender).pause(jobId)
+  })
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesCancel, (event, jobId: unknown) => {
+    if (typeof jobId !== 'string') throw new TypeError('desktop: invalid workspace-runtime job id')
+    return requireWorkspaceRuntimes(event.sender).cancel(jobId)
+  })
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesActivate, (event, capability: unknown) => (
+    requireWorkspaceRuntimes(event.sender).activate(workspaceCapability(capability))
+  ))
+  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesRemove, (event, capability: unknown) => (
+    requireWorkspaceRuntimes(event.sender).remove(workspaceCapability(capability))
+  ))
   ipcMain.handle(DESKTOP_IPC.bundledPluginsStartDeferred, async (
     event,
     request: unknown,
@@ -2474,8 +2588,10 @@ async function startApplication(): Promise<void> {
   })
   ipcMain.on(DESKTOP_IPC.menuClientState, (event, state: unknown) => {
     if (event.sender !== mainSurface?.renderer || typeof state !== 'object' || state === null) return
-    const { ready, locale } = state as { ready?: unknown; locale?: unknown }
-    if (typeof ready !== 'boolean' || typeof locale !== 'string' || locale.length > 64) return
+    const { available, ready, locale } = state as { available?: unknown; ready?: unknown; locale?: unknown }
+    if (typeof available !== 'boolean' || typeof ready !== 'boolean'
+      || typeof locale !== 'string' || locale.length > 64) return
+    menuClientAvailable = available
     menuClientReady = ready
     menuLocale = resolveDesktopLocale(locale)
     if (persistedProfileLocale !== menuLocale) {
@@ -2529,7 +2645,8 @@ async function startApplication(): Promise<void> {
       showLoading('restarting')
       const outcomes: PromiseSettledResult<unknown>[] = []
       outcomes.push(...await Promise.allSettled([
-        releaseDownloader?.dispose(), downloadNetworkProxy?.close(), oneShotOperations.dispose(), profileMutation?.dispose(),
+        releaseDownloader?.dispose(), downloadNetworkProxy?.close(), oneShotOperations.dispose(),
+        workspaceRuntimeManager?.dispose(), profileMutation?.dispose(),
       ]))
       const taskFailures = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
       if (taskFailures.length > 0) {
@@ -2699,6 +2816,7 @@ async function startApplication(): Promise<void> {
     return parsePluginSnapshotJson(output) as T
   }
   const firstStartPreparation = new FirstStartPreparation(dshHome)
+  const presetVersionGate = new BundledPresetVersionGate(dshHome)
   let firstStartPending = await firstStartPreparation.begin(
     !await lstat(join(dshHome, 'profiles/web/package.json')).then(stat => stat.isFile(), () => false) && !preserveCopiedPlugins,
   )
@@ -2763,6 +2881,7 @@ async function startApplication(): Promise<void> {
       return
     }
   }
+  let runtimePendingApplied = false
   const desktopMutations = new DesktopProfileMutation({
     home: dshHome,
     ownerPid: process.pid,
@@ -2814,7 +2933,13 @@ async function startApplication(): Promise<void> {
       }
     },
     onFirstStartCommit: async () => {
+      if (runtimePendingApplied) {
+        await workspaceRuntimeManager?.commitPending(dshHome)
+        runtimePendingApplied = false
+        await appendDesktopStartupLog('Workspace runtime Profile changes committed after normal readiness.')
+      }
       if (!firstStartPending) return
+      await presetVersionGate.markAttempted(app.getVersion())
       await firstStartPreparation.complete()
       firstStartPending = false
       preparingFirstStart = false
@@ -3165,6 +3290,39 @@ async function startApplication(): Promise<void> {
   // automatic snapshots here and retain one known-bootable point only after the
   // client and event dispatcher both prove the resulting Profile can start.
   harnessEnvironment.DSH_PLUGIN_SNAPSHOT_BATCH = '1'
+  const runtimePending = await workspaceRuntimeManager.pending(dshHome)
+  const hasRuntimePending = Object.values(runtimePending).some(value => value !== undefined)
+  const ptcWanted = runtimePending.ptc === 'enable'
+    || (runtimePending.ptc !== 'remove' && await hasManagedWorkspacePtcBlock(dshHome))
+  let ptcVersion: string | undefined
+  let ptcNeedsInstall = false
+  if (ptcWanted) {
+    const harnessBin = resolveHarnessInvocation(harnessEnvironment, [], launchOptions).args[1]
+    if (harnessBin === undefined) throw new Error('desktop: Harness entry is unavailable for optional PTC plugin')
+    const manifest = JSON.parse(await readFile(join(dirname(dirname(harnessBin)), 'package.json'), 'utf8')) as { version?: unknown }
+    if (typeof manifest.version !== 'string') throw new Error('desktop: Harness version is unavailable for optional PTC plugin')
+    ptcVersion = manifest.version
+    ptcNeedsInstall = !await isWorkspacePtcPluginInstalled(dshHome, ptcVersion)
+  }
+  const applyRuntimePending = (hasRuntimePending || ptcNeedsInstall) && startupProfileMutationAllowed && !preserveCopiedPlugins
+  let presetUpgradeNeeded = false
+  let presetVersionMarkerUnavailable = false
+  if (!firstStartPending && (startupProfileMutationAllowed || preserveCopiedPlugins)) {
+    try {
+      if (await presetVersionGate.shouldAttempt(app.getVersion())) {
+        await presetVersionGate.markAttempted(app.getVersion())
+        presetUpgradeNeeded = !preserveCopiedPlugins && startupProfileMutationAllowed
+      }
+    } catch (error) {
+      presetVersionMarkerUnavailable = true
+      await retainStartupWarning(
+        'runtime.bundled-preset-version-marker-unavailable',
+        'bundled-preset-version-marker',
+        ['diagnostics', 'open-log'],
+      )
+      console.warn('desktop: bundled preset version marker is unavailable; skipping automatic preparation', error)
+    }
+  }
   try {
     if (firstStartPending && (!startupProfileMutationAllowed || preserveCopiedPlugins)) {
       showIncompletePreparation('Profile verification or transaction recovery did not complete.')
@@ -3172,7 +3330,7 @@ async function startApplication(): Promise<void> {
     }
     if (startupProfileMutationAllowed && !preserveCopiedPlugins) {
       // Even a retry with settled markers needs a readiness-verified commit before clearing the gate.
-      if (firstStartPending) await desktopMutations.prepareStartup()
+      if (firstStartPending || applyRuntimePending) await desktopMutations.prepareStartup()
       if (prebuilt !== undefined && prebuiltDirectory !== undefined) {
         const startedAt = Date.now()
         const candidate = desktopMutations.mutationHome
@@ -3229,7 +3387,8 @@ async function startApplication(): Promise<void> {
             await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment,
               ['plugin', '--profile', 'web', 'add', '--save-exact', ...archives], launchOptions), 'bundled-batch-install', BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS)
           })
-      } else {
+      } else if (presetUpgradeNeeded) {
+        await appendDesktopStartupLog(`Preparing bundled presets once for desktop ${app.getVersion()} after an application upgrade.`)
         const seedResults = await bundledPluginInstaller.seedStartup((progress) => {
           const mapped = mapBundledPluginProgress(
             progress.entry.packageName,
@@ -3244,7 +3403,11 @@ async function startApplication(): Promise<void> {
           seedResults.filter(item => item.result === result).length
         )
         const pending = seedResults.filter(result => result.result === undefined).length
-        await appendDesktopStartupLog(`Bundled startup plugin preparation finished: verified=${count('verified')}; installed=${count('installed')}; upgraded=${count('upgraded')}; preserved-user-version=${count('preserved-user-version')}; removed=${count('removed')}; unresolved=${count('unresolved')}; failed-or-deferred=${pending}. Activation still requires normal readiness.`)
+        await appendDesktopStartupLog(`Desktop ${app.getVersion()} bundled preset pass finished: verified=${count('verified')}; installed=${count('installed')}; upgraded=${count('upgraded')}; preserved-user-version=${count('preserved-user-version')}; removed=${count('removed')}; unresolved=${count('unresolved')}; failed-or-deferred=${pending}. Activation still requires normal readiness.`)
+      } else {
+        await appendDesktopStartupLog(presetVersionMarkerUnavailable
+          ? 'Skipped bundled plugin provisioning: the desktop version marker is unavailable; inspect startup diagnostics.'
+          : 'Skipped bundled plugin provisioning: this desktop version was already attempted for the Profile.')
       }
     } else {
       await appendDesktopStartupLog(
@@ -3262,6 +3425,67 @@ async function startApplication(): Promise<void> {
   } finally {
     delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_BATCH
   }
+  if (applyRuntimePending) {
+    const launch = resolveHarnessInvocation(harnessEnvironment, [], launchOptions)
+    const harnessBin = launch.args[1]
+    if (harnessBin === undefined) throw new Error('desktop: Harness entry is unavailable for workspace-runtime activation')
+    const nodePackages = app.isPackaged
+      ? join(dirname(dirname(harnessBin)), 'node_modules')
+      : join(DEFAULT_SOURCE_ROOT, 'node_modules')
+    const pnpm = launchOptions.packageManagerBin ?? resolveDevelopmentLaunchOptions(DEFAULT_SOURCE_ROOT).packageManagerBin
+    if (pnpm === undefined) throw new Error('desktop: pnpm entry is unavailable for workspace-runtime activation')
+    if (ptcNeedsInstall && ptcVersion !== undefined) {
+      await desktopMutations.applyAtStartup({
+        operation: 'workspace-runtime-ptc-plugin-install',
+        run: async (context) => {
+          await ensureWorkspacePtcPlugin(context.home, ptcVersion, async (packageSpec) => {
+            await context.write({ kind: 'add', packageSpecs: [packageSpec], exact: true,
+              operation: 'workspace-runtime-ptc-plugin-install', timeoutMs: BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS })
+          })
+          await appendDesktopStartupLog(`Optional PTC plugin ${PTC_PLUGIN_NAME}@${ptcVersion} installed after user opt-in.`)
+        },
+      })
+    }
+    for (const capability of WORKSPACE_RUNTIME_CAPABILITIES) {
+      const action = runtimePending[capability]
+      if (action === undefined) continue
+      const reference = await workspaceRuntimeManager.reference(dshHome, capability)
+      if (action === 'enable' && reference === undefined) throw new Error(`desktop: ${capability} workspace-runtime reference is missing`)
+      const payloadRoot = reference?.payloadRoot ?? join(app.getPath('userData'), 'optional-runtimes', 'removed')
+      const python = reference?.custom === true && reference.python !== undefined
+        ? reference.python.executable
+        : process.platform === 'win32'
+          ? join(payloadRoot, 'python', 'python.exe')
+          : join(payloadRoot, 'python', 'bin', 'python3')
+      const paths: WorkspaceRuntimeProfilePaths = {
+        runtimeRoot: payloadRoot,
+        python,
+        node: launch.command,
+        pnpm,
+        nodePackages,
+        ...(reference?.custom === true && reference.python !== undefined ? { customPython: {
+          executable: reference.python.executable,
+          sitePackages: reference.python.sitePackages,
+          distributions: reference.python.packages,
+        } } : {}),
+      }
+      await desktopMutations.applyAtStartup({
+        operation: `workspace-runtime-${capability}-${action}`,
+        run: () => Promise.resolve(configureWorkspaceRuntimeCapability(
+          desktopMutations.mutationHome,
+          capability,
+          action === 'enable',
+          paths,
+        )),
+      })
+    }
+    runtimePendingApplied = hasRuntimePending
+  }
+  const officeNodeModules = await workspaceRuntimeManager.officeNodeModules(dshHome)
+  if (officeNodeModules === undefined) delete harnessEnvironment.NODE_PATH
+  else harnessEnvironment.NODE_PATH = [officeNodeModules, harnessEnvironment.NODE_PATH]
+    .filter((value): value is string => typeof value === 'string' && value !== '')
+    .join(delimiter)
   const installedProfileDependencies: Record<string, string> = {}
   try {
     const profileManifest = JSON.parse(
@@ -3306,9 +3530,11 @@ async function startApplication(): Promise<void> {
         return
       }
     }
-    else await desktopMutations.finishStartup(firstStartPending
-      ? manifest.plugins.filter(entry => entry.installPolicy === 'startup').map(entry => entry.packageName)
-      : [])
+    else {
+      await desktopMutations.finishStartup(firstStartPending
+        ? manifest.plugins.filter(entry => entry.installPolicy === 'startup').map(entry => entry.packageName)
+        : [])
+    }
   } catch (error) {
     await appendDesktopStartupLog('Startup candidate could not be activated; preserved the prior Profile.')
     console.error('desktop: startup plugin candidate failed', error)
@@ -3456,7 +3682,10 @@ async function startApplication(): Promise<void> {
         desktopReturnControl?.clear()
         desktopWebAccess?.clear()
       }
-      if (state !== 'ready') menuClientReady = false
+      if (state !== 'ready') {
+        menuClientAvailable = false
+        menuClientReady = false
+      }
       applicationMenu?.refresh()
       if (state === 'starting') publishStartupProgress({ stage: 'starting-harness', progress: 92 })
       if (state === 'restarting') publishStartupProgress({ stage: 'restarting-harness', progress: 90 })

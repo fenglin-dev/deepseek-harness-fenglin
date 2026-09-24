@@ -276,16 +276,21 @@ export class HarnessSupervisor {
         this.#restartTimer = undefined
         this.start()
       }, delay)
-    }, (error: unknown) => {
+    }).catch(async (error: unknown) => {
       const failure = error instanceof Error ? error : new Error(String(error))
-      return child.waitForExit().then((rangeStopped) => {
-        if (this.#child?.token === child.token) this.#child = undefined
-        this.#failed = true
-        const message = rangeStopped
-          ? `Harness process owner failed: ${failure.message}`
-          : `Harness process owner failed and cleanup is unconfirmed: ${failure.message}`
-        this.#reportStartupFailure(message, message)
-      })
+      let rangeStopped = false
+      let cleanupFailure = ''
+      try {
+        rangeStopped = await child.waitForExit()
+      } catch (cleanupError) {
+        cleanupFailure = `; cleanup observation failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`
+      }
+      if (rangeStopped && this.#child?.token === child.token) this.#child = undefined
+      this.#failed = true
+      const message = rangeStopped
+        ? `Harness process owner failed: ${failure.message}`
+        : `Harness process owner failed and cleanup is unconfirmed: ${failure.message}${cleanupFailure}`
+      this.#reportStartupFailure(message, message)
     })
   }
 
@@ -385,9 +390,14 @@ export class HarnessSupervisor {
           }
         }
         const timeout = setTimeout(() => { void forceStop() }, this.#options.stopTimeoutMs ?? STOP_TIMEOUT_MS)
-        void child.done.then(async () => {
-          if (await child.waitForExit()) finish()
-        }, () => {})
+        const finishAfterExit = async (): Promise<void> => {
+          if (!await child.waitForExit()) throw new Error('desktop: Harness process range remains active')
+          finish()
+        }
+        void child.done.then(finishAfterExit, finishAfterExit).catch((error: unknown) => {
+          this.#writeLog('error', `failed to observe Harness process range during stop: ${error instanceof Error ? error.message : String(error)}`)
+          finish(error)
+        })
         void child.terminate(false).catch((error: unknown) => {
           this.#writeLog('error', `failed to request Harness process-tree shutdown: ${error instanceof Error ? error.message : String(error)}`)
         })

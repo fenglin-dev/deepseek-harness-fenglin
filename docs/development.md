@@ -26,18 +26,42 @@ Install dependencies separately in each environment because native binaries and 
 Install dependencies from the repo root:
 
 ```sh
-pnpm install
+node scripts/install-dependencies.mjs
 ```
+
+Public npm packages may resolve through `registry.npmjs.org` or `registry.npmmirror.com`. The installer tries the configured one first and, if that attempt fails, retries once through the other public registry. A custom registry remains the only candidate because it may own private packages or authentication. The lockfile keeps the exact package version and SHA-512 integrity but omits ordinary tarball URLs from either public registry, so either can supply the same verified bytes. Nonstandard tarball hosts stay explicit and integrity-pinned; a content mismatch fails before lifecycle scripts run. `pnpm run verify-lockfile-registry-portability` enforces this rule.
 
 The install also configures worktree-local Lefthook hooks and the `dsh-translation-pairing` Git merge driver through `scripts/install-lefthook.mjs`. The [worktree-local hooks Agent Note](../.agents/notes/implemented/process/2026-07-27-worktree-local-lefthook.md) owns the hook-path safety contract; the [automatic pairing merges Agent Note](../.agents/notes/implemented/process/2026-08-08-automatic-translation-pairing-merges.md) owns the merge driver.
 
-If either integration is missing because dependencies were restored from cache or `postinstall` was skipped, install them manually:
+If either Git integration is missing after a manual dependency operation, install it separately:
 
 ```sh
 node scripts/install-lefthook.mjs
 ```
 
 If the wrapper rejects existing Git configuration or reports a stale lock, follow its diagnostic and the linked Agent Note rather than editing worktree metadata speculatively. After moving a checkout, rerun the wrapper to regenerate the owned path.
+
+### Linked worktree dependencies
+
+A linked Git worktree has its own ignored `node_modules` layout even though pnpm reuses the shared content-addressed store. Initialize that layout with a frozen lockfile and without rerunning dependency lifecycle scripts:
+
+```sh
+node scripts/setup-worktree.mjs
+```
+
+The default worktree setup prefers the local store and uses the same public-registry fallback for missing content or metadata. When registry access is unavailable, strict offline mode directs every pnpm registry and proxy request to a closed loopback endpoint and disables retries. Because pnpm 11 lockfile policy verification otherwise requires registry metadata, this explicit mode trusts the committed frozen lockfile while materializing it from the local store; it does not weaken the default setup mode. It succeeds only when every required package already exists in the local store:
+
+```sh
+node scripts/setup-worktree.mjs --offline
+```
+
+If pnpm refuses to run because the workspace layout changed, run the Node-only doctor. It reads the checkout, lockfile, pnpm workspace state, active tool versions, and local store path without modifying Git or dependencies:
+
+```sh
+node scripts/worktree-doctor.mjs
+```
+
+Both worktree setup modes configure the worktree-local Git integrations after dependency linking succeeds. Do not share or symlink `node_modules` between worktrees because workspace package links must resolve inside the checkout that runs the command.
 
 Run typecheck once after a fresh clone:
 
@@ -83,7 +107,7 @@ Both tsdown passes use the same complete workspace match. They neither scan buil
 
 Typert runs only during Host tsdown, seeded by `tsconfig.host.json`. It analyzes Host types and generates both Host reflection artifacts and the Host-for-Client Remote projection; Client tsdown does not start Typert. Consequently, `pnpm run typecheck` runs the complete Host lib phase before Client tsc, while `pnpm run build` continues through Client tsdown and the Web build.
 
-`pnpm run build` embeds the root package version, the seven-character source commit, and a dirty marker when Git reports local changes; it also inherits other caller-supplied `DSH_CLIENT_*` values. `pnpm run build:official` is the cross-platform local equivalent of the CI and release artifact build and omits the local dirty marker. Each successful complete build writes a gitignored record that binds the exact public values to the Vite output and dynamic client bundles; release packing and built Web tests reject a missing record or artifacts changed by a later partial build. `pnpm run dev:web` still requires the artifact tree from a prior complete build, but it samples the current version and Git state once at startup and shares that environment across every watcher stage for the session; it does not validate the complete-build record because the watcher stages rewrite its recorded artifacts.
+`pnpm run build` embeds the root package version, the seven-character source commit, and a dirty marker when Git reports local changes; it also inherits other caller-supplied `DSH_CLIENT_*` values. `pnpm run build:official` is the cross-platform local equivalent of the CI and release artifact build and omits the local dirty marker. Each successful complete build writes a gitignored record that binds the exact public values to the Vite output and dynamic client bundles; release packing and built Web tests reject a missing record or artifacts changed by a later partial build. `pnpm run dev:web` runs that complete build first (`--skip-build` reuses an existing artifact tree instead), then samples the current version and Git state once and shares that environment across every watcher stage for the session; it does not validate the complete-build record because the watcher stages rewrite its recorded artifacts.
 
 Static analysis and tests resolve workspace imports through the base `paths` map to `src` and must pass on a clean tree; gates that consume built `lib/` output declare that dependency explicitly. Generated Host-for-Client Remote declarations are the deliberate exception: the public `typecheck`, `lint`, and `doc-typecheck` commands generate them first, while internal `*:contracts-ready` scripts assume that an invoking public command or scheduler gate already depends on the Typert contract-generation pass or the complete build. See the [ts-build-config note](../.agents/notes/implemented/process/2026-06-17-ts-build-config.md) for tsc-first emit ownership and the [Typert Remote note](../.agents/notes/implemented/architecture/2026-08-02-typert-remote-method-calls.md) for the gate-preparation contract.
 
@@ -153,6 +177,19 @@ The PTC mode demo runs the same headless profile with code presentation enabled:
 ```sh
 pnpm run demo:ptc -- "summarize this workspace"
 ```
+
+### Application commands
+
+Web and Desktop share one command pair. `start:*` launches the artifacts of a prior `pnpm run build`; `dev:*` runs that build first and then launches. Web additionally keeps client bundles rebuilt on source edits, because its Host runs from source while the browser loads built bundles:
+
+```sh
+pnpm run start:web       # serve built Web artifacts through the source launcher (the same launch as pnpm dsh web)
+pnpm run dev:web         # build, serve, and rebuild Web client bundles on source edits
+pnpm run start:desktop   # launch built Desktop artifacts
+pnpm run dev:desktop     # build, then launch Desktop
+```
+
+Arguments after a Web command reach `dsh web`, for example `pnpm run dev:web --no-open --port 3081`; `dev:web` also accepts `--skip-build` to reuse the existing artifact tree and `--no-serve` to run only the rebuild watchers beside a server started elsewhere. Both Web commands use the normal Harness home, while the Desktop commands use the isolated development home described in the [Desktop README](../apps/desktop/README.md). The root `Makefile` names the same commands as `make web`, `make dev-web`, `make desktop`, `make dev-desktop`, and `make build`; `ARGS='--no-open'` forwards options.
 
 ### TODO markers
 

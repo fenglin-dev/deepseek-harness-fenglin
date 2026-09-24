@@ -6,10 +6,10 @@
     { "path": "../../../vendor/cordis" },
     { "path": "../../nas/nas-protocol" },
     { "path": "../ui-renderer" },
-    { "path": "../locale" },
+    { "path": "../locale/tsconfig.client.json" },
     { "path": "../ui-slots" },
     { "path": "../ui-primitives" },
-    { "path": "../ui-settings" },
+    { "path": "../ui-settings/tsconfig.client.json" },
     { "path": "../ui-sidebar" }
   ]
 }

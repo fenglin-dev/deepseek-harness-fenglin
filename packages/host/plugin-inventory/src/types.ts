@@ -1,5 +1,6 @@
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ProfileDiagnostic, ProfileDiagnosticRuleSummary } from '@deepseek-ai/dsh-app-boot'
+import type { PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
 
 /** Stable Loader-tree identity of one configured plugin entry. */
 export type PluginEntryId = Branded<'PluginEntryId'>
@@ -18,6 +19,8 @@ export interface PluginInventoryEntry {
   readonly entryId: PluginEntryId
   /** Exact module specifier imported by the Loader entry. */
   readonly moduleName: string
+  /** Local package display metadata, independent of whether the entry is enabled. */
+  readonly meta?: PluginLocalizedMeta
   /** Effective Loader enablement, including disabled ancestor groups. */
   readonly enabled: boolean
   readonly fiberPhase: PluginFiberPhase
@@ -32,6 +35,8 @@ export interface AgentPresetPluginRow {
   readonly entryId: string | null
   /** Module specifier the row names. */
   readonly moduleName: string
+  /** Local package display metadata, independent of whether the preset is mounted. */
+  readonly meta?: PluginLocalizedMeta
   /**
    * Effective enablement, including disabled ancestor groups. `'conditional'`
    * marks a `!!js` disabled expression on a composition no session has
@@ -48,8 +53,6 @@ export interface AgentPresetPluginRow {
 export interface AgentPresetPluginGroup {
   /** Stable preset id. */
   readonly id: string
-  /** Whether the deployment ships the preset or the user owns it. */
-  readonly trust: 'system' | 'user'
   /** Display name the preset published; a reader falls back to the id. */
   readonly name?: string
   /** Whether a session naming no preset composes this one. */

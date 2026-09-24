@@ -28,9 +28,10 @@ export interface ClientBootOptions {
  * Compose the client: `ctx.plugin(Loader)`, `loader.internal = modules`, one
  * `loader.create({ name })` per manifest row, `loader.await()`, then
  * {@link assertEntriesActive}. A row whose module cannot be imported is marked
- * failed; the Loader logs its import error and the audit rejects startup.
+ * failed; the Loader logs its import error and the module system records it.
+ * Official application-shell failures reject startup; optional extensions warn.
  * @param options - context, module system, manifest, optional progress sink.
- * @returns resolves after every entry is active; rejects with the audit report otherwise.
+ * @returns resolves after required entries are active; rejects with their audit report otherwise.
  */
 export async function bootClient(options: ClientBootOptions): Promise<void> {
   const { ctx, manifest, onEntryState } = options
@@ -52,20 +53,33 @@ export async function bootClient(options: ClientBootOptions): Promise<void> {
   }
 
   await loader.await()
-  assertEntriesActive(ctx)
+  assertEntriesActive(ctx, options.modules)
+}
+
+/** Official client packages are part of the application shell; external packages are optional extensions. */
+function isRequiredEntry(name: string): boolean {
+  return name.startsWith('@deepseek-ai/')
 }
 
 /**
- * Reject entries that failed import/apply or still wait on missing services.
+ * Audit entries that failed import/apply or still wait on missing services.
+ * External package failures are warnings; official application-shell failures
+ * remain fatal.
  * @param ctx - root Context carrying the Loader.
- * @throws {Error} listing every non-active entry with its reason.
+ * @param modules - optional module-system import errors for actionable diagnostics.
+ * @throws {Error} listing every non-active required entry with its reason.
  */
-export function assertEntriesActive(ctx: Context): void {
-  const failures: string[] = []
+export function assertEntriesActive(ctx: Context, modules?: Pick<ClientModuleLoader, 'importError'>): void {
+  const requiredFailures: string[] = []
+  const optionalFailures: string[] = []
   for (const entry of ctx.loader.entries()) {
     const name = entry.options.name
+    const failures = isRequiredEntry(name) ? requiredFailures : optionalFailures
     if (entry.fiber === undefined) {
-      failures.push(`${name}: import failed (see console for the import error)`)
+      const importError = modules?.importError(name)
+      failures.push(importError === undefined
+        ? `${name}: import failed (see console for the import error)`
+        : `${name}: import failed: ${importError.message}`)
       continue
     }
     const state = STATE_LABELS[entry.fiber.state]
@@ -77,7 +91,10 @@ export function assertEntriesActive(ctx: Context): void {
       failures.push(`${name}: ${state}`)
     }
   }
-  if (failures.length > 0) {
-    throw new Error(`web boot: ${String(failures.length)} entr${failures.length === 1 ? 'y' : 'ies'} did not activate\n${failures.join('\n')}`)
+  if (optionalFailures.length > 0) {
+    ctx.logger.warn(`web boot: optional client plugin${optionalFailures.length === 1 ? '' : 's'} did not activate\n${optionalFailures.join('\n')}`)
+  }
+  if (requiredFailures.length > 0) {
+    throw new Error(`web boot: ${String(requiredFailures.length)} entr${requiredFailures.length === 1 ? 'y' : 'ies'} did not activate\n${requiredFailures.join('\n')}`)
   }
 }

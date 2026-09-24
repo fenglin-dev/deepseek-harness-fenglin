@@ -84,6 +84,7 @@ export function menuCopy(locale: string): typeof en {
 export interface DesktopMenuState {
   platform: NodeJS.Platform
   locale: string
+  clientAvailable: boolean
   ready: boolean
   busy: boolean
   maximized: boolean
@@ -100,6 +101,7 @@ export function isDesktopCommand(value: unknown): value is DesktopCommand {
  * @returns Whether execution is allowed.
  */
 export function commandEnabled(command: DesktopCommand, state: DesktopMenuState): boolean {
+  if (command === 'settings') return state.clientAvailable && !state.busy
   if ((CLIENT_COMMANDS as readonly string[]).includes(command)) return state.ready && !state.busy
   // Loading and titlebar pages share file://; never write that origin's zoom preference.
   if (command === 'zoom-in' || command === 'zoom-out' || command === 'zoom-reset') return state.ready

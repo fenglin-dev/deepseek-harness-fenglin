@@ -191,6 +191,7 @@ describe('Windows parent runner contract', () => {
     expect(result.stdin).toBe(child.targetStdin)
     expect(result.stdout).toBe(child.targetStdout)
     expect(result.stderr).toBe(child.targetStderr)
+    expect(result.rootPid).toBe(child.pid)
   })
 
   it('carries a null-device fd 4 for ignored stdin and closes the parent descriptor after spawn', () => {

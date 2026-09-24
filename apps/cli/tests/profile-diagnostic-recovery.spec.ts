@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { createRequire } from 'node:module'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import {
   classifyProfileDiagnostic,
-  healProfilesModuleFallback,
+  createRuntimeResolution,
   loadDiagnosticProfile,
 } from '@deepseek-ai/dsh-app-boot'
 import { fileURLToPath } from 'node:url'
@@ -25,14 +24,13 @@ describe('Profile diagnostic recovery policy', () => {
     expect(fileURLToPath(baseUrl)).toBe(join('/fixture', 'dsh-home', 'profiles', 'package.json'))
   })
 
-  it('resolves installation transitive modules from the healed diagnostic fallback', async () => {
+  it('resolves installation transitive modules without writing a shared fallback', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-diagnostic-mode-modules-'))
     try {
       const profile = loadDiagnosticProfile('test', 'web', INSTALL_ANCHOR, home)
-      await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile, home })
-      const requireFromFallback = createRequire(fileURLToPath(diagnosticProfileModuleBaseUrl(profile.dir)))
-      expect(existsSync(requireFromFallback.resolve('@deepseek-ai/dsh-tools'))).toBe(true)
-      expect(existsSync(requireFromFallback.resolve('@deepseek-ai/dsh-typert-registry'))).toBe(true)
+      const resolution = await createRuntimeResolution({ installAnchor: INSTALL_ANCHOR, profile, home })
+      expect(resolution.entries.some(entry => entry.name === '@deepseek-ai/dsh-tools')).toBe(true)
+      expect(resolution.entries.some(entry => entry.name === '@deepseek-ai/dsh-typert-registry')).toBe(true)
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

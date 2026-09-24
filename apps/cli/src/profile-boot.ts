@@ -24,10 +24,8 @@ import {
   createProfilePluginSnapshot,
   finalizeProfilePluginSnapshot,
   composeEntries,
-  createProfileResolutionGeneration,
+  createRuntimeResolution,
   DEFAULT_PROFILE_BUNDLES,
-  healProfilesModuleFallback,
-  healIsolatedProfileModuleFallback,
   initProfile,
   installFailLoud,
   loadDiagnosticProfile,
@@ -52,11 +50,10 @@ import {
   type ProfileContext,
   type ProfileBundleEntryOwnership,
   type ProfileDiagnostic,
-  type ProfileResolutionGeneration,
-  type ProfileResolutionMode,
   type UnresolvableProfileBundleEntry,
   prepareDiagnosticRuntimeDirectories,
   prepareDiagnosticSettingsDocument,
+  type RuntimeResolution,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
@@ -115,11 +112,11 @@ const PROFILE_ROOT_CONFIG = `# dsh profile root — an empty entry list. The tre
 export const PROFILE_ROOT_FILENAME = 'cordis.yml'
 
 /**
- * Return the installation-maintained shared module fallback anchor used by a
- * diagnostic Profile. It intentionally sits above the active Profile so bare
- * imports cannot see that Profile's third-party node_modules.
+ * Return a module anchor above the active diagnostic Profile so Node fallback
+ * lookup cannot see that Profile's third-party node_modules. Installation
+ * packages are supplied by the immutable runtime resolution.
  * @param profileDir - Absolute active Profile directory.
- * @returns File URL whose parent lookup begins at `$DSH_HOME/profiles/node_modules`.
+ * @returns file URL outside the active Profile's dependency tree.
  */
 export function diagnosticProfileModuleBaseUrl(profileDir: string): string {
   return pathToFileURL(join(profileDir, '..', 'package.json')).href
@@ -310,7 +307,7 @@ function prepareDiagnosticProfile(name: string): Profile {
 interface ComposedProfile {
   profile: Profile
   /** Immutable package lookup generation used by this invocation. */
-  resolution: ProfileResolutionGeneration
+  resolution: RuntimeResolution
   /** Bundle layers concatenated — the part below the user layers on a live reload. */
   bundlePatches: PatchOptions[]
   /** The home-level user layer (`$DSH_HOME/cordis.patch.yml`), applied after the profile's own. */
@@ -340,13 +337,14 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
  * then the telemetry switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
+ * @param fromDefaultProfile - shipped template for a missing named profile.
+ * @param resolvedProfile - application-owned profile and installation.
  * @returns the profile and its patch layers.
  */
 async function composeProfile(
   name: string,
   patchFiles: readonly string[],
   diagnosticMode: boolean,
-  resolutionMode: ProfileResolutionMode,
   fromDefaultProfile?: string,
   resolvedProfile?: ResolvedProfileRuntime,
 ): Promise<ComposedProfile> {
@@ -355,10 +353,7 @@ async function composeProfile(
     : resolvedProfile?.profile ?? prepareProfile(name, true, fromDefaultProfile)
   if (resolvedProfile !== undefined) writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   const resolutionOptions = { installAnchor: resolvedProfile?.installAnchor ?? INSTALL_ANCHOR, profile }
-  if (resolvedProfile !== undefined && resolutionMode !== 'runtime') healIsolatedProfileModuleFallback(resolvedProfile)
-  const resolution = resolutionMode === 'runtime' || resolvedProfile !== undefined
-    ? await createProfileResolutionGeneration(resolutionOptions)
-    : await healProfilesModuleFallback(resolutionOptions)
+  const resolution = await createRuntimeResolution(resolutionOptions)
   const homePatches = diagnosticMode ? [] : loadOptionalPatches(NAME, homePatchPath()) ?? []
   const diagnosticSettings = diagnosticMode ? prepareDiagnosticSettingsDocument() : undefined
   const diagnosticRuntime = diagnosticMode ? prepareDiagnosticRuntimeDirectories() : undefined
@@ -422,8 +417,6 @@ export interface RunProfileOptions {
   diagnosticModeOnFailure?: boolean
   /** Application-owned package runtime, scoped to plugin package operations. */
   packageManager?: ProfileContext['packageManager']
-  /** Module fallback backend; pkg executables always use runtime resolution. */
-  resolutionMode?: ProfileResolutionMode
 }
 
 function startupFailurePhase(error: unknown) {
@@ -586,11 +579,8 @@ function configuredExternalBundles(profile: string): string[] {
  */
 async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
   const diagnosticMode = options.diagnosticMode === true
-  const packaged = (process as NodeJS.Process & { pkg?: unknown }).pkg !== undefined
-  const resolutionMode = packaged ? 'runtime' : options.resolutionMode ?? 'link'
   const profileDir = resolveProfileDir(options.profile)
   if (!diagnosticMode && options.resolvedProfile === undefined && existsSync(join(profileDir, 'package.json'))) {
-    await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR })
     const dependencyHealth = repairProfileDependencies({
       binName: NAME,
       profile: options.profile,
@@ -622,7 +612,6 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
       options.profile,
       options.patchFiles,
       diagnosticMode,
-      resolutionMode,
       options.fromDefaultProfile,
       options.resolvedProfile,
     )
@@ -632,19 +621,24 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
   }
   const app: { current?: Context } = {}
   const appReady = createAppReady()
-  const shutdown = createProcessShutdown(async () => {
-    try {
-      await app.current?.fiber.dispose()
-    } finally {
-      try {
-        await disposeProxy()
-      } finally {
+  let disposal: Promise<void> | undefined
+  const dispose = (): Promise<void> => disposal ??= (async () => {
+    const failures: unknown[] = []
+    for (const release of [
+      () => app.current?.fiber.dispose(),
+      disposeProxy,
+      () => {
         if (composed.diagnosticRuntimeRoot !== undefined) {
           rmSync(composed.diagnosticRuntimeRoot, { recursive: true, force: true })
         }
-      }
+      },
+    ]) {
+      try { await release() } catch (error) { failures.push(error) }
     }
-  })
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'dsh: profile cleanup failed')
+  })()
+  const shutdown = createProcessShutdown(dispose)
   const signalShutdown = new AbortController()
   const interrupt = (code: number): void => {
     signalShutdown.abort()
@@ -675,20 +669,19 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
     telemetryDisabledEnv: process.env.DSH_TELEMETRY_DISABLED,
     projectPatches: patches => withDesktopCodexProxy([...patches], process.env),
   }
-  const initialPatches = diagnosticMode
-    ? structuredClone(allPatches(composed))
-    : readProfilePatches(NAME, profileContext, composed.profile)
   let ctx: Context
   try {
+    const initialPatches = diagnosticMode
+      ? structuredClone(allPatches(composed))
+      : readProfilePatches(NAME, profileContext, composed.profile)
     ctx = await boot(NAME, rootConfig, initialPatches, async (hostCtx) => {
       app.current = hostCtx
       hostCtx.provide('profileContext', profileContext)
       // Before any config-tree entry mounts, so plugins resolve all launch-time
       // environment values from the same immutable launch-environment snapshot.
       hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, options.environment)
-      await hostCtx.plugin(PluginPackages, resolutionMode === 'link' ? {} : {
-        generation: composed.resolution,
-        behavior: resolutionMode === 'dual' ? 'verify' : 'enforce',
+      await hostCtx.plugin(PluginPackages, {
+        resolution: composed.resolution,
       })
       // The command line and bounded exit request are launcher facts available
       // to every app plugin that injects the argument snapshot.
@@ -699,12 +692,8 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
       })
     }, diagnosticMode ? diagnosticProfileModuleBaseUrl(composed.profile.dir) : undefined)
   } catch (error) {
-    try {
-      await disposeProxy()
-    } finally {
-      if (composed.diagnosticRuntimeRoot !== undefined) {
-        rmSync(composed.diagnosticRuntimeRoot, { recursive: true, force: true })
-      }
+    try { await dispose() } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], 'dsh: profile startup and cleanup failed')
     }
     throw error
   }

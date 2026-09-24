@@ -1,11 +1,8 @@
 # Build each desktop artifact on the operating system and CPU architecture it ships for.
-# Tag `dsh-v*` auto-builds Linux + Windows installers and attaches them to the GitHub Release.
 name: Desktop packages
+run-name: Desktop packages ${{ inputs.target }} ${{ inputs.orchestration_id || github.run_id }}
 
 on:
-  push:
-    tags:
-      - 'dsh-v*'
   workflow_dispatch:
     inputs:
       target:
@@ -15,6 +12,7 @@ on:
         default: all
         options:
           - all
+          - macos
           - windows-x64
           - linux-x64
       refresh_plugins:
@@ -22,24 +20,37 @@ on:
         required: true
         type: boolean
         default: true
+      bundled_plugin_run_id:
+        description: Reuse the bundled plugin snapshot from this same-commit run ID
+        required: false
+        type: string
+        default: ''
+      orchestration_id:
+        description: Stable local orchestration key used to recover an already dispatched run
+        required: false
+        type: string
+        default: ''
+      windows_candidate_run_id:
+        description: Reuse a Windows candidate artifact from this run ID (must have the same commit)
+        required: false
+        type: string
+        default: ''
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.target }}
   cancel-in-progress: false
 
 env:
-  PRIMARY_NODE_VERSION: '24.21.0'
+  PRIMARY_NODE_VERSION: '24.17.0'
   DSH_TELEMETRY_DISABLED: '1'
-  # Tag builds stay packaging-only (same plugin snapshot as the verified local install).
-  # workflow_dispatch keeps the refresh_plugins switch.
-  PACKAGE_TARGET: ${{ github.ref_type == 'tag' && 'all' || inputs.target || 'all' }}
 
 jobs:
   bundled-plugins:
-    name: Resolve bundled plugins
+    name: Prepare bundled plugins
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -55,14 +66,41 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Verify package resource contract
+        run: node --test apps/desktop/scripts/packaged-resource-contract.test.mjs
+
       - name: Verify external tool provider coordinates
         run: pnpm run verify:desktop:external-tools
 
       - name: Verify embedded Node runtime pins
         run: node --test apps/desktop/scripts/node-runtime-pins.test.mjs
 
+      - name: Verify reused bundled plugin snapshot commit
+        if: ${{ inputs.bundled_plugin_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          snapshot_sha="$(gh api "repos/${{ github.repository }}/actions/runs/${{ inputs.bundled_plugin_run_id }}" --jq .head_sha)"
+          if [ "$snapshot_sha" != "${{ github.sha }}" ]; then
+            echo "Bundled plugin snapshot run ${{ inputs.bundled_plugin_run_id }} belongs to $snapshot_sha, expected ${{ github.sha }}" >&2
+            exit 1
+          fi
+
+      - name: Clear checked-in bundled plugin snapshot
+        if: ${{ inputs.bundled_plugin_run_id != '' }}
+        run: >-
+          node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
+
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.bundled_plugin_run_id != '' }}
+        with:
+          name: bundled-plugin-snapshot
+          path: apps/desktop/bundled-plugins
+          run-id: ${{ inputs.bundled_plugin_run_id }}
+          github-token: ${{ github.token }}
+
       - name: Resolve latest stable plugin archives
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh_plugins }}
+        if: ${{ inputs.bundled_plugin_run_id == '' && inputs.refresh_plugins }}
         run: pnpm run refresh:desktop:bundled-plugins
 
       - uses: actions/upload-artifact@v4
@@ -71,11 +109,103 @@ jobs:
           path: apps/desktop/bundled-plugins
           if-no-files-found: error
           retention-days: 14
+          compression-level: '0'
+
+  windows-preflight:
+    name: Windows x64 fast preflight
+    if: ${{ inputs.windows_candidate_run_id == '' && (inputs.target == 'all' || inputs.target == 'windows-x64') }}
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify Windows packaging and candidate contracts
+        run: >-
+          node --test
+          apps/desktop/scripts/runtime-deploy-config.test.mjs
+          apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs
+          apps/desktop/scripts/windows-package-candidate.test.mjs
+
+      - name: Verify Windows runner protocol
+        run: pnpm exec vitest run packages/subprocess/subprocess-local/tests/spawn-runner.spec.ts packages/subprocess/subprocess-local/tests/windows-job.spec.ts
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    if: ${{ inputs.windows_candidate_run_id == '' && (inputs.target == 'all' || inputs.target == 'macos') }}
+    needs: bundled-plugins
+    env:
+      DSH_BUNDLED_PLUGINS_REFRESH: '0'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Use resolved bundled plugin snapshot
+        run: |
+          node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundled-plugin-snapshot
+          path: apps/desktop/bundled-plugins
+
+      - name: Build macOS package
+        run: |
+          ulimit -n 65536
+          echo "macOS packaging open-file limit: $(ulimit -n)"
+          pnpm run package:desktop:macos:${{ matrix.arch }}
+
+      - name: Verify macOS Helper lookup regression
+        run: node --test apps/desktop/scripts/smoke-macos-package.test.mjs
+
+      - name: Smoke final macOS DMG and ZIP
+        run: >-
+          node apps/desktop/scripts/smoke-macos-package.mjs
+          .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.dmg
+          .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos-${{ matrix.arch }}
+          path: |
+            .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.dmg
+            .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.zip
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: '0'
 
   windows:
-    name: Windows x64
-    if: ${{ github.ref_type == 'tag' || inputs.target == 'all' || inputs.target == 'windows-x64' }}
-    needs: bundled-plugins
+    name: Build Windows x64 candidate
+    if: ${{ inputs.windows_candidate_run_id == '' && (inputs.target == 'all' || inputs.target == 'windows-x64') }}
+    needs: [bundled-plugins, windows-preflight]
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
     runs-on: windows-2025
@@ -94,7 +224,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Use resolved bundled plugin snapshot
-        shell: pwsh
         run: |
           node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
 
@@ -103,41 +232,117 @@ jobs:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
 
+      - name: Prepare bundled plugins
+        run: pnpm run prepare:desktop:bundled-plugins
+
+      - name: Build clean-checkout Host and Desktop
+        run: pnpm run build:community-desktop
+
+      - name: Prepare bundled Python runtime and Office metadata
+        run: pnpm exec tsx apps/desktop/scripts/prepare-workspace-runtime.ts win-x64
+
+      - name: Deploy Windows runtime
+        run: node apps/desktop/scripts/prepare-windows-runtime.mjs
+
       - name: Build Windows installer
+        working-directory: apps/desktop
+        run: node node_modules/electron-builder/out/cli/cli.js --win nsis --x64 --publish never
+
+      - name: Probe unpacked app.asar and Electron entries
+        run: node apps/desktop/scripts/smoke-windows-unpacked.mjs
+
+      - name: Record Windows candidate identity
+        run: >-
+          node apps/desktop/scripts/windows-package-candidate.mjs create .
+          .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
+          apps/desktop/bundled-plugins
+          .artifacts/desktop-windows/windows-package-candidate.json
+
+      - name: Preserve Windows candidate
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualification-windows-x64-candidate
+          path: |
+            .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
+            .artifacts/desktop-windows/windows-package-candidate.json
+          if-no-files-found: warn
+          retention-days: 3
+
+  windows-smoke:
+    name: Smoke Windows x64 candidate
+    needs: [bundled-plugins, windows]
+    if: >-
+      ${{ always() && (inputs.target == 'all' || inputs.target == 'windows-x64') && (
+        (inputs.windows_candidate_run_id == '' && needs.windows.result == 'success') ||
+        inputs.windows_candidate_run_id != ''
+      ) }}
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Verify Windows smoke evidence interface
         shell: pwsh
-        run: pnpm run package:desktop:win:x64
+        run: |
+          & apps/desktop/scripts/windows-smoke-journal.test.ps1
+          node --test apps/desktop/scripts/collect-windows-smoke-evidence.test.mjs
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundled-plugin-snapshot
+          path: .artifacts/bundled-plugin-snapshot
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: qualification-windows-x64-candidate
+          path: .artifacts/desktop-windows
+          run-id: ${{ inputs.windows_candidate_run_id || github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify Windows candidate identity
+        run: >-
+          node apps/desktop/scripts/windows-package-candidate.mjs verify .
+          .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
+          .artifacts/bundled-plugin-snapshot
+          .artifacts/desktop-windows/windows-package-candidate.json
 
       - name: Smoke test installed Windows package
-        id: smoke
         shell: pwsh
-        # Runner GUI/Job smoke is flaky; installer upload must stay usable.
-        continue-on-error: true
         run: apps/desktop/scripts/smoke-windows-package.ps1
 
-      # Keep the installer downloadable even when runner GUI smoke fails, so
-      # local D-drive install and UI verification can proceed independently.
-      - uses: actions/upload-artifact@v4
+      - name: Collect Windows smoke evidence
         if: ${{ always() }}
+        continue-on-error: true
+        run: node apps/desktop/scripts/collect-windows-smoke-evidence.mjs
+
+      - name: Preserve Windows smoke evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qualification-windows-x64-evidence
+          path: .artifacts/windows-smoke-evidence
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Publish qualified Windows artifact
+        uses: actions/upload-artifact@v4
         with:
           name: desktop-windows-x64
-          path: .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
+          path: |
+            .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
           if-no-files-found: error
           retention-days: 14
-
-      - uses: actions/upload-artifact@v4
-        if: ${{ failure() }}
-        with:
-          name: desktop-windows-smoke-diagnostics
-          path: |
-            ${{ runner.temp }}/DeepSeek-Harness-desktop-smoke*.log
-            ${{ runner.temp }}/DeepSeek-Harness-smoke-appdata/**
-            ${{ runner.temp }}/dsh-smoke-install/**
-          if-no-files-found: ignore
-          retention-days: 7
+          compression-level: '0'
 
   linux:
     name: Linux x64
-    if: ${{ github.ref_type == 'tag' || inputs.target == 'all' || inputs.target == 'linux-x64' }}
+    if: ${{ inputs.windows_candidate_run_id == '' && (inputs.target == 'all' || inputs.target == 'linux-x64') }}
     needs: bundled-plugins
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
@@ -184,14 +389,16 @@ jobs:
             .artifacts/desktop-linux/DeepSeek-Harness-linux-x64.rpm
           if-no-files-found: error
           retention-days: 14
+          compression-level: '0'
 
   checksums:
     name: SHA-256 checksums
-    needs: [windows, linux]
+    needs: [macos, windows-smoke, linux]
     if: >-
       ${{ always() && (
-        ((github.ref_type == 'tag' || inputs.target == 'all' || inputs.target == '') && needs.windows.result == 'success' && needs.linux.result == 'success') ||
-        (inputs.target == 'windows-x64' && needs.windows.result == 'success') ||
+        (inputs.target == 'all' && needs.macos.result == 'success' && needs.windows-smoke.result == 'success' && needs.linux.result == 'success') ||
+        (inputs.target == 'macos' && needs.macos.result == 'success') ||
+        (inputs.target == 'windows-x64' && needs.windows-smoke.result == 'success') ||
         (inputs.target == 'linux-x64' && needs.linux.result == 'success')
       ) }}
     runs-on: ubuntu-24.04
@@ -204,7 +411,10 @@ jobs:
 
       - name: Write checksums
         working-directory: dist
-        run: sha256sum DeepSeek-Harness-* > SHA256SUMS
+        run: >-
+          find . -maxdepth 1 -type f
+          \( -name 'DeepSeek-Harness-macos-*' -o -name 'DeepSeek-Harness-windows-*' -o -name 'DeepSeek-Harness-linux-*' \)
+          -print0 | sort -z | xargs -0 sha256sum | sed 's#  \./#  #' > SHA256SUMS
 
       - uses: actions/upload-artifact@v4
         with:
@@ -212,27 +422,3 @@ jobs:
           path: dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
-
-  publish-release:
-    name: Attach desktop assets to Release
-    needs: [windows, linux, checksums]
-    if: ${{ github.ref_type == 'tag' && always() && (needs.windows.result == 'success' || needs.linux.result == 'success') }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: desktop-*
-          path: dist
-          merge-multiple: true
-
-      - name: Upload installers to GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          # --repo avoids gh requiring a local .git checkout.
-          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber --repo "${GH_REPO}"
-          gh release view "${GITHUB_REF_NAME}" --repo "${GH_REPO}" --json tagName,assets --jq '{tag: .tagName, assets: [.assets[].name]}'

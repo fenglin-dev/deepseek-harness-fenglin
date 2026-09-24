@@ -2,11 +2,16 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 <owner/repo> <windows-run-id> <macos-run-id> <linux-run-id> | --macos-only <owner/repo> <macos-run-id>" >&2
+  echo "usage: $0 [--replace-existing] <owner/repo> <windows-run-id> <macos-run-id> <linux-run-id> | [--replace-existing] --macos-only <owner/repo> <macos-run-id>" >&2
   exit 2
 }
 
 verify_args=()
+replace_existing=0
+if [[ ${1:-} == --replace-existing ]]; then
+  replace_existing=1
+  shift
+fi
 if [[ $# -eq 3 && $1 == --macos-only ]]; then
   repository=$2
   run_ids=("$3")
@@ -44,7 +49,7 @@ else
   primary_checkout=$(dirname "$git_common_directory")
   output_directory="$primary_checkout/release/$version"
 fi
-[[ ! -e "$output_directory" ]] || {
+[[ ! -e "$output_directory" || "$replace_existing" == 1 ]] || {
   echo "refusing to replace existing release directory: $output_directory" >&2
   exit 1
 }
@@ -137,8 +142,26 @@ download_archive() {
     fi
   fi
 
+  connection_steps_text=${ODSH_DOWNLOAD_CONNECTION_STEPS:-16,4,2,1}
+  previous_ifs=$IFS
+  IFS=',' read -r -a connection_steps <<< "$connection_steps_text"
+  IFS=$previous_ifs
+  [[ ${#connection_steps[@]} -gt 0 ]] || {
+    echo "ODSH_DOWNLOAD_CONNECTION_STEPS must contain at least one positive integer" >&2
+    return 2
+  }
+  for connection_step in "${connection_steps[@]}"; do
+    [[ "$connection_step" =~ ^[1-9][0-9]*$ ]] || {
+      echo "ODSH_DOWNLOAD_CONNECTION_STEPS contains an invalid value: $connection_step" >&2
+      return 2
+    }
+  done
   attempt=1
-  max_attempts=${ODSH_DOWNLOAD_URL_ATTEMPTS:-3}
+  max_attempts=${ODSH_DOWNLOAD_URL_ATTEMPTS:-${#connection_steps[@]}}
+  [[ "$max_attempts" =~ ^[1-9][0-9]*$ ]] || {
+    echo "ODSH_DOWNLOAD_URL_ATTEMPTS must be a positive integer" >&2
+    return 2
+  }
   minimum_mibps=${ODSH_MIN_DOWNLOAD_MIBPS:-1.0}
   monitor_minimum_bytes=${ODSH_SPEED_MONITOR_MIN_BYTES:-67108864}
   monitor_warmup_seconds=${ODSH_LOW_SPEED_WARMUP_SECONDS:-15}
@@ -181,8 +204,16 @@ download_archive() {
     fi
     signed_url=$(signed_artifact_url "$artifact_id")
     transfer_status=0
-    if command -v aria2c >/dev/null; then
-      connections=${ODSH_DOWNLOAD_CONNECTIONS:-16}
+    connection_index=$((attempt - 1))
+    if [[ "$connection_index" -ge ${#connection_steps[@]} ]]; then
+      connection_index=$((${#connection_steps[@]} - 1))
+    fi
+    connections=${connection_steps[$connection_index]}
+    use_serial_curl=0
+    if [[ "$connections" == 1 && ${ODSH_DOWNLOAD_SERIAL_WITH_CURL:-1} != 0 ]]; then
+      use_serial_curl=1
+    fi
+    if command -v aria2c >/dev/null && [[ "$use_serial_curl" == 0 ]]; then
       aria_arguments=(
         --continue=true
         --auto-file-renaming=false
@@ -197,28 +228,35 @@ download_archive() {
         --out="$(basename "$archive")"
         "$signed_url"
       )
+      aria_command=(env -u ALL_PROXY -u all_proxy aria2c "${aria_arguments[@]}")
       if [[ "$speed_guard" == 1 ]]; then
         if node "$speed_monitor_script" \
           --minimum-mibps "$minimum_mibps" \
           --warmup-seconds "$monitor_warmup_seconds" \
           --window-seconds "$monitor_window_seconds" \
-          -- aria2c "${aria_arguments[@]}"; then
+          -- "${aria_command[@]}"; then
           :
         else
           transfer_status=$?
         fi
-      elif aria2c "${aria_arguments[@]}"; then
+      elif "${aria_command[@]}"; then
         :
       else
         transfer_status=$?
       fi
     else
-      curl_arguments=(--fail --location --retry 3 --retry-delay 2 --continue-at - --output "$archive")
+      # aria2 may leave a preallocated sparse file populated by non-contiguous
+      # ranges. curl can only resume a contiguous prefix, so keep an independent
+      # serial transfer and replace the aria2 payload only after curl succeeds.
+      serial_archive="$archive.curl"
+      curl_arguments=(--fail --location --retry 3 --retry-delay 2 --continue-at - --output "$serial_archive")
       if [[ "$speed_guard" == 1 ]]; then
         minimum_bytes_per_second=$(awk -v value="$minimum_mibps" 'BEGIN { printf "%.0f", value * 1048576 }')
         curl_arguments+=(--speed-limit "$minimum_bytes_per_second" --speed-time "$monitor_window_seconds")
       fi
       if curl "${curl_arguments[@]}" "$signed_url"; then
+        mv "$serial_archive" "$archive"
+        rm -f "$archive.aria2"
         :
       else
         transfer_status=$?
@@ -228,6 +266,16 @@ download_archive() {
       echo "download stopped because speed remained below $minimum_mibps MiB/s; resumable data is preserved" >&2
       echo "switch network/proxy/node and retry, or ask the user to choose a different ODSH_MIN_DOWNLOAD_MIBPS value" >&2
       return 75
+    fi
+    if [[ "$transfer_status" != 0 ]]; then
+      next_attempt=$((attempt + 1))
+      if [[ "$next_attempt" -le "$max_attempts" ]]; then
+        next_index=$((next_attempt - 1))
+        if [[ "$next_index" -ge ${#connection_steps[@]} ]]; then
+          next_index=$((${#connection_steps[@]} - 1))
+        fi
+        echo "artifact $artifact_name transport attempt $attempt/$max_attempts failed with status $transfer_status; refreshing its signed URL and retrying with ${connection_steps[$next_index]} connection(s)" >&2
+      fi
     fi
     attempt=$((attempt + 1))
   done
@@ -332,7 +380,7 @@ for index in "${!run_ids[@]}"; do
 $(find "$release_directory" -type f -name "$filename" -print)
 EOF
     [[ -n "$source_path" && -f "$source_path" ]] || { echo "workflow run $run_id is missing $filename" >&2; exit 1; }
-    expected_hash=$(awk -v name="$filename" '$2 == name || $2 == "*" name { print $1 }' "$checksum_file")
+    expected_hash=$(awk -v name="$filename" '$2 == name || $2 == "*" name || $2 == "./" name || $2 == "*./" name { print $1 }' "$checksum_file")
     [[ $(printf '%s\n' "$expected_hash" | sed '/^$/d' | wc -l | tr -d ' ') == 1 ]] || {
       echo "workflow checksum entry is missing or ambiguous for $filename" >&2
       exit 1
@@ -353,7 +401,16 @@ LC_ALL=C sort -k2,2 "$combined_checksums" > "$final_directory/SHA256SUMS"
 ODSH_VERIFY_DMG=${ODSH_VERIFY_DMG:-1} "$script_directory/verify-release-directory.sh" ${verify_args[@]+"${verify_args[@]}"} "$final_directory"
 
 mkdir -p "$(dirname "$output_directory")"
+if [[ -e "$output_directory" ]]; then
+  chmod u+w "$output_directory"
+  archive_root="$(dirname "$output_directory")/.archive"
+  mkdir -p "$archive_root"
+  archived_output="$archive_root/$version-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  mv "$output_directory" "$archived_output"
+  echo "archived previous release handoff at $archived_output"
+fi
 mv "$final_directory" "$output_directory"
+chmod a-w "$output_directory"
 completed=1
 printf 'source SHA: %s\n' "$common_head_sha"
 printf 'bundled-plugin snapshot: %s\n' "$common_snapshot_digest"

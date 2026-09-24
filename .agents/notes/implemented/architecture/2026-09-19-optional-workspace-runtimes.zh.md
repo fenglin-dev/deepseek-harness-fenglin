@@ -1,0 +1,33 @@
+# Agent Note：可选工作运行时的所有权
+
+Status: implemented
+
+[English](2026-09-19-optional-workspace-runtimes.md) | 中文
+
+## 问题
+
+Desktop 过去把 Python 与 Office 依赖视为安装包资源。这会让每个安装包承担对应平台的载荷体积，把 Office Skill 绑定到私有 Desktop Host 的提前安装路径，也无法让不同 Profile 独立选择是否开放 Python 代码执行。如果复用插件安装来替代，又会向渲染层暴露任意包坐标，并把可执行运行时生命周期与 Profile 包生命周期混在一起。
+
+## 决策
+
+`OptionalRuntimeManager` 是 Electron 主进程中负责可选工作运行时的深 module。只有它可以解析经过签名、与版本和目标绑定的元数据，通过应用网络路径下载、续传部分文件、校验声明大小、执行 tar 策略、原子解压、拥有共享的 `userData/optional-runtimes` 缓存，并为规范化 Harness home 记录引用。托管 Python 归档必须通过 SHA-256，官方 npm Office 引擎必须通过 npm SHA-512 integrity、包名和版本校验才能暂存。其能力接口仍只接受闭合的 `office` 与 `ptc`。受信任的原生选择器可以选择本机解释器；渲染层绝不提供 URL、可执行文件路径、归档或包坐标。
+
+托管 Python 载荷针对 Windows x64、macOS arm64/x64 与 Linux x64 发布在独立的 `hecoococ/open-dsh-runtime-assets` 仓库。版本化清单根据这些不可变的 Release 字节与不可变的官方 `@deepseek-ai/libreoffice-kit-*` npm 归档重新生成，再由仅允许 master 的 Desktop 工作流进行证明。Desktop Release 及其 CNB 镜像只携带签名清单，不携带任一运行时载荷。安装包继续携带 Node、pnpm、小型 `@deepseek-ai/dsh-host-workspace-runtime` adapter、LibreOffice kit API 与 Office Skill 资源，但不包含 Python 解释器、wheel、LibreOffice 引擎包或可选运行时归档。打包会从 Harness 闭包删除全部 `@deepseek-ai/libreoffice-kit-*` 引擎并拒绝任何残留。Desktop 把经过校验的目标 Office 包暂存到私有运行时 `node_modules`，并且只向已启用 Office 的 Profile 暴露它。
+
+Python 选择、Office 与 PTC 是三种独立状态。`PythonEnvironment` 解析符号链接，接受 CPython 3.10+，校验 pip，并记录架构和 site-packages，再规划精确的 Office 分发包变更。纯新增计划可以继续；变更已安装版本必须显式确认，并通过对应解释器的 `python -m pip` 执行，继承其 pip 配置。Office 只在依赖一致后挂载 adapter 与 Office Skill。PTC 挂载所选解释器，在 Windows 上保持不可用，并要求独立风险确认。
+
+启用和停用进入现有 Desktop Profile 启动事务。在普通客户端与事件分发正常就绪、候选 Profile 提交之前，manager 会保留等待状态。候选启动失败时保留原 Profile 和已经校验的缓存。只有最后一个引用消失后才清理载荷；清理失败会继续保持等待，不能静默重新启用一个已经无人引用的载荷。NAS 只展示不可用状态，因为本决策不扩展远程安装协议。
+
+## 考虑过的替代方案
+
+**继续内置 Python。** 拒绝，因为它会永久增加每个平台安装包的体积，也不给用户独立启用的选择。
+
+**通过 `PluginInstallRequest` 安装 Python。** 拒绝，因为运行时归档拥有不同的校验、共享缓存、续传与清理语义。把它伪装成插件会扩大渲染层权限并模糊所有权。
+
+**在 Electron 偏好中保存一个启用开关。** 拒绝，因为切换 `DSH_HOME` 会让能力状态泄漏到相互独立的 Profile，并使安全卸载无法实现。
+
+**Profile 文件首次激活时立即提交状态。** 拒绝，因为候选 Profile 在渲染层就绪前仍可能失败并回滚。运行时状态必须与 Profile 事务使用同一个经过证明的就绪边界。
+
+## 结果
+
+桌面安装包不再携带 Python 载荷和 LibreOffice 引擎；首次启用 Office 或 PTC 时会下载匹配的可选载荷。桌面升级可把旧载荷标记为需要更新，而不会在新载荷通过校验前销毁它。发布完成条件包含运行时资产仓库中的四份 Python 归档、四个固定版本的官方 npm Office 包可用、签名 Desktop 清单与 CNB 元数据镜像刷新。原生 Office smoke 以及 macOS/Linux PTC smoke 仍属于发布平台职责；聚焦单元测试、真实组合测试、闭包门禁和打包策略测试不能替代它们。

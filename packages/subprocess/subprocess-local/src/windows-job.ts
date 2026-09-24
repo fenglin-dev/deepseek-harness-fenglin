@@ -243,6 +243,7 @@ export function launchWindowsJob(
   })
 
   return {
+    ...(child.pid === undefined ? {} : { rootPid: child.pid }),
     stdin: spec.stdio.stdin === 'ignore' ? null : targetStdin,
     stdout: child.stdio[5] as Readable | null,
     stderr: child.stdio[6] as Readable | null,

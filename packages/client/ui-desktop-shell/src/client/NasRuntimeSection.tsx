@@ -164,7 +164,7 @@ export function NasRuntimeSection({ bridge, t }: NasRuntimeSectionProps) {
           }}><span>{candidate.name}</span><code>{candidate.baseUrl}</code></button>)}
           <p>{t('nas.discovery.untrusted')}</p>
         </div>}
-        <label className={css.field}><span>{t('nas.address')}</span><input value={pairing.draft.baseUrl} placeholder="https://harness.example.com" onChange={(event) => { pairingCeremony.send({ type: 'edit', field: 'baseUrl', value: event.target.value }) }} /></label>
+        <label className={css.field}><span>{t('nas.address')}</span><input value={pairing.draft.baseUrl} placeholder={t('nas.address.placeholder')} onChange={(event) => { pairingCeremony.send({ type: 'edit', field: 'baseUrl', value: event.target.value }) }} /></label>
         <label className={css.field}><span>{t('nas.deviceName')}</span><input value={pairing.draft.deviceName} maxLength={80} onChange={(event) => { pairingCeremony.send({ type: 'edit', field: 'deviceName', value: event.target.value }) }} /></label>
         <label className={css.field}><span>{t('nas.code')}</span><input value={pairing.draft.code} inputMode="numeric" autoComplete="one-time-code" maxLength={9} onChange={(event) => { pairingCeremony.send({ type: 'edit', field: 'code', value: event.target.value }) }} /></label>
         <div className={css.actions}><Button variant="outline" disabled={busy !== undefined || !pairing.canInspect} onClick={() => { clearMessage(); void pairingCeremony.inspect() }}>{pairing.stage.phase === 'inspecting' ? t('nas.inspecting') : t('nas.inspect')}</Button></div>

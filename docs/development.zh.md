@@ -28,18 +28,42 @@
 在仓库根目录安装依赖：
 
 ```sh
-pnpm install
+node scripts/install-dependencies.mjs
 ```
+
+公开 npm 包可以通过 `registry.npmjs.org` 或 `registry.npmmirror.com` 解析。安装器先尝试当前配置的公共 registry；该次失败后，会切换到另一个公共 registry 重试一次。自定义 registry 可能承载私有包或认证，因此不会被自动替换。锁文件保留精确包版本和 SHA-512 integrity，但省略来自两个公共 registry 的普通 tarball URL，使任一公共 registry 都可以提供通过同一内容校验的文件。非标准 tarball 主机仍需显式记录并固定 integrity；内容不一致时，pnpm 会在运行生命周期脚本前失败。`pnpm run verify-lockfile-registry-portability` 负责检查这项规则。
 
 安装过程还会通过 `scripts/install-lefthook.mjs` 配置 worktree 本地的 Lefthook 钩子和 `dsh-translation-pairing` Git 合并驱动。[worktree 本地钩子 Agent Note](../.agents/notes/implemented/process/2026-07-27-worktree-local-lefthook.zh.md) 负责钩子路径的安全约定；[自动配对合并 Agent Note](../.agents/notes/implemented/process/2026-08-08-automatic-translation-pairing-merges.zh.md) 负责合并驱动。
 
-如果依赖是从缓存恢复或 `postinstall` 被跳过而导致任一集成缺失，请手动安装：
+如果手动执行依赖操作后缺少任一 Git 集成，请单独安装：
 
 ```sh
 node scripts/install-lefthook.mjs
 ```
 
 如果包装脚本拒绝现有 Git 配置或报告陈旧锁，请遵循其诊断和所链接的 Agent Note，不要凭猜测编辑 worktree 元数据。移动检出目录后，请重新运行包装脚本以重新生成自有路径。
+
+### 链接 worktree 的依赖
+
+Git 链接 worktree 拥有独立且被忽略的 `node_modules` 布局，但 pnpm 会复用共享的内容寻址 store。使用冻结的锁文件初始化该布局，并避免再次运行依赖生命周期脚本：
+
+```sh
+node scripts/setup-worktree.mjs
+```
+
+默认的 worktree 搭建会优先使用本地 store，并在需要获取内容或元数据时使用相同的公共 registry 回退。无法访问 registry 时可使用严格离线模式；它会把 pnpm 的所有 registry 与代理请求指向已关闭的本机回环端点，并关闭重试。pnpm 11 的锁文件策略复核原本仍需要 registry 元数据，因此这个显式模式会信任仓库已提交且冻结的锁文件，并仅从本地 store 物化依赖；默认搭建模式的安全策略不会因此降低。只有全部所需依赖包都已存在于本地 store 中时，离线搭建才会成功：
+
+```sh
+node scripts/setup-worktree.mjs --offline
+```
+
+如果 workspace 布局变化导致 pnpm 拒绝运行，请执行仅依赖 Node 的诊断脚本。它会读取检出目录、锁文件、pnpm workspace 状态、当前工具版本与本地 store 路径，不修改 Git 或依赖：
+
+```sh
+node scripts/worktree-doctor.mjs
+```
+
+两种 worktree 搭建模式都会在依赖链接成功后配置本 worktree 的 Git 集成。不要在 worktree 之间共享或软链接 `node_modules`，因为 workspace 包链接必须解析到实际执行命令的检出目录。
 
 新克隆后请先运行一次类型检查：
 
@@ -87,7 +111,7 @@ pnpm run build:web
 
 Typert 只在 Host tsdown 中以 `tsconfig.host.json` 为种子运行。它分析 Host 类型并生成 Host 反射产物及 Host-for-Client Remote 投影；Client tsdown 不启动 Typert。`pnpm run typecheck` 因此先执行完整 Host lib 阶段，再运行 Client tsc；`pnpm run build` 继续执行 Client tsdown 和 Web 构建。
 
-`pnpm run build` 会内联根包版本、七位源码 commit，并在 Git 报告本地变化时内联 dirty 标记；调用方提供的其他 `DSH_CLIENT_*` 值也会被继承。`pnpm run build:official` 是与 CI 和 release 产物构建等价的跨平台本地命令，并省略本地 dirty 标记。每次完整构建成功后都会写入一份被 gitignore 的记录，把精确公开值与 Vite 输出及动态 client bundle 绑定；release 打包和 built Web 测试会拒绝缺少记录或被后续局部构建改动的产物。`pnpm run dev:web` 仍需要先执行完整构建来准备产物树，但会在启动时读取一次当前版本和 Git 状态，并在本次会话的所有 watcher stage 之间共享该环境；它不会校验完整构建记录，因为 watcher stage 会重写记录覆盖的产物。
+`pnpm run build` 会内联根包版本、七位源码 commit，并在 Git 报告本地变化时内联 dirty 标记；调用方提供的其他 `DSH_CLIENT_*` 值也会被继承。`pnpm run build:official` 是与 CI 和 release 产物构建等价的跨平台本地命令，并省略本地 dirty 标记。每次完整构建成功后都会写入一份被 gitignore 的记录，把精确公开值与 Vite 输出及动态 client bundle 绑定；release 打包和 built Web 测试会拒绝缺少记录或被后续局部构建改动的产物。`pnpm run dev:web` 会先执行这次完整构建（`--skip-build` 则复用现有产物树），再读取一次当前版本和 Git 状态，并在本次会话的所有 watcher stage 之间共享该环境；它不会校验完整构建记录，因为 watcher stage 会重写记录覆盖的产物。
 
 静态分析和测试通过 base 的 `paths` 映射把工作区 import 解析到 `src`，且必须在干净树上通过；消费构建产物 `lib/` 的门禁显式声明该依赖。生成的 Host-for-Client Remote 声明是有意设置的例外：公共 `typecheck`、`lint` 和 `doc-typecheck` 命令会先生成这些声明，而内部 `*:contracts-ready` 脚本假定调用它的公共命令或调度器门禁已经依赖 Typert 约定生成阶段或完整构建。tsc-first 发射职责见 [ts-build-config Note](../.agents/notes/implemented/process/2026-06-17-ts-build-config.zh.md)，门禁准备约定见 [Typert Remote Agent Note](../.agents/notes/implemented/architecture/2026-08-02-typert-remote-method-calls.zh.md)。
 
@@ -157,6 +181,19 @@ PTC mode 演示启用代码式工具展示，并运行同一个 headless profile
 ```sh
 pnpm run demo:ptc -- "summarize this workspace"
 ```
+
+### 应用命令
+
+Web 与 Desktop 共用同一对命令。`start:*` 启动上一次 `pnpm run build` 的产物；`dev:*` 先执行该构建再启动。Web 还会在源码修改时持续重建 client bundle，因为它的 Host 从源码运行，而浏览器加载的是构建产物：
+
+```sh
+pnpm run start:web       # serve built Web artifacts through the source launcher (the same launch as pnpm dsh web)
+pnpm run dev:web         # build, serve, and rebuild Web client bundles on source edits
+pnpm run start:desktop   # launch built Desktop artifacts
+pnpm run dev:desktop     # build, then launch Desktop
+```
+
+Web 命令后面的参数会传给 `dsh web`，例如 `pnpm run dev:web --no-open --port 3081`；`dev:web` 还接受 `--skip-build` 复用现有产物树，以及 `--no-serve` 只运行重建 watcher、配合别处启动的服务器。两个 Web 命令使用正常的 Harness home，而 Desktop 命令使用 [Desktop README](../apps/desktop/README.zh.md) 描述的隔离开发 home。根目录 `Makefile` 以 `make web`、`make dev-web`、`make desktop`、`make dev-desktop` 和 `make build` 命名同一套命令；`ARGS='--no-open'` 用于转发参数。
 
 ### TODO 标记
 

@@ -1,11 +1,2 @@
-- button "Choose workspace":
-  - img
-  - text: workspace
-  - img
-- button "Standard mode":
-  - img
-  - text: Standard mode
-  - img
-- button "Explore plugins 5":
-  - img
-  - text: Explore plugins 5
+- button "Choose workspace": workspace
+- button "Standard mode"

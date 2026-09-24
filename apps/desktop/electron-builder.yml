@@ -7,6 +7,7 @@ directories:
   output: ../../.artifacts/desktop-windows
 files:
   - lib/**/*
+  - scripts/primary-runtime-lock.json
   - package.json
   # pnpm peerDependencies are not packed automatically; desktop main imports
   # dsh-subprocess which requires these at runtime.
@@ -37,6 +38,10 @@ extraResources:
     to: runtime
     filter:
       - "**/*"
+  - from: ../../.artifacts/workspace-runtime/DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz
+    to: workspace-runtime/DeepSeek-Harness-workspace-runtime-win32-x64.tar.gz
+  - from: ../../.artifacts/workspace-runtime/workspace-runtime-win32-x64.json
+    to: workspace-runtime/workspace-runtime-win32-x64.json
   - from: build/cli-bin
     to: cli-bin
     filter:

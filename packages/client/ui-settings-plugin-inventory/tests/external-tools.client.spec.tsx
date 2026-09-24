@@ -35,6 +35,20 @@ function props(overrides: Partial<ExternalToolsSectionInjected> = {}): ExternalT
     getInstallOutput: async () => { throw new Error('unexpected output poll') },
     pauseInstall: async () => { throw new Error('unexpected pause') },
     cancelInstall: async () => { throw new Error('unexpected cancel') },
+    getWorkspaceRuntimes: async () => ({
+      currentHome: '/test/dsh-home', target: 'darwin-arm64',
+      capabilities: {
+        office: { capabilityId: 'office', phase: 'not-installed' },
+        ptc: { capabilityId: 'ptc', phase: 'not-installed' },
+      },
+    }),
+    startWorkspaceRuntime: async () => { throw new Error('unexpected workspace-runtime install') },
+    getWorkspaceRuntimeJob: async () => { throw new Error('unexpected workspace-runtime poll') },
+    readWorkspaceRuntimeOutput: async () => { throw new Error('unexpected workspace-runtime output poll') },
+    pauseWorkspaceRuntime: async () => { throw new Error('unexpected workspace-runtime pause') },
+    cancelWorkspaceRuntime: async () => { throw new Error('unexpected workspace-runtime cancel') },
+    activateWorkspaceRuntime: async () => { throw new Error('unexpected workspace-runtime activation') },
+    removeWorkspaceRuntime: async () => { throw new Error('unexpected workspace-runtime removal') },
     restart: async () => false,
     activateAutoReview: async () => 'no-session',
     ...overrides,
@@ -51,7 +65,14 @@ describe('ExternalToolsSection download progress', () => {
     expect(screen.getByRole('heading', { name: 'Computer Use' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Auto review' })).toBeTruthy()
     const capabilityGrid = screen.getByTestId('experimental-capability-grid')
+    const runtimeGrid = screen.getByTestId('workspace-runtime-grid')
     const externalGrid = screen.getByTestId('external-tools-grid')
+    expect(screen.getByRole('heading', { name: en['external.runtime.title'] })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: en['external.runtime.office.title'] })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: en['external.runtime.ptc.title'] })).toBeTruthy()
+    expect(screen.getByText(/Quick restart downloads the experimental adapter from npm/u)).toBeTruthy()
+    expect(capabilityGrid.compareDocumentPosition(runtimeGrid) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(runtimeGrid.compareDocumentPosition(externalGrid) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
     expect(capabilityGrid.compareDocumentPosition(externalGrid) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
 
     fireEvent.click(screen.getAllByRole('button', { name: en['external.capability.action.configure'] })[0]!)

@@ -16,7 +16,7 @@ const win = globalThis as DshWindow
 const transportGlobal = globalThis as {
   __DSH_TRANSPORT__?: { loadBundle(url: string): Promise<void> }
 }
-const moduleFace = modulesClient as unknown as Record<string, unknown>
+const moduleFace = modulesClient as Record<string, unknown>
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -78,12 +78,12 @@ describe('bootstrap failure rendering', () => {
     const target = installFacade()
     win.__DSH_BOOT__ = {
       rev: 'graph',
-      entries: [{ id: 'broken', url: '/broken.js', rev: '1' }],
-      batches: [{ phase: 'application', url: '/application.js', rev: '1', entries: ['broken'] }],
+      entries: [{ id: '@deepseek-ai/broken', url: '/broken.js', rev: '1' }],
+      batches: [{ phase: 'application', url: '/application.js', rev: '1', entries: ['@deepseek-ai/broken'] }],
     }
     const entry = new AppWebEntry(container, {
       loadBundle: async () => {
-        target.load({ id: 'broken', factory: () => ({ apply() { throw new Error('plugin activation failed') } }) })
+        target.load({ id: '@deepseek-ai/broken', factory: () => ({ apply() { throw new Error('plugin activation failed') } }) })
       },
     })
     const report = vi.fn<(reason: unknown) => void>()

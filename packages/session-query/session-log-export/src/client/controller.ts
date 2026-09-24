@@ -2,15 +2,18 @@
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SESSION_LOG_EXPORT_ROUTE } from '../routes.ts'
 
 /** Download phases presented by the shared modal. */
-export type SessionLogDownloadStatus = 'downloading' | 'success' | 'error'
+export type SessionLogDownloadStatus = 'confirming' | 'downloading' | 'success' | 'error'
 
 /** One Session's current download-dialog state. */
 export interface SessionLogDownloadEntry {
   readonly open: boolean
   readonly status: SessionLogDownloadStatus
   readonly error: string | null
+  readonly includeCustomInstructions?: boolean
+  readonly remember?: boolean
 }
 
 /** Download states keyed by the Session whose Header owns the dialog. */
@@ -18,8 +21,15 @@ export interface SessionLogDownloadState {
   bySession: Record<string, SessionLogDownloadEntry | undefined>
 }
 
+/** HTTP carrier for the export route. */
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
 type Save = (url: string, filename: string) => void
+
+/** Remembered plaintext-disclosure policy supplied by trusted Settings UI. */
+export interface SessionLogExportPrivacy {
+  getPreference: () => 'ask' | 'include' | 'exclude'
+  setPreference: (preference: 'include' | 'exclude') => Promise<void>
+}
 
 const INITIAL: SessionLogDownloadState = { bySession: {} }
 
@@ -33,8 +43,9 @@ export function sessionLogZipFilename(sessionId: SessionId): string {
 }
 
 /**
- * Hand a Host download URL to the browser download manager.
- * @param url - same-origin Host download URL.
+ * Hand a Host download route to the browser download manager, which resolves it
+ * against the document's own base.
+ * @param url - document-relative Host download route.
  * @param filename - browser download filename.
  */
 export function downloadUrl(url: string, filename: string): void {
@@ -42,12 +53,6 @@ export function downloadUrl(url: string, filename: string): void {
   anchor.href = url
   anchor.download = filename
   anchor.click()
-}
-
-/** Resolve the browser's Host base with the connection carrier's null-origin fallback. */
-function hostBase(): string {
-  const origin = (globalThis as { location?: { origin?: string } }).location?.origin
-  return origin !== undefined && origin !== 'null' ? origin : 'http://dsh.internal'
 }
 
 function messageOf(error: unknown): string {
@@ -69,6 +74,7 @@ export class SessionLogDownloadController {
   constructor(
     private readonly fetcher: Fetch = (input, init) => fetch(input, init),
     private readonly save: Save = downloadUrl,
+    private readonly privacy?: SessionLogExportPrivacy,
   ) {}
 
   /**
@@ -77,11 +83,62 @@ export class SessionLogDownloadController {
    * @returns after the browser save starts, an error state is published, or a late post-disposal request is ignored.
    */
   download(sessionId: SessionId): Promise<void> {
+    const preference = this.privacy?.getPreference()
+    if (preference === 'ask') {
+      this.publish(sessionId, {
+        open: true,
+        status: 'confirming',
+        error: null,
+        includeCustomInstructions: false,
+        remember: false,
+      })
+      return Promise.resolve()
+    }
+    return this.start(sessionId, preference === 'include')
+  }
+
+  /**
+   * Change the one-shot disclosure choice while the confirmation is open.
+   * @param sessionId - Session whose confirmation is being edited.
+   * @param include - whether this export should retain custom-prompt plaintext.
+   */
+  setIncludeCustomInstructions(sessionId: SessionId, include: boolean): void {
+    const current = this.store.getSnapshot().bySession[String(sessionId)]
+    if (current?.status !== 'confirming') return
+    this.publish(sessionId, { ...current, includeCustomInstructions: include })
+  }
+
+  /**
+   * Remember (or stop remembering) the current disclosure choice.
+   * @param sessionId - Session whose confirmation is being edited.
+   * @param remember - whether to persist the exact include/exclude selection.
+   */
+  setRemember(sessionId: SessionId, remember: boolean): void {
+    const current = this.store.getSnapshot().bySession[String(sessionId)]
+    if (current?.status !== 'confirming') return
+    this.publish(sessionId, { ...current, remember })
+  }
+
+  /**
+   * Accept the disclosure dialog and begin the Host download.
+   * @param sessionId - Session whose confirmed export should start.
+   */
+  async confirm(sessionId: SessionId): Promise<void> {
+    const current = this.store.getSnapshot().bySession[String(sessionId)]
+    if (current?.status !== 'confirming') return
+    const include = current.includeCustomInstructions === true
+    if (current.remember === true) {
+      await this.privacy?.setPreference(include ? 'include' : 'exclude')
+    }
+    await this.start(sessionId, include)
+  }
+
+  private start(sessionId: SessionId, includeCustomInstructions: boolean): Promise<void> {
     const existing = this.active.get(sessionId)
     if (existing !== undefined) return existing.done
     if (this.disposed) return Promise.resolve()
     const abort = new AbortController()
-    const done = this.run(sessionId, abort.signal).finally(() => {
+    const done = this.run(sessionId, includeCustomInstructions, abort.signal).finally(() => {
       this.active.delete(sessionId)
     })
     this.active.set(sessionId, { abort, done })
@@ -109,18 +166,19 @@ export class SessionLogDownloadController {
     await Promise.allSettled(active.map(operation => operation.done))
   }
 
-  private async run(sessionId: SessionId, signal: AbortSignal): Promise<void> {
+  private async run(sessionId: SessionId, includeCustomInstructions: boolean, signal: AbortSignal): Promise<void> {
     this.publish(sessionId, { open: true, status: 'downloading', error: null })
     try {
-      const url = new URL('/api/session.export', hostBase())
-      url.searchParams.set('sessionId', sessionId)
-      url.searchParams.set('includeDescendants', 'true')
-      const response = await this.fetcher(url, { method: 'HEAD', signal })
+      const query = new URLSearchParams({
+        sessionId, includeDescendants: 'true', includeCustomInstructions: String(includeCustomInstructions),
+      })
+      const route = `${SESSION_LOG_EXPORT_ROUTE}?${query.toString()}`
+      const response = await this.fetcher(route, { method: 'HEAD', signal })
       if (!response.ok) {
         const detail = await response.text().catch(() => '')
         throw new Error(`Export failed: HTTP ${response.status}${detail === '' ? '' : ` ${detail}`}`)
       }
-      this.save(url.toString(), sessionLogZipFilename(sessionId))
+      this.save(route, sessionLogZipFilename(sessionId))
       const open = this.store.getSnapshot().bySession[String(sessionId)]?.open ?? true
       this.publish(sessionId, { open, status: 'success', error: null })
     } catch (error: unknown) {

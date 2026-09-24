@@ -23,7 +23,17 @@ function bench(
     )
   }
   const t = (key: keyof typeof en): string => en[key]
-  const props = { sessionId: SID, useSessionLogDownload, dismiss, t } as unknown as SessionLogDownloadDialogProps
+  const props = {
+    sessionId: SID,
+    useSessionLogDownload,
+    dismiss,
+    setIncludeCustomInstructions: (sessionId: SessionId, include: boolean) => {
+      controller.setIncludeCustomInstructions(sessionId, include)
+    },
+    setRemember: (sessionId: SessionId, remember: boolean) => { controller.setRemember(sessionId, remember) },
+    confirm: (sessionId: SessionId) => controller.confirm(sessionId),
+    t,
+  } as unknown as SessionLogDownloadDialogProps
   const view = render(<SessionLogDownloadDialog {...props} />)
   return { controller, dismiss, view }
 }
@@ -31,6 +41,23 @@ function bench(
 afterEach(cleanup)
 
 describe('SessionLogDownloadDialog', () => {
+  it('shows both privacy choices and warns before remembering plaintext inclusion', async () => {
+    const controller = new SessionLogDownloadController(
+      async () => new Response('zip'), vi.fn(),
+      { getPreference: () => 'ask', setPreference: vi.fn(async () => undefined) },
+    )
+    const b = bench(controller)
+    await controller.download(SID)
+    expect(await b.view.findByRole('dialog', { name: 'Export conversation diagnostics' })).toBeTruthy()
+    fireEvent.click(b.view.getByRole('checkbox', { name: 'Include custom-prompt plaintext' }))
+    fireEvent.click(b.view.getByRole('checkbox', { name: 'Do not ask again; remember this choice' }))
+    expect(b.view.getByRole('alert').textContent).toContain('automatically contain prompt plaintext')
+    fireEvent.click(b.view.getByRole('button', { name: 'Export' }))
+    await waitFor(() => {
+      expect(controller.store.getSnapshot().bySession[SID]?.status).toBe('success')
+    })
+  })
+
   it('shows a controller failure and closes it without reading Session history', async () => {
     const b = bench()
     act(() => {

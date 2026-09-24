@@ -44,6 +44,8 @@ dsh --help                          # the launcher's own help
 
 profile 目录包含一个 `package.json`，其中记录树外插件依赖，以及 profile manifest（元数据清单）`dsh.profile`、其中按顺序排列的 `bundles` 列表；还包含一个 `cordis.patch.yml`，其中保存用户自己的 patch 层。在 YAML 中启用的 `dsh-hmr` 监视 profile manifest、profile 与 home 级 patch 文件，再通过统一串行重载重新组合所有层。未启用 HMR 时，更改在重启后生效。监听器注册期间发生的编辑与后续编辑使用相同的非致命重载错误报告。[插件管理器](../../packages/boot/plugin-manager/README.zh.md) 与 `dsh plugin` 共享包操作和 profile 写锁；更新依赖会保留已停用的组合包选择。CLI 包操作继承认证环境和终端描述符，支持交互式构建批准；service 调用保留清理后的环境并捕获诊断。
 
+安装和 profile 启动会按声明的 DSH peer 范围，检查与 `dsh --version` 显示值相同的运行时版本。不兼容插件需要用户明确确认精确版本豁免。[插件管理器的兼容性参考](../../packages/boot/plugin-manager/README.zh.md#version-compatibility-and-exemptions)说明 `version-exemptions`、`allow-version`、`revoke-version`、持久化规则与风险。
+
 配置树以空根为起点，依次叠加以下配置层：
 - `dsh.profile.bundles` 中各组合包的 patch
 - profile 自身的 `cordis.patch.yml`，然后是 home 级的 `$DSH_HOME/cordis.patch.yml`
@@ -51,19 +53,7 @@ profile 目录包含一个 `package.json`，其中记录树外插件依赖，以
 
 `dsh.profile.bundles` 中列出的组合包先从 dsh 安装目录解析（`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`@deepseek-ai/dsh-headless`、`@deepseek-ai/dsh-sdk-app`、`@deepseek-ai/dsh-sdk-minimal`、`@deepseek-ai/dsh-acp-app`），再从 profile 自身的 `node_modules` 解析；pnpm 会将树外插件安装到该目录。
 
-profile 开始组合前，启动器会检查身份敏感的 Host 包是否被插件安装了影子副本。兼容的声明会通过 Harness 管理的 pnpm `link:` override 收敛到安装目录自有副本；不兼容或收敛后仍冲突的根插件会从活动 profile 移除，并记录到 `$DSH_HOME/quarantine/profile-plugins.json`。如果收敛或隔离仍无法得到干净依赖树，启动会失败，而不会加载混合运行时。`dsh plugin` 改动后也会运行相同检查，因此 Electron、`dsh web` 与其他 profile 启动路径共享同一策略。
-
-在 Windows 上，杀毒软件或文件索引服务短暂占用 pnpm 生成的 `node_modules/*_tmp_<pid>_<sequence>` 目录时，pnpm 的原子目录替换可能失败。`dsh plugin` 只会针对这种特定的 `ERR_PNPM_EPERM` rename 错误执行 3 次有界退避重试。其他权限错误仍会直接失败；如果目标目录在用完重试次数后依然被占用，命令会继续报告 pnpm 的原始诊断，便于用户停止占用文件的进程。
-
-不带选项的 `doctor` 只读运行：健康时退出 `0`，存在冲突时退出 `2`。`--repair` 在无损收敛后退出 `10`，发生隔离后退出 `11`，无法令 profile 安全时退出 `1`。可用 `doctor --retry <quarantine-id>` 重试隔离插件；只有普通健康策略成功时，才会保留其原始依赖说明符与 bundle 位置。
-
-市场自行发起的命令不继承桌面事务授权：它们在写锁保护下同步修改活动 Profile，并保留自动快照。桌面管理的 Web 启动轮次携带独立启动标记；继承标记的同目录 Web 替代进程直接退出，不启动第二个服务，由 Supervisor 负责重启。
-
-插件命令将执行结果保留为进程退出码，并等待 Node 完成待处理输出和原生句柄收尾后退出。
-
-插件命令和普通启动会在依赖诊断前准备安装目录自有的模块回退映射。因此，新 Profile 在首次启动前就能解析内置 Host 服务；无法解析的第三方依赖仍按常规规则诊断。
-
-使用 `--dump-default-config` 和 `--dump-config` 可在不启动的情况下检查组合后的配置树。
+使用 `--dump-default-config` 和 `--dump-config` 可在不启动的情况下检查组合后的配置树。`--dump-config-schema` 会导入组合树中插件声明的 schema，并打印描述 entry 与 patch 的 JSON Schema，而不是配置值；检查不受信任的插件前，请阅读 [schema dump 的安全性与范围](reference/README.zh.md#config-schema-dump)。
 
 层的确切优先级、flag、关闭行为、部署默认值和源码执行方式，以 [CLI 行为参考](reference/README.zh.md)为准。[启动与重载失败表](../../packages/boot/app-boot/README.zh.md#startup-and-reload-failures)对比 optional、required 插件启动失败与配置 HMR 的行为。
 

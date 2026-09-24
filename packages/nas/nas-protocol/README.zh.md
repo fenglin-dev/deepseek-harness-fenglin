@@ -11,6 +11,8 @@ kind: "package-reference"
 
 `dsh-nas-protocol` 是 NAS 线路协议 v1 的唯一事实来源：固定 HTTP 方法与路由、健康和配对文档、已配对设备管理消息、构造以及运行时校验。NAS 运行端主机与 Desktop 网络代码是该 seam 上的两个 adapter。本包不包含传输、TLS、凭据、Electron 或 React 行为。
 
+**运行时不变量：**不发布配套组件。两个适配器都通过本包校验固定的 v1 线路文档；传输安全仍由各自的适配器负责。
+
 ## 目录
 
 - [使用本包](#use-this-package)

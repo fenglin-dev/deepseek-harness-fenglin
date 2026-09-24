@@ -23,10 +23,12 @@ import { initSync as initEsmLexer, parse as parseEsmImports } from 'es-module-le
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { loadOverlayPatches } from './index.ts'
 import {
   composeEntries,
   DEFAULT_PROFILE_BUNDLES,
   loadProfile,
+  OPTIONAL_BUNDLES,
   PROFILE_TEMPLATES,
   PROFILES_DIR,
   readProfileManifest,
@@ -706,10 +708,18 @@ export function inspectProfileDependencies(options: ProfileDependencyOptions): P
   return conflicts
 }
 
+/** An offered optional layer must be both declared and physically present in this installation. */
+function isInstallationOwnedOptionalBundle(options: ProfileDependencyOptions, packageName: string): boolean {
+  if (!OPTIONAL_BUNDLES.includes(packageName)) return false
+  const installation = readPackageManifest(options.installAnchor)
+  return installation.dependencies?.[packageName] !== undefined
+    && directPackageDir(options.installAnchor, packageName) !== undefined
+}
+
 /**
  * Find Loader bundles that are still composed but cannot be managed or removed by pnpm.
- * Only the active profile template's installation-owned layers are excluded;
- * separately installed official plugins remain dependency-managed like every other plugin.
+ * Exclude the active template and optional layers proven to belong to this
+ * installation; separately installed official plugins remain dependency-managed.
  * @param options - profile, installation anchor, and optional Harness home.
  * @returns orphaned third-party bundles in Loader order.
  */
@@ -722,7 +732,9 @@ export function inspectOrphanedProfileBundles(options: ProfileDependencyOptions)
   const installationOwned = new Set(PROFILE_TEMPLATES[options.profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
   const issues: OrphanedProfileBundle[] = []
   for (const [bundleIndex, packageName] of bundles.entries()) {
-    if (installationOwned.has(packageName) || dependencies[packageName] !== undefined) continue
+    if (installationOwned.has(packageName)
+      || isInstallationOwnedOptionalBundle(options, packageName)
+      || dependencies[packageName] !== undefined) continue
     const packageDir = directPackageDir(join(profileDir, 'package.json'), packageName)
       ?? directPackageDir(options.installAnchor, packageName)
     if (packageDir === undefined) {
@@ -804,13 +816,15 @@ export function inspectProfileLoaderEntryCollisions(
   }>()
   for (const layer of profile.layers) {
     if (!installationOwned.has(layer.packageName)) continue
-    for (const entry of enabledInsertedLoaderEntries(layer.patches)) {
-      if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
-      shippedById.set(entry.id, {
-        packageName: layer.packageName,
-        moduleName: entry.name,
-        patchPath: layer.patchPath,
-      })
+    for (const patchPath of layer.patchPaths) {
+      for (const entry of enabledInsertedLoaderEntries(loadOverlayPatches(options.binName, patchPath))) {
+        if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
+        shippedById.set(entry.id, {
+          packageName: layer.packageName,
+          moduleName: entry.name,
+          patchPath,
+        })
+      }
     }
   }
   const collisions = new Map<string, ProfileLoaderEntryCollision>()
@@ -818,21 +832,23 @@ export function inspectProfileLoaderEntryCollisions(
     if (installationOwned.has(layer.packageName)
       || dependencies[layer.packageName] === undefined
       || !bundles.has(layer.packageName)) continue
-    for (const entry of enabledInsertedLoaderEntries(layer.patches)) {
-      if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
-      const shipped = shippedById.get(entry.id)
-      if (shipped === undefined) continue
-      const collision: ProfileLoaderEntryCollision = {
-        profile: options.profile,
-        rootPackage: layer.packageName,
-        entryId: entry.id,
-        moduleName: entry.name,
-        patchPath: layer.patchPath,
-        installationPackage: shipped.packageName,
-        installationModuleName: shipped.moduleName,
-        installationPatchPath: shipped.patchPath,
+    for (const patchPath of layer.patchPaths) {
+      for (const entry of enabledInsertedLoaderEntries(loadOverlayPatches(options.binName, patchPath))) {
+        if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
+        const shipped = shippedById.get(entry.id)
+        if (shipped === undefined) continue
+        const collision: ProfileLoaderEntryCollision = {
+          profile: options.profile,
+          rootPackage: layer.packageName,
+          entryId: entry.id,
+          moduleName: entry.name,
+          patchPath,
+          installationPackage: shipped.packageName,
+          installationModuleName: shipped.moduleName,
+          installationPatchPath: shipped.patchPath,
+        }
+        collisions.set(`${collision.rootPackage}\0${collision.entryId}`, collision)
       }
-      collisions.set(`${collision.rootPackage}\0${collision.entryId}`, collision)
     }
   }
   return [...collisions.values()]
@@ -928,12 +944,14 @@ function profileBundleEntryOwnership(
     if (installationOwned.has(layer.packageName)
       || dependencies[layer.packageName] === undefined
       || !bundles.has(layer.packageName)) continue
-    for (const entry of insertedLoaderEntries(layer.patches)) {
-      if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
-      const key = `${entry.id}\0${entry.name}`
-      const candidates = origins.get(key) ?? []
-      candidates.push({ rootPackage: layer.packageName, patchPath: layer.patchPath })
-      origins.set(key, candidates)
+    for (const patchPath of layer.patchPaths) {
+      for (const entry of insertedLoaderEntries(loadOverlayPatches(options.binName, patchPath))) {
+        if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
+        const key = `${entry.id}\0${entry.name}`
+        const candidates = origins.get(key) ?? []
+        candidates.push({ rootPackage: layer.packageName, patchPath })
+        origins.set(key, candidates)
+      }
     }
   }
   const ownership: ProfileBundleEntryOwnership[] = []
@@ -1764,6 +1782,38 @@ function removeInterruptedQuarantineResidue(
   }
 }
 
+/** Undo the old orphan classification for an optional layer still supplied by this installation. */
+function restoreMisclassifiedOptionalBundles(options: ProfileDependencyOptions, home: string): void {
+  const records = readQuarantineFile(home).plugins
+    .filter(record => record.profile === options.profile
+      && record.reason === 'orphaned-bundle'
+      && record.bundleIndex !== null
+      && isInstallationOwnedOptionalBundle(options, record.packageName))
+    .sort((a, b) => (a.bundleIndex ?? 0) - (b.bundleIndex ?? 0))
+  if (records.length === 0) return
+
+  const profileDir = resolveProfileDir(options.profile, home)
+  const manifest = readProfileManifest(options.binName, profileDir)
+  const bundles = [...(manifest.dsh?.profile?.bundles ?? [])]
+  const restored = records.filter(record => manifest.dependencies?.[record.packageName] === undefined)
+  if (restored.length === 0) return
+  for (const record of restored) {
+    if (!bundles.includes(record.packageName)) {
+      bundles.splice(Math.min(record.bundleIndex ?? bundles.length, bundles.length), 0, record.packageName)
+    }
+  }
+  if (JSON.stringify(bundles) !== JSON.stringify(manifest.dsh?.profile?.bundles ?? [])) {
+    writeProfileManifest(profileDir, {
+      ...manifest,
+      dsh: { ...manifest.dsh, profile: { ...manifest.dsh?.profile, bundles } },
+    })
+  }
+  for (const record of restored) {
+    reconcileRemovedQuarantineReports(record, home)
+    clearQuarantinedProfilePlugin(record.quarantineId, home)
+  }
+}
+
 function recoverInterruptedQuarantine(
   options: ProfileRepairOptions,
   home: string,
@@ -1829,6 +1879,7 @@ function recoverInterruptedQuarantine(
 export function repairProfileDependencies(options: ProfileRepairOptions): ProfileRepairReport {
   const home = options.home ?? resolveDshHome()
   const profileDir = resolveProfileDir(options.profile, home)
+  restoreMisclassifiedOptionalBundles(options, home)
   const quarantineRemovalResidue = inspectQuarantineRemovalResidue({ ...options, home })
   writeProfilePnpmCompatibility(profileDir)
   const repairedQuarantineRemoval = repairQuarantineRemovalResidue(

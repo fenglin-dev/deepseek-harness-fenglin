@@ -17,11 +17,13 @@ import {
   type SessionLogCompressionLevel,
   type SessionLogExportReady,
 } from './archive.ts'
+import { SESSION_LOG_EXPORT_PATH } from './routes.ts'
 
 export {
   DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
   flushLiveSessionLog,
   readSessionLogText,
+  redactCustomInstructionsInSessionLog,
   serializeSessionLog,
   SESSION_LOG_FILENAME,
   sessionLogExportDeps,
@@ -39,8 +41,7 @@ export type {
 export const name = 'session-log-download'
 export const inject = ['commands', 'connection']
 
-/** Stable browser download path retained across the transport migration. */
-export const SESSION_LOG_EXPORT_PATH = '/api/session.export'
+export { SESSION_LOG_EXPORT_PATH } from './routes.ts'
 
 /** Session-log archive policy. */
 export interface Config {
@@ -114,8 +115,11 @@ async function sessionLogExportResponse(
   const query = Object.fromEntries(url.searchParams)
   const sessionIdValue = query['sessionId']
   const descendantsValue = query['includeDescendants']
+  const includeCustomInstructionsValue = query['includeCustomInstructions']
   if (sessionIdValue === undefined || sessionIdValue.length === 0
-    || (descendantsValue !== undefined && descendantsValue !== 'true' && descendantsValue !== 'false')) {
+    || (descendantsValue !== undefined && descendantsValue !== 'true' && descendantsValue !== 'false')
+    || (includeCustomInstructionsValue !== undefined
+      && includeCustomInstructionsValue !== 'true' && includeCustomInstructionsValue !== 'false')) {
     return new Response('missing or invalid sessionId query parameter', { status: 400 })
   }
   const sessionId = brandString<SessionId>(sessionIdValue)
@@ -157,6 +161,7 @@ async function sessionLogExportResponse(
       descendantsValue === 'true',
       compressionLevel,
       request.signal,
+      includeCustomInstructionsValue === 'true',
     ),
     {
       headers: {

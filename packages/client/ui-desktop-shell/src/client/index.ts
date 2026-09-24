@@ -62,7 +62,7 @@ export function apply(ctx: Context): void {
   if (menu !== undefined) ctx.inject(['settingsNavigation', 'uiWorkspace'], (inner) => {
     inner.effect(() => {
       const report = (): void => { menu.reportState({
-        ready: connection.state.getSnapshot() === 'connected', locale: inner.locale.getSnapshot().active,
+        available: true, ready: connection.state.getSnapshot() === 'connected', locale: inner.locale.getSnapshot().active,
       }) }
       const removeCommand = menu.onCommand((command) => {
         navigateDesktopMenu(command, {
@@ -78,7 +78,7 @@ export function apply(ctx: Context): void {
       report()
       return () => {
         removeCommand(); removeState(); removeLocale()
-        menu.reportState({ ready: false, locale: inner.locale.getSnapshot().active })
+        menu.reportState({ available: false, ready: false, locale: inner.locale.getSnapshot().active })
       }
     }, 'ui-desktop-shell: native menu navigation')
   })
