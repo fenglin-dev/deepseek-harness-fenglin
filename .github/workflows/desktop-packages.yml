@@ -250,7 +250,7 @@ jobs:
           @'
           DSH_DESKTOP_APP_ID=com.deepseek.harness
           DSH_DESKTOP_AUTO_UPDATE_ENV=test
-          DOWNLOAD_TEST_ORIGIN=
+          DOWNLOAD_TEST_ORIGIN=https://example.com
           DOWNLOAD_TEST_RELEASE_ID=0123456789abcdef0123456789abcdef
           DSH_DESKTOP_MANDATORY_UPDATE_TEST_ORIGIN=https://example.com
           DSH_DESKTOP_MANDATORY_UPDATE_PROD_ORIGIN=https://example.com
