@@ -27,7 +27,7 @@ describe('community desktop locales', () => {
     } as unknown as Context
 
     const dispose = registerDesktopLanguages(ctx)
-    for (const definition of DESKTOP_LANGUAGE_DEFINITIONS) {
+    for (const definition of DESKTOP_LANGUAGE_DEFINITIONS as ReadonlyArray<{ id: string }>) {
       expect(registrations).toContain(`desktop-shell/${definition.id}`)
       expect(dictionaries.get(`desktop-shell/${definition.id}`)?.['nas.title']).toBeTruthy()
       expect(dictionaries.get(`desktop-shell/${definition.id}`)?.['nas.address.placeholder']).toContain('https://')
