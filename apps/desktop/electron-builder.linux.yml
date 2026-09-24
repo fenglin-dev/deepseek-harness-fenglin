@@ -9,6 +9,13 @@ files:
   - lib/**/*
   - scripts/primary-runtime-lock.json
   - package.json
+  - "node_modules/@deepseek-ai/cordis/**/*"
+  - "node_modules/@deepseek-ai/cosmokit/**/*"
+  - "node_modules/@deepseek-ai/dsh-http-proxy/**/*"
+  - "node_modules/@deepseek-ai/dsh-nas-protocol/**/*"
+  - "node_modules/@deepseek-ai/dsh-subprocess/**/*"
+  - "node_modules/@standard-schema/**/*"
+  - "node_modules/undici/**/*"
 extraResources:
   - from: bundled-plugins
     to: bundled-plugins
