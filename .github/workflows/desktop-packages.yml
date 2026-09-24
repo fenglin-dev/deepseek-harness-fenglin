@@ -246,7 +246,9 @@ jobs:
 
       - name: Prepare dsh runtime descriptor
         working-directory: apps/desktop
-        run: pnpm run prepare:dsh
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run prepare:dsh
 
       - name: Build Windows installer
         working-directory: apps/desktop
