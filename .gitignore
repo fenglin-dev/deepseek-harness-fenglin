@@ -49,3 +49,11 @@ worktrees/
 .typert-*/
 release/
 native/system/test/bin/
+batch-*.log
+batch-*.ps1
+batch-*.py
+tmp-*
+gh-askpass*
+gh-cred*
+ci-dispatch.json
+preflight.log

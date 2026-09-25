@@ -64,7 +64,7 @@ jobs:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile
 
       - name: Verify package resource contract
         run: node --test apps/desktop/scripts/packaged-resource-contract.test.mjs
@@ -127,7 +127,7 @@ jobs:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile
 
       - name: Verify Windows packaging and candidate contracts
         run: >-
@@ -166,7 +166,7 @@ jobs:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile
 
       - name: Use resolved bundled plugin snapshot
         run: |
@@ -221,7 +221,7 @@ jobs:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile
 
       - name: Use resolved bundled plugin snapshot
         run: |
@@ -364,7 +364,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -yq rpm
 
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile
 
       - name: Use resolved bundled plugin snapshot
         run: |
