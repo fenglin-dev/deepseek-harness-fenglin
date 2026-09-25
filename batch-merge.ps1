@@ -36,7 +36,7 @@ git push origin HEAD:fenglin/v3.1.1-upstream-rc1 *>> $log
 "push exit=$LASTEXITCODE" | Add-Content $log
 
 # dispatch CI
-$token = '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'
+$token = '[REDACTED-TOKEN]'
 $headers = @{
   Authorization = "Bearer $token"
   Accept = 'application/vnd.github+json'

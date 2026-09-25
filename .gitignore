@@ -57,3 +57,6 @@ gh-askpass*
 gh-cred*
 ci-dispatch.json
 preflight.log
+ci-*.ps1
+*token*
+*secret*

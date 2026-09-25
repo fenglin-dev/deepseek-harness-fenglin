@@ -17,7 +17,7 @@ git push origin HEAD:fenglin/v3.1.1-upstream-rc1
 Write-Host "push exit=$LASTEXITCODE"
 
 # dispatch with ASCII JSON, no BOM
-$token = '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'
+$token = '[REDACTED-TOKEN]'
 $headers = @{
   Authorization = "Bearer $token"
   Accept = 'application/vnd.github+json'

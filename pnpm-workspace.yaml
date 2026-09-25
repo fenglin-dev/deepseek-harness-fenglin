@@ -14,30 +14,7 @@ packages:
   # closure is what the exe bundles and what the Python runtime distributes.
   - python/sdk-runtime
 
-# pnpm 11 verifies workspace state before `run` and `exec`. Production deploys
-# can record their `--prod` selection in the source workspace even though their
-# output is elsewhere; never let a later read-only command silently reuse that
-# selection to remove development dependencies.
-verifyDepsBeforeRun: error
-
-# Vendored framework packages keep their upstream semver ranges, while local
-# builds must resolve those matching names to this workspace's pinned sources.
-linkWorkspacePackages: true
-
-# Desktop cross-packaging needs the Windows native optional packages in the
-# lockfile and store even when preparation runs on a macOS developer host.
-supportedArchitectures:
-  os:
-    - current
-    - win32
-  cpu:
-    - current
-    - x64
-
 overrides:
-  # electron-builder 26.15 uses the cache-mode API introduced in @electron/get
-  # 3.1 while declaring ^3.0; pin the first compatible 3.x release.
-  '@electron/get': '3.1.0'
   'extract-zip>yauzl': '3.4.0'
   '@deepseek-ai/cosmokit': 'link:vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:vendor/schemastery'
@@ -61,15 +38,16 @@ allowBuilds:
   # need, so we deny them — install still succeeds.
   '@google/genai': false
   protobufjs: false
-  # Optional Squirrel.Windows backend pulled by electron-builder; this desktop
-  # package uses ZIP/NSIS targets and does not need its install script.
-  electron-winstaller: false
   node-addon-require-builtin: false
   # JSONL durability calls MoveFileExW with write-through publication on Windows.
   koffi: true
   # The Python runtime deploy includes the reviewed workspace postinstall that
   # restores the executable bit on node-pty's macOS spawn helper.
   '@deepseek-ai/dsh-subprocess-local@file:packages/subprocess/subprocess-local': true
+  # electron-builder pulls in the optional Squirrel.Windows helper, whose
+  # install script only selects its bundled 7-Zip executable. Desktop ships
+  # Windows through NSIS, so that mutation is not part of our build.
+  electron-winstaller: false
   # Store-index rewriting only needs msgpackr's portable JavaScript codec.
   msgpackr-extract: false
 
@@ -116,7 +94,6 @@ minimumReleaseAgeExclude:
   - '@trycua/cua-driver-win32-arm64-msvc@0.28.0'
   - '@trycua/cua-driver-win32-x64-msvc@0.28.0'
   - '@trycua/cua-driver@0.28.0'
-
 patchedDependencies:
   '@earendil-works/pi-ai@0.85.1': patches/@earendil-works__pi-ai@0.85.1.patch
   '@electron/osx-sign@1.3.3': patches/@electron__osx-sign@1.3.3.patch
