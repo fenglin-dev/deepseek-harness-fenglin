@@ -8,7 +8,8 @@
 
 import { generateConfigSchema, type ConfigSchemaDump } from '@deepseek-ai/dsh-app-boot'
 import { collectConfigDumpLayers } from './dump-config.ts'
-import { INSTALL_ANCHOR, prepareProfile } from './profile-boot.ts'
+import { prepareProfile } from './profile-boot.ts'
+import { INSTALL_ANCHOR } from './install-anchor.ts'
 
 const NAME = 'dsh'
 
@@ -35,7 +36,7 @@ export async function runDumpConfigSchema(
   // Trusted module diagnostics must not precede the JSON document on stdout.
   process.stdout.write = process.stderr.write.bind(process.stderr)
   try {
-    dump = await generateConfigSchema(loaded, layers.map(layer => layer.patches), INSTALL_ANCHOR)
+    dump = await generateConfigSchema(NAME, loaded, layers.map(layer => layer.patches), INSTALL_ANCHOR)
   } finally {
     process.stdout.write = stdoutWrite
   }

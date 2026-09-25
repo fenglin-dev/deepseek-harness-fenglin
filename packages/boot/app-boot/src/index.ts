@@ -61,6 +61,7 @@ export {
   bundlePatchFiles,
   bundlePatchPaths,
   initProfile,
+  loadDiagnosticProfile,
   removeLinkProjections,
   loadProfile,
   loadProfileDirectory,
@@ -68,13 +69,12 @@ export {
   PROFILE_TEMPLATES,
   PROFILES_DIR,
   readProfileManifest,
-  reportSkippedBundles,
   resolveBundleDir,
+  resolveProfileLoaderModule,
   resolveProfileDir,
   writeProfileManifest,
   type Profile,
   type ProfileLayer,
-  type SkippedBundle,
   type ProfileManifest,
   type LinkedRoot,
   type RuntimeResolutionOptions,
@@ -87,6 +87,113 @@ export {
   type PluginPackage,
   type PluginPackagesConfig,
 } from './profile-resolution/service.ts'
+
+export {
+  allowProfilePackageBuild,
+  allowProfileRegistryPackageBuild,
+  type ProfilePackageBuildAllowance,
+} from './profile-package-builds.ts'
+
+export {
+  approveQuarantinedProfilePluginHostVersion,
+  clearQuarantinedProfilePlugin,
+  clearLastProfileRepairReport,
+  inspectProfileDependencies,
+  inspectProfileHostCompatibility,
+  inspectProfileImmutableAgentInputMutation,
+  inspectProfileLegacySessionApi,
+  inspectProfileLoaderEntryCollisions,
+  inspectOrphanedProfileBundles,
+  inspectProfileBundleEntryOwnership,
+  inspectUnresolvableProfileBundleEntries,
+  inspectQuarantineRemovalResidue,
+  listQuarantinedProfilePlugins,
+  PROFILE_QUARANTINE_SCHEMA,
+  quarantineProfilePluginAfterLoadFailure,
+  reconcileRestoredQuarantinedProfilePlugins,
+  repairProfileDependencies,
+  retryQuarantinedProfilePlugin,
+  readLastProfileRepairReport,
+  SHARED_HOST_PACKAGES,
+  uninstallQuarantinedProfilePlugin,
+  type ProfileDependencyConflict,
+  type ProfileHostCompatibilityIssue,
+  type OrphanedProfileBundle,
+  type ProfileBundleEntryOwnership,
+  type ProfileLoaderEntryCollision,
+  type ProfileQuarantineReason,
+  type ProfileDependencyOptions,
+  type ProfilePackageManagerResult,
+  type ProfileRepairOptions,
+  type UnresolvableProfileBundleEntry,
+  type ProfileRepairReport,
+  type ProfileQuarantineRetryOptions,
+  type QuarantineRemovalResidue,
+  type QuarantinedProfilePlugin,
+} from './profile-health.ts'
+
+export {
+  classifyProfileDiagnostic,
+  clearProfileDiagnosticReport,
+  createProfileDiagnosticReport,
+  extractProfileBuildApprovalKey,
+  orphanedBundleDiagnostic,
+  PROFILE_DIAGNOSTIC_SCHEMA,
+  profileDiagnosticRuleCatalog,
+  profileDependencyConflictDiagnostic,
+  profileHostCompatibilityDiagnostic,
+  profileLoaderEntryCollisionDiagnostic,
+  quarantineRemovalResidueDiagnostic,
+  quarantinedPluginDiagnostic,
+  readProfileDiagnosticReport,
+  sanitizeProfileDiagnostic,
+  writeProfileDiagnosticReport,
+  type ClassifyProfileDiagnosticOptions,
+  type ProfileDiagnostic,
+  type ProfileDiagnosticAction,
+  type ProfileDiagnosticAttribution,
+  type ProfileDiagnosticCode,
+  type ProfileDiagnosticPhase,
+  type ProfileDiagnosticReport,
+  type ProfileDiagnosticRuleSummary,
+  type ProfileDiagnosticSeverity,
+  type ProfileDiagnosticSource,
+} from './profile-diagnostics.ts'
+
+export {
+  backupAndResetInvalidSettings,
+  prepareDiagnosticRuntimeDirectories,
+  prepareDiagnosticSettingsDocument,
+  type DiagnosticRuntimeDirectories,
+  type ResetInvalidSettingsResult,
+} from './settings-diagnostics.ts'
+
+export {
+  acquireProfilePluginMutationLock,
+  assertProfilePluginMutationLease,
+  beginProfilePluginMutationLease,
+  createProfilePluginSnapshot,
+  finalizeProfilePluginSnapshot,
+  endProfilePluginMutationLease,
+  listProfilePluginSnapshots,
+  PROFILE_PLUGIN_SNAPSHOT_SCHEMA,
+  removeProfilePluginSnapshot,
+  restoreProfilePluginSnapshotFiles,
+  settleProfilePluginSafetySnapshot,
+  withAutomaticProfilePluginSnapshot,
+  type CreateProfilePluginSnapshotOptions,
+  type CreatedProfilePluginSnapshot,
+  type ProfilePluginSnapshotDifference,
+  type ProfilePluginSnapshotFile,
+  type ProfilePluginSnapshotKind,
+  type ProfilePluginSnapshotOptions,
+  type ProfilePluginSnapshotPackage,
+  type ProfilePluginSnapshotRecord,
+  type ProfilePluginSnapshotSummary,
+  type ProfilePluginSnapshotTrigger,
+  type ProfilePluginSnapshotVersionChange,
+  type RestoredProfilePluginSnapshot,
+} from './profile-plugin-snapshot.ts'
 
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
@@ -299,6 +406,44 @@ export async function reconcileProfilePatches(
   }
   ctx.emit('app-boot/config-reload')
   return failures.map(inactiveDiagnostic)
+}
+
+/** Options for the legacy exact-path profile patch watcher. */
+export interface UserPatchWatchOptions {
+  /** Diagnostic prefix used when loading or applying the patch file. */
+  binName: string
+  /** Absolute path to the optional patch-list file. */
+  filename: string
+  /** Rebuild the complete generation from the freshly read user layer. */
+  compose?: (userPatches: PatchOptions[]) => PatchOptions[]
+}
+
+/**
+ * Register one exact profile patch path with the shared HMR transaction queue.
+ *
+ * New profile launches provide {@link ProfileContext} and let HMR own all
+ * profile inputs. This helper remains as a compatibility surface for callers
+ * that intentionally manage one patch layer themselves; it delegates both
+ * scheduling and serialization to that same HMR service.
+ * @param ctx Booted root context containing HMR and its root Include entry.
+ * @param options Patch path and optional complete-generation composer.
+ * @returns An asynchronous watcher disposer.
+ */
+export async function watchUserPatches(
+  ctx: Context, options: UserPatchWatchOptions,
+): Promise<() => Promise<void>> {
+  const hmr = ctx.get('hmr') as undefined | {
+    watchConfig(filename: string, refresh: () => Promise<void>): Promise<() => Promise<void>>
+  }
+  if (hmr === undefined) throw new Error(`${options.binName}: profile reload requires the Cordis HMR service`)
+  if (bootstrapIncludes.get(ctx) === undefined) {
+    throw new Error(`${options.binName}: profile reload requires the root Include entry`)
+  }
+  const compose = options.compose ?? ((patches: PatchOptions[]) => patches)
+  return hmr.watchConfig(options.filename, async () => {
+    const userPatches = loadOptionalPatches(options.binName, options.filename) ?? []
+    await reconcileProfilePatches(ctx, compose(userPatches), options.binName)
+  })
 }
 
 /**
@@ -753,6 +898,9 @@ const requiredStartupEntryIds = new Set<string>([
   'sdk-jsonrpc-server',
 ])
 
+/** Machine-readable prefix consumed by supervisors that validate a staged plugin activation. */
+export const OPTIONAL_STARTUP_FAILURES_MARKER = 'dsh: optional startup failures '
+
 /** Render plugin stacks, nested causes, and aggregate member failures once per error. */
 function formatActivationError(error: unknown): string {
   const details: string[] = []
@@ -928,14 +1076,27 @@ export async function auditStartupEntries(
   warn: (line: string) => void = line => void process.stderr.write(line),
 ): Promise<void> {
   const failures = await inactiveEntries(ctx)
-  const required = new Set(failures.filter(({ entry }) => entry === bootstrapIncludes.get(ctx)
-    || requiredStartupEntryIds.has(entry.options.id)).map(({ entry }) => entry))
+  const requiredEntries: InactiveEntry[] = []
+  const optional: InactiveEntry[] = []
+  for (const failure of failures) {
+    const target = failure.entry === bootstrapIncludes.get(ctx)
+      || requiredStartupEntryIds.has(failure.entry.options.id) ? requiredEntries : optional
+    target.push(failure)
+  }
+  if (optional.length > 0) {
+    const summary = optional.map(failure => ({
+      id: failure.entry.options.id,
+      name: failure.entry.options.name,
+    }))
+    warn(`${OPTIONAL_STARTUP_FAILURES_MARKER}${JSON.stringify(summary)}\n${activationDiagnostic(binName, optional)}`)
+  }
+  const required = new Set(requiredEntries.map(({ entry }) => entry))
   if (required.size > 0) {
     throw new StartupError(startupDiagnostic(binName, failures, required), failures.map(({ entry, outcome }) => ({
       id: entry.options.id, module: entry.options.name, required: required.has(entry), fiberState: entry.fiber?.state, outcome,
     })))
   }
-  if (failures.length > 0) warn(activationDiagnostic(binName, failures))
+  if (required.size === 0 && optional.length > 0) return
 }
 
 /**
