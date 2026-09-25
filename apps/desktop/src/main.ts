@@ -1,3982 +1,1293 @@
-/** Electron application host for the existing DeepSeek Harness Web GUI. */
+import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
+/** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
-import { createHash, randomUUID } from 'node:crypto'
-import {
-  loadProcessObserver,
-  quarantineProcessRecoveryJournal,
-  type DesktopProcessObserver,
-} from './process-observer.ts'
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile, copyFile } from 'node:fs/promises'
-import { homedir, tmpdir, userInfo } from 'node:os'
-import { basename, delimiter, dirname, join } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, net, Notification, safeStorage, session, shell, Tray,
-  type Session,
-  type MenuItemConstructorOptions, type MessageBoxOptions, type WebContents, type WebPreferences,
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  powerMonitor,
+  nativeImage,
+  nativeTheme,
+  net,
+  protocol,
+  session,
+  shell,
+  type IpcMainInvokeEvent,
+  type MenuItemConstructorOptions,
 } from 'electron'
-import { appendBundledPluginFailure, seedBundledPluginsBatch, verifyBundledPluginArchive } from './bundled-plugin-seed.ts'
-import { BundledPluginStartupCooldown } from './bundled-plugin-cooldown.ts'
-import { FirstStartPreparation } from './first-start-preparation.ts'
-import { BundledPresetVersionGate } from './bundled-preset-version-gate.ts'
-import { applyFreshProfileDefaults } from './fresh-profile-defaults.ts'
-import { deployPrebuiltProfile, readPrebuiltProfile, readProfileBuildApprovals, type PrebuiltProfileManifest } from './prebuilt-profile.ts'
-import {
-  BundledPluginInstaller,
-  installBundledPluginSource,
-  parseBundledPluginManifest,
-  resolveBundledPluginResourcesDirectory,
-  type BundledPluginDeferredStartResult,
-  type BundledPluginStartResult,
-  type BundledPluginInstallSnapshot,
-} from './bundled-plugin-installer.ts'
-import {
-  resolveDevelopmentLaunchOptions,
-  resolveHarnessInvocation,
-  resolveHarnessLaunch,
-  type DesktopLaunchOptions,
-  type HarnessLaunch,
-} from './launch.ts'
-import {
-  DesktopOperationSupervisor,
-  HarnessInvocationError,
-} from './harness-invocation.ts'
-import {
-  harnessPermissionDecisionKeys,
-  harnessPermissionName,
-  isSilentHarnessPermission,
-  isTrustedHarnessPermissionRequest,
-  type HarnessPermissionDetails,
-} from './permissions.ts'
-import { ensurePackagedPrebuiltProfile, ensurePackagedRuntime, packagedPrebuiltProfileArchiveRoot, packagedRuntimeArchiveRoot } from './packaged-runtime.ts'
-import { HarnessSupervisor, type HarnessFailure, type HarnessState } from './supervisor.ts'
-import { readRecoveryFailureSummary, type RecoveryFailureSummary } from './recovery-failure.ts'
-import { parseClientBootFailure } from './client-boot-failure.ts'
-import { clearDeadModuleFallbackLock, inspectModuleFallbackLock } from './module-fallback-lock.ts'
-import { DesktopProfileMutation } from './desktop-profile-mutation/index.ts'
-import { ensureWorkspacePtcPlugin, hasManagedWorkspacePtcBlock, isWorkspacePtcPluginInstalled, PTC_PLUGIN_NAME } from './workspace-ptc-plugin.ts'
-import { DESKTOP_IPC } from './desktop-ipc-protocol.ts'
-import { terminateWindowsProcessTree } from './windows-process-tree.ts'
-import { revealHarnessLog, type OpenLogResult } from './log-reveal.ts'
-import { startDesktopLogSession } from './persistent-log.ts'
-import { createNotificationThrottle, desktopNotificationDictionary } from './notifications.ts'
-import {
-  createDesktopPreferencesStore, DEFAULT_DESKTOP_PREFERENCES, parseDesktopPreferencesPatch,
-  type DesktopPreferences, type DesktopPreferencesStore,
-} from './preferences.ts'
-import { DesktopReleaseChecker, fetchGitHubReleases, isAllowedReleaseUrl, type DesktopReleaseStatus } from './release-checker.ts'
-import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus, type ReleaseFetch } from './release-downloader.ts'
-import { fetchCnbReleaseIndex, isAllowedCnbUrl, selectCnbRelease } from './cnb-release-source.ts'
-import {
-  DownloadNetworkSettingsStore, type DownloadNetworkSettings, type DownloadNetworkTarget,
-  type DownloadNetworkTestStatus,
-} from './download-network-settings.ts'
-import {
-  pluginDownloadEnvironment, startPluginDownloadProxy, type PluginDownloadProxy,
-} from './plugin-download-proxy.ts'
-import { SourceUpdater } from './source-updater.ts'
-import { DesktopIconManager, type DesktopIconImages } from './desktop-icons.ts'
-import { loadDefaultApplicationIcon } from './icon-image.ts'
-import { updateIconShortcuts } from './icon-shortcuts.ts'
-import type { IconSurfaceResult, IconTarget } from './icon-protocol.ts'
-import { ExternalToolCompatibilityManager } from './external-tool-compatibility.ts'
-import { EXTERNAL_TOOL_IDS, type DesktopExternalToolId } from './external-tool-compatibility-manifest.ts'
-import { WorkspaceRuntimeCatalog } from './workspace-runtime-catalog.ts'
-import { loadBundledWorkspaceRuntimeManifest } from './bundled-workspace-runtime.ts'
-import { OptionalRuntimeManager } from './workspace-runtime-manager.ts'
-import {
-  WORKSPACE_RUNTIME_CAPABILITIES,
-  workspaceRuntimeTarget,
-  type WorkspaceRuntimeCapability,
-} from './workspace-runtime-manifest.ts'
-import { configureWorkspaceRuntimeCapability, type WorkspaceRuntimeProfilePaths } from './workspace-runtime-profile.ts'
-import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycle.ts'
-import { ApplicationMenuController } from './application-menu-controller.ts'
-import { CLIENT_COMMANDS, menuCopy, type DesktopCommand } from './application-menu.ts'
-import { inspectProfileMutationLock, menuMutationActive } from './menu-mutation-guard.ts'
-import { CANDIDATE_PREPARATION_TIMEOUT_MS } from './candidate-preparation.ts'
-import { isDesktopRenderer, withDesktopWindowMetadata } from './window-frame.ts'
-import {
-  createDesktopWindowSurface,
-  type DesktopWindowSurface,
-} from './desktop-window-surface.ts'
-import {
-  DiagnosticLabManager,
-  type DiagnosticLabDoctorResult,
-  type DiagnosticLabRunSnapshot,
-  type DiagnosticLabStartRequest,
-} from './diagnostic-lab.ts'
-import { parseStartupBuildApproval } from './startup-build-approval.ts'
-import { ensureLegacySessionCompatibility } from './session-legacy-compatibility.ts'
-import { ensureFenglinLiangShenPreset } from './liangshen-preset-ensure.ts'
-import { applyFenglinRuntimeOverlays } from './fenglin-runtime-overlays.ts'
-import { ensureIgnoredOptionalDependencies } from './profile-pnpm-compat.ts'
-import {
-  readDesktopDataHomeSetup,
-  resolveDesktopApplicationDataRoot,
-  shouldPreserveLegacyCopiedProfile,
-  resolveDesktopDataHomeLayout,
-  type DesktopDataHomeSelectionResult,
-  type DesktopDataHomeSwitchResult,
-} from './desktop-data-home.ts'
-import {
-  DesktopDataHomeAuthority,
-  DesktopDataHomeSelectionCancelledError,
-  type DesktopDataHomeChoice,
-  type DesktopDataHomeChooserSession,
-  type DesktopDataHomeSourceResult,
-  type DesktopDataHomeTargetResult,
-} from './desktop-data-home-authority.ts'
-import { mapBundledPluginProgress, type DesktopStartupProgress } from './startup-progress.ts'
-import {
-  isRecoveryPluginPackageName,
-  readRecoveryPluginInventory,
-} from './recovery-plugins.ts'
-import {
-  DesktopCliManager,
-  type DesktopCliRuntime,
-  type DesktopCliStatus,
-} from './desktop-cli-registration.ts'
-import {
-  createDesktopChatBackgroundStore,
-  type DesktopChatBackgroundStore,
-} from './chat-background-store.ts'
-import {
-  desktopThemeBackground,
-  isDesktopThemeSource,
-  readDesktopThemeSource,
-  type DesktopThemeSource,
-} from './desktop-theme.ts'
-import {
-  classifyImportedPluginSourceFailure,
-  ImportedPluginRestoreManager,
-  mergeImportedAllowBuilds,
-  readImportedPluginRestorePlan,
-  type ImportedPluginRestoreSnapshot,
-} from './imported-plugin-restore.ts'
-import {
-  importedPluginVersionDiffers,
-  stageImportedPluginArchive,
-  stageImportedPluginDirectory,
-  type StagedImportedPlugin,
-} from './imported-plugin-local-source.ts'
-import { resolveSystemProxyEnvironment } from './system-proxy.ts'
-import {
-  PluginSnapshotManager,
-  type PluginSnapshotRestoreSnapshot,
-  type PluginSnapshotSummary,
-} from './plugin-snapshot-manager.ts'
-import { backupAndResetDesktopSettings } from './settings-recovery.ts'
-import {
-  readStartupDiagnostics,
-  recordStartupDiagnostic,
-  type StartupDiagnosticCode,
-  type StartupDiagnosticIncident,
-} from './startup-diagnostics.ts'
-import { DesktopWebAccess, type DesktopWebStatus } from './desktop-web-access.ts'
-import { clearStaleHarnessAuthCookies } from './harness-auth-cookies.ts'
-import { shellMessages, trayMessages, dataHomeMessages } from './locales/shell.ts'
-import { sourceCopyFor } from './locales/data-home-source.ts'
-import { DesktopReturnControl } from './desktop-return-control.ts'
-import { createDesktopLocaleStore, type DesktopLocaleStore } from './desktop-locale-store.ts'
-import { resolveDesktopLocale } from './desktop-locale.ts'
-import { DESKTOP_PRODUCT_NAME, desktopWindowTitle } from './product-name.ts'
-import {
-  FilePersistentServiceAuthorizer,
-  FilePersistentServiceRuntimeRegistry,
-  persistentProfileFingerprint,
-  type PersistentServiceSummary,
-} from '@deepseek-ai/dsh-subprocess'
-import {
-  NasRuntimeClient,
-  NasRuntimeStore,
-  discoverNasRuntimes,
-  inspectNasCertificate,
-  type NasRuntimeRecord,
-} from './nas-runtime.ts'
-import { DesktopNasRuntimeAuthority } from './nas-runtime-authority.ts'
-import { registerNasRuntimeIpc } from './nas-runtime-ipc.ts'
+import { resolveDesktopPaths } from './paths.ts'
+import { DesktopProjectManager } from './project-manager.ts'
+import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
+import { DesktopPlatformView, PLATFORM_IPC, platformBounds } from './platform-view.ts'
+import { installDesktopDirectoryPicker } from './directory-picker.ts'
+import { installMicrophonePermissions } from './microphone-permissions.ts'
+import { DesktopBackendController } from './backend-controller.ts'
+import { DESKTOP_IPC, SCHEME, assertDesktopSender, type DesktopUpdateState } from './ipc.ts'
+import { desktopUpdateReadyConfirmation, formatDesktopMessage, resolveDesktopLocale, resolveDesktopStartupLocale } from './locale.ts'
+import { claimDesktopSingleInstance } from './single-instance.ts'
+import { DesktopUpdateCoordinator } from './update-coordinator.ts'
+import { serveWebDocument, authenticateWebHost, forwardWebRequest } from './web-document.ts'
+import { DesktopFatalRecovery } from './fatal-recovery.ts'
+import { pruneCrashReports, RendererConsoleTail, writeCrashReport, type CrashReportSource } from './crash-report.ts'
+import { openWelcomeWindow } from './welcome-window.ts'
+import { WELCOME_IPC, needsWelcome, type WelcomeNotice } from './welcome-api.ts'
+import { connectDesktopWelcome, type DesktopWelcomeBackend } from './welcome-backend.ts'
+import { DesktopUpdateJournal } from './update-journal.ts'
+import { DesktopUpdatePreparationError } from './update-error.ts'
+import { DesktopUpdateSchedule, resolveDesktopUpdateScheduleConfig } from './update-schedule.ts'
+import { desktopUpdateErrorSummary, presentDesktopUpdate } from './update-presentation.ts'
+import { desktopErrorState } from './startup-error.ts'
+import { DesktopMandatoryUpdatePolicy, resolveDesktopPolicyConfig, type DesktopPolicyState } from './mandatory-update-policy.ts'
+import { desktopClientMetadata } from './client-metadata.ts'
+import { DesktopMandatoryUpdateWindow } from './mandatory-update-window.ts'
+import { DesktopPolicyTestAuth } from './policy-test-auth.ts'
+import { DesktopUpdateDialog, type UpdateDialogOptions } from './update-dialog.ts'
+import { readDesktopRuntime } from './runtime-tree.ts'
+import { DesktopBrowserGuests } from './browser-guests.ts'
+import { installDesktopShortcuts } from './keyboard.ts'
+import { DesktopUpdateOverlays } from './update-overlay.ts'
+import { DesktopQuitConfirmation } from './quit-confirmation.ts'
+import { DesktopTray } from './tray.ts'
+import { DesktopBackgroundNotice } from './background-notice.ts'
 
-const APP_NAME = DESKTOP_PRODUCT_NAME
-const DESKTOP_WEB_SUPPORTED = process.platform === 'darwin' || process.platform === 'win32'
-const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
-const WINDOW_ICON = fileURLToPath(new URL('./icon.png', import.meta.url))
-const MACOS_TRAY_ICON = fileURLToPath(new URL('./tray-iconTemplate.png', import.meta.url))
-const PRELOAD = fileURLToPath(new URL('./preload.cjs', import.meta.url))
-const TITLEBAR_PAGE = fileURLToPath(new URL('./titlebar.html', import.meta.url))
-const TITLEBAR_PRELOAD = fileURLToPath(new URL('./titlebar-preload.cjs', import.meta.url))
-const DATA_HOME_PAGE = fileURLToPath(new URL('./data-home.html', import.meta.url))
-const DATA_HOME_PRELOAD = fileURLToPath(new URL('./data-home-preload.cjs', import.meta.url))
-const DESKTOP_PNPM_VERSION = '11.7.0'
-const PROFILE_CHECK_TIMEOUT_MS = 15_000
-const PROFILE_LOCK_WAIT_MS = 5_000
-const PROFILE_REPAIR_TIMEOUT_MS = 60_000
-const BUILD_APPROVAL_TIMEOUT_MS = 15_000
-const BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS = 10 * 60_000
-const SNAPSHOT_COMMAND_TIMEOUT_MS = 15_000
-const IMPORTED_PLUGIN_INSTALL_TIMEOUT_MS = 10 * 60_000
-const BOOTABLE_SNAPSHOT_DELAY_MS = 30_000
-const DEFAULT_SOURCE_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
-const DESKTOP_APPLICATION_DATA_ROOT = resolveDesktopApplicationDataRoot(
-  app.getPath('appData'),
-  app.isPackaged,
-  process.env,
-)
-const DESKTOP_DATA_HOME = resolveDesktopDataHomeLayout(
-  DESKTOP_APPLICATION_DATA_ROOT,
-  homedir(),
-  app.isPackaged,
-  process.env,
-)
+let focusPrimaryWindow = (): void => {}
+let stopForRecovery = async (): Promise<void> => {}
+let shuttingDown = false
+/**
+ * Set by quit entries that must not ask: crash recovery exit and restart, and the
+ * development restart command. The installer handoff has its own before-quit branch.
+ */
+let skipQuitConfirmation = false
+let windowsLanguage: string | undefined
+/**
+ * Whether the backend has reached ready: false until the first ready, back to
+ * false when a restart returns it to starting, frozen during shutdown so a
+ * failure while tearing down a ready backend still reads as `running`.
+ */
+let backendReady = false
+/** Error-level console output of the primary window, attached to crash reports. */
+const rendererConsole = new RendererConsoleTail()
 
-app.setName(DESKTOP_PRODUCT_NAME)
-process.title = DESKTOP_PRODUCT_NAME
-app.setPath('userData', DESKTOP_DATA_HOME.desktopRoot)
-app.setPath('sessionData', DESKTOP_DATA_HOME.sessionData)
-app.setAppLogsPath(DESKTOP_DATA_HOME.logs)
-const harnessLogPath = join(DESKTOP_DATA_HOME.logs, 'harness.log')
-const desktopLogSession = startDesktopLogSession(harnessLogPath, {
-  sessionId: randomUUID(),
-  version: app.getVersion(),
-  platform: process.platform,
-  architecture: process.arch,
-  packaged: app.isPackaged,
-  pid: process.pid,
-})
-process.on('uncaughtExceptionMonitor', (error, origin) => {
-  desktopLogSession.append('desktop-process', 'error', `uncaught exception origin=${origin}: ${error.stack ?? error.message}`)
-})
+// Platform-conventional logs directory (macOS ~/Library/Logs/<name>, otherwise under userData);
+// set before ready so the first fatal report already resolves under it.
+app.setAppLogsPath()
 
-let mainWindow: BrowserWindow | undefined
-let iconManager: DesktopIconManager | undefined
-let mainSurface: DesktopWindowSurface | undefined
-let supervisor: HarnessSupervisor | undefined
-let harnessOrigin: string | undefined
-let harnessAuthenticationUrl: string | undefined
-let nasRuntimeAuthority: DesktopNasRuntimeAuthority | undefined
-let desktopWebAccess: DesktopWebAccess | undefined
-let desktopReturnControl: DesktopReturnControl | undefined
-let lifecycle: DesktopLifecycle | undefined
-let applicationMenu: ApplicationMenuController | undefined
-let disposeApplicationMenu: (() => void) | undefined
-let activeMenuHome: string | undefined
-let menuLocale = 'en'
-let desktopLocaleStore: DesktopLocaleStore | undefined
-let persistedProfileLocale: string | undefined
-let menuClientReady = false
-let menuClientAvailable = false
-let reportedClientBootFailureOrigin: string | undefined
-let snapshotMutationActive = false
-let recoveryHarnessSuspended = false
-let recoveryRestartRequired = false
-let blockedProcessRecoveryPath: string | undefined
-let latestRecoveryFailure: string | undefined
-let latestRecoveryDiagnostic: RecoveryFailureSummary | undefined
-let processObserver: DesktopProcessObserver | undefined
-let processObservationFailure: unknown
-let persistentServiceAuthority: FilePersistentServiceAuthorizer | undefined
-let persistentServiceRuntime: FilePersistentServiceRuntimeRegistry | undefined
-async function stopPersistentServicesForActiveProfile(): Promise<void> {
-  if (persistentServiceAuthority === undefined || persistentServiceRuntime === undefined) return
-  const runtime = processObserver
-  for (const service of persistentServiceAuthority.list()) {
-    const identities = persistentServiceRuntime.identities(service.key)
-    if (identities.length === 0) continue
-    if (runtime === undefined) throw new Error('desktop: persistent services cannot be stopped safely')
-    await runtime.stopRecovered(service.key, `${service.pluginName}: ${service.serviceId}`, identities)
-    persistentServiceRuntime.clear(service.key)
-  }
+function currentDesktopLocale(): ReturnType<typeof resolveDesktopLocale> {
+  return resolveDesktopLocale(windowsLanguage ?? app.getLocale())
 }
-async function stopAndRevokePersistentServicesForPlugin(pluginName: string): Promise<void> {
-  if (persistentServiceAuthority === undefined || persistentServiceRuntime === undefined) return
-  const services = persistentServiceAuthority.list().filter(service => service.pluginName === pluginName)
-  for (const service of services) {
-    const identities = persistentServiceRuntime.identities(service.key)
-    if (identities.length > 0) {
-      if (processObserver === undefined) throw new Error('desktop: persistent services cannot be stopped safely')
-      await processObserver.stopRecovered(service.key, `${service.pluginName}: ${service.serviceId}`, identities)
-      persistentServiceRuntime.clear(service.key)
-    }
-    persistentServiceAuthority.revoke(service.key)
-  }
-}
-async function preservePersistentServicesForActiveProfile(): Promise<void> {
-  if (persistentServiceAuthority === undefined || persistentServiceRuntime === undefined || processObserver === undefined) return
-  const identities = persistentServiceAuthority.list().flatMap(service => persistentServiceRuntime?.identities(service.key) ?? [])
-  await processObserver.preserve(identities)
-}
-function observeProcess(pid: number, label: string): void {
-  try { processObserver?.register(pid, label) } catch (error) { processObservationFailure = error }
-}
-const oneShotOperations = new DesktopOperationSupervisor(observeProcess, () => processObserver)
-const prebuiltDeploymentAbort = new AbortController()
-let prebuiltDeploymentTask: Promise<void> | undefined
-let preparingFirstStart = false
-let bootableSnapshotTimer: NodeJS.Timeout | undefined
-const startupWarnings: string[] = []
-let trayUnavailable = false
-let trayWarningOpen = false
-const pendingMenuCommands = new Map<string, { resolve(): void; reject(error: Error): void; timer: NodeJS.Timeout }>()
-let permissionPromptQueue: Promise<void> = Promise.resolve()
-const pendingPermissionPrompts = new Map<string, Promise<boolean>>()
-
-function runDesktopInvocation(
-  launch: HarnessLaunch,
-  kind: string,
-  timeoutMs: number,
-  acceptedExitCodes: readonly number[] = [0],
-  allowDuringDisposal = false,
-): Promise<string> {
-  return oneShotOperations.run(launch, {
-    kind, timeoutMs, acceptedExitCodes,
-    ...(allowDuringDisposal ? { allowDuringDisposal: true } : {}),
-  })
-}
-
-function cancelBootableSnapshot(): void {
-  if (bootableSnapshotTimer === undefined) return
-  clearTimeout(bootableSnapshotTimer)
-  bootableSnapshotTimer = undefined
-}
-
-function scheduleBootableSnapshot(manager: PluginSnapshotManager): void {
-  cancelBootableSnapshot()
-  bootableSnapshotTimer = setTimeout(() => {
-    bootableSnapshotTimer = undefined
-    if (harnessOrigin === undefined || lifecycle?.isQuitting === true || supervisor?.isDiagnosticMode === true) return
-    if (menuBusy()) {
-      void appendDesktopStartupLog(
-        'Bootable plugin snapshot stability window restarted because a managed operation is active.',
-      )
-      scheduleBootableSnapshot(manager)
-      return
-    }
-    void (async () => {
-      await appendDesktopStartupLog('Creating post-readiness plugin snapshot after stable runtime.')
-      await manager.markBootable()
-      await appendDesktopStartupLog('Post-readiness plugin snapshot retained.')
-    })().catch(async (error: unknown) => {
-      await appendDesktopStartupLog(
-        `Post-readiness plugin snapshot failed without interrupting Harness: ${error instanceof Error ? error.message : String(error)}`,
-      )
-      console.warn('desktop: could not retain the latest bootable plugin snapshot', error)
-    })
-  }, BOOTABLE_SNAPSHOT_DELAY_MS)
-}
-
-function restartBootableSnapshotStabilityWindow(reason: string): void {
-  cancelBootableSnapshot()
-  const manager = pluginSnapshotManager
-  if (manager === undefined || harnessOrigin === undefined
-    || lifecycle?.isQuitting === true || supervisor?.isDiagnosticMode === true || reportedDesktopReadiness.size !== 2) return
-  void appendDesktopStartupLog(`Restarting bootable plugin snapshot stability window: ${reason}.`)
-  scheduleBootableSnapshot(manager)
-}
-
-function profileDoctorStatus(output: string): 'failed' | 'healthy' | 'quarantined' | 'repaired' | undefined {
-  const start = output.indexOf('{')
-  const end = output.lastIndexOf('}')
-  if (start < 0 || end < start) return undefined
-  try {
-    const value = JSON.parse(output.slice(start, end + 1)) as { status?: unknown }
-    return typeof value.status === 'string'
-      && ['failed', 'healthy', 'quarantined', 'repaired'].includes(value.status)
-      ? value.status as 'failed' | 'healthy' | 'quarantined' | 'repaired'
-      : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function menuBusy(): boolean {
-  const lab = diagnosticLabManager?.current()
-  return snapshotMutationActive || lab?.phase === 'running' || lab?.phase === 'queued' || lab?.phase === 'restoring'
-    || (activeMenuHome !== undefined && menuMutationActive(activeMenuHome))
-}
-
-function reportMenuError(error: unknown): void {
-  if (quitReleased || lifecycle?.isQuitting === true) return
-  dialog.showErrorBox(menuCopy(menuLocale).error, error instanceof Error ? error.message : String(error))
-}
-
-function rejectPendingMenuCommands(): void {
-  for (const pending of pendingMenuCommands.values()) {
-    clearTimeout(pending.timer)
-    pending.reject(new Error(menuCopy(menuLocale).unavailable))
-  }
-  pendingMenuCommands.clear()
-}
-
-async function executeProductMenu(command: DesktopCommand): Promise<void> {
-  if ((CLIENT_COMMANDS as readonly string[]).includes(command)) {
-    lifecycle?.showWindow()
-    const id = randomUUID()
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pendingMenuCommands.delete(id)
-        reject(new Error(menuCopy(menuLocale).unavailable))
-      }, 5000)
-      pendingMenuCommands.set(id, { resolve, reject, timer })
-      mainSurface?.send(DESKTOP_IPC.menuCommand, { id, command })
-    })
-    return
-  }
-  switch (command) {
-    case 'show': lifecycle?.showWindow(); return
-    case 'open-web':
-      if (desktopWebAccess === undefined) throw new Error(menuCopy(menuLocale).unavailable)
-      await desktopWebAccess.open()
-      return
-    case 'restart': requestDesktopRestart(); return
-    case 'quit':
-      if (lifecycle === undefined) { quitReleased = true; app.quit() }
-      else await lifecycle.requestQuit()
-      return
-    case 'open-config': {
-      const result = await openSettingsDocument()
-      if (result.error !== '') throw new Error(result.error)
-      return
-    }
-    case 'logs': {
-      const error = await shell.openPath(DESKTOP_DATA_HOME.logs)
-      if (error !== '') throw new Error(error)
-      return
-    }
-    case 'about': {
-      const manifest = JSON.parse(await readFile(new URL('./harness-version.json', import.meta.url), 'utf8')) as { version: string }
-      await dialog.showMessageBox({ type: 'info', title: menuCopy(menuLocale).about,
-        message: shellMessages(menuLocale).productName,
-        detail: `${app.getVersion()}\nHarness ${manifest.version}\n\n${menuCopy(menuLocale).community}` })
-      return
-    }
-    case 'docs': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin#readme'); return
-    case 'repository': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin'); return
-    case 'feedback': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin/issues/new'); return
-    case 'reload': mainSurface?.renderer.reload(); return
-    default: throw new Error(`desktop: unhandled menu command ${command}`)
-  }
-}
-
-async function openSettingsDocument(): Promise<{ error: string }> {
-  const dshHome = activeMenuHome
-  if (dshHome === undefined) throw new Error(menuCopy(menuLocale).unavailable)
-  const settingsPath = join(dshHome, 'settings.yaml')
-  try { await lstat(settingsPath) } catch (error) {
-    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error
-    return { error: await shell.openPath(dshHome) }
-  }
-  const error = await shell.openPath(settingsPath)
-  if (error === '') return { error }
-  shell.showItemInFolder(settingsPath)
-  return { error }
-}
-let preferencesStore: DesktopPreferencesStore | undefined
-let preferences: DesktopPreferences = { ...DEFAULT_DESKTOP_PREFERENCES }
-let tray: Tray | undefined
-let quitReleased = false
-let hiddenLaunch = false
-let releaseChecker: DesktopReleaseChecker | undefined
-let releaseDownloader: DesktopReleaseDownloader | undefined
-let stopReleaseChecks: (() => void) | undefined
-let downloadNetworkStore: DownloadNetworkSettingsStore | undefined
-let downloadNetworkProxy: PluginDownloadProxy | undefined
-let applicationDownloadSession: Session | undefined
-let pluginDownloadSession: Session | undefined
-let downloadNetworkTestStatus: DownloadNetworkTestStatus = { phase: 'idle' }
-let externalToolCompatibility: ExternalToolCompatibilityManager | undefined
-let bundledPluginInstaller: BundledPluginInstaller | undefined
-let bundledPluginCooldown: BundledPluginStartupCooldown | undefined
-let importedPluginRestoreManager: ImportedPluginRestoreManager | undefined
-let desktopCliManager: DesktopCliManager | undefined
-let chatBackgroundStore: DesktopChatBackgroundStore | undefined
-let diagnosticLabManager: DiagnosticLabManager | undefined
-let pluginSnapshotManager: PluginSnapshotManager | undefined
-let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
-let desktopThemeSource: DesktopThemeSource = 'system'
-const reportedDesktopReadiness = new Set<'client' | 'event-dispatch'>()
-let profileMutation: DesktopProfileMutation | undefined
-let workspaceRuntimeManager: OptionalRuntimeManager | undefined
-let dataHomeChooserWindow: BrowserWindow | undefined
-const desktopDataHomes = new DesktopDataHomeAuthority({
-  layout: DESKTOP_DATA_HOME,
-  stopActiveProfile: () => stopPersistentServicesForActiveProfile(),
-  scheduleRestart: () => { setTimeout(requestDesktopRestart, 250) },
-})
-
-function appendDesktopStartupLog(message: string): Promise<void> {
-  desktopLogSession.append('desktop-startup', 'info', message)
-  return Promise.resolve()
-}
-
-interface DesktopCapabilities {
-  runtimeKind: 'local' | 'nas'
-  platform: NodeJS.Platform
-  packaged: boolean
-  launchAtLoginAvailable: boolean
-  sourceUpdateAvailable: boolean
-  commandLineAvailable: boolean
-  developmentRecoveryAvailable: boolean
-}
-
-function bootNasRuntime(): NasRuntimeRecord | undefined {
-  const bootRuntime = nasRuntimeAuthority?.bootRuntime
-  return bootRuntime?.kind === 'nas' ? bootRuntime.runtime : undefined
-}
-
-function applyDesktopThemeSource(source: DesktopThemeSource): void {
-  desktopThemeSource = source
-  nativeTheme.themeSource = source
-  const window = mainWindow
-  if (window !== undefined && !window.isDestroyed()) {
-    const background = desktopThemeBackground(source, nativeTheme.shouldUseDarkColors)
-    mainSurface?.setBackgroundColor(background)
-    mainSurface?.sendTitlebar('dsh:window:theme', nativeTheme.shouldUseDarkColors)
-    if (mainSurface === undefined) window.setBackgroundColor(background)
-  }
-}
-
-function desktopCapabilities(): DesktopCapabilities {
-  return {
-    runtimeKind: bootNasRuntime() === undefined ? 'local' : 'nas',
-    platform: process.platform,
-    packaged: app.isPackaged,
-    launchAtLoginAvailable: app.isPackaged && process.platform === 'darwin',
-    sourceUpdateAvailable: !app.isPackaged,
-    // Keep the row discoverable in source builds as well. DesktopCliManager
-    // reports `unsupported` there, while packaged macOS/Windows builds expose
-    // the real install, repair, and remove actions.
-    commandLineAvailable: process.platform === 'win32' || process.platform === 'darwin',
-    developmentRecoveryAvailable: !app.isPackaged,
-  }
-}
-
-function desktopCopy() { return trayMessages(menuLocale) }
-
-function dataHomeCopy() { return dataHomeMessages(app.getLocale()) }
-
-async function showDataHomeChooser(
-  session: DesktopDataHomeChooserSession,
-  parent?: BrowserWindow,
-): Promise<DesktopDataHomeChoice> {
-  const presentation = session.presentation
-  const chooser = new BrowserWindow({
-    title: APP_NAME,
-    width: 1080,
-    height: 720,
-    useContentSize: true,
-    minWidth: 920,
-    minHeight: 620,
-    backgroundColor: desktopThemeBackground('system', nativeTheme.shouldUseDarkColors),
-    icon: desktopWindowIcon(),
-    show: false,
-    ...(parent === undefined ? {} : { parent }),
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      preload: DATA_HOME_PRELOAD,
-    },
-  })
-  dataHomeChooserWindow = chooser
-  chooser.webContents.on('will-navigate', (event) => { event.preventDefault() })
-  chooser.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-
-  return new Promise<DesktopDataHomeChoice>((resolve, reject) => {
-    let settled = false
-    const cleanup = (): void => {
-      ipcMain.removeListener('dsh:data-home:selected', handleSelection)
-      ipcMain.removeListener('dsh:data-home:cancelled', handleCancellation)
-      ipcMain.removeHandler('dsh:data-home:choose-source')
-      ipcMain.removeHandler('dsh:data-home:choose-target')
-      session.clear()
-      if (dataHomeChooserWindow === chooser) dataHomeChooserWindow = undefined
-    }
-    const closeChooser = (): void => {
-      cleanup()
-      if (!chooser.isDestroyed()) chooser.destroy()
-    }
-    const finish = (selection?: DesktopDataHomeChoice): void => {
-      if (settled) return
-      settled = true
-      closeChooser()
-      if (selection === undefined) reject(new DesktopDataHomeSelectionCancelledError())
-      else resolve(selection)
-    }
-    const fail = (error: unknown): void => {
-      if (settled) return
-      settled = true
-      closeChooser()
-      reject(error instanceof Error ? error : new Error(String(error)))
-    }
-    const handleSelection = (event: Electron.IpcMainEvent, value: unknown): void => {
-      if (event.sender !== chooser.webContents) return
-      void (async () => {
-        const submission = await session.submit(value)
-        if (submission.status === 'source-error') event.sender.send('dsh:data-home:source-error', submission.result)
-        else if (submission.status === 'target-error') event.sender.send('dsh:data-home:target-error', submission.result)
-        else if (submission.status === 'selected') finish(submission.choice)
-      })().catch(fail)
-    }
-    const handleCancellation = (event: Electron.IpcMainEvent): void => {
-      if (event.sender === chooser.webContents) finish()
-    }
-    ipcMain.on('dsh:data-home:selected', handleSelection)
-    ipcMain.on('dsh:data-home:cancelled', handleCancellation)
-    ipcMain.handle('dsh:data-home:choose-source', async (event, origin: unknown): Promise<DesktopDataHomeSourceResult> => {
-      if (event.sender !== chooser.webContents) throw new Error('desktop: invalid data-home source requester')
-      if (origin !== 'official' && origin !== 'community') throw new Error('desktop: invalid data-home source category')
-      const dialogResult = await dialog.showOpenDialog(chooser, {
-        title: shellMessages(app.getLocale()).chooseSource,
-        properties: ['openDirectory'],
-      })
-      const candidate = dialogResult.canceled ? undefined : dialogResult.filePaths[0]
-      const result = await session.chooseSource(origin, candidate)
-      if (result.status !== 'confirmation-required') return result
-      const copy = sourceCopyFor(resolveDesktopLocale(app.getLocale()))
-      const confirmation = await dialog.showMessageBox(chooser, {
-        type: 'warning',
-        title: copy.communityConfirmTitle,
-        message: copy.communityConfirmMessage,
-        detail: `${copy.communityConfirmDetail}\n\n${result.path}`,
-        buttons: [copy.communityConfirmCancel, copy.communityConfirmAccept],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true,
-      })
-      if (confirmation.response !== 1) return { status: 'cancelled' }
-      const confirmed = await session.chooseSource('community', result.path, true)
-      if (confirmed.status === 'confirmation-required') {
-        return { status: 'invalid', path: confirmed.path }
-      }
-      return confirmed
-    })
-    ipcMain.handle('dsh:data-home:choose-target', async (event): Promise<DesktopDataHomeTargetResult> => {
-      if (event.sender !== chooser.webContents) throw new Error('desktop: invalid data-home target requester')
-      const result = await dialog.showOpenDialog(chooser, {
-        title: shellMessages(app.getLocale()).chooseTarget,
-        properties: ['openDirectory', 'createDirectory'],
-      })
-      return session.chooseTarget(result.canceled ? undefined : result.filePaths[0])
-    })
-    chooser.once('closed', () => { finish() })
-    chooser.once('ready-to-show', () => {
-      chooser.show()
-      chooser.focus()
-    })
-    void chooser.loadFile(DATA_HOME_PAGE, { query: {
-      locale: menuLocale,
-      selected: presentation.officialSource === undefined && presentation.communitySource === undefined ? 'fresh' : 'imported',
-      selectedSource: presentation.officialSource === undefined && presentation.communitySource !== undefined ? 'community' : 'official',
-      officialSource: presentation.officialSource?.path ?? '',
-      officialDefaultSource: presentation.officialSource?.path ?? '',
-      officialSourceCandidate: presentation.officialSourceCandidate,
-      officialSourceStatus: presentation.officialSourceUnreadable
-        ? 'unreadable' : presentation.officialSource === undefined ? 'missing' : 'valid',
-      communitySource: presentation.communitySource?.path ?? '',
-      communityDefaultSource: presentation.communitySource?.path ?? '',
-      communitySourceCandidate: presentation.communitySourceCandidate,
-      communitySourceStatus: presentation.communitySourceUnreadable
-        ? 'unreadable' : presentation.communitySource === undefined ? 'missing' : 'valid',
-      defaultTarget: presentation.defaultTarget,
-      development: app.isPackaged ? 'false' : 'true',
-      returnToMain: presentation.returnToMain ? 'true' : 'false',
-      defaultTargetAvailable: presentation.defaultTargetAvailable ? 'true' : 'false',
-    } }).catch(fail)
-  })
-}
-
-async function prepareDesktopDshHome(): Promise<string> {
-  const copy = dataHomeCopy()
-  try {
-    const result = await desktopDataHomes.initialize(async (session) => {
-      return showDataHomeChooser(session)
-    })
-    if (result.copied) {
-      await dialog.showMessageBox({
-        type: 'info', title: copy.completeTitle, message: copy.completeMessage,
-        detail: result.path, buttons: ['OK'], noLink: true,
-      })
-    }
-    return result.path
-  } catch (error) {
-    if (!(error instanceof DesktopDataHomeSelectionCancelledError)) {
-      dialog.showErrorBox(copy.failedTitle, error instanceof Error ? error.message : String(error))
-    }
-    throw error
-  }
-}
-
-function applyLaunchAtLogin(enabled: boolean): void {
-  if (!desktopCapabilities().launchAtLoginAvailable) return
-  app.setLoginItemSettings({ openAtLogin: enabled })
-}
-
-function publishPreferences(): void {
-  mainSurface?.send(DESKTOP_IPC.preferencesChanged, preferences)
-  refreshTrayMenu()
-}
-
-function publishDesktopWebStatus(status: DesktopWebStatus): void {
-  mainSurface?.send(DESKTOP_IPC.webStatus, status)
-  applicationMenu?.refresh()
-  refreshTrayMenu()
-}
-
-function updatePreferences(raw: unknown): DesktopPreferences {
-  const patch = parseDesktopPreferencesPatch(raw)
-  if (patch.launchAtLoginEnabled !== undefined) {
-    if (!desktopCapabilities().launchAtLoginAvailable && patch.launchAtLoginEnabled) {
-      throw new Error('desktop: launch at login is available only in a packaged macOS application')
-    }
-    applyLaunchAtLogin(patch.launchAtLoginEnabled)
-  }
-  preferences = { ...preferences, ...patch }
-  preferencesStore?.write(preferences)
-  publishPreferences()
-  return preferences
-}
-
-async function openHarnessLog(): Promise<OpenLogResult> {
-  const result = await revealHarnessLog(harnessLogPath, shell)
-  if (result.error !== '') dialog.showErrorBox(desktopCopy().logErrorTitle, result.error)
-  return result
-}
-
-function requestDesktopRestart(): void {
-  if (lifecycle !== undefined) {
-    void lifecycle.requestRestart(() => { app.relaunch() })
-    return
-  }
-  app.relaunch()
-  quitReleased = true
+/** Quit without the task confirmation; the caller has already decided the application must stop. */
+function quitWithoutConfirmation(): void {
+  skipQuitConfirmation = true
   app.quit()
 }
+const recovery = new DesktopFatalRecovery({
+  messages: () => currentDesktopLocale().messages,
+  show: options => dialog.showMessageBox(options),
+  stop: () => { shuttingDown = true; return stopForRecovery() },
+  disablePlugins: async () => {
+    const manager = new DesktopProjectManager(resolveDesktopPaths(), runtimeResources())
+    const backupPath = await manager.disableAllPlugins()
+    console.info('Desktop profile recovery completed:', { profilePatchBackup: backupPath ?? null, homePatch: 'unchanged' })
+  },
+  exit: () => { quitWithoutConfirmation() },
+  restart: () => { app.relaunch(); quitWithoutConfirmation() },
+  writeReport: (error, source) => persistCrashReport(error, source),
+})
 
-function buildTrayMenu(): Menu {
-  const copy = desktopCopy()
-  const capabilities = desktopCapabilities()
-  const template: MenuItemConstructorOptions[] = [
-    { label: copy.open, click: () => { lifecycle?.showWindow() } },
-    ...(DESKTOP_WEB_SUPPORTED ? [{
-      label: copy.openWeb,
-      enabled: desktopWebAccess?.canOpen() ?? false,
-      click: () => { applicationMenu?.execute('open-web') },
-    }] : []),
-    {
-      label: copy.restart,
-      click: () => { applicationMenu?.execute('restart') },
+function persistCrashReport(error: unknown, source: CrashReportSource): Promise<string | undefined> {
+  return writeCrashReport(app.getPath('logs'), {
+    source,
+    phase: backendReady ? 'running' : 'startup',
+    error,
+    ...(error instanceof DesktopHostFatalError && error.diagnostic !== undefined ? { hostDiagnostic: error.diagnostic } : {}),
+    rendererConsole: rendererConsole.snapshot(),
+    app: {
+      name: app.name, version: app.getVersion(), platform: process.platform, arch: process.arch,
+      electron: process.versions.electron, node: process.versions.node, locale: currentDesktopLocale().id,
     },
-    { label: copy.openLog, click: () => { applicationMenu?.execute('logs') } },
-    { type: 'separator' },
-    {
-      label: copy.launchAtLogin,
-      type: 'checkbox',
-      visible: capabilities.launchAtLoginAvailable,
-      checked: preferences.launchAtLoginEnabled,
-      click: (item) => { updatePreferences({ launchAtLoginEnabled: item.checked }) },
+    time: new Date(),
+  })
+}
+
+function reportFatal(error: unknown, source: CrashReportSource): void {
+  console.error(error)
+  if (shuttingDown) {
+    // No dialog during shutdown, but the report still records what failed on the way out.
+    void persistCrashReport(error, source)
+    return
+  }
+  void recovery.report(error, source).catch((failure: unknown) => { console.error(failure); app.exit(1) })
+}
+
+protocol.registerSchemesAsPrivileged([{
+  scheme: SCHEME,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    corsEnabled: true,
+    stream: true,
+    codeCache: true,
+  },
+}])
+
+interface RuntimeResources {
+  readonly nodeBin: string
+  readonly node: string
+  readonly pnpm: string
+  readonly dsh: string
+}
+
+function runtimeResources(): RuntimeResources {
+  const development = !app.isPackaged
+  const node = process.execPath
+  const nodeBin = development ? join(app.getAppPath(), 'scripts', 'node-bin') : join(process.resourcesPath, 'runtime', 'bin')
+  const pnpm = (development ? process.env.DSH_DESKTOP_PNPM_ENTRY : undefined)
+    ?? (development ? join(app.getAppPath(), 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
+      : join(process.resourcesPath, 'runtime', 'pnpm', 'bin', 'pnpm.mjs'))
+  const dsh = (development ? process.env.DSH_DESKTOP_DSH_DIR : undefined)
+    ?? (development ? join(app.getAppPath(), '.desktop-build', 'development', 'project') : join(app.getAppPath(), 'dsh'))
+  return { node, nodeBin, pnpm, dsh }
+}
+
+function developmentPrimaryRuntime(): string {
+  const directory = process.env.DSH_DESKTOP_PRIMARY_RUNTIME_DIR
+  if (directory === undefined || directory === '') {
+    throw new Error('dsh desktop: DSH_DESKTOP_PRIMARY_RUNTIME_DIR is required for an unpackaged launch')
+  }
+  return directory
+}
+
+function developmentHostInspectPort(enabled: boolean): number | undefined {
+  const configured = process.env.DSH_DESKTOP_HOST_INSPECT_PORT
+  if (!enabled || configured === undefined || configured === '') return undefined
+  const port = Number(configured)
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    throw new Error('dsh desktop: DSH_DESKTOP_HOST_INSPECT_PORT must be an integer from 1 through 65535')
+  }
+  return port
+}
+
+/**
+ * Opaque chrome fallback matching the built-in sidebar palette (the resolved
+ * `--dsw-static-neutral-bluish-900` / `-50` tokens). An approximation for
+ * custom themes: Windows swaps in the renderer's measured palette over the
+ * windowsAppearance IPC, and macOS shows it only while minimized or hidden.
+ * @returns the sidebar fill hex for the active system color scheme.
+ */
+function chromeFallbackFill(): string {
+  return nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb'
+}
+
+/**
+ * Add the effective Desktop palette to a Platform authorization URL so the
+ * login page opens in the application's theme. `system` resolves through
+ * `nativeTheme.shouldUseDarkColors`, which follows the theme source the
+ * application preload publishes.
+ * @param authorizeUrl - validated Platform authorization URL.
+ * @returns the authorization URL carrying `theme=light` or `theme=dark`.
+ */
+function platformLoginUrl(authorizeUrl: string): string {
+  const url = new URL(authorizeUrl)
+  url.searchParams.set('theme', nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
+  return url.href
+}
+
+function createWindow(preload: string, show = false, primary = false): BrowserWindow {
+  const window = new BrowserWindow({
+    width: 1280,
+    height: 820,
+    minWidth: 520,
+    minHeight: 600,
+    show,
+    ...(process.platform === 'win32' && primary ? {
+      titleBarStyle: 'hidden' as const,
+      titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: chromeFallbackFill(),
+        symbolColor: nativeTheme.shouldUseDarkColors ? '#f9fafb' : '#0f1115' },
+    } : {}),
+    // hiddenInset places traffic lights inside the sidebar; sidebar vibrancy
+    // needs a transparent window background to show through the page.
+    ...(process.platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset' as const,
+      trafficLightPosition: { x: 16, y: 18 },
+      vibrancy: 'sidebar' as const,
+      // 'active' keeps the vibrancy material stable when the window blurs;
+      // 'followWindow' washes the sidebar out behind an unfocused window.
+      visualEffectState: 'active' as const,
+      backgroundColor: '#00000000',
+    } : {}),
+    webPreferences: {
+      preload,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+      webviewTag: primary,
+      devTools: true,
     },
-    {
-      label: copy.notifications,
-      type: 'checkbox',
-      checked: preferences.notificationsEnabled,
-      click: (item) => { updatePreferences({ notificationsEnabled: item.checked }) },
-    },
-    { type: 'separator' },
-    { label: copy.quit, click: () => { applicationMenu?.execute('quit') } },
-  ]
-  return Menu.buildFromTemplate(template)
-}
-
-function refreshTrayMenu(): void {
-  tray?.setContextMenu(buildTrayMenu())
-}
-
-function createTray(): void {
-  const images = iconManager?.images()
-  tray = new Tray(images === undefined ? nativeImage.createFromPath(WINDOW_ICON) : desktopTrayImage(images))
-  tray.setToolTip(APP_NAME)
-  refreshTrayMenu()
-  // A macOS tray with a context menu opens that menu on a primary click. Do
-  // not also focus the application window: doing so lets an auto-hidden menu
-  // bar collapse behind the still-open tray menu. Other platforms retain the
-  // conventional primary-click shortcut for restoring the window.
-  if (process.platform !== 'darwin') {
-    tray.on('click', () => { lifecycle?.showWindow() })
-  }
-  tray.on('right-click', refreshTrayMenu)
-}
-
-/** Apply the saved Dock preference before either setup or the main window appears. */
-function applyStartupDockIcon(): void {
-  if (process.platform !== 'darwin') return
-  try { app.dock?.setIcon(iconManager?.images().application ?? loadDefaultApplicationIcon(process.platform)) }
-  catch { console.warn('desktop: Dock icon could not be applied') }
-}
-
-function desktopTrayImage(images: DesktopIconImages): Electron.NativeImage {
-  if (images.trayTemplate) {
-    images.tray.setTemplateImage(true)
-    return images.tray
-  }
-  const image = nativeImage.createEmpty()
-  const size = process.platform === 'darwin' ? 22 : 16
-  for (const scaleFactor of [1, 2]) image.addRepresentation({
-    scaleFactor, buffer: images.tray.resize({ width: size * scaleFactor, height: size * scaleFactor, quality: 'best' }).toPNG(),
   })
-  image.setTemplateImage(false)
-  return image
-}
-
-function desktopWindowIcon(): Electron.NativeImage | string {
-  const images = iconManager?.images()
-  if (process.platform === 'win32' && images?.applicationIco !== null && images?.applicationIco !== undefined) {
-    return images.applicationIco
-  }
-  return images?.application ?? WINDOW_ICON
-}
-
-function applyDesktopIcons(images: DesktopIconImages, shortcuts: boolean, createShortcut: boolean): IconSurfaceResult[] {
-  applicationMenu?.refresh()
-  const results: IconSurfaceResult[] = []
-  try {
-    if (process.platform === 'darwin') {
-      if (app.dock === undefined) throw new Error('Dock unavailable')
-      app.dock.setIcon(images.application)
-    } else {
-      for (const window of BrowserWindow.getAllWindows()) window.setIcon(images.applicationIco ?? images.application)
-      if (app.isPackaged) {
-        for (const window of BrowserWindow.getAllWindows()) window.setAppDetails({
-          appId: 'ai.flaq.deepseek-harness', appIconPath: images.applicationIco ?? process.execPath,
-          appIconIndex: 0, relaunchCommand: `"${process.execPath}"`, relaunchDisplayName: APP_NAME,
-        })
-      }
-    }
-    results.push({ surface: 'application', status: 'applied' })
-  } catch { results.push({ surface: 'application', status: 'unavailable' }) }
-  try {
-    if (tray === undefined) throw new Error('Tray unavailable')
-    tray.setImage(desktopTrayImage(images))
-    results.push({ surface: 'tray', status: 'applied' })
-  } catch { results.push({ surface: 'tray', status: 'unavailable' }) }
-  if (process.platform === 'win32') {
-    results.push({ surface: 'taskbar', status: 'repin' })
-    if (app.isPackaged && shortcuts) {
-      try {
-        results.push(...updateIconShortcuts({
-          desktop: app.getPath('desktop'),
-          startMenu: join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
-          executable: process.execPath, managedDirectory: join(app.getPath('userData'), 'icons'),
-          appId: 'ai.flaq.deepseek-harness', read: path => shell.readShortcutLink(path),
-          write: (path, operation, options) => shell.writeShortcutLink(path, operation, options),
-        }, images.applicationIco ?? process.execPath, createShortcut))
-      } catch { results.push({ surface: 'desktop', status: 'unavailable' }, { surface: 'start-menu', status: 'unavailable' }) }
-    }
-  }
-  return results
-}
-
-const PLUGIN_SNAPSHOT_JSON_MARKER = 'dsh:plugin-snapshot-json '
-
-function parsePluginSnapshotJson(output: string): unknown {
-  const line = output.split(/\r?\n/u).find(candidate => candidate.startsWith(PLUGIN_SNAPSHOT_JSON_MARKER))
-  if (line === undefined) throw new Error(`desktop: plugin snapshot command returned no structured result: ${output.slice(-2000)}`)
-  return JSON.parse(line.slice(PLUGIN_SNAPSHOT_JSON_MARKER.length)) as unknown
-}
-
-function parseDiagnosticLabDoctorOutput(output: string): DiagnosticLabDoctorResult {
-  const start = output.indexOf('{')
-  const end = output.lastIndexOf('}')
-  if (start < 0 || end < start) throw new Error(`desktop: Doctor returned no structured report: ${output.slice(-2000)}`)
-  const report = JSON.parse(output.slice(start, end + 1)) as {
-    status?: unknown
-    issues?: Array<{ code?: unknown }>
-  }
-  if (typeof report.status !== 'string' || !Array.isArray(report.issues)) {
-    throw new Error('desktop: Doctor returned an invalid structured report')
-  }
-  return {
-    status: report.status,
-    issueCodes: report.issues.flatMap(issue => typeof issue.code === 'string' ? [issue.code] : []),
-    output,
-  }
-}
-
-class PackageManagerInvocationError extends Error {
-  readonly timedOut: boolean
-
-  constructor(message: string, timedOut: boolean) {
-    super(message)
-    this.timedOut = timedOut
-  }
-}
-
-async function runPackageManagerInvocation(
-  args: readonly string[],
-  cwd: string,
-  environment: NodeJS.ProcessEnv,
-  options: DesktopLaunchOptions,
-  timeoutMs = 10 * 60_000,
-): Promise<string> {
-  const packageManager = options.packageManagerBin
-  if (packageManager === undefined) throw new Error('desktop: bundled pnpm is unavailable')
-  const javaScriptEntry = /\.(?:cjs|mjs|js)$/iu.test(packageManager)
-  const command = javaScriptEntry
-    ? environment.DSH_DESKTOP_NODE_BIN ?? options.nodeCommand ?? 'node'
-    : packageManager
-  const commandArgs = javaScriptEntry ? [packageManager, ...args] : [...args]
-  try {
-    if (args[0] === 'install' && environment.DSH_HOME !== undefined
-      && cwd === join(environment.DSH_HOME, 'profiles', 'web')) {
-      return await runDesktopInvocation(resolveHarnessInvocation(environment, [
-        'plugin', '--profile', 'web', 'snapshot', 'materialize', ...args.slice(1),
-      ], options), 'package-manager', timeoutMs)
-    }
-    return await runDesktopInvocation({
-      command,
-      args: commandArgs,
-      cwd,
-      environment,
-    }, 'package-manager', timeoutMs)
-  } catch (error) {
-    throw new PackageManagerInvocationError(
-      error instanceof Error ? error.message : String(error),
-      error instanceof HarnessInvocationError && error.timedOut,
-    )
-  }
-}
-
-async function inspectImportedPluginSource(
-  packageSpec: string,
-  environment: NodeJS.ProcessEnv,
-  options: DesktopLaunchOptions,
-) {
-  const directory = await mkdtemp(join(tmpdir(), 'dsh-plugin-source-check-'))
-  try {
-    await writeFile(join(directory, 'package.json'), '{"private":true}\n', { mode: 0o600 })
-    try {
-      await runPackageManagerInvocation([
-        'add', '--lockfile-only', '--ignore-scripts', '--save-exact', packageSpec,
-      ], directory, environment, options)
-      return { availability: 'available' as const }
-    } catch (error) {
-      return classifyImportedPluginSourceFailure(
-        error instanceof Error ? error.message : String(error),
-        error instanceof PackageManagerInvocationError && error.timedOut,
-      )
-    }
-  } finally {
-    await rm(directory, { recursive: true, force: true })
-  }
-}
-
-function showDesktopMessageBox(options: MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
-  return mainWindow === undefined
-    ? dialog.showMessageBox(options)
-    : dialog.showMessageBox(mainWindow, options)
-}
-
-async function resolveStartupBuildApproval(
-  diagnostic: string,
-  environment: NodeJS.ProcessEnv,
-  launchOptions: DesktopLaunchOptions,
-): Promise<string> {
-  const approval = parseStartupBuildApproval(diagnostic)
-  if (approval === undefined) return diagnostic
-  const chinese = app.getLocale().toLowerCase().startsWith('zh')
-  const result = await showDesktopMessageBox({
-    type: 'warning',
-    title: shellMessages(app.getLocale()).buildBlockedTitle,
-    message: shellMessages(app.getLocale()).buildBlockedMessage,
-    detail: chinese
-      ? `pnpm 已阻止 ${approval.packageBuildKey} 的构建脚本。该插件已被安全隔离，因此即使不允许也可以继续进入应用。仅在你信任插件来源时允许。`
-      : `pnpm blocked the build script for ${approval.packageBuildKey}. The plugin is already safely isolated, so you can continue without allowing it. Only allow a source you trust.`,
-    buttons: chinese
-      ? ['允许构建并恢复插件', '不允许，保持隔离', '退出应用']
-      : ['Allow and restore plugin', 'Keep isolated', 'Quit'],
-    defaultId: 1,
-    cancelId: 2,
-    noLink: true,
-  })
-  if (result.response === 2) throw new DesktopDataHomeSelectionCancelledError()
-  if (result.response !== 0) return diagnostic
-
-  const recoveryDiagnostics: string[] = []
-  try {
-    recoveryDiagnostics.push(await runDesktopInvocation(resolveHarnessInvocation(environment, [
-      'plugin', '--profile', 'web', 'approve-build-key', approval.packageBuildKey,
-    ], launchOptions), 'build-approval-recovery', BUILD_APPROVAL_TIMEOUT_MS))
-    for (const quarantineId of approval.quarantineIds) {
-      recoveryDiagnostics.push(await runDesktopInvocation(resolveHarnessInvocation(environment, [
-        'plugin', '--profile', 'web', 'doctor', '--retry', quarantineId,
-      ], launchOptions), 'quarantine-retry', PROFILE_REPAIR_TIMEOUT_MS, [0, 10, 11]))
-    }
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    await showDesktopMessageBox({
-      type: 'warning',
-      title: shellMessages(app.getLocale()).recoveryFailedTitle,
-      message: shellMessages(app.getLocale()).recoveryFailedMessage,
-      detail: chinese
-        ? `构建许可未能安全完成或插件仍有其他问题。插件会继续保持隔离，可稍后在“诊断”中重试。\n\n${detail.slice(-2000)}`
-        : `The approval could not be completed safely or the plugin has another issue. It remains isolated and can be retried later in Diagnostics.\n\n${detail.slice(-2000)}`,
-      buttons: [chinese ? '继续' : 'Continue'],
-    })
-    return `${diagnostic}\n[desktop] Build approval recovery failed: ${detail}`
-  }
-  return `${diagnostic}\n[desktop] User approved ${JSON.stringify(approval.packageBuildKey)} and restored ${approval.quarantineIds.length} quarantined plugin(s).\n${recoveryDiagnostics.join('\n')}`
-}
-
-function assertMainRenderer(sender: Electron.WebContents): void {
-  if (mainSurface === undefined || mainSurface.window.isDestroyed()
-    || !isDesktopRenderer(sender, mainSurface.renderer)) {
-    throw new Error('desktop: request came from an untrusted renderer')
-  }
-}
-
-function publishStartupProgress(next: DesktopStartupProgress): void {
-  startupProgress = {
-    ...next,
-    startedAt: next.startedAt ?? Date.now(),
-    state: next.state ?? 'running',
-  }
-  mainSurface?.send('dsh:startup-progress', startupProgress)
-}
-
-function showLoading(
-  state: HarnessState,
-  failure?: HarnessFailure & { logPath: string } & Partial<RecoveryFailureSummary>,
-  mode?: 'shutdown',
-): void {
-  if (mainSurface === undefined || mainSurface.window.isDestroyed() || state === 'ready' || state === 'stopped') return
-  if (failure !== undefined) {
-    latestRecoveryFailure = failure.message
-    latestRecoveryDiagnostic = failure.diagnosticCode === undefined ? undefined : {
-      diagnosticCode: failure.diagnosticCode,
-      ...(failure.nativeCode === undefined ? {} : { nativeCode: failure.nativeCode }),
-      ...(failure.packageName === undefined ? {} : { packageName: failure.packageName }),
-      ...(failure.entryId === undefined ? {} : { entryId: failure.entryId }),
-      ...(failure.moduleName === undefined ? {} : { moduleName: failure.moduleName }),
-      ...(failure.evidence === undefined ? {} : { evidence: failure.evidence }),
-    }
-  }
-  void mainSurface.loadFile(LOADING_PAGE, {
-    query: {
-      state,
-      locale: menuLocale,
-      ...(mode === 'shutdown' || startupProgress.stage === 'waiting-background-tasks'
-        || startupProgress.stage === 'stopping-harness'
-        || startupProgress.stage === 'reclaiming-processes'
-        || startupProgress.stage === 'checking-shutdown')
-        ? { mode: 'shutdown' }
-        : {},
-      stage: startupProgress.stage,
-      progress: String(startupProgress.progress),
-      ...(startupProgress.detail === undefined ? {} : { detail: startupProgress.detail }),
-      ...(failure === undefined ? {} : {
-        message: failure.message,
-        logPath: failure.logPath,
-        ...(failure.diagnosticCode === undefined ? {} : { diagnosticCode: failure.diagnosticCode }),
-        ...(failure.nativeCode === undefined ? {} : { nativeCode: failure.nativeCode }),
-        ...(failure.packageName === undefined ? {} : { packageName: failure.packageName }),
-        ...(failure.entryId === undefined ? {} : { entryId: failure.entryId }),
-        ...(failure.moduleName === undefined ? {} : { moduleName: failure.moduleName }),
-        ...(failure.evidence === undefined ? {} : { evidence: failure.evidence }),
-      }),
-    },
-  }).catch((error: unknown) => {
-    // A newer loading stage or the ready page can supersede this navigation.
-    if (error instanceof Error && 'code' in error && error.code === 'ERR_ABORTED') return
-    console.error('desktop: loading page navigation failed', error)
-  })
-}
-
-async function loadAuthenticatedHarness(surface: DesktopWindowSurface, url: string): Promise<void> {
-  const expectedOrigin = new URL(url).origin
-  if (mainSurface !== surface || surface.window.isDestroyed() || harnessOrigin !== expectedOrigin) return
-  try {
-    const removed = await clearStaleHarnessAuthCookies(surface.renderer.session.cookies, url)
-    if (removed > 0) await appendDesktopStartupLog(`Removed ${removed} stale Harness authentication cookie(s).`)
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    console.warn('desktop: could not clear stale Harness authentication cookies', error)
-    await appendDesktopStartupLog(`Could not clear stale Harness authentication cookies: ${detail}`)
-  }
-  if (mainSurface !== surface || surface.window.isDestroyed() || harnessOrigin !== expectedOrigin) return
-  await surface.loadURL(withDesktopWindowMetadata(url, process.platform))
-}
-
-function configureNavigation(renderer: WebContents): void {
-  const permissionGrants = new Set<string>()
-  const permissionDetails = (details: object): HarnessPermissionDetails => ({
-    ...('mediaType' in details && details.mediaType !== undefined
-      ? { mediaType: details.mediaType as Exclude<HarnessPermissionDetails['mediaType'], undefined> }
-      : {}),
-    ...('mediaTypes' in details && Array.isArray(details.mediaTypes)
-      ? { mediaTypes: details.mediaTypes as ('video' | 'audio')[] }
-      : {}),
-  })
-  const originGrantKey = (origin: string, key: string): string => `${origin}\n${key}`
-  const requestPermissionConsent = (
-    permission: string,
-    details: HarnessPermissionDetails,
-    origin: string,
-  ): Promise<boolean> => {
-    const decisionKeys = harnessPermissionDecisionKeys(permission, details)
-    if (decisionKeys.length === 0) return Promise.resolve(false)
-    const promptKey = `${renderer.id}\n${origin}\n${decisionKeys.join(',')}`
-    const existing = pendingPermissionPrompts.get(promptKey)
-    if (existing !== undefined) return existing
-
-    const chinese = app.getLocale().toLowerCase().startsWith('zh')
-    const capability = harnessPermissionName(permission, details, chinese ? 'zh' : 'en')
-    const options: MessageBoxOptions = {
-      type: 'question',
-      title: shellMessages(app.getLocale()).permissionTitle(APP_NAME),
-      message: shellMessages(app.getLocale()).permissionMessage(capability),
-      detail: chinese
-        ? '仅在你确认后，当前本机 Harness 页面才能使用此能力。拒绝不会影响其他功能。'
-        : 'Only the current local Harness page can use this capability after you approve it. Denying it will not affect other features.',
-      buttons: chinese ? ['拒绝', '允许'] : ['Deny', 'Allow'],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-    }
-    const decision = permissionPromptQueue.then(async () => {
-      if (renderer.isDestroyed() || harnessOrigin !== origin) return false
-      const owner = BrowserWindow.fromWebContents(renderer)
-      const result = owner === null
-        ? await dialog.showMessageBox(options)
-        : await dialog.showMessageBox(owner, options)
-      return result.response === 1 && !renderer.isDestroyed() && harnessOrigin === origin
-    })
-    permissionPromptQueue = decision.then(() => undefined, () => undefined)
-    pendingPermissionPrompts.set(promptKey, decision)
-    void decision.then(
-      () => pendingPermissionPrompts.delete(promptKey),
-      () => pendingPermissionPrompts.delete(promptKey),
-    )
-    return decision
-  }
-
-  renderer.on('will-navigate', (event, target) => {
-    if (harnessOrigin !== undefined && new URL(target).origin === harnessOrigin) return
-    event.preventDefault()
-  })
-  renderer.setWindowOpenHandler(({ url }) => {
-    let parsed: URL
-    try {
-      parsed = new URL(url)
-    } catch {
-      return { action: 'deny' }
-    }
-    if (parsed.protocol === 'https:') void shell.openExternal(parsed.href)
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (['http:', 'https:'].includes(new URL(url).protocol)) void shell.openExternal(url)
     return { action: 'deny' }
   })
-  renderer.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
-    if (bootNasRuntime() !== undefined && permission !== 'notifications') return false
-    const origin = harnessOrigin
-    const trustedContents = contents === renderer
-      || (contents === null && details.embeddingOrigin === undefined)
-    if (!trustedContents || !isTrustedHarnessPermissionRequest(
-      permission, details.requestingUrl ?? requestingOrigin, origin, details.isMainFrame,
-    )) return false
-    if (isSilentHarnessPermission(permission)) return true
-    if (origin === undefined) return false
-    const keys = harnessPermissionDecisionKeys(permission, permissionDetails(details))
-    return keys.length > 0 && keys.every(key => permissionGrants.has(originGrantKey(origin, key)))
-  })
-  renderer.session.setPermissionRequestHandler((contents, permission, callback, details) => {
-    if (bootNasRuntime() !== undefined && permission !== 'notifications') {
-      callback(false)
-      return
+  if (process.platform === 'darwin') {
+    // macOS hides the traffic lights in fullscreen; the page drops its
+    // clearance for them off the html[data-fullscreen] flag this feeds.
+    const sendFullscreen = (): void => {
+      if (!window.isDestroyed()) window.webContents.send(DESKTOP_IPC.windowFullscreen, window.isFullScreen())
     }
-    const requestingUrl = details.requestingUrl
-    const isMainFrame = 'isMainFrame' in details && details.isMainFrame
-    const origin = harnessOrigin
-    if (contents !== renderer || !isTrustedHarnessPermissionRequest(
-      permission, requestingUrl, origin, isMainFrame,
-    )) {
-      callback(false)
-      return
+    window.on('enter-full-screen', sendFullscreen)
+    window.on('leave-full-screen', sendFullscreen)
+    // Reloads and navigations re-register the preload listener; resend the
+    // current state so a fullscreen reload does not fall back to windowed CSS.
+    window.webContents.on('did-finish-load', sendFullscreen)
+    // Deminiaturize reattaches the NSVisualEffectView material late
+    // (electron/electron#25368), so a transparent window shows the desktop
+    // through the sidebar until then. Paint an opaque base while minimized or
+    // hidden so the deminiaturize animation and the reattachment gap show a
+    // solid fill; restoring flips back, and the null -> 'sidebar' transition
+    // forces the material to reattach.
+    const applyBackdrop = (): void => {
+      if (window.isDestroyed()) return
+      if (window.isMinimized() || !window.isVisible()) {
+        window.setVibrancy(null)
+        window.setBackgroundColor(chromeFallbackFill())
+      } else {
+        window.setVibrancy('sidebar')
+        window.setBackgroundColor('#00000000')
+      }
     }
-    if (isSilentHarnessPermission(permission)) {
-      callback(true)
-      return
-    }
-    if (origin === undefined) {
-      callback(false)
-      return
-    }
-    const parsedDetails = permissionDetails(details)
-    const keys = harnessPermissionDecisionKeys(permission, parsedDetails)
-    if (keys.length > 0 && keys.every(key => permissionGrants.has(originGrantKey(origin, key)))) {
-      callback(true)
-      return
-    }
-    void requestPermissionConsent(permission, parsedDetails, origin).then((allowed) => {
-      if (allowed) for (const key of keys) permissionGrants.add(originGrantKey(origin, key))
-      callback(allowed)
-    }, () => { callback(false) })
-  })
-}
-
-function createWindow(): BrowserWindow {
-  const rendererPreferences: WebPreferences = {
-    contextIsolation: true,
-    nodeIntegration: false,
-    sandbox: true,
-    preload: PRELOAD,
-    additionalArguments: [
-      app.isPackaged ? '--dsh-packaged' : '--dsh-source',
-      ...(bootNasRuntime() === undefined ? [] : ['--dsh-nas-runtime']),
-    ],
+    window.on('minimize', applyBackdrop)
+    window.on('hide', applyBackdrop)
+    window.on('restore', applyBackdrop)
+    window.on('show', applyBackdrop)
   }
-  const surface = createDesktopWindowSurface({
-    platform: process.platform,
-    window: {
-      title: APP_NAME,
-      width: 1440,
-      height: 920,
-      minWidth: 960,
-      minHeight: 640,
-      backgroundColor: desktopThemeBackground(desktopThemeSource, nativeTheme.shouldUseDarkColors),
-      icon: desktopWindowIcon(),
-      show: false,
-    },
-    rendererPreferences,
-    titlebarPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      preload: TITLEBAR_PRELOAD,
-    },
-    titlebarPage: TITLEBAR_PAGE,
-    onSplitFailure: (error) => {
-      console.error('desktop: could not create split title-bar renderer; using the native frame', error)
-      void appendDesktopStartupLog(`Split title-bar renderer unavailable: ${error instanceof Error ? error.message : String(error)}`)
-    },
-  })
-  const { window } = surface
-  configureNavigation(surface.renderer)
-  surface.renderer.session.webRequest.onCompleted({ urls: ['http://127.0.0.1/*', 'https://*/*'] }, (details) => {
-    if (details.webContentsId !== surface.renderer.id || details.resourceType !== 'mainFrame'
-      || details.statusCode < 400 || lifecycle?.isQuitting === true || harnessOrigin === undefined) return
-    let responseOrigin: string
-    try { responseOrigin = new URL(details.url).origin } catch { return }
-    if (responseOrigin !== harnessOrigin) return
-    const evidence = `HTTP ${details.statusCode}`
-    void appendDesktopStartupLog(`Harness main page failed with ${evidence}; showing recovery controls.`)
-    showLoading('failed', {
-      message: shellMessages(app.getLocale()).harnessHttpFailed(details.statusCode),
-      diagnosticCode: 'desktop.harness-http-response',
-      nativeCode: `HTTP_${details.statusCode}`,
-      evidence,
-      logPath: harnessLogPath,
-    })
-  })
-  surface.renderer.on('page-title-updated', (_event, title) => {
-    surface.sendTitlebar('dsh:window:title', desktopWindowTitle(title))
-  })
-  if (surface.titlebarRenderer !== undefined) {
-    const syncTitlebarState = (): void => {
-      surface.layout()
-      surface.sendTitlebar('dsh:window:maximized', window.isMaximized())
-      surface.sendTitlebar('dsh:window:title', desktopWindowTitle(surface.renderer.getTitle()))
-      surface.sendTitlebar('dsh:window:theme', nativeTheme.shouldUseDarkColors)
+  window.webContents.on('context-menu', (_event, { isEditable, selectionText, editFlags }) => {
+    const items: MenuItemConstructorOptions[] = []
+    if (isEditable) {
+      items.push(
+        { role: 'undo', enabled: editFlags.canUndo },
+        { role: 'redo', enabled: editFlags.canRedo },
+        { type: 'separator' },
+        { role: 'cut', enabled: editFlags.canCut },
+        { role: 'copy', enabled: editFlags.canCopy },
+        { role: 'paste', enabled: editFlags.canPaste },
+        { type: 'separator' },
+        { role: 'selectAll', enabled: editFlags.canSelectAll },
+      )
+    } else if (selectionText.length > 0) {
+      items.push({ role: 'copy', enabled: editFlags.canCopy })
     }
-    window.on('maximize', syncTitlebarState)
-    window.on('unmaximize', syncTitlebarState)
-    void surface.initialize().then(syncTitlebarState, (error: unknown) => {
-      console.error('desktop: could not load the custom title bar', error)
-    })
-  }
-  window.once('ready-to-show', () => {
-    if (!hiddenLaunch && lifecycle?.isQuitting !== true) window.show()
-  })
-  window.on('close', (event) => {
-    lifecycle?.onWindowClose(event)
-    if (!event.defaultPrevented) surface.dispose()
-  })
-  window.on('closed', () => {
-    surface.dispose()
-    if (mainSurface === surface) mainSurface = undefined
-    if (mainWindow === window) mainWindow = undefined
-  })
-  mainWindow = window
-  mainSurface = surface
-  applicationMenu?.attach(surface)
-  applicationMenu?.refresh()
-  const refreshMenu = (): void => { applicationMenu?.refresh() }
-  window.on('maximize', refreshMenu)
-  window.on('unmaximize', refreshMenu)
-  window.on('enter-full-screen', refreshMenu)
-  window.on('leave-full-screen', refreshMenu)
-  surface.titlebarRenderer?.on('did-finish-load', () => { applicationMenu?.refresh() })
-  const rendererId = surface.renderer.id
-  surface.renderer.on('destroyed', () => {
-    iconManager?.discardOwner(rendererId)
-    menuClientAvailable = false
-    menuClientReady = false
-    rejectPendingMenuCommands()
-    applicationMenu?.refresh()
-  })
-  surface.renderer.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) {
-      iconManager?.discardOwner(rendererId)
-      menuClientAvailable = false
-      menuClientReady = false
-      rejectPendingMenuCommands()
-      applicationMenu?.refresh()
+    // Empty accelerators suppress Electron's default shortcut labels for native roles.
+    if (items.length > 0) {
+      const messages = currentDesktopLocale().messages
+      Menu.buildFromTemplate(items.map(item => ({
+        ...item,
+        ...(process.platform === 'win32' && item.role !== undefined && item.role in messages
+          ? { label: messages[item.role as keyof typeof messages] } : {}),
+        accelerator: '',
+      }))).popup({ window })
     }
   })
-  if (iconManager !== undefined && tray !== undefined) iconManager.refresh(app.isPackaged)
-  if (harnessOrigin === undefined) showLoading('starting')
-  else void surface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))
+  window.webContents.on('will-navigate', (event, url) => {
+    const destination = new URL(url)
+    const current = new URL(window.webContents.getURL())
+    if (destination.protocol !== `${SCHEME}:`
+      && !(destination.protocol === 'http:' && destination.origin === current.origin)) {
+      event.preventDefault()
+      if (['http:', 'https:'].includes(destination.protocol)) void shell.openExternal(url)
+    }
+  })
   return window
 }
 
-async function startApplication(): Promise<void> {
-  if (process.platform === 'win32') app.setAppUserModelId('ai.flaq.deepseek-harness')
-  await app.whenReady()
-  desktopLocaleStore = createDesktopLocaleStore(join(app.getPath('userData'), 'desktop-locale.json'))
-  menuLocale = desktopLocaleStore.read(app.getLocale())
-  applicationMenu = new ApplicationMenuController({
-    surface: () => mainSurface,
-    state: () => ({ platform: process.platform, locale: menuLocale,
-      clientAvailable: menuClientAvailable && harnessOrigin !== undefined,
-      ready: menuClientReady && harnessOrigin !== undefined,
-      busy: menuBusy(), maximized: mainWindow?.isMaximized() ?? false,
-      fullscreen: mainWindow?.isFullScreen() ?? false, development: !app.isPackaged }),
-    icon: () => (iconManager?.images().application ?? nativeImage.createFromPath(WINDOW_ICON))
-      .resize({ width: 20, height: 20 }).toDataURL(),
-    execute: executeProductMenu, reportError: reportMenuError,
-  })
-  disposeApplicationMenu = applicationMenu.register(ipcMain)
-  applicationMenu.refresh()
-  if (process.platform === 'darwin' || process.platform === 'win32') {
-    iconManager = new DesktopIconManager({
-      directory: join(app.getPath('userData'), 'icons'), platform: process.platform, packaged: app.isPackaged,
-      defaultApplication: loadDefaultApplicationIcon(process.platform),
-      defaultTray: nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : WINDOW_ICON),
-      apply: applyDesktopIcons,
-      notify: status => mainSurface?.send(DESKTOP_IPC.iconsStatus, status),
-    })
+async function main(): Promise<void> {
+  void pruneCrashReports(app.getPath('logs'))
+  const journalDirectory = process.env.DSH_DESKTOP_UPDATE_JOURNAL_DIR
+  const updateJournal = journalDirectory === undefined ? undefined : new DesktopUpdateJournal(journalDirectory, app.getVersion())
+  const resources = runtimeResources()
+  const paths = resolveDesktopPaths()
+  const development = !app.isPackaged
+  const primaryRuntime = development
+    ? developmentPrimaryRuntime()
+    : join(process.resourcesPath, 'runtime', 'primary-runtime')
+  const activeProject = paths.profile
+  const manager = new DesktopProjectManager(paths, resources)
+  let quitting = false
+  let startup: Promise<void> | undefined
+  let workspaceRecovery: Promise<void> | undefined
+  let mainWindow: BrowserWindow | undefined
+  let welcomeWindow: BrowserWindow | undefined
+  let enteredWorkspace = false
+  // NSIS passes --updated when it launches the application after installation.
+  let raiseAfterUpdate = process.platform === 'win32' && process.argv.includes('--updated')
+  let shellInstallerOwnsQuit = false
+  let requireCleanStop = false
+  let updateStoppedHost = false
+  let updateStopFailure: DesktopHostUncleanExitError | undefined
+  let updateState: DesktopUpdateState = { phase: 'idle' }
+  const systemLanguages = app.getPreferredSystemLanguages()
+  let locale = resolveDesktopStartupLocale(null, systemLanguages)
+  windowsLanguage = locale.id
+  let mandatoryPolicy: DesktopMandatoryUpdatePolicy | undefined
+  let mandatoryUI: DesktopMandatoryUpdateWindow | undefined
+  let policyAuth: DesktopPolicyTestAuth | undefined
+  let tray: DesktopTray | undefined
+  /**
+   * The operating system is ending the session: the quit skips its confirmation. Windows sets it
+   * on the definitive session-end message. macOS sets it on the power-off notification, which
+   * another application can still cancel, so the next focus or show of the main window clears it.
+   */
+  let sessionEnding = false
+  const isQuitting = (): boolean => quitting
+  const currentMainWindow = (): BrowserWindow | undefined => mainWindow
+  const ordinaryDialogs = new Set<AbortController>()
+  const currentDialogWindow = (): BrowserWindow | undefined => welcomeWindow ?? mainWindow
+  const updateOverlays = new DesktopUpdateOverlays()
+  const updateDialog = new DesktopUpdateDialog(fileURLToPath(new URL('./preload-update-dialog.cjs', import.meta.url)), () => locale, updateOverlays)
+  const isMandatory = (): boolean => mandatoryPolicy?.state.blocking === true
+  const ordinaryMessageBox = async (options: UpdateDialogOptions): Promise<Electron.MessageBoxReturnValue> => {
+    const controller = new AbortController()
+    ordinaryDialogs.add(controller)
+    try {
+      const parent = currentDialogWindow()
+      if (parent === undefined) return { response: options.cancelId ?? 0, checkboxChecked: false }
+      return await updateDialog.show(parent, { ...options, signal: controller.signal })
+    }
+    finally { ordinaryDialogs.delete(controller) }
   }
-  applyStartupDockIcon()
-  const nasRuntimeStore = new NasRuntimeStore(
-    join(app.getPath('userData'), 'nas-runtimes-v1.json'),
-    join(app.getPath('userData'), 'nas-device-credentials-v1.json'),
-    {
-      available: safeStorage.isEncryptionAvailable(),
-      seal: value => safeStorage.encryptString(value).toString('base64'),
-      open: value => safeStorage.decryptString(Buffer.from(value, 'base64')),
-    },
-    (error) => { console.error('desktop: could not read NAS runtime settings', error) },
-  )
-  const nasRuntimeClient = new NasRuntimeClient(async (url, init) => net.fetch(url, init))
-  const authority = new DesktopNasRuntimeAuthority({
-    store: nasRuntimeStore,
-    network: {
-      discover: discoverNasRuntimes,
-      inspectCertificate: inspectNasCertificate,
-      health: (baseUrl, token) => nasRuntimeClient.health(baseUrl, token),
-      pair: request => nasRuntimeClient.pair(request),
-      devices: (baseUrl, token) => nasRuntimeClient.devices(baseUrl, token),
-      revokeDevice: (baseUrl, token, deviceId) => nasRuntimeClient.revokeDevice(baseUrl, token, deviceId),
-    },
-    connection: {
-      capture: () => {
-        const surface = mainSurface
-        if (surface === undefined) return undefined
-        return {
-          isCurrent: runtime => !surface.window.isDestroyed() && mainSurface === surface
-            && bootNasRuntime()?.id === runtime.id,
-          load: baseUrl => surface.loadURL(withDesktopWindowMetadata(baseUrl, process.platform)),
-        }
-      },
-      begin: (runtime) => {
-        harnessOrigin = runtime.baseUrl
-        harnessAuthenticationUrl = undefined
-        reportedDesktopReadiness.clear()
-        publishStartupProgress({ stage: 'starting-harness', progress: 72, detail: 'connecting-nas' })
-        showLoading('starting')
-      },
-      ready: () => { publishStartupProgress({ stage: 'ready', progress: 100, detail: 'nas-ready' }) },
-      fail: async (runtime, error) => {
-        await appendDesktopStartupLog(`NAS connection failed: ${error.message}`)
-        showLoading('failed', {
-          message: error.message,
-          diagnosticCode: 'desktop.nas-connection-failed',
-          evidence: runtime.baseUrl,
-          logPath: harnessLogPath,
+  // Copy comes from the same locale as the update prompts so the dialog
+  // chrome and its content never mix languages.
+  const showAbout = async (): Promise<void> => {
+    await ordinaryMessageBox({ type: 'info', title: locale.messages.aboutMenu, message: locale.messages.aboutProduct,
+      detail: formatDesktopMessage(locale.messages.aboutVersion, { version: app.getVersion() }),
+      buttons: [locale.messages.updateAcknowledge], cancelId: 0 })
+  }
+  const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
+  const applicationUrl = `${SCHEME}://app/`
+  let hostUrl: string | undefined
+  let hostCookie: string | undefined
+  const browserGuests = new DesktopBrowserGuests(() => hostUrl)
+  let injections: readonly unknown[] = []
+  let welcomeBackend: DesktopWelcomeBackend | undefined
+  let stopAccount: (() => void) | undefined
+  let openedAttempt: string | undefined
+  let returnedAttempt: string | undefined
+  let pendingWelcomeNotice: WelcomeNotice | undefined
+  let previousAccountStatus: string | undefined
+  const assertProductSender = (event: IpcMainInvokeEvent): void => {
+    assertDesktopSender(event, ['app'])
+    if (mainWindow === undefined || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
+      || event.senderFrame === null || event.senderFrame !== mainWindow.webContents.mainFrame) {
+      throw new Error('dsh desktop: rejected IPC from an unowned renderer')
+    }
+  }
+  let navigation: { window: BrowserWindow; url: string; promise: Promise<void> } | undefined
+  const navigateMain = (url: string): Promise<void> => {
+    const window = mainWindow
+    if (quitting || window === undefined || window.isDestroyed()) return Promise.resolve()
+    if (navigation?.window === window && navigation.url === url) return navigation.promise
+    const next = { window, url, promise: Promise.resolve() }
+    next.promise = window.loadURL(url).catch((error: unknown) => {
+      if (quitting || shuttingDown || window.isDestroyed() || navigation !== next
+        || (error instanceof Error && 'code' in error && error.code === 'ERR_ABORTED')) return
+      navigation = undefined
+      throw error
+    })
+    navigation = next
+    return next.promise
+  }
+  const platformView = new DesktopPlatformView(join(app.getAppPath(), 'lib', 'preload-platform-account.cjs'),
+    () => locale.id === 'zh-CN' ? 'zh_CN' : 'en_US', process.platform === 'win32' ? 'win32' : 'darwin')
+  const backend = new DesktopBackendController((onFailure) => {
+    const hostInspectPort = developmentHostInspectPort(development)
+    const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
+      hostInspectPort, process.env, onFailure,
+      primaryRuntime,
+      resources, (next) => { platformView.setSession(next) })
+    return {
+      start: async () => {
+        const ready = await host.start()
+        hostCookie = await authenticateWebHost(ready.url)
+        hostUrl = ready.url
+        if (ready.injections === undefined) throw new Error('Desktop Host did not provide boot injections')
+        injections = ready.injections
+        welcomeBackend = await connectDesktopWelcome(ready.url, (input, init) => net.fetch(input, init), async () => (await session.defaultSession.cookies.get({ url: ready.url })).map(cookie => `${cookie.name}=${cookie.value}`).join('; '))
+        stopAccount?.()
+        const accountBackend = welcomeBackend.account
+        stopAccount = accountBackend.watch((state) => {
+          if (quitting) return
+          if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
+          const attempt = state.attempt
+          if (attempt?.phase === 'waiting-browser' && attempt.authorizeUrl !== undefined && openedAttempt !== attempt.id) {
+            openedAttempt = attempt.id
+            void shell.openExternal(platformLoginUrl(attempt.authorizeUrl)).catch(() => undefined)
+          }
+          if ((attempt?.phase === 'failed' || attempt?.phase === 'expired') && returnedAttempt !== attempt.id) {
+            returnedAttempt = attempt.id
+            focusPrimaryWindow()
+          }
+          if (state.status === 'credential-stored' && attempt?.phase === 'succeeded' && welcomeWindow !== undefined) void enterWorkspace({ activate: false }).catch(() => undefined)
+          if (previousAccountStatus === 'credential-stored' && state.status === 'signed-out') {
+            void readWelcomeState().then(async (value) => {
+              if (needsWelcome(value) && !quitting) {
+                enteredWorkspace = false
+                await showWelcome()
+                if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
+              }
+              return undefined
+            }).catch(() => undefined)
+          }
+          previousAccountStatus = state.status
+        }, () => {
+          // The stream reconnects; a transport failure does not change account state.
+        }, () => {
+          void readWelcomeState().then(async (value) => {
+            if (!needsWelcome(value) || quitting) return
+            pendingWelcomeNotice = 'session-expired'
+            enteredWorkspace = false
+            await showWelcome()
+            const state = await accountBackend.state()
+            if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.webContents.send(WELCOME_IPC.state, state)
+          }).catch(() => undefined)
         })
       },
-    },
-    lifecycle: {
-      stopActiveProfileServices: stopPersistentServicesForActiveProfile,
-      restartAfter: (delayMs) => { setTimeout(requestDesktopRestart, delayMs) },
-    },
-    publishStatus: status => mainSurface?.send(DESKTOP_IPC.nasStatus, status),
+      stop: async () => {
+        try { await host.stop(requireCleanStop) }
+        catch (error) {
+          if (!requireCleanStop || !(error instanceof DesktopHostUncleanExitError)) throw error
+          // Backend cleanup succeeded; installation still rejects the unsuccessful task teardown.
+          updateStopFailure = error
+        }
+      },
+      updateTasks: (action: 'inspect' | 'lock' | 'unlock') => host.updateTasks(action),
+      inspectQuit: () => host.inspectQuit(),
+    }
+  }, (state) => {
+    if (state.phase === 'error') reportFatal(state.failure, 'host')
+    else if (!shuttingDown) backendReady = state.phase === 'ready'
   })
-  nasRuntimeAuthority = authority
-  const activeNasRuntime = bootNasRuntime()
-  // A saved NAS selection is a complete runtime choice. Do not force a new device
-  // through local Profile import or mutate its local Harness home before connecting.
-  const dshHome = activeNasRuntime === undefined
-    ? await prepareDesktopDshHome()
-    : DESKTOP_DATA_HOME.dshHome
-  const dataHomeSetup = activeNasRuntime === undefined
-    ? await readDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile)
-    : undefined
-  if (activeNasRuntime === undefined) await applyFreshProfileDefaults(dshHome, dataHomeSetup)
-  // Fenglin: upgrade compatibility — copy missing legacy session trees into the
-  // active home without overwriting existing sessions.
-  if (activeNasRuntime === undefined) {
-    try {
-      const summary = await ensureLegacySessionCompatibility(dshHome, app.getPath('userData'))
-      await appendDesktopStartupLog(summary)
-    } catch (error) {
-      await appendDesktopStartupLog(`legacy session compatibility skipped: ${error instanceof Error ? error.message : String(error)}`)
+
+  const updateErrors = new WeakMap<DesktopUpdateState, Promise<void>>()
+  const showUpdateFailure = (state: DesktopUpdateState): Promise<void> => {
+    if (state.phase !== 'error') return Promise.resolve()
+    if (isMandatory()) { mandatoryUI?.sync(); return Promise.resolve() }
+    let shown = updateErrors.get(state)
+    if (shown === undefined) {
+      shown = ordinaryMessageBox({ type: 'error', title: locale.messages.updateFailedTitle,
+        message: desktopUpdateErrorSummary(state, locale.messages),
+        technicalDetails: state.technicalDetails ?? state.message ?? '' }).then(() => {})
+      updateErrors.set(state, shown)
     }
-    try {
-      const presetSummary = await ensureFenglinLiangShenPreset(dshHome)
-      await appendDesktopStartupLog(presetSummary)
-    } catch (error) {
-      await appendDesktopStartupLog(`liangshen preset ensure skipped: ${error instanceof Error ? error.message : String(error)}`)
-    }
+    return shown
   }
-  // Releases before the portable community import copied the complete Profile and did not write a
-  // restore plan. Keep those deployments intact; new copies carry a plan and use normal first-start
-  // preparation so packaged presets come from local archives before optional plugin restoration.
-  const preserveCopiedPlugins = shouldPreserveLegacyCopiedProfile(dataHomeSetup)
-  activeMenuHome = activeNasRuntime === undefined ? dshHome : undefined
-  const persistentServicesPath = join(app.getPath('userData'), 'managed-processes', 'persistent-services-v1.json')
-  persistentServiceAuthority = new FilePersistentServiceAuthorizer(
-    persistentServicesPath,
-    persistentProfileFingerprint(dshHome),
+  const publishUpdate = (state: DesktopUpdateState): DesktopUpdateState => {
+    updateJournal?.state(state)
+    updateState = state
+    mandatoryUI?.sync()
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(DESKTOP_IPC.updatesPresentation, presentDesktopUpdate(state))
+    }
+    if (state.phase === 'error' && state.failedOperation !== 'check') {
+      const restoreHost = state.failedOperation === 'install' && updateStoppedHost && !quitting
+      shellInstallerOwnsQuit = false
+      updateStoppedHost = false
+      if (restoreHost) {
+        // Only confirmed process exit permits replacement before another installation confirmation.
+        const hostReady = backend.start(async () => {})
+        startup = hostReady
+        const recovery = hostReady.then(async () => {
+          if (quitting) return
+          // A replacement Host can have a new port, cookie, or boot injections even at the same URL.
+          navigation = undefined
+          await navigateMain(applicationUrl)
+          if (backend.host !== undefined) updateJournal?.action('workspace-ready')
+        })
+        workspaceRecovery = recovery
+        void recovery.catch((error: unknown) => { reportFatal(error, 'main') }).finally(() => {
+          if (startup === hostReady) startup = undefined
+          if (workspaceRecovery === recovery) workspaceRecovery = undefined
+        })
+      }
+      void showUpdateFailure(state).catch((error: unknown) => { console.error(error) })
+    }
+    return state
+  }
+
+  const readWelcomeState = async () => {
+    if (backend.host === undefined || welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
+    return welcomeBackend.read()
+  }
+  stopForRecovery = () => backend.close()
+
+  const reconcileBackend = (): Promise<void> => {
+    startup ??= (async () => {
+      await navigateMain(applicationUrl)
+      await backend.start(async () => {
+        await manager.applyRelease()
+      })
+      if (backend.host !== undefined) await openInitialWindow()
+      if (backend.host !== undefined) updateJournal?.action('workspace-ready')
+      // The existing Web document resumes through the boot IPC response.
+    })().catch((error: unknown) => {
+      updateJournal?.action('workspace-failed')
+      reportFatal(error, 'main')
+      throw error
+    }).finally(() => { startup = undefined })
+    return startup
+  }
+
+  const updates = new DesktopUpdateCoordinator(
+    publishUpdate,
+    async () => {
+      await workspaceRecovery
+      await startup?.catch(() => undefined)
+      const host = backend.host
+      if (host === undefined) throw new DesktopUpdatePreparationError('tasks-unavailable', locale.messages.updateTasksUnavailable)
+      const active = await host.updateTasks('inspect')
+      const ready = desktopUpdateReadyConfirmation(locale.messages, updates.state.version ?? '', process.platform)
+      const confirmation: Electron.MessageBoxOptions = {
+        type: active ? 'warning' : 'info', title: locale.messages.updateTitle,
+        message: active ? locale.messages.updateActiveTasks : ready.message,
+        detail: active ? locale.messages.updateActiveTasksDetail : ready.detail,
+        buttons: active ? [locale.messages.updateStopTasks, locale.messages.updateLater] : [locale.messages.installAndRestart],
+        defaultId: 1, cancelId: 1,
+      }
+      if (isMandatory()) {
+        if (!await mandatoryUI?.confirm(updates.state.version ?? '', active)) return false
+      } else {
+        const parent = currentDialogWindow()
+        if (parent === undefined) return false
+        const result = await updateDialog.show(parent, confirmation)
+        if (result.response !== 0 || isMandatory()) return false
+      }
+      if (backend.host !== host) throw new DesktopUpdatePreparationError('tasks-unavailable', locale.messages.updateTasksUnavailable)
+      try {
+        const stillActive = await host.updateTasks('lock')
+        if (stillActive && !active) throw new DesktopUpdatePreparationError('tasks-changed', locale.messages.updateTasksChanged)
+        mandatoryUI?.preparingRestart(stillActive)
+        // The embedded Platform document holds credentials issued by the Host that is about to stop.
+        await platformView.closeAndWait()
+        requireCleanStop = true
+        updateStopFailure = undefined
+        await backend.stop()
+        updateStoppedHost = true
+        // The backend's async cleanup callback can assign this after the reset above.
+        const stopFailure = updateStopFailure as DesktopHostUncleanExitError | undefined
+        if (stopFailure !== undefined) throw new DesktopUpdatePreparationError('stop-failed', locale.messages.updateStopFailed, stopFailure.message)
+        updateJournal?.action('install-confirmed')
+        shellInstallerOwnsQuit = true
+      } catch (error) {
+        if (!updateStoppedHost) await host.updateTasks('unlock').catch((unlockError: unknown) => { console.error(unlockError) })
+        throw error
+      } finally {
+        requireCleanStop = false
+      }
+      return true
+    },
   )
-  persistentServiceRuntime = new FilePersistentServiceRuntimeRegistry(
-    persistentServicesPath,
-    persistentProfileFingerprint(dshHome),
-  )
-  const retainStartupWarning = async (
-    code: StartupDiagnosticCode,
-    operation: string,
-    actions: StartupDiagnosticIncident['actions'],
-    packageName?: string,
-    versions: Pick<StartupDiagnosticIncident, 'recordedVersion' | 'actualVersion' | 'targetVersion'> = {},
-  ): Promise<void> => {
-    startupWarnings.push(`${code}: ${packageName ?? operation}`)
-    await recordStartupDiagnostic(dshHome, {
-      code, operation, actions,
-      ...(packageName === undefined ? {} : { packageName }),
-      ...versions,
+
+  const updateSchedule = new DesktopUpdateSchedule(updates, resolveDesktopUpdateScheduleConfig(process.env))
+
+  const downloadUpdate = async (version: string): Promise<DesktopUpdateState> => {
+    updateJournal?.action('download-requested')
+    const state = await updates.download(version)
+    if (state.phase !== 'ready' || quitting) return state
+    // Only a completed user-driven download opens this prompt; cancelling installation does not reopen it.
+    // A confirmation on a hidden window would go unseen, so it waits for the next show; the mandatory
+    // flow keeps its own taskbar and Dock attention instead.
+    if (!isMandatory()) await windowShown()
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- A quit can begin while the show is awaited.
+    if (quitting) return state
+    return updates.install(version)
+  }
+  const windowShown = (): Promise<void> => new Promise((resolve) => {
+    const window = currentDialogWindow()
+    if (window === undefined || window.isDestroyed() || window.isVisible()) { resolve(); return }
+    window.once('show', () => { resolve() })
+    window.once('closed', () => { resolve() })
+  })
+
+  protocol.handle(SCHEME, (request) => {
+    const url = new URL(request.url)
+    // Shell-owned documents live in the application bundle and never pass through the Host.
+    if (url.hostname === 'shell') return serveWebDocument(request, join(app.getAppPath(), 'renderer'))
+    if (url.hostname === 'app') {
+      if (url.pathname === '/' || url.pathname === '/index.html' || url.pathname.startsWith('/assets/')
+        || ['/favicon.svg', '/manifest.webmanifest'].includes(url.pathname)) {
+        return serveWebDocument(request, join(resources.dsh, 'node_modules', '@deepseek-ai', 'dsh-web-frontend', 'dist'))
+      }
+      if (backend.host === undefined || hostUrl === undefined || hostCookie === undefined) {
+        return Promise.resolve(new Response(null, { status: 503 }))
+      }
+      return forwardWebRequest(request, hostUrl, hostCookie)
+    }
+    return Promise.resolve(new Response(null, { status: 404 }))
+  })
+
+  installDesktopDirectoryPicker(() => mainWindow)
+  installMicrophonePermissions(session.defaultSession, () => mainWindow?.webContents)
+  const shortcuts = installDesktopShortcuts(() => mainWindow, app.getPath('userData'),
+    process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux', () => { refreshApplicationMenu() }, window => updateOverlays.input(window))
+  app.on('will-quit', () => { shortcuts.dispose() })
+
+  ipcMain.handle(DESKTOP_IPC.boot, async (event) => {
+    assertDesktopSender(event, ['app'])
+    await startup
+    if (backend.host === undefined || hostUrl === undefined) throw new Error('Desktop Host is unavailable')
+    return { injections, streamBaseUrl: new URL(hostUrl).origin }
+  })
+
+  ipcMain.handle(DESKTOP_IPC.bootFailed, (event, message: unknown) => {
+    assertDesktopSender(event, ['app'])
+    if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame) {
+      throw new Error('dsh desktop: rejected startup failure from a non-primary frame')
+    }
+    if (typeof message !== 'string') throw new Error('dsh desktop: startup failure must be text')
+    reportFatal(new Error(message), 'web-boot')
+  })
+
+  ipcMain.handle(DESKTOP_IPC.browserAcquire, (event, workspace: unknown) => {
+    assertProductSender(event)
+    return browserGuests.acquire(event.sender, workspace)
+  })
+  ipcMain.handle(DESKTOP_IPC.browserRelease, (event, lease: unknown) => {
+    assertProductSender(event)
+    return browserGuests.release(event.sender, lease)
+  })
+
+  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['ws://127.0.0.1/*'] }, (details, callback) => {
+    if (hostUrl === undefined || hostCookie === undefined || details.webContentsId !== mainWindow?.webContents.id) {
+      callback({})
+      return
+    }
+    const target = new URL(hostUrl)
+    const requested = new URL(details.url)
+    if (requested.host !== target.host) { callback({}); return }
+    const headers = Object.fromEntries(Object.entries(details.requestHeaders).map(([name, value]) => [name.toLowerCase(), value]))
+    if (headers.origin !== 'dsh-app://app') { callback({ cancel: true }); return }
+    callback({ requestHeaders: { ...headers, origin: target.origin, cookie: hostCookie, 'sec-fetch-site': 'same-origin' } })
+  })
+
+  const assertMainApplication = (event: IpcMainInvokeEvent): BrowserWindow => {
+    const owner = mainWindow
+    if (owner === undefined || event.sender !== owner.webContents || event.senderFrame !== owner.webContents.mainFrame
+      || !event.senderFrame.url.startsWith('dsh-app://app/')) throw new Error('Rejected Platform command')
+    return owner
+  }
+  ipcMain.on(PLATFORM_IPC.bootstrap, (event) => {
+    try { event.returnValue = platformView.bootstrap(event) }
+    catch { event.returnValue = null }
+  })
+  ipcMain.handle(PLATFORM_IPC.open, (event, page: unknown, bounds: unknown) => {
+    const owner = assertMainApplication(event)
+    if (page !== 'usage' && page !== 'top-up') throw new Error('Invalid Platform page')
+    return platformView.open(owner, page, platformBounds(bounds))
+  })
+  ipcMain.handle(PLATFORM_IPC.bounds, (event, bounds: unknown) => {
+    assertMainApplication(event)
+    platformView.setBounds(platformBounds(bounds))
+  })
+  ipcMain.handle(PLATFORM_IPC.close, (event) => { assertMainApplication(event); platformView.close() })
+  // Only the main window may synchronize its palette with the native material.
+  ipcMain.on(DESKTOP_IPC.nativeThemeSet, (event, source: unknown) => {
+    if (mainWindow === undefined || event.sender !== mainWindow.webContents) return
+    if (source === 'light' || source === 'dark' || source === 'system') nativeTheme.themeSource = source
+  })
+  ipcMain.handle(DESKTOP_IPC.localeBootstrap, async (event) => {
+    if (event.sender !== mainWindow?.webContents || event.senderFrame !== mainWindow.webContents.mainFrame
+      || new URL(event.senderFrame.url).origin !== new URL(applicationUrl).origin) {
+      throw new Error('desktop welcome: rejected locale request from an unowned frame')
+    }
+    if (welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
+    return { languages: systemLanguages, preference: await welcomeBackend.readLocalePreference() }
+  })
+  ipcMain.on(DESKTOP_IPC.localeChanged, (event, next: unknown) => {
+    const window = mainWindow
+    if (window === undefined || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame
+      || typeof next !== 'string') return
+    const current = resolveDesktopStartupLocale(next, systemLanguages)
+    if (current.id === locale.id) return
+    locale = current
+    platformView.notifyLocaleChanged()
+    windowsLanguage = locale.id
+    refreshApplicationMenu()
+  })
+  ipcMain.handle(DESKTOP_IPC.updatesStatus, (event) => {
+    assertProductSender(event)
+    return presentDesktopUpdate(updates.state)
+  })
+  ipcMain.handle(DESKTOP_IPC.onboardingApiKey, async (event) => {
+    assertProductSender(event)
+    return (await readWelcomeState()).hasApiKey
+  })
+  ipcMain.on(DESKTOP_IPC.onboardingActive, (event, active: unknown) => {
+    const window = mainWindow
+    if (window === undefined || window.isDestroyed() || event.sender !== window.webContents
+      || event.senderFrame !== window.webContents.mainFrame
+      || !event.senderFrame.url.startsWith(`${SCHEME}://app/`) || typeof active !== 'boolean') return
+    window.setMinimumSize(active ? 960 : 520, 600)
+    if (active) {
+      const { width, height } = window.getBounds()
+      if (width < 960) window.setSize(960, height)
+    }
+  })
+  ipcMain.handle(DESKTOP_IPC.updatesOpen, async (event) => {
+    assertProductSender(event)
+    await openUpdatePrompt()
+  })
+
+  let promptOperation: Promise<void> | undefined
+  let policyAuthenticationQueued = false
+  const openUpdatePrompt = (manual = false): Promise<void> => {
+    if (authenticationOperation !== undefined) {
+      policyAuth?.focus(); updateDialog.focus()
+    }
+    let failedOperation: 'check' | 'download' | 'install' = 'check'
+    promptOperation ??= Promise.resolve().then(async () => {
+      if (manual) updateJournal?.action('check-requested')
+      const joinedPolicyAuthentication = authenticationOperation !== undefined
+      if (joinedPolicyAuthentication) await authenticatePolicy()
+      if (isMandatory()) {
+        mandatoryUI?.focus()
+        if (manual) await Promise.all([checkPolicyManually(), updateSchedule.check(true)])
+        return
+      }
+      let controller: AbortController | undefined
+      let progress: Promise<unknown> | undefined
+      try {
+        let state = updates.state
+        if (manual || state.phase === 'idle' || (state.phase === 'error' && state.failedOperation === 'check')) {
+          controller = new AbortController()
+          ordinaryDialogs.add(controller)
+          const parent = currentDialogWindow()
+          progress = parent === undefined ? Promise.resolve() : updateDialog.show(parent, { type: 'info', title: locale.messages.updateCheckTitle,
+            message: locale.messages.updateChecking, buttons: [locale.messages.later], cancelId: 0, signal: controller.signal })
+          if (!joinedPolicyAuthentication) {
+            void checkPolicyManually('deferred').catch((error: unknown) => { console.error(error) })
+          }
+          state = await updateSchedule.check(true)
+        }
+        if (isMandatory()) { mandatoryUI?.focus(); return }
+        if (state.phase === 'error' && state.failedOperation === 'check') { await showUpdateFailure(state); return }
+        if (state.phase === 'idle') {
+          await ordinaryMessageBox({ type: 'info', title: locale.messages.updateCheckTitle,
+            message: formatDesktopMessage(locale.messages.updateCurrent, { version: app.getVersion() }) })
+          return
+        }
+        if (state.phase === 'ready' || (state.phase === 'error' && state.failedOperation === 'install')) {
+          if (state.version !== undefined) {
+            failedOperation = 'install'
+            await showUpdateFailure(await updates.install(state.version))
+          }
+          return
+        }
+        if (state.phase !== 'available' && !(state.phase === 'error' && state.failedOperation === 'download')) return
+        if (manual) {
+          const result = await ordinaryMessageBox({ title: locale.messages.updateCheckTitle, message: locale.messages.updateAvailable,
+            detail: formatDesktopMessage(locale.messages.updateDetail, { version: state.version ?? '' }),
+            buttons: [locale.messages.updateDownload], cancelId: 1 })
+          if (result.response !== 0) return
+        }
+        if (!isMandatory() && state.version !== undefined) {
+          controller?.abort()
+          failedOperation = 'download'
+          await showUpdateFailure(await downloadUpdate(state.version))
+        }
+      } finally {
+        controller?.abort()
+        if (controller !== undefined) ordinaryDialogs.delete(controller)
+        await progress
+      }
+    }).catch((error: unknown) => showUpdateFailure({ phase: 'error', failedOperation,
+      message: desktopErrorState(error).message }))
+      .finally(() => { promptOperation = undefined; flushQueuedPolicyAuthentication() })
+    return promptOperation
+  }
+
+  let authenticationOperation: Promise<DesktopPolicyState | undefined> | undefined
+  const authenticatePolicy = () => {
+    if (authenticationOperation !== undefined) { policyAuth?.focus(); updateDialog.focus() }
+    authenticationOperation ??= runPolicyAuthentication().finally(() => { authenticationOperation = undefined })
+    return authenticationOperation
+  }
+  const flushQueuedPolicyAuthentication = (): void => {
+    if (!policyAuthenticationQueued || promptOperation !== undefined || authenticationOperation !== undefined
+      || isMandatory() || quitting) return
+    policyAuthenticationQueued = false
+    void authenticatePolicy().catch((error: unknown) => { console.error(error) })
+  }
+  const queuePolicyAuthentication = (): void => {
+    if (authenticationOperation !== undefined) {
+      policyAuth?.focus(); updateDialog.focus()
+      return
+    }
+    policyAuthenticationQueued = true
+    flushQueuedPolicyAuthentication()
+  }
+  const runPolicyAuthentication = async () => {
+    if (policyAuth === undefined || mandatoryPolicy === undefined || quitting) return undefined
+    const parent = mandatoryUI?.confirmationWindow ?? currentDialogWindow()
+    if (parent === undefined) return undefined
+    const consent = await updateDialog.show(parent, { type: 'info', title: locale.messages.policyLoginTitle,
+      message: locale.messages.policyLoginRequired, buttons: [locale.messages.policyLogin, locale.messages.later], cancelId: 1 })
+    if (consent.response !== 0 || isQuitting()) return undefined
+    const outcome = await policyAuth.login()
+    if (isQuitting() || outcome === 'cancelled') return undefined
+    if (outcome === 'failed') {
+      await updateDialog.show(parent, { type: 'error', title: locale.messages.policyLoginTitle,
+        message: locale.messages.policyLoginFailed, buttons: [locale.messages.updateAcknowledge], cancelId: 0 })
+      return undefined
+    }
+    // Drain a pre-login request before asking the server to evaluate the new cookies.
+    await mandatoryPolicy.check('login-return')
+    if (isQuitting()) return undefined
+    return mandatoryPolicy.check('login-return', true)
+  }
+
+  const checkPolicyManually = async (authentication: 'immediate' | 'deferred' = 'immediate') => {
+    if (authenticationOperation !== undefined) return authenticatePolicy()
+    const policy = await mandatoryPolicy?.check('manual', true)
+    if (policy?.error !== 'authentication-required') return policy
+    if (authentication === 'immediate') return authenticatePolicy()
+    queuePolicyAuthentication()
+    return policy
+  }
+
+  const automaticCheck = (): void => {
+    if (!quitting) void mandatoryPolicy?.check('foreground-or-resume').catch((error: unknown) => { console.error(error) })
+    if (!quitting) void updateSchedule.check().catch((error: unknown) => { console.error(error) })
+  }
+  powerMonitor.on('resume', automaticCheck)
+  app.on('will-quit', () => {
+    updateSchedule.dispose()
+    powerMonitor.off('resume', automaticCheck)
+    updates.dispose()
+  })
+
+  const applicationIconPath = development ? join(app.getAppPath(), 'resources', 'icon-windows.png')
+    : join(process.resourcesPath, 'icon.png')
+  app.setAboutPanelOptions({
+    applicationName: 'DeepSeek Harness',
+    applicationVersion: app.getVersion(),
+    // The release has no separate build number; omit Electron's bundle version.
+    version: '',
+    copyright: '',
+    iconPath: applicationIconPath,
+  })
+  // A custom application menu replaces Electron's default menu, so macOS needs
+  // its standard menus and application hide commands declared explicitly.
+  // Keep app.name stable: Electron derives its default userData directory from it.
+  const darwin = process.platform === 'darwin'
+  const platformMenus = (): MenuItemConstructorOptions[] => darwin
+    ? [shortcuts.fileMenu(currentDesktopLocale().messages), { role: 'editMenu' }, { role: 'windowMenu' }]
+    : [{ role: 'editMenu' }]
+  const hideCommands: MenuItemConstructorOptions[] = darwin
+    ? [{ role: 'hide', label: currentDesktopLocale().messages.hideApplication },
+      { role: 'hideOthers', label: currentDesktopLocale().messages.hideOtherApplications },
+      { role: 'unhide', label: currentDesktopLocale().messages.showAllApplications }, { type: 'separator' }]
+    : []
+  const applicationItems = (): MenuItemConstructorOptions[] => [
+    // Windows has no system About panel; Electron's fallback is a plain
+    // message box, so the shell shows its own dimmed dialog instead.
+    process.platform === 'win32'
+      ? { label: currentDesktopLocale().messages.aboutMenu,
+        click: () => { void showAbout().catch((error: unknown) => { console.error(error) }) } }
+      : { label: currentDesktopLocale().messages.aboutMenu, role: 'about' },
+    { type: 'separator' },
+    { label: currentDesktopLocale().messages.checkUpdatesMenu, click: () => { void openUpdatePrompt(true) } },
+    ...development ? [
+      { type: 'separator' as const },
+      { label: currentDesktopLocale().messages.reloadPageMenu, role: 'reload' as const },
+      { label: currentDesktopLocale().messages.restartAppHostMenu, click: () => {
+        if (quitting) return
+        app.relaunch()
+        quitWithoutConfirmation()
+      } },
+    ] : [],
+    { type: 'separator' },
+    ...hideCommands,
+    { role: 'quit', ...(darwin ? { label: currentDesktopLocale().messages.quitApplication }
+      : process.platform === 'win32' ? { label: currentDesktopLocale().messages.exitApplication } : {}) },
+  ]
+  const devToolsItems: MenuItemConstructorOptions[] = [
+    { role: 'toggleDevTools', visible: false },
+    { role: 'toggleDevTools', visible: false, accelerator: 'F12' },
+  ]
+  const refreshApplicationMenu = (): void => {
+    Menu.setApplicationMenu(Menu.buildFromTemplate(process.platform === 'win32' ? devToolsItems : [{
+      label: darwin ? app.name : currentDesktopLocale().messages.application,
+      submenu: [...applicationItems(), ...devToolsItems],
+    }, ...platformMenus()]))
+    tray?.relabel()
+  }
+  refreshApplicationMenu()
+  const trayIconPath = development ? join(app.getAppPath(), 'resources', 'tray-windows.ico') : join(process.resourcesPath, 'tray.ico')
+  if (process.platform === 'win32') {
+    // The tray is the way back to a hidden window; without it, relaunching the application still focuses it.
+    try {
+      tray = new DesktopTray({ iconPath: trayIconPath, locale: currentDesktopLocale,
+        open: () => { focusPrimaryWindow() }, quit: () => { app.quit() } })
+    } catch (error) { console.warn('desktop tray: unavailable', error) }
+  }
+  const backgroundNotice = process.platform === 'win32'
+    ? new DesktopBackgroundNotice({ markerPath: join(app.getPath('userData'), 'background-close-confirmed'),
+      locale: () => locale, show: ordinaryMessageBox, focus: () => { updateDialog.focus() } })
+    : undefined
+  const quitConfirmation = new DesktopQuitConfirmation({
+    locale: () => locale,
+    inspect: () => backend.host?.inspectQuit(),
+    // No owner window: a hidden window stays hidden and the native box is its own top-level window.
+    show: options => dialog.showMessageBox(options),
+    // macOS raises the open alert with the application; Electron exposes no handle to the Windows task
+    // dialog, so a repeated request there only joins the open decision.
+    focus: () => { if (process.platform === 'darwin') app.focus({ steal: true }) },
+    // The task dialog draws its main icon at the system icon size; the multi-size ICO yields that
+    // size directly, where the 1024 px PNG would be scaled down by GDI.
+    ...(process.platform === 'win32' ? { icon: nativeImage.createFromPath(trayIconPath) } : {}),
+  })
+
+  if (process.platform === 'win32') {
+    ipcMain.handle(DESKTOP_IPC.windowsMenu, (event, name: unknown, x: unknown, y: unknown) => {
+      assertDesktopSender(event, ['app'])
+      if (mainWindow === undefined || event.sender !== mainWindow.webContents
+        || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error('desktop menu: rejected sender')
+      if ((name !== 'application' && name !== 'edit')
+        || typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)
+        || x < 0 || y < 0 || x > 100_000 || y > 100_000) throw new Error('desktop menu: invalid popup request')
+      const window = mainWindow
+      // Editor-owned history listens to key events rather than Chromium's native undo stack.
+      const editItem = (label: string, keyCode: string, modifiers: Array<'control'>, accelerator?: string): MenuItemConstructorOptions => ({
+        label,
+        ...(accelerator === undefined ? {} : { accelerator }),
+        click: () => {
+          shortcuts.sendEditingKey(keyCode, modifiers)
+        },
+      })
+      const items: MenuItemConstructorOptions[] = name === 'application' ? applicationItems() : [
+        editItem(currentDesktopLocale().messages.undo, 'Z', ['control'], 'Ctrl+Z'),
+        editItem(currentDesktopLocale().messages.redo, 'Y', ['control'], 'Ctrl+Y'),
+        { type: 'separator' },
+        editItem(currentDesktopLocale().messages.cut, 'X', ['control'], 'Ctrl+X'),
+        editItem(currentDesktopLocale().messages.copy, 'C', ['control'], 'Ctrl+C'),
+        editItem(currentDesktopLocale().messages.paste, 'V', ['control'], 'Ctrl+V'),
+        editItem(currentDesktopLocale().messages.delete, 'Delete', []),
+        { type: 'separator' },
+        editItem(currentDesktopLocale().messages.selectAll, 'A', ['control'], 'Ctrl+A'),
+      ]
+      const zoom = mainWindow.webContents.getZoomFactor()
+      return new Promise<void>((resolve) => {
+        Menu.buildFromTemplate(items).popup({ window, x: Math.round(x * zoom), y: Math.round(y * zoom), callback: resolve })
+      })
+    })
+    ipcMain.on(DESKTOP_IPC.windowsAppearance, (event, language: unknown, color: unknown, symbolColor: unknown) => {
+      if (mainWindow === undefined || event.sender !== mainWindow.webContents
+        || event.senderFrame !== mainWindow.webContents.mainFrame) return
+      if (!event.senderFrame.url.startsWith(`${SCHEME}://app/`)) return
+      if (typeof language === 'string' && /^[a-zA-Z]+(?:-[a-zA-Z0-9]+)*$/u.test(language)) {
+        windowsLanguage = language
+      }
+      // Empty colors precede client stylesheet installation; only CSS color values cross IPC.
+      const validColor = (value: unknown): value is string => typeof value === 'string'
+        && /^(?:#[\da-f]{3,8}|rgba?\([\d.,%\s]+\))$/iu.test(value)
+      if (validColor(color) && validColor(symbolColor)) mainWindow.setTitleBarOverlay({ color, symbolColor })
     })
   }
-  applyDesktopThemeSource(await readDesktopThemeSource(
-    dshHome,
-    (error) => { console.warn('desktop: could not read theme preference; following the system appearance', error) },
-  ))
-  const downloadNetworkFile = join(app.getPath('userData'), 'download-network-v1.json')
-  downloadNetworkStore = new DownloadNetworkSettingsStore(
-    downloadNetworkFile,
-    {
-      available: () => safeStorage.isEncryptionAvailable(),
-      encrypt: value => safeStorage.encryptString(value),
-      decrypt: value => safeStorage.decryptString(value),
-    },
-    (error) => { console.error('desktop: could not read download network settings; using defaults', error) },
-  )
-  downloadNetworkProxy = await startPluginDownloadProxy(downloadNetworkStore)
-  let harnessEnvironment: NodeJS.ProcessEnv = {
-    ...process.env,
-    DSH_HOME: dshHome,
-    // Fenglin: pin profile-local pnpm store so plugin installs stay on one store.
-    PNPM_HOME: join(dshHome, 'pnpm-home'),
-    DSH_DESKTOP_APPLICATION_VERSION: app.getVersion(),
-    DSH_DESKTOP_PNPM_VERSION: DESKTOP_PNPM_VERSION,
-    ...(app.isPackaged ? { DSH_PROFILE_RESOLUTION_MODE: 'runtime' } : {}),
-    DSH_PROFILE_DIAGNOSTIC_MODE_ON_FAILURE: '1',
-    DSH_DESKTOP_PERSISTENT_SERVICES: persistentServicesPath,
-    DSH_DESKTOP_PERSISTENT_PROFILE: persistentProfileFingerprint(dshHome),
-    DSH_DESKTOP_DOWNLOAD_NETWORK_FILE: downloadNetworkFile,
-    ...pluginDownloadEnvironment(downloadNetworkStore, downloadNetworkProxy.pluginUrl),
+
+  const hideMainWindow = (window: BrowserWindow): void => {
+    if (process.platform === 'darwin' && window.isFullScreen()) {
+      // Hiding a fullscreen window leaves an empty black space; leave fullscreen first.
+      window.once('leave-full-screen', () => { if (!window.isDestroyed()) window.hide() })
+      window.setFullScreen(false)
+    } else {
+      window.hide()
+    }
   }
-  try {
-    const resolvedProxy = await resolveSystemProxyEnvironment(
-      harnessEnvironment,
-      url => session.defaultSession.resolveProxy(url),
-    )
-    harnessEnvironment = resolvedProxy.environment
-    if (resolvedProxy.applied) console.info('desktop: system proxy resolved for Codex only; package-manager proxy configuration unchanged')
-  } catch {
-    console.warn('desktop: system proxy resolution failed; preserving explicit proxy configuration (resolver details omitted for privacy)')
-  }
-  let launchOptions: DesktopLaunchOptions = app.isPackaged
-    ? {}
-    : resolveDevelopmentLaunchOptions(DEFAULT_SOURCE_ROOT)
-  preferencesStore = createDesktopPreferencesStore(
-    join(app.getPath('userData'), 'desktop-preferences.json'),
-    (error) => { console.error('desktop: could not read preferences; using defaults', error) },
-  )
-  preferences = preferencesStore.read()
-  app.on('certificate-error', (event, _webContents, url, _error, certificate, callback) => {
-    if (authority.acceptsCertificate(url, certificate.fingerprint)) {
+  const createMainWindow = (): BrowserWindow => {
+    const window = createWindow(appPreload, false, true)
+    mainWindow = window
+    browserGuests.bind(window, (guest, name) => shortcuts.attachGuest(window, guest, name))
+    shortcuts.attach(window)
+    window.on('focus', automaticCheck)
+    // Closing hides: the page and the Host keep running, and the next show resumes the same document.
+    window.on('close', (event) => {
+      if (quitting || shellInstallerOwnsQuit || sessionEnding) return
       event.preventDefault()
-      callback(true)
-      return
-    }
-    callback(false)
-  })
-  session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://*/*', 'wss://*/*'] }, (details, callback) => {
-    callback({
-      requestHeaders: authority.authorizeRequestHeaders(details.url, details.requestHeaders),
+      if (updateDialog.isOpen) { updateDialog.focus(); return }
+      const hide = (): void => {
+        if (!quitting && !shellInstallerOwnsQuit && !sessionEnding && !window.isDestroyed()) hideMainWindow(window)
+      }
+      if (backgroundNotice === undefined) hide()
+      else backgroundNotice.close(hide)
     })
-  })
-  chatBackgroundStore = createDesktopChatBackgroundStore(
-    join(app.getPath('userData'), 'chat-background.json'),
-    (error) => { console.error('desktop: could not read chat background; using browser fallback', error) },
-  )
-  if (!desktopCapabilities().launchAtLoginAvailable) preferences.launchAtLoginEnabled = false
-  applyLaunchAtLogin(preferences.launchAtLoginEnabled)
-  hiddenLaunch = (DESKTOP_WEB_SUPPORTED && preferences.openBrowserOnStartup) || (process.platform === 'darwin'
-    && preferences.launchAtLoginEnabled
-    && app.getLoginItemSettings().wasOpenedAtLogin)
-  const updater = new SourceUpdater({
-    sourceRoot: process.env.DSH_DESKTOP_SOURCE_ROOT ?? DEFAULT_SOURCE_ROOT,
-    nodeCommand: process.env.DSH_DESKTOP_NODE_BIN ?? 'node',
-  })
-  const applicationFetch = async (): Promise<ReleaseFetch> => {
-    const mode = downloadNetworkStore?.read().application.proxy.mode ?? 'system'
-    if (mode === 'system') return (input, init) => net.fetch(input, init)
-    applicationDownloadSession ??= session.fromPartition('dsh-download-network', { cache: false })
-    if (downloadNetworkProxy === undefined) throw new Error('Application download proxy is unavailable')
-    const proxyRules = downloadNetworkProxy.applicationProxyRules
-    await applicationDownloadSession.setProxy(mode === 'direct'
-      ? { mode: 'direct' }
-      : { mode: 'fixed_servers', proxyRules })
-    await applicationDownloadSession.closeAllConnections()
-    return (input, init) => applicationDownloadSession?.fetch(input, init) ?? Promise.reject(new Error('Application download session is unavailable'))
-  }
-  const pluginFetch = async (): Promise<ReleaseFetch> => {
-    if (downloadNetworkProxy === undefined) throw new Error('Plugin download proxy is unavailable')
-    pluginDownloadSession ??= session.fromPartition('dsh-plugin-download-network', { cache: false })
-    await pluginDownloadSession.setProxy({ mode: 'fixed_servers', proxyRules: downloadNetworkProxy.pluginProxyRules })
-    await pluginDownloadSession.closeAllConnections()
-    return (input, init) => pluginDownloadSession?.fetch(input, init) ?? Promise.reject(new Error('Plugin download session is unavailable'))
-  }
-  app.on('login', (event, _webContents, _details, authInfo, callback) => {
-    if (!authInfo.isProxy || downloadNetworkProxy === undefined) return
-    const credentials = downloadNetworkProxy.credentialsForProxyAuth(authInfo.host, authInfo.port)
-    if (credentials === undefined) return
-    event.preventDefault()
-    callback(credentials.username, credentials.password)
-  })
-  const publishDownloadNetworkTest = (status: DownloadNetworkTestStatus): DownloadNetworkTestStatus => {
-    downloadNetworkTestStatus = status
-    mainSurface?.send(DESKTOP_IPC.downloadNetworkTestStatus, status)
-    return status
-  }
-  const testDownloadNetwork = async (target: DownloadNetworkTarget): Promise<DownloadNetworkTestStatus> => {
-    const startedAt = Date.now()
-    publishDownloadNetworkTest({ phase: 'testing', target, stage: 'metadata' })
-    try {
-      if (target === 'application') {
-        const fetcher = await applicationFetch()
-        if (downloadNetworkStore?.read().application.source === 'cnb') await fetchCnbReleaseIndex(fetcher)
-        else await fetchGitHubReleases(fetcher)
-      } else {
-        const settings = downloadNetworkStore?.read()
-        const fetcher = await pluginFetch()
-        const url = target === 'npm'
-          ? `${settings === undefined ? 'https://registry.npmmirror.com' : settings.npm.registry === 'npmmirror'
-            ? 'https://registry.npmmirror.com' : settings.npm.registry === 'custom'
-              ? settings.npm.registryUrl : 'https://registry.npmjs.org'}/dshmarket/latest`
-          : settings?.github.download === 'custom' && settings.github.acceleratorUrl !== undefined
-            ? `${settings.github.acceleratorUrl}/https://github.com/deepseek-ai/deepseek-harness/info/refs?service=git-upload-pack`
-            : 'https://github.com/deepseek-ai/deepseek-harness/info/refs?service=git-upload-pack'
-        publishDownloadNetworkTest({ phase: 'testing', target, stage: 'download' })
-        const response = await fetcher(url, { headers: { 'User-Agent': 'DeepSeek-Harness-Desktop' } })
-        if (!response.ok) throw new Error(`${target} metadata returned HTTP ${response.status}`)
-        const reader = response.body?.getReader()
-        if (reader !== undefined) { await reader.read(); await reader.cancel() }
-      }
-      const stage = target === 'application' ? 'metadata' : 'download'
-      return publishDownloadNetworkTest({ phase: 'succeeded', target, stage, elapsedMs: Date.now() - startedAt })
-    } catch (error) {
-      const stage = downloadNetworkTestStatus.phase === 'testing' && downloadNetworkTestStatus.target === target
-        ? downloadNetworkTestStatus.stage : 'metadata'
-      return publishDownloadNetworkTest({ phase: 'failed', target, stage,
-        message: error instanceof Error ? error.message : String(error) })
-    }
-  }
-  const configureReleaseServices = async (): Promise<void> => {
-    stopReleaseChecks?.(); stopReleaseChecks = undefined
-    await releaseDownloader?.dispose()
-    if (!app.isPackaged) { releaseChecker = undefined; releaseDownloader = undefined; return }
-    const fetcher = await applicationFetch()
-    const applicationSettings = downloadNetworkStore?.read().application
-    const source = applicationSettings?.source ?? 'github'
-    releaseChecker = source === 'cnb'
-      ? new DesktopReleaseChecker(app.getVersion(), undefined, async () => {
-        return selectCnbRelease(app.getVersion(), await fetchCnbReleaseIndex(fetcher))
-      })
-      : new DesktopReleaseChecker(app.getVersion(), () => fetchGitHubReleases(fetcher))
-    releaseDownloader = new DesktopReleaseDownloader({
-      platform: process.platform, arch: process.arch,
-      downloadDirectory: join(app.getPath('userData'), 'updates'),
-      getRelease: () => releaseChecker?.status ?? { phase: 'unsupported' },
-      openPath: path => shell.openPath(path), systemFetch: fetcher,
-      ...(applicationSettings?.proxy.mode === 'system' ? {} : { apiFetch: fetcher }),
-    })
-    releaseChecker.subscribe((status) => {
-      releaseDownloader?.resetForRelease(status)
-      mainSurface?.send(DESKTOP_IPC.releaseStatus, status)
-    })
-    releaseDownloader.subscribe((status) => { mainSurface?.send(DESKTOP_IPC.releaseDownloadStatus, status) })
-    stopReleaseChecks = releaseChecker.startPolling()
-  }
-  await configureReleaseServices()
-  externalToolCompatibility = new ExternalToolCompatibilityManager({
-    cacheDirectory: join(app.getPath('userData'), 'external-tool-compatibility'),
-    desktopVersion: app.getVersion(),
-  })
-  const workspaceRuntimeCatalog = new WorkspaceRuntimeCatalog({
-    cacheDirectory: join(app.getPath('userData'), 'optional-runtimes', 'catalog'),
-    desktopVersion: app.getVersion(),
-    fetch: async (input, init) => (await applicationFetch())(input, init),
-    development: !app.isPackaged,
-    metadataBaseUrls: () => {
-      const tag = `odsh-v${app.getVersion()}`
-      const github = `https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/${tag}`
-      const cnb = `https://cnb.cool/hecoococ/open-deepseek-harness-desktop/-/releases/download/${tag}`
-      return downloadNetworkStore?.read().application.source === 'cnb' ? [cnb, github] : [github, cnb]
-    },
-    ...(!app.isPackaged && process.env.DSH_WORKSPACE_RUNTIME_MANIFEST_BASE_URL !== undefined
-      ? { metadataBaseUrl: process.env.DSH_WORKSPACE_RUNTIME_MANIFEST_BASE_URL }
-      : {}),
-  })
-  const nativeWorkspaceTarget = workspaceRuntimeTarget(process.platform, process.arch)
-  const bundledWorkspaceRuntimeRoot = app.isPackaged
-    ? join(process.resourcesPath, 'workspace-runtime')
-    : join(fileURLToPath(new URL('../../..', import.meta.url)), '.artifacts', 'workspace-runtime')
-  workspaceRuntimeManager = new OptionalRuntimeManager({
-    cacheRoot: join(app.getPath('userData'), 'optional-runtimes'),
-    stateFile: join(app.getPath('userData'), 'optional-runtimes', 'state-v1.json'),
-    desktopVersion: app.getVersion(),
-    platform: process.platform,
-    arch: process.arch,
-    getHome: () => dshHome,
-    isNas: () => bootNasRuntime() !== undefined,
-    source: () => downloadNetworkStore?.read().application.source ?? 'github',
-    loadManifest: async () => {
-      if (nativeWorkspaceTarget !== undefined) {
-        try {
-          return await loadBundledWorkspaceRuntimeManifest(bundledWorkspaceRuntimeRoot, nativeWorkspaceTarget, app.getVersion())
-        } catch (error) {
-          if (app.isPackaged) throw error
-        }
-      }
-      return workspaceRuntimeCatalog.load()
-    },
-    fetch: async (input, init) => (await applicationFetch())(input, init),
-    bundledArtifactsRoot: bundledWorkspaceRuntimeRoot,
-    requireBundledPython: app.isPackaged,
-    ...(nativeWorkspaceTarget === undefined ? {} : { target: nativeWorkspaceTarget }),
-  })
-  ipcMain.handle(DESKTOP_IPC.capabilities, (event) => {
-    assertMainRenderer(event.sender)
-    return desktopCapabilities()
-  })
-  ipcMain.handle(DESKTOP_IPC.directoryPick, async (event): Promise<string | null> => {
-    assertMainRenderer(event.sender)
-    if (bootNasRuntime() !== undefined) throw new Error('desktop: local directory picker is unavailable in NAS mode')
-    const surface = mainSurface
-    if (surface === undefined || surface.window.isDestroyed()) {
-      throw new Error('desktop: main window is unavailable')
-    }
-    const result = await dialog.showOpenDialog(surface.window, { properties: ['openDirectory'] })
-    return result.canceled ? null : result.filePaths[0] ?? null
-  })
-  ipcMain.handle(DESKTOP_IPC.processesList, (event) => {
-    assertMainRenderer(event.sender)
-    return processObserver?.list() ?? []
-  })
-  ipcMain.handle(DESKTOP_IPC.processesStop, async (event, id: unknown) => {
-    assertMainRenderer(event.sender)
-    if (typeof id !== 'string' || id.length < 1 || id.length > 128) {
-      throw new TypeError('desktop: invalid managed process id')
-    }
-    const current = processObserver?.list().find(process => process.id === id)
-    if (current === undefined || !current.stoppable) throw new Error('desktop: process cannot be stopped from settings')
-    await processObserver?.stop(id)
-    return processObserver?.list() ?? []
-  })
-  ipcMain.handle(DESKTOP_IPC.persistentServicesList, (event): readonly PersistentServiceSummary[] => {
-    assertMainRenderer(event.sender)
-    return persistentServiceAuthority?.list() ?? []
-  })
-  ipcMain.handle(DESKTOP_IPC.persistentServicesApprove, (event, key: unknown): readonly PersistentServiceSummary[] => {
-    assertMainRenderer(event.sender)
-    if (typeof key !== 'string' || !/^[a-f0-9]{64}$/u.test(key)) {
-      throw new TypeError('desktop: invalid persistent service request')
-    }
-    if (persistentServiceAuthority === undefined) throw new Error('desktop: persistent service authority is unavailable')
-    return persistentServiceAuthority.approve(key)
-  })
-  ipcMain.handle(DESKTOP_IPC.persistentServicesRevoke, async (event, key: unknown): Promise<readonly PersistentServiceSummary[]> => {
-    assertMainRenderer(event.sender)
-    if (typeof key !== 'string' || !/^[a-f0-9]{64}$/u.test(key)) {
-      throw new TypeError('desktop: invalid persistent service request')
-    }
-    if (persistentServiceAuthority === undefined) throw new Error('desktop: persistent service authority is unavailable')
-    if (persistentServiceRuntime === undefined) throw new Error('desktop: persistent service runtime registry is unavailable')
-    const service = persistentServiceAuthority.list().find(record => record.key === key)
-    if (service === undefined) throw new Error('desktop: persistent service request is unavailable')
-    const identities = persistentServiceRuntime.identities(key)
-    if (identities.length > 0) {
-      if (processObserver === undefined) throw new Error('desktop: persistent service cannot be stopped safely')
-      await processObserver.stopRecovered(key, `${service.pluginName}: ${service.serviceId}`, identities)
-      persistentServiceRuntime.clear(key)
-    }
-    return persistentServiceAuthority.revoke(key)
-  })
-  ipcMain.handle(DESKTOP_IPC.persistentServicesPreparePluginUninstall, async (event, packageName: unknown) => {
-    assertMainRenderer(event.sender)
-    if (!isRecoveryPluginPackageName(packageName)) throw new TypeError('desktop: invalid plugin identity')
-    await stopAndRevokePersistentServicesForPlugin(packageName)
-    return { prepared: true as const }
-  })
-  ipcMain.handle(DESKTOP_IPC.dataHomeGet, (event) => {
-    assertMainRenderer(event.sender)
-    return desktopDataHomes.status(dshHome)
-  })
-  let runningDataHomeChooser: Promise<{ restarting: boolean }> | undefined
-  ipcMain.handle(DESKTOP_IPC.dataHomeOpenChooser, (event): Promise<{ restarting: boolean }> => {
-    assertMainRenderer(event.sender)
-    if (DESKTOP_DATA_HOME.explicitDshHome) {
-      throw new Error('desktop: DSH_HOME is managed by the launch environment')
-    }
-    if (runningDataHomeChooser !== undefined) {
-      if (dataHomeChooserWindow !== undefined && !dataHomeChooserWindow.isDestroyed()) {
-        dataHomeChooserWindow.show()
-        dataHomeChooserWindow.focus()
-      }
-      return runningDataHomeChooser
-    }
-    const operation = (async (): Promise<{ restarting: boolean }> => {
-      const surface = mainSurface
-      if (surface === undefined) throw new Error('desktop: main window is unavailable')
-      try {
-        const result = await desktopDataHomes.change(
-          dshHome,
-          session => showDataHomeChooser(session, surface.window),
-        )
-        return { restarting: result.restarting }
-      } catch (error) {
-        if (error instanceof DesktopDataHomeSelectionCancelledError) {
-          if (!surface.window.isDestroyed()) {
-            surface.window.show()
-            surface.window.focus()
-          }
-          return { restarting: false }
-        }
-        throw error
-      }
-    })()
-    runningDataHomeChooser = operation
-    const clearOperation = (): void => {
-      if (runningDataHomeChooser === operation) runningDataHomeChooser = undefined
-    }
-    void operation.then(clearOperation, clearOperation)
-    return operation
-  })
-  ipcMain.handle('dsh:desktop:data-home:choose', async (
-    event,
-    selectionKind: unknown,
-  ): Promise<DesktopDataHomeSelectionResult> => {
-    assertMainRenderer(event.sender)
-    if (selectionKind !== 'existing' && selectionKind !== 'empty') {
-      throw new TypeError('desktop: invalid data-home selection kind')
-    }
-    const surface = mainSurface
-    if (surface === undefined) throw new Error('desktop: main window is unavailable')
-    const result = await dialog.showOpenDialog(surface.window, {
-      title: selectionKind === 'empty'
-        ? shellMessages(app.getLocale()).chooseEmpty
-        : shellMessages(app.getLocale()).chooseExisting,
-      properties: ['openDirectory'],
-    })
-    return desktopDataHomes.chooseDirectory(
-      event.sender.id,
-      selectionKind,
-      result.canceled ? undefined : result.filePaths[0],
-    )
-  })
-  ipcMain.handle('dsh:desktop:data-home:choose-recovery', async (
-    event,
-  ): Promise<DesktopDataHomeSelectionResult> => {
-    assertMainRenderer(event.sender)
-    const surface = mainSurface
-    if (surface === undefined) throw new Error('desktop: main window is unavailable')
-    const result = await dialog.showOpenDialog(surface.window, {
-      title: shellMessages(app.getLocale()).switchData,
-      properties: ['openDirectory', 'createDirectory'],
-    })
-    return desktopDataHomes.chooseRecoveryDirectory(
-      event.sender.id,
-      result.canceled ? undefined : result.filePaths[0],
-    )
-  })
-  ipcMain.handle('dsh:desktop:data-home:switch', async (
-    event,
-    request: unknown,
-  ): Promise<DesktopDataHomeSwitchResult> => {
-    assertMainRenderer(event.sender)
-    return desktopDataHomes.switch(dshHome, event.sender.id, request)
-  })
-  ipcMain.handle(DESKTOP_IPC.preferencesGet, (event) => {
-    assertMainRenderer(event.sender)
-    return preferences
-  })
-  const requireIcons = (sender: WebContents): DesktopIconManager => {
-    assertMainRenderer(sender)
-    if (iconManager === undefined) throw new Error('icon.unsupported')
-    return iconManager
-  }
-  ipcMain.handle(DESKTOP_IPC.iconsGet, event => requireIcons(event.sender).status())
-  ipcMain.handle(DESKTOP_IPC.iconsChoose, async (event) => {
-    const manager = requireIcons(event.sender)
-    const owner = event.sender.id
-    const options = {
-      properties: ['openFile'] as const,
-      filters: [{
-        name: process.platform === 'win32' ? 'PNG / JPEG / ICO' : 'PNG / JPEG',
-        extensions: process.platform === 'win32' ? ['png', 'jpg', 'jpeg', 'ico'] : ['png', 'jpg', 'jpeg'],
-      }],
-    }
-    const picked = mainWindow === undefined
-      ? await dialog.showOpenDialog({ ...options, properties: ['openFile'] })
-      : await dialog.showOpenDialog(mainWindow, { ...options, properties: ['openFile'] })
-    if (event.sender.isDestroyed()) return null
-    assertMainRenderer(event.sender)
-    const path = picked.filePaths[0]
-    return picked.canceled || path === undefined ? null : manager.select(owner, path)
-  })
-  ipcMain.handle(DESKTOP_IPC.iconsDiscard, (event, id: unknown) => {
-    requireIcons(event.sender).discard(event.sender.id, id)
-  })
-  ipcMain.handle(DESKTOP_IPC.iconsApply, (event, id: unknown, target: unknown, crop: unknown) => {
-    return requireIcons(event.sender).apply(event.sender.id, id, target, crop)
-  })
-  ipcMain.handle(DESKTOP_IPC.iconsFollow, (event, follow: unknown) => requireIcons(event.sender).followTray(follow))
-  ipcMain.handle(DESKTOP_IPC.iconsReset, (event, target: IconTarget) => requireIcons(event.sender).reset(target))
-  ipcMain.handle(DESKTOP_IPC.iconsRepair, event => requireIcons(event.sender).refresh(true))
-  ipcMain.handle(DESKTOP_IPC.iconsCreateShortcut, (event) => {
-    const manager = requireIcons(event.sender)
-    if (!app.isPackaged || process.platform !== 'win32') throw new Error('icon.unsupported')
-    return manager.refresh(true, true)
-  })
-  ipcMain.handle(DESKTOP_IPC.preferencesUpdate, (event, patch: unknown) => {
-    assertMainRenderer(event.sender)
-    return updatePreferences(patch)
-  })
-  registerNasRuntimeIpc(ipcMain, { authority, assertRenderer: assertMainRenderer })
-  ipcMain.handle(DESKTOP_IPC.downloadNetworkGet, (event): DownloadNetworkSettings => {
-    assertMainRenderer(event.sender)
-    if (downloadNetworkStore === undefined) throw new Error('desktop: download network settings are unavailable')
-    return downloadNetworkStore.read()
-  })
-  ipcMain.handle(DESKTOP_IPC.downloadNetworkUpdate, async (event, patch: unknown): Promise<DownloadNetworkSettings> => {
-    assertMainRenderer(event.sender)
-    if (downloadNetworkStore === undefined || downloadNetworkProxy === undefined) throw new Error('desktop: download network settings are unavailable')
-    const previous = downloadNetworkStore.read()
-    const next = downloadNetworkStore.update(patch)
-    delete harnessEnvironment.npm_config_registry
-    Object.assign(harnessEnvironment, pluginDownloadEnvironment(downloadNetworkStore, downloadNetworkProxy.pluginUrl))
-    mainSurface?.send(DESKTOP_IPC.downloadNetworkChanged, next)
-    if (previous.application.source !== next.application.source
-      || JSON.stringify(previous.application.proxy) !== JSON.stringify(next.application.proxy)) {
-      await configureReleaseServices()
-      mainSurface?.send(DESKTOP_IPC.releaseStatus, releaseChecker?.status ?? { phase: 'unsupported' })
-      mainSurface?.send(DESKTOP_IPC.releaseDownloadStatus, releaseDownloader?.status ?? { phase: 'unsupported' })
-    }
-    return next
-  })
-  ipcMain.handle(DESKTOP_IPC.downloadNetworkReset, async (event, target: unknown): Promise<DownloadNetworkSettings> => {
-    assertMainRenderer(event.sender)
-    if (!['application', 'npm', 'github'].includes(String(target))) throw new TypeError('desktop: invalid download network target')
-    if (downloadNetworkStore === undefined || downloadNetworkProxy === undefined) throw new Error('desktop: download network settings are unavailable')
-    const next = downloadNetworkStore.reset(target as DownloadNetworkTarget)
-    delete harnessEnvironment.npm_config_registry
-    Object.assign(harnessEnvironment, pluginDownloadEnvironment(downloadNetworkStore, downloadNetworkProxy.pluginUrl))
-    mainSurface?.send(DESKTOP_IPC.downloadNetworkChanged, next)
-    if (target === 'application') await configureReleaseServices()
-    return next
-  })
-  ipcMain.handle(DESKTOP_IPC.downloadNetworkTestGet, (event): DownloadNetworkTestStatus => {
-    assertMainRenderer(event.sender); return downloadNetworkTestStatus
-  })
-  ipcMain.handle(DESKTOP_IPC.downloadNetworkTest, (event, target: unknown) => {
-    assertMainRenderer(event.sender)
-    if (!['application', 'npm', 'github'].includes(String(target))) throw new TypeError('desktop: invalid download network test target')
-    return testDownloadNetwork(target as DownloadNetworkTarget)
-  })
-  ipcMain.handle(DESKTOP_IPC.webGet, (event) => {
-    assertMainRenderer(event.sender)
-    return desktopWebAccess?.status() ?? { phase: 'starting' }
-  })
-  ipcMain.handle(DESKTOP_IPC.webOpen, async (event) => {
-    assertMainRenderer(event.sender)
-    if (desktopWebAccess === undefined) throw new Error('desktop: local Web interface is unavailable')
-    return desktopWebAccess.open()
-  })
-  ipcMain.handle(DESKTOP_IPC.chatBackgroundRead, (event) => {
-    assertMainRenderer(event.sender)
-    return chatBackgroundStore?.read()
-  })
-  ipcMain.handle(DESKTOP_IPC.chatBackgroundWrite, (event, background: unknown) => {
-    assertMainRenderer(event.sender)
-    if (chatBackgroundStore === undefined) throw new Error('desktop: chat background store is unavailable')
-    return chatBackgroundStore.write(background)
-  })
-  ipcMain.handle(DESKTOP_IPC.logOpen, (event) => {
-    assertMainRenderer(event.sender)
-    return openHarnessLog()
-  })
-  ipcMain.handle(DESKTOP_IPC.logDirectoryOpen, async (event): Promise<{ error: string }> => {
-    assertMainRenderer(event.sender)
-    await mkdir(DESKTOP_DATA_HOME.logs, { recursive: true, mode: 0o700 })
-    return { error: await shell.openPath(DESKTOP_DATA_HOME.logs) }
-  })
-  ipcMain.handle(DESKTOP_IPC.settingsOpen, async (event): Promise<{ error: string }> => {
-    assertMainRenderer(event.sender)
-    return openSettingsDocument()
-  })
-  ipcMain.handle(DESKTOP_IPC.settingsReset, async (event): Promise<{ backupName?: string; restarting: true }> => {
-    assertMainRenderer(event.sender)
-    const { backupName } = await backupAndResetDesktopSettings(dshHome)
-    setTimeout(() => { requestDesktopRestart() }, 250)
-    return { ...(backupName === undefined ? {} : { backupName }), restarting: true }
-  })
-  ipcMain.handle(DESKTOP_IPC.cliGet, async (event): Promise<DesktopCliStatus> => {
-    assertMainRenderer(event.sender)
-    if (desktopCliManager === undefined) throw new Error('desktop: command-line manager is unavailable')
-    return desktopCliManager.getStatus()
-  })
-  ipcMain.handle(DESKTOP_IPC.cliInstall, async (event, force: unknown): Promise<DesktopCliStatus> => {
-    assertMainRenderer(event.sender)
-    if (typeof force !== 'boolean') throw new TypeError('desktop: invalid command-line conflict confirmation')
-    if (desktopCliManager === undefined) throw new Error('desktop: command-line manager is unavailable')
-    return desktopCliManager.install(force)
-  })
-  ipcMain.handle(DESKTOP_IPC.cliRemove, async (event): Promise<DesktopCliStatus> => {
-    assertMainRenderer(event.sender)
-    if (desktopCliManager === undefined) throw new Error('desktop: command-line manager is unavailable')
-    return desktopCliManager.remove()
-  })
-  ipcMain.handle('dsh:desktop:startup-progress:get', (event): DesktopStartupProgress => {
-    assertMainRenderer(event.sender)
-    return startupProgress
-  })
-  ipcMain.on(DESKTOP_IPC.themeSource, (event, source: unknown) => {
-    assertMainRenderer(event.sender)
-    if (!isDesktopThemeSource(source)) throw new TypeError('desktop: invalid theme source')
-    applyDesktopThemeSource(source)
-  })
-  ipcMain.on(DESKTOP_IPC.readiness, (event, phase: unknown) => {
-    assertMainRenderer(event.sender)
-    if (phase !== 'client' && phase !== 'event-dispatch') {
-      throw new TypeError('desktop: invalid readiness phase')
-    }
-    if (harnessOrigin === undefined) return
-    if (event.senderFrame === null) return
-    let rendererOrigin: string
-    try {
-      rendererOrigin = new URL(event.senderFrame.url).origin
-    } catch {
-      return
-    }
-    if (rendererOrigin !== harnessOrigin || reportedDesktopReadiness.has(phase)) return
-    reportedDesktopReadiness.add(phase)
-    void appendDesktopStartupLog(phase === 'client' ? 'client ready' : 'event-dispatch is ready')
-    if (supervisor?.isDiagnosticMode === true) {
-      profileMutation?.observeHarness({ type: 'diagnostic-ready' })
-      void appendDesktopStartupLog('Diagnostic Profile readiness does not verify the active Profile or its plugin snapshots.')
-      if (phase === 'client') void pluginSnapshotManager?.handleHarnessFailure(
-        'The active Profile failed to start; only the installation-owned diagnostic Profile became ready.',
-      ).catch((error: unknown) => {
-        console.error('desktop: snapshot rollback after diagnostic fallback failed', error)
-      })
-      return
-    }
-    const readinessComplete = reportedDesktopReadiness.size === 2
-    if (readinessComplete) profileMutation?.observeHarness({ type: 'normal-ready' })
-    const manager = pluginSnapshotManager
-    if (manager !== undefined) void (async () => {
-      await manager.reportReadiness(phase)
-      if (readinessComplete) {
-        await appendDesktopStartupLog('Scheduling bootable plugin snapshot after 30 stable seconds.')
-        scheduleBootableSnapshot(manager)
-      }
-    })().catch(async (error: unknown) => {
-      await appendDesktopStartupLog(
-        `Post-readiness plugin snapshot failed without interrupting Harness: ${error instanceof Error ? error.message : String(error)}`,
-      )
-      console.warn('desktop: could not retain the latest bootable plugin snapshot', error)
-    })
-  })
-  ipcMain.on(DESKTOP_IPC.clientBootFailure, (event, payload: unknown) => {
-    assertMainRenderer(event.sender)
-    const failure = parseClientBootFailure(payload)
-    if (failure === undefined || harnessOrigin === undefined || lifecycle?.isQuitting === true
-      || supervisor?.isDiagnosticMode === true || event.senderFrame === null) return
-    let rendererOrigin: string
-    try { rendererOrigin = new URL(event.senderFrame.url).origin } catch { return }
-    if (rendererOrigin !== harnessOrigin || reportedClientBootFailureOrigin === harnessOrigin) return
-    reportedClientBootFailureOrigin = harnessOrigin
-    cancelBootableSnapshot()
-    void appendDesktopStartupLog(
-      `Client plugin tree failed before readiness (${failure.diagnosticCode}; ${failure.nativeCode ?? 'unknown'}).`,
-    )
-    profileMutation?.observeHarness({
-      type: 'failed', error: new Error(failure.evidence ?? 'desktop: client plugin tree failed before readiness'),
-    })
-    showLoading('failed', {
-      message: shellMessages(app.getLocale()).clientPluginBootFailed,
-      ...failure,
-      logPath: harnessLogPath,
-    })
-    showNotification('failed', notificationCopy.failed)
-  })
-  ipcMain.handle(DESKTOP_IPC.releasesGet, (event): DesktopReleaseStatus => {
-    assertMainRenderer(event.sender)
-    return releaseChecker?.status ?? { phase: 'unsupported' }
-  })
-  ipcMain.handle(DESKTOP_IPC.releasesCheck, (event) => {
-    assertMainRenderer(event.sender)
-    return releaseChecker?.check() ?? Promise.resolve({ phase: 'unsupported' } satisfies DesktopReleaseStatus)
-  })
-  ipcMain.handle(DESKTOP_IPC.releasesOpen, async (event, releaseUrl: unknown) => {
-    assertMainRenderer(event.sender)
-    if (typeof releaseUrl !== 'string' || (!isAllowedReleaseUrl(releaseUrl) && !isAllowedCnbUrl(releaseUrl))) {
-      throw new TypeError('desktop: invalid Release URL')
-    }
-    return { error: await shell.openExternal(releaseUrl).then(() => '') }
-  })
-  ipcMain.handle(DESKTOP_IPC.releasesDownloadGet, (event): DesktopReleaseDownloadStatus => {
-    assertMainRenderer(event.sender)
-    return releaseDownloader?.status ?? { phase: 'unsupported' }
-  })
-  ipcMain.handle(DESKTOP_IPC.releasesDownloadStart, async (event) => {
-    assertMainRenderer(event.sender)
-    if (releaseChecker === undefined || releaseDownloader === undefined) {
-      return { phase: 'unsupported' } satisfies DesktopReleaseDownloadStatus
-    }
-    await releaseChecker.check()
-    return releaseDownloader.start()
-  })
-  ipcMain.handle(DESKTOP_IPC.releasesDownloadCancel, (event): DesktopReleaseDownloadStatus => {
-    assertMainRenderer(event.sender)
-    return releaseDownloader?.cancel() ?? { phase: 'unsupported' }
-  })
-  ipcMain.handle(DESKTOP_IPC.releasesDownloadOpen, (event) => {
-    assertMainRenderer(event.sender)
-    return releaseDownloader?.open() ?? Promise.resolve({ error: 'Release downloads are unavailable.' })
-  })
-  ipcMain.handle(DESKTOP_IPC.sourceUpdateCheck, (event) => {
-    assertMainRenderer(event.sender)
-    return updater.check()
-  })
-  ipcMain.handle(DESKTOP_IPC.sourceUpdateUpgrade, (event, expectedCommit: unknown) => {
-    assertMainRenderer(event.sender)
-    if (typeof expectedCommit !== 'string' || !/^[0-9a-f]{40}$/u.test(expectedCommit)) {
-      throw new TypeError('desktop: invalid expected update commit')
-    }
-    return updater.upgrade(expectedCommit)
-  })
-  ipcMain.handle(DESKTOP_IPC.sourceUpdateRestart, (event) => {
-    assertMainRenderer(event.sender)
-    setTimeout(() => {
-      requestDesktopRestart()
-    }, 250)
-    return { restarting: true as const }
-  })
-  ipcMain.handle(DESKTOP_IPC.restart, (event) => {
-    assertMainRenderer(event.sender)
-    setTimeout(() => {
-      requestDesktopRestart()
-    }, 250)
-    return { restarting: true as const }
-  })
-  ipcMain.handle(DESKTOP_IPC.recoveryEnter, (event) => {
-    assertMainRenderer(event.sender)
-    if (app.isPackaged) throw new Error('desktop: recovery preview is available only in development mode')
-    if (harnessOrigin === undefined) throw new Error('desktop: Harness must be ready before opening recovery mode')
-    if (menuBusy()) throw new Error(menuCopy(menuLocale).busy)
-    showLoading('failed', {
-      message: shellMessages(app.getLocale()).recoveryPreview,
-      logPath: harnessLogPath,
-    })
-    return { entered: true as const }
-  })
-  ipcMain.handle('dsh:desktop:recovery-plugins:list', (event) => {
-    assertMainRenderer(event.sender)
-    if (activeMenuHome === undefined || profileMutation === undefined) throw new Error('desktop: active Profile is unavailable')
-    return profileMutation.readRecovery(activeMenuHome, readRecoveryPluginInventory)
-  })
-  ipcMain.handle('dsh:desktop:recovery-plugins:remove', async (event, packageName: unknown) => {
-    assertMainRenderer(event.sender)
-    if (!isRecoveryPluginPackageName(packageName)) throw new TypeError('desktop: invalid recovery plugin identity')
-    if (activeMenuHome === undefined || profileMutation === undefined) {
-      throw new Error('desktop: recovery plugin removal is not ready')
-    }
-    const inventory = await profileMutation.readRecovery(activeMenuHome, readRecoveryPluginInventory)
-    if (!inventory.plugins.some(plugin => plugin.packageName === packageName)) {
-      throw new Error('desktop: recovery plugin is not a direct removable dependency')
-    }
-    await profileMutation.stageRecovery({
-      operation: `recovery-plugin-remove:${packageName}`,
-      run: async (context) => {
-        await stopAndRevokePersistentServicesForPlugin(packageName)
-        await appendDesktopStartupLog(`Recovery mode is removing external plugin ${packageName}.`)
-        await context.write({
-          kind: 'remove', packageName, operation: `recovery-plugin-remove:${packageName}`,
-          timeoutMs: BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS,
-        })
-        await appendDesktopStartupLog(`Recovery mode removed external plugin ${packageName}.`)
-      },
-    })
-    return profileMutation.readRecovery(activeMenuHome, readRecoveryPluginInventory)
-  })
-  ipcMain.handle('dsh:desktop:recovery:export', async (event) => {
-    assertMainRenderer(event.sender)
-    if (activeMenuHome === undefined) throw new Error('desktop: active Profile is unavailable')
-    const surface = mainSurface
-    if (surface === undefined) throw new Error('desktop: main window is unavailable')
-    const inventory = await readRecoveryPluginInventory(activeMenuHome)
-    const moduleFallbackLock = await inspectModuleFallbackLock(activeMenuHome).catch(() => ({ state: 'unavailable' as const }))
-    const day = new Date().toISOString().slice(0, 10)
-    const result = await dialog.showSaveDialog(surface.window, {
-      title: shellMessages(app.getLocale()).exportDiagnostics,
-      defaultPath: join(app.getPath('documents'), `DeepSeek-Harness-diagnostic-${day}.json`),
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-    })
-    if (result.canceled) return { saved: false as const }
-    const redact = (value: string): string => value
-      .replaceAll(activeMenuHome ?? '', '<dsh-home>')
-      .replace(/\b(api[ _-]?key|token|password|secret|authorization|cookie)(\s*[:=]\s*)([^\s,;]+)/giu, '$1$2<redacted>')
-      .slice(0, 8_192)
-    await writeFile(result.filePath, `${JSON.stringify({
-      schema: 'dsh/desktop-recovery-diagnostic/v1',
-      generatedAt: new Date().toISOString(),
-      desktopVersion: app.getVersion(),
-      platform: process.platform,
-      arch: process.arch,
-      startup: {
-        stage: startupProgress.stage,
-        progress: startupProgress.progress,
-        detail: startupProgress.detail,
-        state: startupProgress.state,
-        ...(latestRecoveryFailure === undefined ? {} : { failure: redact(latestRecoveryFailure) }),
-        ...(latestRecoveryDiagnostic === undefined ? {} : {
-          diagnostic: {
-            ...latestRecoveryDiagnostic,
-            ...(latestRecoveryDiagnostic.evidence === undefined
-              ? {} : { evidence: redact(latestRecoveryDiagnostic.evidence) }),
-          },
-        }),
-      },
-      moduleFallbackLock,
-      plugins: inventory,
-    }, undefined, 2)}\n`, { mode: 0o600 })
-    return { saved: true as const, fileName: basename(result.filePath) }
-  })
-  ipcMain.handle('dsh:desktop:process-recovery:get', (event) => {
-    assertMainRenderer(event.sender)
-    return { resetAvailable: blockedProcessRecoveryPath !== undefined }
-  })
-  ipcMain.handle('dsh:desktop:process-recovery:reset', async (event) => {
-    assertMainRenderer(event.sender)
-    const path = blockedProcessRecoveryPath
-    if (path === undefined) throw new Error('desktop: no blocked process recovery journal is available')
-    await quarantineProcessRecoveryJournal(path)
-    blockedProcessRecoveryPath = undefined
-    setTimeout(() => { requestDesktopRestart() }, 150)
-    return { restarting: true as const }
-  })
-  ipcMain.handle('dsh:desktop:module-fallback-lock:get', async (event) => {
-    assertMainRenderer(event.sender)
-    if (activeMenuHome === undefined) throw new Error('desktop: active Profile is unavailable')
-    return inspectModuleFallbackLock(activeMenuHome)
-  })
-  ipcMain.handle('dsh:desktop:module-fallback-lock:clear', async (event) => {
-    assertMainRenderer(event.sender)
-    if (activeMenuHome === undefined) throw new Error('desktop: active Profile is unavailable')
-    return clearDeadModuleFallbackLock(activeMenuHome)
-  })
-  ipcMain.handle('dsh:desktop:recovery:exit', async (event) => {
-    assertMainRenderer(event.sender)
-    if (profileMutation?.hasRecoveryCandidate === true) await profileMutation.settleRecovery('discard')
-    else if (menuBusy()) throw new Error(menuCopy(menuLocale).busy)
-    setTimeout(() => { void lifecycle?.requestQuit() }, 0)
-    return { exiting: true as const }
-  })
-  ipcMain.handle('dsh:desktop:shutdown:retry', (event) => {
-    assertMainRenderer(event.sender)
-    setTimeout(() => { void lifecycle?.requestQuit() }, 0)
-    return { started: true as const }
-  })
-  ipcMain.handle('dsh:harness:retry', async (event) => {
-    assertMainRenderer(event.sender)
-    if (bootNasRuntime() !== undefined) {
-      try {
-        await authority.connectSelected()
-        return { started: true }
-      } catch {
-        return { started: false }
-      }
-    }
-    await profileMutation?.settleRecovery('activate')
-    if (recoveryRestartRequired) {
-      setTimeout(() => { requestDesktopRestart() }, 150)
-      return { started: true }
-    }
-    if (recoveryHarnessSuspended) {
-      recoveryHarnessSuspended = false
-      return { started: supervisor?.resume() ?? false }
-    }
-    if (supervisor?.isDiagnosticMode === true) {
-      await supervisor.stop()
-      harnessOrigin = undefined
-      harnessAuthenticationUrl = undefined
-      return { started: supervisor.resume() }
-    }
-    const started = supervisor?.retry() ?? false
-    if (!started && harnessOrigin !== undefined && mainSurface !== undefined && !mainSurface.window.isDestroyed()) {
-      const retryUrl = harnessAuthenticationUrl
-      if (retryUrl === undefined || new URL(retryUrl).origin !== harnessOrigin) {
-        void mainSurface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))
-      } else {
-        void loadAuthenticatedHarness(mainSurface, retryUrl).catch((error: unknown) => {
-          console.error('desktop: Harness authentication retry failed', error)
-        })
-      }
-    }
-    return { started }
-  })
-  ipcMain.handle('dsh:harness:open-logs', (event) => {
-    assertMainRenderer(event.sender)
-    return openHarnessLog()
-  })
-  ipcMain.handle(DESKTOP_IPC.bundledPluginsStart, (event, request: unknown): BundledPluginStartResult => {
-    assertMainRenderer(event.sender)
-    if (request === null || typeof request !== 'object') throw new TypeError('desktop: invalid bundled plugin request')
-    const { profile, packageSpec } = request as { profile?: unknown; packageSpec?: unknown }
-    if (typeof profile !== 'string' || typeof packageSpec !== 'string') {
-      throw new TypeError('desktop: invalid bundled plugin request')
-    }
-    return bundledPluginInstaller?.startManual(profile, packageSpec) ?? { handled: false }
-  })
-  ipcMain.handle(DESKTOP_IPC.externalToolsResolve, async (event, toolId: unknown) => {
-    assertMainRenderer(event.sender)
-    if (typeof toolId !== 'string' || !EXTERNAL_TOOL_IDS.includes(toolId as DesktopExternalToolId)) {
-      throw new TypeError('desktop: invalid external tool id')
-    }
-    if (externalToolCompatibility === undefined) {
-      throw new Error('desktop: external-tool compatibility resolver is unavailable')
-    }
-    return externalToolCompatibility.resolve(toolId as DesktopExternalToolId)
-  })
-  const requireWorkspaceRuntimes = (sender: WebContents): OptionalRuntimeManager => {
-    assertMainRenderer(sender)
-    if (workspaceRuntimeManager === undefined) throw new Error('desktop: workspace-runtime manager is unavailable')
-    return workspaceRuntimeManager
-  }
-  const workspaceCapability = (value: unknown): WorkspaceRuntimeCapability => {
-    if (typeof value !== 'string' || !WORKSPACE_RUNTIME_CAPABILITIES.includes(value as WorkspaceRuntimeCapability)) {
-      throw new TypeError('desktop: invalid workspace-runtime capability id')
-    }
-    return value as WorkspaceRuntimeCapability
-  }
-  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesGet, event => requireWorkspaceRuntimes(event.sender).get())
-  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesChoosePython, async (event) => {
-    const manager = requireWorkspaceRuntimes(event.sender)
-    const title = shellMessages(app.getLocale()).choosePythonInterpreter
-    const result = mainWindow === undefined
-      ? await dialog.showOpenDialog({ title, properties: ['openFile'] })
-      : await dialog.showOpenDialog(mainWindow, { title, properties: ['openFile'] })
-    const path = result.filePaths[0]
-    return path === undefined ? undefined : manager.selectCustomPython(path)
-  })
-  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesManagedPython, event => (
-    requireWorkspaceRuntimes(event.sender).selectManagedPython()
-  ))
-  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesInstallOffice, (event, allowPackageChanges: unknown) => {
-    if (typeof allowPackageChanges !== 'boolean') throw new TypeError('desktop: invalid Office dependency confirmation')
-    return requireWorkspaceRuntimes(event.sender).installCustomOffice(allowPackageChanges)
-  })
-  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesStart, (event, capability: unknown) => (
-    requireWorkspaceRuntimes(event.sender).start(workspaceCapability(capability))
-  ))
-  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesGetJob, (event, jobId: unknown) => {
-    if (typeof jobId !== 'string') throw new TypeError('desktop: invalid workspace-runtime job id')
-    return requireWorkspaceRuntimes(event.sender).getJob(jobId)
-  })
-  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesOutput, (event, jobId: unknown, offset: unknown) => {
-    if (typeof jobId !== 'string' || !Number.isSafeInteger(offset)) throw new TypeError('desktop: invalid workspace-runtime output request')
-    return requireWorkspaceRuntimes(event.sender).readOutput(jobId, offset as number)
-  })
-  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesPause, (event, jobId: unknown) => {
-    if (typeof jobId !== 'string') throw new TypeError('desktop: invalid workspace-runtime job id')
-    return requireWorkspaceRuntimes(event.sender).pause(jobId)
-  })
-  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesCancel, (event, jobId: unknown) => {
-    if (typeof jobId !== 'string') throw new TypeError('desktop: invalid workspace-runtime job id')
-    return requireWorkspaceRuntimes(event.sender).cancel(jobId)
-  })
-  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesActivate, (event, capability: unknown) => (
-    requireWorkspaceRuntimes(event.sender).activate(workspaceCapability(capability))
-  ))
-  ipcMain.handle(DESKTOP_IPC.workspaceRuntimesRemove, (event, capability: unknown) => (
-    requireWorkspaceRuntimes(event.sender).remove(workspaceCapability(capability))
-  ))
-  ipcMain.handle(DESKTOP_IPC.bundledPluginsStartDeferred, async (
-    event,
-    request: unknown,
-  ): Promise<BundledPluginDeferredStartResult> => {
-    assertMainRenderer(event.sender)
-    if (request === null || typeof request !== 'object') throw new TypeError('desktop: invalid bundled plugin request')
-    const { profile, packageSpec } = request as { profile?: unknown; packageSpec?: unknown }
-    if (typeof profile !== 'string' || typeof packageSpec !== 'string') {
-      throw new TypeError('desktop: invalid bundled plugin request')
-    }
-    return bundledPluginInstaller?.startDeferred(profile, packageSpec) ?? { handled: false }
-  })
-  ipcMain.handle(DESKTOP_IPC.bundledPluginsGet, (event, installId: unknown): BundledPluginInstallSnapshot => {
-    assertMainRenderer(event.sender)
-    if (typeof installId !== 'string') throw new TypeError('desktop: invalid bundled plugin install id')
-    if (bundledPluginInstaller === undefined) throw new Error('desktop: bundled plugin installer is unavailable')
-    return bundledPluginInstaller.getInstall(installId)
-  })
-  ipcMain.handle(DESKTOP_IPC.importedPluginsGet, (event): ImportedPluginRestoreSnapshot | undefined => {
-    assertMainRenderer(event.sender)
-    return importedPluginRestoreManager?.snapshot()
-  })
-  ipcMain.handle(DESKTOP_IPC.importedPluginsCheckSources, (event): ImportedPluginRestoreSnapshot | undefined => {
-    assertMainRenderer(event.sender)
-    return importedPluginRestoreManager?.startSourceCheck()
-  })
-  ipcMain.handle(DESKTOP_IPC.importedPluginsStart, async (
-    event,
-    restoreIds: unknown,
-  ): Promise<ImportedPluginRestoreSnapshot> => {
-    assertMainRenderer(event.sender)
-    if (!Array.isArray(restoreIds) || restoreIds.some(value => typeof value !== 'string')) {
-      throw new TypeError('desktop: invalid imported plugin restore ids')
-    }
-    if (importedPluginRestoreManager === undefined) {
-      throw new Error('desktop: imported plugin restore manager is unavailable')
-    }
-    cancelBootableSnapshot()
-    try {
-      return await importedPluginRestoreManager.start(restoreIds)
-    } finally {
-      restartBootableSnapshotStabilityWindow('imported plugin restore settled')
-    }
-  })
-  ipcMain.handle(DESKTOP_IPC.importedPluginsDismiss, async (
-    event,
-  ): Promise<ImportedPluginRestoreSnapshot | undefined> => {
-    assertMainRenderer(event.sender)
-    return importedPluginRestoreManager?.dismissPrompt()
-  })
-  ipcMain.handle(DESKTOP_IPC.importedPluginsIgnore, async (
-    event,
-  ): Promise<ImportedPluginRestoreSnapshot | undefined> => {
-    assertMainRenderer(event.sender)
-    return importedPluginRestoreManager?.ignorePending()
-  })
-  const installSelectedImportedPlugin = async (
-    restoreId: unknown,
-    kind: 'directory' | 'archive',
-  ): Promise<ImportedPluginRestoreSnapshot | undefined> => {
-    if (typeof restoreId !== 'string' || importedPluginRestoreManager === undefined) {
-      throw new TypeError('desktop: invalid imported plugin local restore request')
-    }
-    const entry = importedPluginRestoreManager.localEntry(restoreId)
-    const chinese = app.getLocale().toLowerCase().startsWith('zh')
-    const chooser = mainWindow
-    const result = await (chooser === undefined
-      ? dialog.showOpenDialog({
-        title: shellMessages(app.getLocale()).choosePluginSource,
-        properties: kind === 'directory' ? ['openDirectory'] : ['openFile'],
-        ...(kind === 'archive' ? { filters: [{ name: 'npm package', extensions: ['tgz'] }] } : {}),
-      })
-      : dialog.showOpenDialog(chooser, {
-        title: shellMessages(app.getLocale()).choosePluginSource,
-        properties: kind === 'directory' ? ['openDirectory'] : ['openFile'],
-        ...(kind === 'archive' ? { filters: [{ name: 'npm package', extensions: ['tgz'] }] } : {}),
-      }))
-    const selectedPath = result.filePaths[0]
-    if (result.canceled || selectedPath === undefined) return importedPluginRestoreManager.snapshot()
-    let staged: StagedImportedPlugin | undefined
-    try {
-      staged = kind === 'archive'
-        ? await stageImportedPluginArchive(selectedPath, entry.packageName)
-        : await stageImportedPluginDirectory(selectedPath, entry.packageName, async (source, destination) => {
-          await runPackageManagerInvocation([
-            'pack', '--ignore-scripts', '--pack-destination', destination,
-          ], source, harnessEnvironment, launchOptions, 60_000)
-        })
-      if (importedPluginVersionDiffers(entry.declaredSpec, staged.manifest.version)) {
-        const confirmation = await showDesktopMessageBox({
-          type: 'warning',
-          title: shellMessages(app.getLocale()).pluginVersionDiffers,
-          message: shellMessages(app.getLocale()).confirmPlugin(entry.packageName),
-          detail: chinese
-            ? `原声明：${entry.declaredSpec}\n本地版本：${staged.manifest.version ?? '未知'}\n本地包将安装到桌面版独立环境。`
-            : `Imported declaration: ${entry.declaredSpec}\nLocal version: ${staged.manifest.version ?? 'unknown'}\nThe local package will install into the independent Desktop environment.`,
-          buttons: chinese ? ['取消', '继续安装'] : ['Cancel', 'Install anyway'],
-          defaultId: 0,
-          cancelId: 0,
-        })
-        if (confirmation.response !== 1) return importedPluginRestoreManager.snapshot()
-      }
-      cancelBootableSnapshot()
-      try {
-        return await importedPluginRestoreManager.installLocal(restoreId, staged.archivePath)
-      } finally {
-        restartBootableSnapshotStabilityWindow('local plugin restore settled')
-      }
-    } finally {
-      await staged?.cleanup()
-    }
-  }
-  ipcMain.handle(DESKTOP_IPC.importedPluginsChooseDirectory, async (event, restoreId: unknown) => {
-    assertMainRenderer(event.sender)
-    return installSelectedImportedPlugin(restoreId, 'directory')
-  })
-  ipcMain.handle(DESKTOP_IPC.importedPluginsChooseArchive, async (event, restoreId: unknown) => {
-    assertMainRenderer(event.sender)
-    return installSelectedImportedPlugin(restoreId, 'archive')
-  })
-  ipcMain.handle(DESKTOP_IPC.diagnosticLabCatalog, (event) => {
-    assertMainRenderer(event.sender)
-    if (diagnosticLabManager === undefined) throw new Error('desktop: diagnostic lab is unavailable')
-    return diagnosticLabManager.catalog()
-  })
-  ipcMain.handle(DESKTOP_IPC.startupDiagnosticsList, async (event) => {
-    assertMainRenderer(event.sender)
-    if (activeMenuHome === undefined) return []
-    return readStartupDiagnostics(activeMenuHome)
-  })
-  ipcMain.handle(DESKTOP_IPC.startupDiagnosticsRetry, async (event, incidentId: unknown) => {
-    assertMainRenderer(event.sender)
-    if (activeMenuHome === undefined || typeof incidentId !== 'string' || incidentId.length > 80) {
-      throw new TypeError('desktop: invalid startup diagnostic retry request')
-    }
-    const incident = (await readStartupDiagnostics(activeMenuHome))
-      .find(candidate => candidate.incidentId === incidentId)
-    if (incident === undefined) throw new Error('desktop: startup diagnostic incident was not found')
-    if (incident.code === 'runtime.profile-check-timeout'
-      || incident.code === 'runtime.profile-repair-timeout'
-      || incident.code === 'runtime.profile-repair-failed') {
-      requestDesktopRestart()
-      return { status: 'restarting' as const }
-    }
-    if ((incident.code === 'runtime.bundled-plugin-timeout'
-      || incident.code === 'runtime.bundled-plugin-failed'
-      || incident.code === 'runtime.bundled-plugin-marker-mismatch')
-      && incident.packageName !== undefined
-      && bundledPluginInstaller !== undefined) {
-      await bundledPluginCooldown?.clear(incident.packageName)
-      const started = bundledPluginInstaller.startManual('web', incident.packageName)
-      if (started.handled) {
-        return { status: 'plugin-started' as const, installId: started.snapshot.installId }
-      }
-    }
-    return { status: 'unsupported' as const }
-  })
-  ipcMain.handle(DESKTOP_IPC.diagnosticLabCurrent, (event) => {
-    assertMainRenderer(event.sender)
-    if (diagnosticLabManager === undefined) throw new Error('desktop: diagnostic lab is unavailable')
-    return diagnosticLabManager.current()
-  })
-  ipcMain.handle(DESKTOP_IPC.diagnosticLabStart, (event, request: unknown) => {
-    assertMainRenderer(event.sender)
-    if (diagnosticLabManager === undefined) throw new Error('desktop: diagnostic lab is unavailable')
-    if (request === null || typeof request !== 'object') throw new TypeError('desktop: invalid diagnostic lab request')
-    return diagnosticLabManager.start(request as DiagnosticLabStartRequest)
-  })
-  ipcMain.handle(DESKTOP_IPC.diagnosticLabGet, (event, runId: unknown) => {
-    assertMainRenderer(event.sender)
-    if (diagnosticLabManager === undefined || typeof runId !== 'string') {
-      throw new TypeError('desktop: invalid diagnostic lab run id')
-    }
-    return diagnosticLabManager.get(runId)
-  })
-  ipcMain.handle(DESKTOP_IPC.diagnosticLabCancel, (event, runId: unknown) => {
-    assertMainRenderer(event.sender)
-    if (diagnosticLabManager === undefined || typeof runId !== 'string') {
-      throw new TypeError('desktop: invalid diagnostic lab run id')
-    }
-    return diagnosticLabManager.cancel(runId)
-  })
-  ipcMain.handle(DESKTOP_IPC.diagnosticLabRestoreAll, async (event, runId: unknown) => {
-    assertMainRenderer(event.sender)
-    if (diagnosticLabManager === undefined || typeof runId !== 'string') {
-      throw new TypeError('desktop: invalid diagnostic lab run id')
-    }
-    return diagnosticLabManager.restoreAll(runId)
-  })
-  ipcMain.handle(DESKTOP_IPC.diagnosticLabExport, (event, runId: unknown) => {
-    assertMainRenderer(event.sender)
-    if (diagnosticLabManager === undefined || typeof runId !== 'string') {
-      throw new TypeError('desktop: invalid diagnostic lab run id')
-    }
-    return diagnosticLabManager.exportReport(runId)
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginSnapshotsList, (event): Promise<readonly PluginSnapshotSummary[]> => {
-    assertMainRenderer(event.sender)
-    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
-    return pluginSnapshotManager.list()
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginSnapshotsCreate, (event, label: unknown) => {
-    assertMainRenderer(event.sender)
-    if (label !== undefined && typeof label !== 'string') throw new TypeError('desktop: invalid plugin snapshot label')
-    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
-    return pluginSnapshotManager.create(label)
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginSnapshotsRemove, (event, snapshotId: unknown) => {
-    assertMainRenderer(event.sender)
-    if (typeof snapshotId !== 'string') throw new TypeError('desktop: invalid plugin snapshot id')
-    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
-    return pluginSnapshotManager.remove(snapshotId)
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginSnapshotsRestore, (
-    event,
-    snapshotId: unknown,
-    networkAllowed: unknown,
-  ): PluginSnapshotRestoreSnapshot => {
-    assertMainRenderer(event.sender)
-    if (typeof snapshotId !== 'string' || typeof networkAllowed !== 'boolean') {
-      throw new TypeError('desktop: invalid plugin snapshot restore request')
-    }
-    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
-    return pluginSnapshotManager.startRestore(snapshotId, networkAllowed)
-  })
-  ipcMain.handle(DESKTOP_IPC.pluginSnapshotsRestoreGet, (event, operationId: unknown) => {
-    assertMainRenderer(event.sender)
-    if (typeof operationId !== 'string') throw new TypeError('desktop: invalid plugin snapshot restore operation')
-    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
-    return pluginSnapshotManager.current(operationId)
-  })
-  ipcMain.on('dsh:window:minimize', (event) => {
-    const surface = mainSurface
-    if (surface !== undefined && isDesktopRenderer(event.sender, surface.titlebarRenderer)) surface.window.minimize()
-  })
-  ipcMain.on('dsh:window:toggle-maximize', (event) => {
-    const surface = mainSurface
-    if (surface === undefined || !isDesktopRenderer(event.sender, surface.titlebarRenderer)) return
-    const window = surface.window
-    if (window.isMaximized()) window.unmaximize()
-    else window.maximize()
-  })
-  ipcMain.on('dsh:window:close', (event) => {
-    const surface = mainSurface
-    if (surface !== undefined && isDesktopRenderer(event.sender, surface.titlebarRenderer)) surface.window.close()
-  })
-  ipcMain.on(DESKTOP_IPC.menuClientState, (event, state: unknown) => {
-    if (event.sender !== mainSurface?.renderer || typeof state !== 'object' || state === null) return
-    const { available, ready, locale } = state as { available?: unknown; ready?: unknown; locale?: unknown }
-    if (typeof available !== 'boolean' || typeof ready !== 'boolean'
-      || typeof locale !== 'string' || locale.length > 64) return
-    menuClientAvailable = available
-    menuClientReady = ready
-    menuLocale = resolveDesktopLocale(locale)
-    if (persistedProfileLocale !== menuLocale) {
-      try {
-        desktopLocaleStore?.write(menuLocale)
-        persistedProfileLocale = menuLocale
-      } catch (error) {
-        console.warn('desktop: could not persist active locale', error)
-      }
-    }
-    applicationMenu?.refresh()
-    refreshTrayMenu()
-  })
-  ipcMain.on(DESKTOP_IPC.menuResult, (event, result: unknown) => {
-    if (event.sender !== mainSurface?.renderer || typeof result !== 'object' || result === null) return
-    const { id, error } = result as { id?: unknown; error?: unknown }
-    if (typeof id !== 'string' || (error !== undefined && typeof error !== 'string')) return
-    const pending = pendingMenuCommands.get(id)
-    if (pending === undefined) return
-    pendingMenuCommands.delete(id)
-    clearTimeout(pending.timer)
-    if (typeof error === 'string') pending.reject(new Error(error.slice(0, 1000)))
-    else pending.resolve()
-  })
-  lifecycle = createDesktopLifecycle({
-    getWindow: () => mainWindow,
-    createWindow,
-    readCloseBehavior: () => preferences.closeBehavior,
-    canQuit: () => {
-      if (preparingFirstStart) return true
-      if (!menuBusy()) return true
-      reportMenuError(new Error(menuCopy(menuLocale).busy))
-      return false
-    },
-    canHideToTray: () => !trayUnavailable,
-    onTrayUnavailable: () => {
-      if (trayWarningOpen) return
-      trayWarningOpen = true
-      const copy = menuCopy(menuLocale)
-      void dialog.showMessageBox({ type: 'warning', message: copy.tray,
-        buttons: [copy.cancel, copy.quit], defaultId: 0, cancelId: 0,
-      }).then((result) => { if (result.response === 1) void lifecycle?.requestQuit() })
-        .finally(() => { trayWarningOpen = false })
-    },
-    disposeHost: async () => {
-      prebuiltDeploymentAbort.abort()
-      // File deployment settles before transaction disposal can release its lease.
-      await prebuiltDeploymentTask?.catch(() => {})
-      cancelBootableSnapshot()
-      publishStartupProgress({ stage: 'waiting-background-tasks', progress: 12 })
-      showLoading('restarting')
-      const outcomes: PromiseSettledResult<unknown>[] = []
-      outcomes.push(...await Promise.allSettled([
-        releaseDownloader?.dispose(), downloadNetworkProxy?.close(), oneShotOperations.dispose(),
-        workspaceRuntimeManager?.dispose(), profileMutation?.dispose(),
-      ]))
-      const taskFailures = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
-      if (taskFailures.length > 0) {
-        throw new AggregateError(taskFailures.map(outcome => outcome.reason as unknown), 'desktop: managed task cleanup failed')
-      }
-      // Do not stop Harness until every authorized persistent identity has
-      // been removed from both normal and crash-recovery cleanup scopes.
-      await preservePersistentServicesForActiveProfile()
-      publishStartupProgress({ stage: 'stopping-harness', progress: 38 })
-      outcomes.push(...await Promise.allSettled([supervisor?.stop(), desktopReturnControl?.close()]))
-      publishStartupProgress({ stage: 'reclaiming-processes', progress: 72 })
-      outcomes.push(...await Promise.allSettled([processObserver?.stopAll()]))
-      publishStartupProgress({ stage: 'checking-shutdown', progress: 94 })
-      if (activeMenuHome !== undefined && inspectProfileMutationLock(activeMenuHome).active) {
-        outcomes.push({ status: 'rejected', reason: new Error('desktop: Profile mutation lock remains active after process cleanup') })
-      }
-      if (processObservationFailure !== undefined) outcomes.push({
-        status: 'rejected', reason: new Error('desktop: process identity registration failed', { cause: processObservationFailure }),
-      })
-      const failures = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
-      if (failures.length > 0) throw new AggregateError(failures.map(outcome => outcome.reason as unknown), 'desktop: process cleanup failed')
-      publishStartupProgress({ stage: 'checking-shutdown', progress: 100 })
-    },
-    releaseQuit: () => {
-      quitReleased = true
-      disposeApplicationMenu?.()
-      tray?.destroy()
-      tray = undefined
-      app.quit()
-    },
-    reportError: (error) => {
-      console.error('desktop: shutdown failed', error)
-      showLoading('failed', {
-        message: menuCopy(menuLocale).shutdownFailed,
-        logPath: harnessLogPath,
-      }, 'shutdown')
-    },
-  })
-  desktopReturnControl = DESKTOP_WEB_SUPPORTED ? new DesktopReturnControl({
-    showWindow: () => { lifecycle?.showWindow() },
-  }) : undefined
-  try {
-    await desktopReturnControl?.start()
-  } catch (error) {
-    desktopReturnControl = undefined
-    console.error('desktop: browser return control is unavailable', error)
-  }
-  desktopWebAccess = DESKTOP_WEB_SUPPORTED ? new DesktopWebAccess({
-    openExternal: url => shell.openExternal(url),
-    decorateUrl: (url) => {
-      const returnUrl = desktopReturnControl?.returnUrl()
-      if (returnUrl === undefined) return url
-      const external = new URL(url)
-      external.hash = `dsh-desktop-return=${encodeURIComponent(returnUrl)}`
-      return external.href
-    },
-    canHideWindow: () => !trayUnavailable,
-    hideWindow: () => { mainWindow?.hide() },
-    showWindow: () => { lifecycle?.showWindow() },
-    publish: publishDesktopWebStatus,
-  }) : undefined
-  try { createTray() } catch (error) {
-    hiddenLaunch = false
-    trayUnavailable = true
-    console.error('desktop: system tray unavailable; closing will keep the window accessible', error)
-  }
-  createWindow()
-
-  if (activeNasRuntime !== undefined) {
-    await appendDesktopStartupLog(`Connecting to selected NAS runtime ${activeNasRuntime.name} at ${activeNasRuntime.baseUrl}.`)
-    try { await authority.connectSelected() } catch { /* recovery controls remain visible */ }
-    app.on('activate', () => { lifecycle?.showWindow() })
-    return
-  }
-
-  publishStartupProgress(app.isPackaged
-    ? { stage: 'preparing-runtime', progress: 10 }
-    : { stage: 'preparing-desktop', progress: 24 })
-  const packagedRuntimeRoot = app.isPackaged
-    ? packagedRuntimeArchiveRoot(process.platform, process.arch)
-    : undefined
-  const packagedRuntime = packagedRuntimeRoot !== undefined
-    ? await ensurePackagedRuntime({
-      expandedPath: join(process.resourcesPath, 'harness'),
-      archivePath: join(process.resourcesPath, 'harness-runtime.tar'),
-      checksumPath: join(process.resourcesPath, 'harness-runtime.tar.sha256'),
-      destination: join(app.getPath('userData'), 'runtime', app.getVersion()),
-      archiveRoot: packagedRuntimeRoot,
-      onProgress: (phase) => {
-        publishStartupProgress({
-          stage: 'preparing-runtime',
-          progress: phase === 'verifying-archive' ? 11 : 16,
-          detail: phase === 'verifying-archive' ? 'runtime-archive-verification' : 'runtime-archive-extraction',
-        })
-      },
-    })
-    : undefined
-  const packageRuntimeBin = packagedRuntime === undefined
-    ? undefined
-    : join(packagedRuntime, 'package-runtime', 'bin')
-  let desktopCliRuntime: DesktopCliRuntime | undefined
-  if (app.isPackaged) {
     if (process.platform === 'win32') {
-      const windowsRuntime = join(process.resourcesPath, 'runtime', 'win32-x64')
-      const harnessBin = join(process.resourcesPath, 'harness', 'lib', 'bin.js')
-      const nodeCommand = join(windowsRuntime, 'node.exe')
-      const packageManagerBin = join(windowsRuntime, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
-      launchOptions = {
-        harnessBin,
-        nodeCommand,
-        packageManagerBin,
-        runtimeBinPath: windowsRuntime,
-      }
-      desktopCliRuntime = {
-        harnessBin,
-        nodeBin: nodeCommand,
-        pnpmBin: packageManagerBin,
-        launcherSource: join(process.resourcesPath, 'cli', 'desktop-cli.mjs'),
-      }
-    } else if (packagedRuntime !== undefined && packageRuntimeBin !== undefined) {
-      const harnessBin = join(packagedRuntime, 'lib', 'bin.js')
-      const nodeCommand = join(packageRuntimeBin, 'node')
-      const packageManagerBin = join(packageRuntimeBin, 'pnpm')
-      launchOptions = {
-        harnessBin,
-        nodeCommand,
-        packageManagerBin,
-        runtimeBinPath: packageRuntimeBin,
-      }
-      desktopCliRuntime = {
-        harnessBin,
-        nodeBin: nodeCommand,
-        pnpmBin: packageManagerBin,
-        launcherSource: join(process.resourcesPath, 'cli', 'desktop-cli.mjs'),
-      }
+      // Shutdown, restart, and log-off must not wait on a confirmation. query-session-end is only a
+      // question that another application can veto without any follow-up message, so it does not count.
+      window.on('session-end', () => { sessionEnding = true })
     } else {
-      throw new Error(`desktop: packaged runtime is unavailable for ${process.platform}-${process.arch}`)
+      // The macOS power-off notification arrives before the terminate request; a cancelled shutdown
+      // leaves the process running, and user attention on the window shows the session continues.
+      window.on('focus', () => { sessionEnding = false })
+      window.on('show', () => { sessionEnding = false })
     }
-
-  }
-  const desktopShellPath = process.env.SHELL ?? (process.platform === 'darwin' ? userInfo().shell ?? '' : '')
-  desktopCliManager = new DesktopCliManager({
-    platform: process.platform,
-    packaged: app.isPackaged,
-    desktopRoot: DESKTOP_DATA_HOME.desktopRoot,
-    setupFile: DESKTOP_DATA_HOME.setupFile,
-    homeDirectory: homedir(),
-    resourcesPath: process.resourcesPath,
-    environment: process.env,
-    ...(desktopShellPath === '' ? {} : { shellPath: desktopShellPath }),
-    ...(desktopCliRuntime === undefined ? {} : { runtime: desktopCliRuntime }),
-  })
-  try {
-    await desktopCliManager.refresh()
-  } catch (error) {
-    console.warn('desktop: could not refresh the registered dsh command', error)
-  }
-  const runSnapshotCommand = async <T>(
-    args: readonly string[],
-    timeoutMs?: number,
-    allowDuringDisposal = false,
-  ): Promise<T> => {
-    const output = await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
-      'plugin', '--profile', 'web', 'snapshot', ...args,
-    ], launchOptions), `plugin-snapshot:${args[0] ?? 'unknown'}`,
-    timeoutMs ?? SNAPSHOT_COMMAND_TIMEOUT_MS, [0], allowDuringDisposal)
-    return parsePluginSnapshotJson(output) as T
-  }
-  const firstStartPreparation = new FirstStartPreparation(dshHome)
-  const presetVersionGate = new BundledPresetVersionGate(dshHome)
-  let firstStartPending = await firstStartPreparation.begin(
-    !await lstat(join(dshHome, 'profiles/web/package.json')).then(stat => stat.isFile(), () => false) && !preserveCopiedPlugins,
-  )
-  preparingFirstStart = firstStartPending
-  const showIncompletePreparation = (detail: string): void => {
-    if (lifecycle?.isQuitting === true) return
-    recoveryRestartRequired = true
-    showLoading('failed', {
-      message: shellMessages(app.getLocale()).bundledPreparationFailed(detail),
-      diagnosticCode: 'desktop.bundled-preparation-incomplete',
-      evidence: detail,
-      logPath: harnessLogPath,
+    window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
+    window.webContents.on('console-message', (details) => {
+      if (details.level !== 'error') return
+      rendererConsole.push(`${details.sourceId}:${String(details.lineNumber)} ${details.message}`)
     })
+    window.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+      if (isMainFrame && code !== -3 && !quitting && !window.isDestroyed()) {
+        reportFatal(new Error(`Desktop page failed to load: ${url} (${String(code)}: ${description})`), 'renderer')
+      }
+    })
+    window.webContents.on('preload-error', (_event, _path, error) => {
+      if (!quitting && !window.isDestroyed()) reportFatal(error, 'renderer')
+    })
+    window.webContents.on('render-process-gone', (_event, details) => {
+      navigation = undefined
+      if (!quitting && !window.isDestroyed() && details.reason !== 'clean-exit') {
+        reportFatal(new Error(`Desktop renderer exited: ${details.reason}`), 'renderer')
+      }
+    })
+    return window
   }
-  const bundledDirectory = resolveBundledPluginResourcesDirectory(app.isPackaged, process.resourcesPath, DEFAULT_SOURCE_ROOT)
-  const bundledManifestSource = await readFile(join(bundledDirectory, 'manifest.json'), 'utf8')
-  const manifest = parseBundledPluginManifest(JSON.parse(bundledManifestSource) as unknown)
-  let prebuiltDirectory: string | undefined
-  if (app.isPackaged && firstStartPending) {
-    const prebuiltRoot = packagedPrebuiltProfileArchiveRoot(process.platform, process.arch)
-    const prebuiltStartedAt = Date.now()
-    await appendDesktopStartupLog('Preparing the first-start Profile archive with single-pass verification and extraction.')
-    try {
-      prebuiltDirectory = await ensurePackagedPrebuiltProfile({
-        archivePath: join(process.resourcesPath, 'prebuilt-profile.tar'),
-        checksumPath: join(process.resourcesPath, 'prebuilt-profile.tar.sha256'),
-        destination: join(app.getPath('userData'), 'prebuilt-profile', app.getVersion(), prebuiltRoot),
-        archiveRoot: prebuiltRoot,
-        onProgress: (phase) => {
-          publishStartupProgress({
-            stage: 'preparing-runtime',
-            progress: phase === 'verifying-archive' ? 18 : 22,
-            detail: phase === 'verifying-archive' ? 'prebuilt-profile-verification' : 'prebuilt-profile-extraction',
-          })
+  const enterWorkspace = async ({ activate = true }: { activate?: boolean } = {}): Promise<void> => {
+    if (quitting) return
+    const window = mainWindow ?? createMainWindow()
+    await navigateMain(applicationUrl)
+    if (isQuitting() || recovery.active || window.isDestroyed()) return
+    if (activate) window.show()
+    else window.showInactive()
+    enteredWorkspace = true
+    if (welcomeWindow !== undefined) {
+      welcomeWindow.close()
+      window.webContents.send(DESKTOP_IPC.enterWorkspace)
+    }
+    welcomeWindow = undefined
+    if (raiseAfterUpdate) {
+      raiseAfterUpdate = false
+      window.moveTop()
+      window.focus()
+    }
+    if (activate && development && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
+      window.webContents.openDevTools({ mode: 'detach' })
+    }
+  }
+  let openingWelcome: Promise<void> | undefined
+  const showWelcome = (): Promise<void> => {
+    if (quitting) return Promise.resolve()
+    if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) {
+      welcomeWindow.show()
+      welcomeWindow.focus()
+      return Promise.resolve()
+    }
+    openingWelcome ??= (async () => {
+      welcomeWindow = await openWelcomeWindow(locale, {
+        takeNotice: () => {
+          const notice = pendingWelcomeNotice
+          pendingWelcomeNotice = undefined
+          return Promise.resolve(notice)
         },
-      })
-      await appendDesktopStartupLog(`First-start Profile archive prepared in ${Date.now() - prebuiltStartedAt}ms.`)
-    } catch (error) {
-      showIncompletePreparation(error instanceof Error ? error.message : String(error))
-      return
-    }
-  }
-  const importedBuildPlan = firstStartPending ? await readImportedPluginRestorePlan(dshHome) : undefined
-  const startupBuildRules = firstStartPending && !inspectProfileMutationLock(dshHome).active ? await readProfileBuildApprovals(dshHome) : {}
-  for (const [name, allowed] of Object.entries(importedBuildPlan?.allowBuilds ?? {})) {
-    startupBuildRules[name] = startupBuildRules[name] === false || !allowed ? false : true
-  }
-  let prebuilt: PrebuiltProfileManifest | undefined
-  if (firstStartPending && prebuiltDirectory !== undefined) {
-    try {
-      const candidate = await readPrebuiltProfile(prebuiltDirectory)
-      if (launchOptions.harnessBin === undefined) throw new Error('desktop: packaged Harness entry is unavailable')
-      const core = JSON.parse(await readFile(join(dirname(dirname(launchOptions.harnessBin)), 'package.json'), 'utf8')) as { version: string }
-      if (candidate?.identity.target === `${process.platform}-${process.arch}`
-        && candidate.identity.nodeVersion === '24.21.0' && candidate.identity.pnpmVersion === DESKTOP_PNPM_VERSION
-        && candidate.identity.runtimeVersion === core.version
-        && candidate.identity.pluginManifestSha256 === createHash('sha256').update(bundledManifestSource).digest('hex')
-        && !Object.values(startupBuildRules).includes(false)
-        && (importedBuildPlan?.sourceIssues.length ?? 0) === 0) prebuilt = candidate
-    } catch (error) {
-      showIncompletePreparation(error instanceof Error ? error.message : String(error))
-      return
-    }
-  }
-  let runtimePendingApplied = false
-  const desktopMutations = new DesktopProfileMutation({
-    home: dshHome,
-    ownerPid: process.pid,
-    environment: harnessEnvironment,
-    commands: {
-      run: (environment, args, operation, timeoutMs, acceptedExitCodes = [0], allowDuringDisposal = false) => (
-        runDesktopInvocation(
-          resolveHarnessInvocation(environment, ['plugin', '--profile', 'web', ...args], launchOptions),
-          operation,
-          timeoutMs,
-          acceptedExitCodes,
-          allowDuringDisposal,
-        )
-      ),
-    },
-    harness: {
-      available: () => supervisor !== undefined,
-      stop: async () => { await supervisor?.stop() },
-      resume: () => { supervisor?.resume() },
-      suspendForRecovery: async () => {
-        if (!recoveryHarnessSuspended && supervisor !== undefined) {
-          cancelBootableSnapshot()
-          await supervisor.stop()
-          recoveryHarnessSuspended = true
-          harnessOrigin = undefined
-          harnessAuthenticationUrl = undefined
-          desktopReturnControl?.clear()
-          desktopWebAccess?.clear()
-        } else if (supervisor === undefined) recoveryRestartRequired = true
-      },
-    },
-    timeouts: {
-      preparationMs: CANDIDATE_PREPARATION_TIMEOUT_MS,
-      profileCheckMs: PROFILE_CHECK_TIMEOUT_MS,
-      snapshotMs: SNAPSHOT_COMMAND_TIMEOUT_MS,
-      installMs: BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS,
-    },
-    isFirstStart: () => firstStartPending,
-    canResumeFirstStart: async (candidateHome) => {
-      if (!firstStartPending || prebuilt === undefined) return false
-      const progressPath = join(candidateHome, 'prebuilt-deployment.json')
-      try {
-        if (!(await lstat(progressPath)).isFile()) return false
-        const progress = JSON.parse(await readFile(progressPath, 'utf8')) as { fingerprint?: unknown }
-        return progress.fingerprint === prebuilt.fingerprint
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError) return false
-        throw error
-      }
-    },
-    onFirstStartCommit: async () => {
-      if (runtimePendingApplied) {
-        await workspaceRuntimeManager?.commitPending(dshHome)
-        runtimePendingApplied = false
-        await appendDesktopStartupLog('Workspace runtime Profile changes committed after normal readiness.')
-      }
-      if (!firstStartPending) return
-      await presetVersionGate.markAttempted(app.getVersion())
-      await firstStartPreparation.complete()
-      firstStartPending = false
-      preparingFirstStart = false
-      await appendDesktopStartupLog('First-start bundled plugin preparation committed after normal readiness.')
-    },
-    runSnapshot: (args, timeoutMs, allowDuringDisposal) => runSnapshotCommand(args, timeoutMs, allowDuringDisposal),
-    cancelBootableSnapshot,
-    restartBootableSnapshotWindow: restartBootableSnapshotStabilityWindow,
-    onCandidatePreparation: (startedAt) => {
-      publishStartupProgress({ stage: 'configuring-plugin', progress: startupProgress.progress,
-        startedAt, deadlineAt: startedAt + CANDIDATE_PREPARATION_TIMEOUT_MS })
-    },
-    onActivation: () => { publishStartupProgress({ stage: 'starting-harness', progress: 88 }) },
-    log: appendDesktopStartupLog,
-    onRollback: (error) => {
-      const detail = error instanceof Error ? error.message : String(error)
-      void appendDesktopStartupLog(`Plugin activation failed; the previous Profile was restored: ${detail}`)
-      if (firstStartPending) showIncompletePreparation(detail)
-    },
-    onRecoveryRequired: (error, operation) => {
-      cancelBootableSnapshot()
-      console.error('desktop: plugin transaction requires recovery', error)
-      void appendDesktopStartupLog('Plugin transaction could not be settled; its recovery journal was retained.')
-      if (operation !== undefined) void retainStartupWarning(
-        'runtime.startup-rollback-failed', `${operation}:rollback`,
-        ['diagnostics', 'open-log', 'snapshot-restore'],
-      )
-      if (supervisor !== undefined) void supervisor.stop().then(() => {
-        showLoading('failed', {
-          message: shellMessages(app.getLocale()).transactionRecoveryFailed,
-          diagnosticCode: 'desktop.profile-transaction-rollback-failed',
-          logPath: harnessLogPath,
-        })
-      })
-    },
-  })
-  profileMutation = desktopMutations
-  try { await desktopMutations.recoverBeforeStartup() } catch (error) {
-    await appendDesktopStartupLog('Interrupted plugin transaction recovery failed; using diagnostic mode.')
-    console.error('desktop: interrupted plugin transaction recovery failed', error)
-  }
-  const profileCheckStartedAt = Date.now()
-  publishStartupProgress({
-    stage: 'checking-profile', progress: 28,
-    detail: 'profile-read-only-check',
-    startedAt: profileCheckStartedAt,
-    deadlineAt: profileCheckStartedAt + PROFILE_CHECK_TIMEOUT_MS,
-  })
-  let initialProfileRepairDiagnostic = ''
-  const observerLaunch = resolveHarnessInvocation(harnessEnvironment, [], launchOptions)
-  // Node flags precede the CLI entry; process ownership must resolve modules from the entry itself.
-  const observerBin = observerLaunch.args[1]
-  if (observerBin === undefined) throw new Error('desktop: Harness entry is unavailable for process ownership')
-  const processRecoveryPath = join(app.getPath('userData'), 'managed-processes', 'recovery-v1.json')
-  try {
-    processObserver = await loadProcessObserver(
-      observerBin,
-      observerLaunch.command,
-      processRecoveryPath,
-      `${persistentServicesPath}.runtime`,
-    )
-  } catch (error) {
-    blockedProcessRecoveryPath = processRecoveryPath
-    const detail = error instanceof Error ? error.message : String(error)
-    await appendDesktopStartupLog(`Managed process recovery could not prove quiescence: ${detail}`)
-    publishStartupProgress({
-      stage: 'checking-profile', progress: 28,
-      detail: 'process-recovery-blocked', state: 'degraded',
-    })
-    showLoading('failed', {
-      message: shellMessages(app.getLocale()).processRecoveryFailed(detail),
-      diagnosticCode: 'desktop.process-recovery-blocked',
-      evidence: detail,
-      logPath: harnessLogPath,
-    })
-    return
-  }
-  const profileManifestPath = join(dshHome, 'profiles', 'web', 'package.json')
-  const profileInitialized = await lstat(profileManifestPath).then(stat => stat.isFile(), () => false)
-  firstStartPending = await firstStartPreparation.begin(!profileInitialized && !preserveCopiedPlugins)
-  preparingFirstStart = firstStartPending
-  let profileMutationLock = inspectProfileMutationLock(dshHome)
-  if (profileMutationLock.active && !desktopMutations.hasCandidate) {
-    const lockWaitStartedAt = Date.now()
-    publishStartupProgress({
-      stage: 'checking-profile', progress: 28,
-      detail: 'profile-lock-wait',
-      startedAt: lockWaitStartedAt,
-      deadlineAt: lockWaitStartedAt + PROFILE_LOCK_WAIT_MS,
-    })
-    await new Promise<void>((resolve) => { setTimeout(resolve, PROFILE_LOCK_WAIT_MS) })
-    profileMutationLock = inspectProfileMutationLock(dshHome)
-  }
-  const profileMutationBlocked = profileMutationLock.active
-    && !(desktopMutations.hasCandidate && profileMutationLock.pid === process.pid && profileMutationLock.workerPid === undefined)
-  let startupProfileMutationAllowed = !profileMutationBlocked && !desktopMutations.recoveryRequired
-  let profileNeedsRepair = prebuilt === undefined && !profileInitialized && startupProfileMutationAllowed
-  if (profileMutationBlocked) {
-    const created = profileMutationLock.createdAt === undefined
-      ? undefined
-      : Date.parse(profileMutationLock.createdAt)
-    const heldMs = created === undefined || !Number.isFinite(created)
-      ? undefined
-      : Math.max(0, Date.now() - created)
-    const owner = [
-      `state=${profileMutationLock.state}`,
-      `operation=${profileMutationLock.operationKind ?? 'unknown'}`,
-      ...(profileMutationLock.pid === undefined ? [] : [`pid=${profileMutationLock.pid}`]),
-      ...(heldMs === undefined ? [] : [`heldMs=${heldMs}`]),
-      `lock=${profileMutationLock.lockPath}`,
-    ].join(' ')
-    const warning = `runtime.profile-mutation-lock-busy: ${owner}; opening Diagnostics without reading the active Profile`
-    await retainStartupWarning(
-      'runtime.profile-mutation-lock-busy',
-      `profile-lock-check:${profileMutationLock.operationKind ?? profileMutationLock.state}`,
-      ['diagnostics', 'open-log', 'switch-profile'],
-    )
-    await appendDesktopStartupLog(warning)
-    publishStartupProgress({
-      stage: 'checking-profile', progress: 34,
-      detail: 'profile-lock-diagnostics',
-      state: 'degraded',
-    })
-  } else if (prebuilt === undefined && profileInitialized && !desktopMutations.recoveryRequired) {
-    try {
-      await appendDesktopStartupLog('Checking Web Profile compatibility without modifying it.')
-      const inspection = await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
-        'plugin', '--profile', 'web', 'doctor',
-      ], launchOptions), 'profile-check', PROFILE_CHECK_TIMEOUT_MS, [0, 2])
-      profileNeedsRepair = profileDoctorStatus(inspection) !== 'healthy'
-      await appendDesktopStartupLog(profileNeedsRepair
-        ? 'Web Profile compatibility issues require bounded repair.'
-        : 'Web Profile compatibility check completed without repair.')
-    } catch (error) {
-      if (error instanceof HarnessInvocationError && error.timedOut) {
-        const warning = 'runtime.profile-check-timeout: compatibility inspection exceeded 15 seconds; continuing without Profile changes'
-        await retainStartupWarning(
-          'runtime.profile-check-timeout',
-          'profile-check',
-          ['diagnostics', 'open-log'],
-        )
-        await appendDesktopStartupLog(warning)
-        publishStartupProgress({
-          stage: 'checking-profile', progress: 32,
-          detail: 'profile-check-timeout',
-          state: 'degraded',
-        })
-        profileNeedsRepair = false
-        startupProfileMutationAllowed = false
-      } else {
-        await appendDesktopStartupLog(
-          `Web Profile read-only inspection failed without modifying the Profile: ${error instanceof Error ? error.message : String(error)}`,
-        )
-        profileNeedsRepair = false
-        startupProfileMutationAllowed = false
-      }
-    }
-  }
-  if (profileNeedsRepair) {
-    try {
-      const repairStartedAt = Date.now()
-      publishStartupProgress({
-        stage: 'checking-profile', progress: 31,
-        detail: profileInitialized ? 'profile-repair' : 'profile-initialize',
-        startedAt: repairStartedAt,
-        deadlineAt: repairStartedAt + PROFILE_REPAIR_TIMEOUT_MS,
-      })
-      await appendDesktopStartupLog(profileInitialized
-        ? 'Repairing Web Profile compatibility with a hard timeout.'
-        : 'Initializing the new Web Profile with a hard timeout.')
-      const runProfileRepair = (): Promise<string> => runDesktopInvocation(
-        resolveHarnessInvocation(harnessEnvironment, [
-          'plugin', '--profile', 'web', 'doctor', '--repair',
-        ], launchOptions),
-        profileInitialized ? 'profile-repair' : 'profile-initialize',
-        PROFILE_REPAIR_TIMEOUT_MS,
-        [0, 10, 11],
-      )
-      initialProfileRepairDiagnostic = profileInitialized
-        ? await desktopMutations.applyAtStartup({ operation: 'profile-repair', run: () => runProfileRepair() })
-        : await runProfileRepair()
-      await appendDesktopStartupLog('Web Profile compatibility repair completed.')
-    } catch (error) {
-      if (!profileInitialized) {
-        const message = error instanceof Error ? error.message : String(error)
-        await retainStartupWarning(
-          'runtime.profile-repair-failed',
-          'profile-initialize',
-          ['diagnostics', 'open-log', 'switch-profile'],
-        )
-        await appendDesktopStartupLog(`Web Profile initialization failed: ${message}`)
-        publishStartupProgress({
-          stage: 'checking-profile', progress: 31,
-          detail: 'profile-initialize-failed',
-          state: 'degraded',
-        })
-        showLoading('failed', {
-          message: shellMessages(app.getLocale()).initializeFailed(message),
-          diagnosticCode: 'desktop.profile-initialize-failed',
-          evidence: message,
-          logPath: harnessLogPath,
-        })
-        return
-      }
-      initialProfileRepairDiagnostic = error instanceof Error ? error.message : String(error)
-      startupProfileMutationAllowed = false
-      const code = error instanceof HarnessInvocationError && error.timedOut
-        ? 'runtime.profile-repair-timeout'
-        : 'runtime.profile-repair-failed'
-      await retainStartupWarning(
-        code,
-        'profile-repair',
-        ['diagnostics', 'open-log', 'snapshot-restore'],
-      )
-      console.warn('desktop: Profile startup repair did not settle; supervised startup will classify the failure', error)
-    }
-  }
-  const profileRepairDiagnostic = await resolveStartupBuildApproval(
-    initialProfileRepairDiagnostic,
-    harnessEnvironment,
-    launchOptions,
-  )
-  if (profileRepairDiagnostic.trim() !== '') {
-    desktopLogSession.append('desktop-startup', 'warn', `Profile startup repair:\n${profileRepairDiagnostic.trim()}`)
-  }
-  publishStartupProgress({ stage: 'checking-profile', progress: 34 })
-  // Descendant `dsh plugin add` processes (including the plugin market) can
-  // restore an absent bundled version without downloading it again. The CLI
-  // verifies the manifest and archive before using this directory.
-  harnessEnvironment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR = bundledDirectory
-  const startupPluginCooldown = new BundledPluginStartupCooldown(dshHome)
-  bundledPluginCooldown = startupPluginCooldown
-  const withStartupPluginTransaction = async <T>(
-    packageName: string,
-    operation: () => Promise<T>,
-  ): Promise<T> => {
-    if (desktopMutations.recoveryRequired) {
-      throw new Error('desktop: bundled plugin startup stopped after rollback failure')
-    }
-    // Fenglin: keep marketplace add/update from dying on wrong-arch optional
-    // platform packages (dsh-im → agently-cli → win32-arm64 on x64).
-    try {
-      await ensureIgnoredOptionalDependencies(join(desktopMutations.mutationHome, 'profiles', 'web'))
-    } catch (error) {
-      await appendDesktopStartupLog(`pnpm optional-deps compat skipped: ${error instanceof Error ? error.message : String(error)}`)
-    }
-    return desktopMutations.applyAtStartup({ operation: `bundled-plugin:${packageName}`, run: () => operation() })
-  }
-  bundledPluginInstaller = new BundledPluginInstaller({
-    manifest,
-    resourcesDirectory: bundledDirectory,
-    get dshHome() { return desktopMutations.mutationHome },
-    sourceDshHome: dshHome,
-    repairLegacyMarkers: !app.isPackaged,
-    startupBudgetMs: 120_000,
-    requireCompleteStartup: firstStartPending,
-    isStartupCancelled: () => lifecycle?.isQuitting === true,
-    shouldAttemptStartup: plugin => startupPluginCooldown.shouldAttempt(plugin.packageName, plugin.version),
-    onStartupSuccess: plugin => startupPluginCooldown.clear(plugin.packageName),
-    onStartupResult: async (plugin, result) => {
-      await appendDesktopStartupLog(`Bundled plugin ${plugin.packageName}@${plugin.version}: ${result}.`)
-      if (result === 'unresolved') {
-        await retainStartupWarning(
-          'runtime.bundled-plugin-marker-mismatch',
-          'bundled-plugin-reconciliation',
-          ['diagnostics', 'open-log', 'retry-plugin'],
-          plugin.packageName,
-        )
-      }
-    },
-    onReconciled: (reconciliation) => {
-      void appendDesktopStartupLog(
-        `Bundled plugin reconciliation: ${reconciliation.packageName}; recorded=${reconciliation.recordedVersion ?? 'none'}; actual=${reconciliation.actualVersion ?? 'missing'}; target=${reconciliation.targetVersion}; source=${reconciliation.sourceKind ?? 'missing'}; ownership=${reconciliation.ownership}.`,
-      ).catch((error: unknown) => {
-        console.warn('desktop: could not persist bundled plugin reconciliation', error)
-      })
-      if (reconciliation.recordedVersion !== undefined
-        && reconciliation.recordedVersion !== reconciliation.actualVersion) {
-        void retainStartupWarning(
-          'runtime.bundled-plugin-marker-mismatch',
-          'bundled-plugin-reconciliation',
-          ['diagnostics', 'open-log', 'retry-plugin'],
-          reconciliation.packageName,
-          {
-            recordedVersion: reconciliation.recordedVersion,
-            ...(reconciliation.actualVersion === undefined ? {} : { actualVersion: reconciliation.actualVersion }),
-            targetVersion: reconciliation.targetVersion,
-          },
-        ).catch((error: unknown) => {
-          console.warn('desktop: could not retain bundled plugin reconciliation warning', error)
-        })
-      }
-    },
-    onStartupDeferred: async (plugin, reason) => {
-      await appendDesktopStartupLog(`Bundled plugin ${plugin.packageName}@${plugin.version} was not attempted (${reason}); it remains available for manual installation.`)
-      await retainStartupWarning(
-        'runtime.bundled-plugin-failed',
-        `bundled-plugin-deferred:${reason}`,
-        ['diagnostics', 'open-log', 'retry-plugin'],
-        plugin.packageName,
-      )
-    },
-    onManagedMutationStart: () => { cancelBootableSnapshot() },
-    onManagedMutationSettled: (plugin) => {
-      restartBootableSnapshotStabilityWindow(`bundled plugin ${plugin.packageName} settled`)
-    },
-    withStartupTransaction: (plugin, operation) => withStartupPluginTransaction(plugin.packageName, operation),
-    withManagedTransaction: (plugin, operation) => desktopMutations.applyManaged({
-      operation: `bundled-plugin:${plugin.packageName}`,
-      expectedPackages: [plugin.packageName],
-      run: () => operation(),
-    }),
-    prepare: async (plugin) => {
-      await appendDesktopStartupLog(`Preparing bundled plugin ${plugin.packageName}@${plugin.version}.`)
-      for (const packageName of plugin.approvedBuilds ?? []) {
-        await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
-          'plugin', '--profile', plugin.profile, 'approve-build', packageName,
-        ], launchOptions), `bundled-plugin-approve:${plugin.packageName}`, BUILD_APPROVAL_TIMEOUT_MS)
-      }
-    },
-    install: async (archivePath, plugin) => {
-      const startedAt = Date.now()
-      publishStartupProgress({ ...startupProgress, startedAt, deadlineAt: startedAt + BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS })
-      await appendDesktopStartupLog(`Installing bundled plugin ${plugin.packageName}@${plugin.version}.`)
-      await installBundledPluginSource(plugin, archivePath, async (packageSpec) => {
-        await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
-          'plugin', '--profile', plugin.profile, 'add', '--save-exact', packageSpec,
-        ], launchOptions), `bundled-plugin-install:${plugin.packageName}`, BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS)
-      })
-      await appendDesktopStartupLog(`Bundled plugin ${plugin.packageName}@${plugin.version} installed.`)
-    },
-    onFailure: async (error, plugin) => {
-      await appendBundledPluginFailure(harnessLogPath, error)
-      await startupPluginCooldown.record(plugin.packageName, plugin.version)
-      const code = error instanceof HarnessInvocationError && error.timedOut
-        ? 'runtime.bundled-plugin-timeout'
-        : 'runtime.bundled-plugin-failed'
-      await retainStartupWarning(
-        code,
-        'bundled-plugin-install',
-        ['diagnostics', 'open-log', 'retry-plugin'],
-        plugin.packageName,
-      )
-      console.error(error)
-    },
-  })
-  // Startup seed is trusted, verified application material. Suppress per-plugin
-  // automatic snapshots here and retain one known-bootable point only after the
-  // client and event dispatcher both prove the resulting Profile can start.
-  harnessEnvironment.DSH_PLUGIN_SNAPSHOT_BATCH = '1'
-  const runtimePending = await workspaceRuntimeManager.pending(dshHome)
-  const hasRuntimePending = Object.values(runtimePending).some(value => value !== undefined)
-  const ptcWanted = runtimePending.ptc === 'enable'
-    || (runtimePending.ptc !== 'remove' && await hasManagedWorkspacePtcBlock(dshHome))
-  let ptcVersion: string | undefined
-  let ptcNeedsInstall = false
-  if (ptcWanted) {
-    const harnessBin = resolveHarnessInvocation(harnessEnvironment, [], launchOptions).args[1]
-    if (harnessBin === undefined) throw new Error('desktop: Harness entry is unavailable for optional PTC plugin')
-    const manifest = JSON.parse(await readFile(join(dirname(dirname(harnessBin)), 'package.json'), 'utf8')) as { version?: unknown }
-    if (typeof manifest.version !== 'string') throw new Error('desktop: Harness version is unavailable for optional PTC plugin')
-    ptcVersion = manifest.version
-    ptcNeedsInstall = !await isWorkspacePtcPluginInstalled(dshHome, ptcVersion)
-  }
-  const applyRuntimePending = (hasRuntimePending || ptcNeedsInstall) && startupProfileMutationAllowed && !preserveCopiedPlugins
-  let presetUpgradeNeeded = false
-  let presetVersionMarkerUnavailable = false
-  if (!firstStartPending && (startupProfileMutationAllowed || preserveCopiedPlugins)) {
-    try {
-      if (await presetVersionGate.shouldAttempt(app.getVersion())) {
-        await presetVersionGate.markAttempted(app.getVersion())
-        presetUpgradeNeeded = !preserveCopiedPlugins && startupProfileMutationAllowed
-      }
-    } catch (error) {
-      presetVersionMarkerUnavailable = true
-      await retainStartupWarning(
-        'runtime.bundled-preset-version-marker-unavailable',
-        'bundled-preset-version-marker',
-        ['diagnostics', 'open-log'],
-      )
-      console.warn('desktop: bundled preset version marker is unavailable; skipping automatic preparation', error)
-    }
-  }
-  try {
-    if (firstStartPending && (!startupProfileMutationAllowed || preserveCopiedPlugins)) {
-      showIncompletePreparation('Profile verification or transaction recovery did not complete.')
-      return
-    }
-    if (startupProfileMutationAllowed && !preserveCopiedPlugins) {
-      // Even a retry with settled markers needs a readiness-verified commit before clearing the gate.
-      if (firstStartPending || applyRuntimePending) await desktopMutations.prepareStartup()
-      if (prebuilt !== undefined && prebuiltDirectory !== undefined) {
-        const startedAt = Date.now()
-        const candidate = desktopMutations.mutationHome
-        const receipt = join(candidate, 'prebuilt-deployment.json')
-        await writeFile(`${receipt}.tmp`, JSON.stringify({ fingerprint: prebuilt.fingerprint, stage: 'copying' }))
-        await rename(`${receipt}.tmp`, receipt)
-        let lastProgressAt = 0
-        prebuiltDeploymentTask = deployPrebuiltProfile(prebuiltDirectory, candidate, prebuilt, prebuiltDeploymentAbort.signal,
-          (completed, total) => {
-            const now = Date.now()
-            if (now - lastProgressAt < 100 && completed !== total) return
-            lastProgressAt = now
-            publishStartupProgress({ stage: 'configuring-plugin', progress: 36 + Math.floor(44 * completed / Math.max(1, total)), detail: `${completed}/${total}`, startedAt })
-          })
-        try { await prebuiltDeploymentTask } finally { prebuiltDeploymentTask = undefined }
-        await mergeImportedAllowBuilds(join(candidate, 'profiles/web'), startupBuildRules)
-        // Fenglin: first-start homes must always carry fenglin-ui-guard.yml.
-        // Custom DSH_HOME paths and partial restores used to miss it; launch
-        // omits --patch when absent, but we still seed the file when possible.
-        try {
-          const guardTarget = join(candidate, 'fenglin-ui-guard.yml')
-          const guardSources = [
-            join(prebuiltDirectory, 'fenglin-ui-guard.yml'),
-            join(bundledDirectory, 'fenglin-fixes', 'fenglin-ui-guard.yml'),
-          ]
-          let guardExists = false
-          try { guardExists = (await lstat(guardTarget)).isFile() } catch { guardExists = false }
-          if (!guardExists) {
-            for (const source of guardSources) {
-              try {
-                if ((await lstat(source)).isFile()) {
-                  await copyFile(source, guardTarget)
-                  await appendDesktopStartupLog(`Seeded fenglin-ui-guard.yml into candidate home from ${source}`)
-                  break
-                }
-              } catch { /* try next source */ }
-            }
+        startSignIn: async () => {
+          if (welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
+          return welcomeBackend.account.start(desktopClientMetadata(locale.id))
+        },
+        cancelSignIn: async (id) => {
+          if (welcomeBackend === undefined) throw new Error('desktop welcome: backend unavailable')
+          return welcomeBackend.account.cancel(id)
+        },
+        copySignInLink: async (id) => {
+          const state = await welcomeBackend?.account.state()
+          if (state?.attempt?.id !== id || state.attempt.phase !== 'waiting-browser' || state.attempt.authorizeUrl === undefined) {
+            throw new Error('desktop welcome: login link is unavailable')
           }
-        } catch (error) {
-          await appendDesktopStartupLog(`fenglin-ui-guard seed skipped: ${error instanceof Error ? error.message : String(error)}`)
-        }
-        await appendDesktopStartupLog(`Prebuilt Profile deployment completed in ${Date.now() - startedAt}ms; fingerprint=${prebuilt.fingerprint}; verifying bundled plugins after deploy.`)
-        // Prebuilt can omit or drop individual packages across seal/relocate.
-        // seedStartup verifies every startup entry and fills only the gaps.
-        const prebuiltSeedResults = await bundledPluginInstaller.seedStartup((progress) => {
-          const mapped = mapBundledPluginProgress(
-            progress.entry.packageName,
-            progress.index,
-            progress.total,
-            progress.stage,
-            progress.progress,
-          )
-          publishStartupProgress({ ...mapped, detail: `${progress.entry.packageName} (${progress.index + 1}/${progress.total})` })
-        })
-        const prebuiltCount = (result: NonNullable<(typeof prebuiltSeedResults)[number]['result']>): number => (
-          prebuiltSeedResults.filter(item => item.result === result).length
-        )
-        await appendDesktopStartupLog(`Post-prebuilt bundled plugin pass: verified=${prebuiltCount('verified')}; installed=${prebuiltCount('installed')}; upgraded=${prebuiltCount('upgraded')}; preserved-user-version=${prebuiltCount('preserved-user-version')}; removed=${prebuiltCount('removed')}; unresolved=${prebuiltCount('unresolved')}; failed-or-deferred=${prebuiltSeedResults.filter(r => r.result === undefined).length}.`)
-        try {
-          await appendDesktopStartupLog(await applyFenglinRuntimeOverlays(desktopMutations.mutationHome))
-        } catch (error) {
-          await appendDesktopStartupLog(`fenglin overlays skipped: ${error instanceof Error ? error.message : String(error)}`)
-        }
-      } else if (firstStartPending) {
-        await mergeImportedAllowBuilds(join(desktopMutations.mutationHome, 'profiles/web'), startupBuildRules)
-        await seedBundledPluginsBatch(manifest.plugins.filter(entry => entry.installPolicy === 'startup'), bundledDirectory, desktopMutations.mutationHome,
-          async (entry) => {
-            for (const name of entry.approvedBuilds ?? []) {
-              if (Object.values(startupBuildRules).includes(false)) continue
-              await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment,
-                ['plugin', '--profile', 'web', 'approve-build', name], launchOptions), 'bundled-batch-approve', BUILD_APPROVAL_TIMEOUT_MS)
-            }
-          },
-          async (archives) => {
-            await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment,
-              ['plugin', '--profile', 'web', 'add', '--save-exact', ...archives], launchOptions), 'bundled-batch-install', BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS)
-          })
-      } else if (presetUpgradeNeeded) {
-        await appendDesktopStartupLog(`Preparing bundled presets once for desktop ${app.getVersion()} after an application upgrade.`)
-        const seedResults = await bundledPluginInstaller.seedStartup((progress) => {
-          const mapped = mapBundledPluginProgress(
-            progress.entry.packageName,
-            progress.index,
-            progress.total,
-            progress.stage,
-            progress.progress,
-          )
-          publishStartupProgress({ ...mapped, detail: `${progress.entry.packageName} (${progress.index + 1}/${progress.total})` })
-        })
-        const count = (result: NonNullable<(typeof seedResults)[number]['result']>): number => (
-          seedResults.filter(item => item.result === result).length
-        )
-        const pending = seedResults.filter(result => result.result === undefined).length
-        await appendDesktopStartupLog(`Desktop ${app.getVersion()} bundled preset pass finished: verified=${count('verified')}; installed=${count('installed')}; upgraded=${count('upgraded')}; preserved-user-version=${count('preserved-user-version')}; removed=${count('removed')}; unresolved=${count('unresolved')}; failed-or-deferred=${pending}. Activation still requires normal readiness.`)
-        try {
-          await appendDesktopStartupLog(await applyFenglinRuntimeOverlays(desktopMutations.mutationHome))
-        } catch (error) {
-          await appendDesktopStartupLog(`fenglin overlays skipped: ${error instanceof Error ? error.message : String(error)}`)
-        }
-      } else {
-        // Fenglin: reconcile every startup so a newer bundled archive still
-        // upgrades an older registry-owned copy after the version gate settles.
-        await appendDesktopStartupLog(presetVersionMarkerUnavailable
-          ? 'Bundled plugin reconcile pass: desktop version marker unavailable; reconciling archives anyway.'
-          : `Bundled plugin reconcile pass for desktop ${app.getVersion()}.`)
-        const seedResults = await bundledPluginInstaller.seedStartup((progress) => {
-          const mapped = mapBundledPluginProgress(
-            progress.entry.packageName,
-            progress.index,
-            progress.total,
-            progress.stage,
-            progress.progress,
-          )
-          publishStartupProgress({ ...mapped, detail: `${progress.entry.packageName} (${progress.index + 1}/${progress.total})` })
-        })
-        const count = (result: NonNullable<(typeof seedResults)[number]['result']>): number => (
-          seedResults.filter(item => item.result === result).length
-        )
-        await appendDesktopStartupLog(`Bundled plugin reconcile finished: verified=${count('verified')}; installed=${count('installed')}; upgraded=${count('upgraded')}; preserved-user-version=${count('preserved-user-version')}; removed=${count('removed')}; unresolved=${count('unresolved')}.`)
-        try {
-          await appendDesktopStartupLog(await applyFenglinRuntimeOverlays(desktopMutations.mutationHome))
-        } catch (error) {
-          await appendDesktopStartupLog(`fenglin overlays skipped: ${error instanceof Error ? error.message : String(error)}`)
-        }
-      }
-    } else {
-      await appendDesktopStartupLog(
-        preserveCopiedPlugins
-          ? 'Preserved copied community plugins without startup seeding.'
-          : 'Skipped bundled startup plugin mutations because Profile health was not proven safe for writes.',
-      )
-    }
-  } catch (error) {
-    if (lifecycle.isQuitting) return
-    if (!firstStartPending) throw error
-    await appendBundledPluginFailure(harnessLogPath, error)
-    showIncompletePreparation(error instanceof Error ? error.message : String(error))
-    return
-  } finally {
-    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_BATCH
-  }
-  if (applyRuntimePending) {
-    const launch = resolveHarnessInvocation(harnessEnvironment, [], launchOptions)
-    const harnessBin = launch.args[1]
-    if (harnessBin === undefined) throw new Error('desktop: Harness entry is unavailable for workspace-runtime activation')
-    const nodePackages = app.isPackaged
-      ? join(dirname(dirname(harnessBin)), 'node_modules')
-      : join(DEFAULT_SOURCE_ROOT, 'node_modules')
-    const pnpm = launchOptions.packageManagerBin ?? resolveDevelopmentLaunchOptions(DEFAULT_SOURCE_ROOT).packageManagerBin
-    if (pnpm === undefined) throw new Error('desktop: pnpm entry is unavailable for workspace-runtime activation')
-    if (ptcNeedsInstall && ptcVersion !== undefined) {
-      await desktopMutations.applyAtStartup({
-        operation: 'workspace-runtime-ptc-plugin-install',
-        run: async (context) => {
-          await ensureWorkspacePtcPlugin(context.home, ptcVersion, async (packageSpec) => {
-            await context.write({ kind: 'add', packageSpecs: [packageSpec], exact: true,
-              operation: 'workspace-runtime-ptc-plugin-install', timeoutMs: BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS })
-          })
-          await appendDesktopStartupLog(`Optional PTC plugin ${PTC_PLUGIN_NAME}@${ptcVersion} installed after user opt-in.`)
+          await clipboard.writeText(platformLoginUrl(state.attempt.authorizeUrl))
         },
+        saveApiKey: async (apiKey) => {
+          if (backend.host === undefined || welcomeBackend === undefined) return { ok: false }
+          const saved = await welcomeBackend.save(apiKey)
+          if (!saved.ok) return saved
+          await enterWorkspace()
+          return { ok: true }
+        },
+        skip: enterWorkspace,
       })
-    }
-    for (const capability of WORKSPACE_RUNTIME_CAPABILITIES) {
-      const action = runtimePending[capability]
-      if (action === undefined) continue
-      const reference = await workspaceRuntimeManager.reference(dshHome, capability)
-      if (action === 'enable' && reference === undefined) throw new Error(`desktop: ${capability} workspace-runtime reference is missing`)
-      const payloadRoot = reference?.payloadRoot ?? join(app.getPath('userData'), 'optional-runtimes', 'removed')
-      const python = reference?.custom === true && reference.python !== undefined
-        ? reference.python.executable
-        : process.platform === 'win32'
-          ? join(payloadRoot, 'python', 'python.exe')
-          : join(payloadRoot, 'python', 'bin', 'python3')
-      const paths: WorkspaceRuntimeProfilePaths = {
-        runtimeRoot: payloadRoot,
-        python,
-        node: launch.command,
-        pnpm,
-        nodePackages,
-        ...(reference?.custom === true && reference.python !== undefined ? { customPython: {
-          executable: reference.python.executable,
-          sitePackages: reference.python.sitePackages,
-          distributions: reference.python.packages,
-        } } : {}),
-      }
-      await desktopMutations.applyAtStartup({
-        operation: `workspace-runtime-${capability}-${action}`,
-        run: () => Promise.resolve(configureWorkspaceRuntimeCapability(
-          desktopMutations.mutationHome,
-          capability,
-          action === 'enable',
-          paths,
-        )),
+      const window = welcomeWindow
+      window.once('closed', () => {
+        void welcomeBackend?.account.state().then((state) => {
+          if (state.attempt !== null && !enteredWorkspace) return welcomeBackend?.account.cancel(state.attempt.id)
+          return undefined
+        }).catch(() => undefined)
       })
-    }
-    runtimePendingApplied = hasRuntimePending
+      window.once('closed', () => {
+        if (welcomeWindow === window) welcomeWindow = undefined
+        if (enteredWorkspace || recovery.active) return
+        // Nothing runs before the workspace opens. macOS keeps the Dock convention and drops the
+        // unused main window so the next activation rebuilds the welcome; elsewhere the close quits.
+        if (process.platform === 'darwin') mainWindow?.destroy()
+        else app.quit()
+      })
+      if (isQuitting() || recovery.active || enteredWorkspace) window.close()
+      else mainWindow?.hide()
+    })().finally(() => { openingWelcome = undefined })
+    return openingWelcome
   }
-  const officeNodeModules = await workspaceRuntimeManager.officeNodeModules(dshHome)
-  if (officeNodeModules === undefined) delete harnessEnvironment.NODE_PATH
-  else harnessEnvironment.NODE_PATH = [officeNodeModules, harnessEnvironment.NODE_PATH]
-    .filter((value): value is string => typeof value === 'string' && value !== '')
-    .join(delimiter)
-  const installedProfileDependencies: Record<string, string> = {}
-  try {
-    const profileManifest = JSON.parse(
-      await readFile(join(desktopMutations.mutationHome, 'profiles', 'web', 'package.json'), 'utf8'),
-    ) as { dependencies?: Record<string, unknown> }
-    for (const [packageName, declaredSpec] of Object.entries(profileManifest.dependencies ?? {})) {
-      if (typeof declaredSpec === 'string') installedProfileDependencies[packageName] = declaredSpec
+  const openInitialWindow = async (): Promise<void> => {
+    if (quitting || recovery.active) return
+    const state = await readWelcomeState()
+    if (isQuitting() || backend.state.phase !== 'ready') return
+    locale = resolveDesktopStartupLocale(state.localePreference, systemLanguages)
+    windowsLanguage = locale.id
+    refreshApplicationMenu()
+    if (!enteredWorkspace && needsWelcome({ loggedIn: state.loggedIn, hasApiKey: state.hasApiKey })) {
+      // A later login must retain its own activation policy instead of replaying startup focus.
+      raiseAfterUpdate = false
+      await showWelcome()
+    } else {
+      await enterWorkspace()
     }
-  } catch (error) {
-    console.warn('desktop: could not identify installed startup plugins for imported restore', error)
   }
-  importedPluginRestoreManager = new ImportedPluginRestoreManager({
-    get dshHome() { return desktopMutations.mutationHome },
-    providedDependencies: installedProfileDependencies,
-    inspectSource: packageSpec => inspectImportedPluginSource(packageSpec, harnessEnvironment, launchOptions),
-    install: packageSpec => runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
-      'plugin', '--profile', 'web', 'add', packageSpec,
-    ], launchOptions), 'imported-plugin-install', IMPORTED_PLUGIN_INSTALL_TIMEOUT_MS),
-    mergeAllowBuilds: (_profileDir, rules) => desktopMutations.applyAtStartup({
-      operation: 'imported-plugin-allow-builds',
-      run: () => mergeImportedAllowBuilds(join(desktopMutations.mutationHome, 'profiles', 'web'), rules),
-    }),
-    withMutation: (operation, expectedPackages) => desktopMutations.applyManaged({
-      operation: 'imported-plugin-restore', expectedPackages, run: () => operation(),
-    }),
-  })
-  try {
-    if (startupProfileMutationAllowed && !preserveCopiedPlugins) await importedPluginRestoreManager.prepare()
-    else await appendDesktopStartupLog(
-      preserveCopiedPlugins
-        ? 'Skipped imported plugin restore preparation to preserve the copied community deployment.'
-        : 'Skipped imported plugin restore preparation because Profile health was not proven safe for writes.',
-    )
-  } catch (error) {
-    console.warn('desktop: imported plugin restore metadata is unavailable; startup will continue', error)
-  }
-  try {
-    if (desktopMutations.recoveryRequired) {
-      await desktopMutations.abortStartup()
-      if (firstStartPending) {
-        showIncompletePreparation('Profile transaction recovery did not complete.')
-        return
-      }
-    }
-    else {
-      await desktopMutations.finishStartup(firstStartPending
-        ? manifest.plugins.filter(entry => entry.installPolicy === 'startup').map(entry => entry.packageName)
-        : [])
-    }
-  } catch (error) {
-    await appendDesktopStartupLog('Startup candidate could not be activated; preserved the prior Profile.')
-    console.error('desktop: startup plugin candidate failed', error)
-    if (firstStartPending) {
-      showIncompletePreparation(error instanceof Error ? error.message : String(error))
+  focusPrimaryWindow = () => {
+    if (quitting) return
+    if (isMandatory()) { mandatoryUI?.focus(); return }
+    const window = welcomeWindow ?? mainWindow
+    if (window === undefined || window.isDestroyed()) {
+      try { createMainWindow() } catch (error) { reportFatal(error, 'main'); return }
+      void (backend.state.phase === 'ready' ? openInitialWindow() : navigateMain(applicationUrl)).catch((error: unknown) => { reportFatal(error, 'main') })
       return
     }
+    // Startup and sign-out select the visible window before activation may reveal the workspace.
+    if (window === mainWindow && !enteredWorkspace) return
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
   }
-  publishStartupProgress({ stage: 'starting-harness', progress: 88 })
-  await appendDesktopStartupLog('Starting Harness supervisor.')
-  // Fenglin: custom DSH_HOME paths and rolled-back candidate activations used
-  // to launch against a home missing fenglin-ui-guard.yml or profiles/web.
-  try {
-    const activeHome = (harnessEnvironment.DSH_HOME ?? '').trim() !== ''
-      ? harnessEnvironment.DSH_HOME
-      : desktopMutations.mutationHome
-    if (activeHome !== undefined && activeHome.trim() !== '') {
-      const profileManifest = join(activeHome, 'profiles', 'web', 'package.json')
-      let profileExists = false
-      try { profileExists = (await lstat(profileManifest)).isFile() } catch { profileExists = false }
-      if (!profileExists && prebuilt !== undefined && prebuiltDirectory !== undefined) {
-        await deployPrebuiltProfile(prebuiltDirectory, activeHome, prebuilt, prebuiltDeploymentAbort.signal, () => {})
-        await appendDesktopStartupLog(`Re-deployed prebuilt Profile into ${activeHome} after missing profiles/web`)
-      }
-      const guardTarget = join(activeHome, 'fenglin-ui-guard.yml')
-      let guardExists = false
-      try { guardExists = (await lstat(guardTarget)).isFile() } catch { guardExists = false }
-      if (!guardExists) {
-        const guardSources = [
-          join(bundledDirectory, 'fenglin-fixes', 'fenglin-ui-guard.yml'),
-          prebuiltDirectory === undefined ? '' : join(prebuiltDirectory, 'fenglin-ui-guard.yml'),
-          join(desktopMutations.mutationHome, 'fenglin-ui-guard.yml'),
-        ]
-        for (const source of guardSources) {
-          if (source === '') continue
-          try {
-            if ((await lstat(source)).isFile()) {
-              await copyFile(source, guardTarget)
-              await appendDesktopStartupLog(`Seeded missing fenglin-ui-guard.yml into ${activeHome}`)
-              break
-            }
-          } catch { /* next */ }
-        }
-      }
-    }
-  } catch (error) {
-    await appendDesktopStartupLog(`fenglin-ui-guard ensure skipped: ${error instanceof Error ? error.message : String(error)}`)
-  }
-  const launch = resolveHarnessLaunch(harnessEnvironment, launchOptions)
-  desktopMutations.start()
-  const notificationCopy = desktopNotificationDictionary(app.getLocale())
-  const allowNotification = createNotificationThrottle(5 * 60_000)
-  let recovering = false
-  const showNotification = (key: string, copy: { title: string; body: string }): void => {
-    if (!preferences.notificationsEnabled || !Notification.isSupported() || !allowNotification(key, Date.now())) return
-    const notification = new Notification({ title: copy.title, body: copy.body, icon: WINDOW_ICON })
-    notification.on('click', () => { lifecycle?.showWindow() })
-    notification.show()
-  }
-  supervisor = new HarnessSupervisor({
-    launch,
-    beforeRestart: signal => desktopMutations.beforeHarnessRestart(signal),
-    onSpawn: (pid) => { observeProcess(pid, 'Harness') },
-    logPath: harnessLogPath,
-    environment: { ...harnessEnvironment },
-    managedRuntime: processObserver,
-    onOptionalStartupFailures: (failures) => {
-      profileMutation?.observeHarness({ type: 'optional-startup-failures', failures })
-    },
-    ...(profileMutationBlocked || desktopMutations.recoveryRequired
-      ? {
-        initialDiagnosticMode: true,
-        initialDiagnosticReason: profileMutationBlocked
-          ? 'The active Profile is owned by another plugin mutation operation.'
-          : 'A startup plugin mutation could not be rolled back safely.',
-      }
-      : {}),
-    ...(process.platform === 'win32' ? { terminateProcessTree: terminateWindowsProcessTree } : {}),
-    onReady: (url) => {
-      profileMutation?.observeHarness({ type: 'server-ready' })
-      recoveryHarnessSuspended = false
-      recoveryRestartRequired = false
-      latestRecoveryFailure = undefined
-      latestRecoveryDiagnostic = undefined
-      harnessOrigin = new URL(url).origin
-      harnessAuthenticationUrl = url
-      desktopReturnControl?.setHarnessOrigin(`${harnessOrigin}/`)
-      desktopWebAccess?.setReady(url)
-      reportedDesktopReadiness.clear()
-      reportedClientBootFailureOrigin = undefined
-      publishStartupProgress({ stage: 'ready', progress: 100 })
-      const readyOrigin = harnessOrigin
-      setTimeout(() => {
-        if (harnessOrigin !== readyOrigin || mainSurface === undefined || mainSurface.window.isDestroyed()) return
-        void loadAuthenticatedHarness(mainSurface, url).catch((error: unknown) => {
-          console.error('desktop: could not load authenticated Harness page', error)
-        })
-      }, 120)
-      if (recovering) {
-        recovering = false
-        showNotification('recovered', notificationCopy.recovered)
-      }
-      if (startupWarnings.length > 0) showNotification('startup-warning', {
-        ...notificationCopy.startupWarning,
-        body: `${notificationCopy.startupWarning.body}\n${startupWarnings.slice(0, 3).join('\n')}`,
-      })
-      desktopWebAccess?.openAutomatically(preferences.openBrowserOnStartup)
-    },
-    onDiagnosticReady: (url, failure) => {
-      recoveryHarnessSuspended = false
-      recoveryRestartRequired = false
-      harnessOrigin = new URL(url).origin
-      harnessAuthenticationUrl = undefined
-      reportedDesktopReadiness.clear()
-      reportedClientBootFailureOrigin = undefined
-      desktopReturnControl?.clear()
-      desktopWebAccess?.clear()
-      publishStartupProgress({
-        stage: 'starting-harness',
-        progress: 92,
-        detail: 'profile-diagnostics-ready',
-        state: 'degraded',
-      })
-      void appendDesktopStartupLog(
-        `Diagnostic mode is ready; the active Profile remains paused: ${failure.message}`,
-      )
-      const diagnosticSummary = profileMutationBlocked
-        ? { diagnosticCode: 'desktop.profile-lock-busy' }
-        : desktopMutations.recoveryRequired
-          ? { diagnosticCode: 'desktop.profile-transaction-rollback-failed' }
-          : readRecoveryFailureSummary(dshHome) ?? { diagnosticCode: 'desktop.harness-startup-failed' }
-      showLoading('failed', {
-        ...failure,
-        ...diagnosticSummary,
-        logPath: harnessLogPath,
-      })
-      showNotification('failed', notificationCopy.failed)
-    },
-    onState: (state) => {
-      if (state === 'starting') profileMutation?.observeHarness({ type: 'starting' })
-      if (state === 'restarting' || state === 'failed' || state === 'stopped') {
-        cancelBootableSnapshot()
-        harnessOrigin = undefined
-        harnessAuthenticationUrl = undefined
-        desktopReturnControl?.clear()
-        desktopWebAccess?.clear()
-      }
-      if (state !== 'ready') {
-        menuClientAvailable = false
-        menuClientReady = false
-      }
-      applicationMenu?.refresh()
-      if (state === 'starting') publishStartupProgress({ stage: 'starting-harness', progress: 92 })
-      if (state === 'restarting') publishStartupProgress({ stage: 'restarting-harness', progress: 90 })
-      if (state !== 'failed') showLoading(state)
-      if (state === 'restarting' && !recovering) {
-        recovering = true
-        showNotification('restart', notificationCopy.restart)
-      }
-    },
-    onFailure: (failure) => {
-      profileMutation?.observeHarness({ type: 'failed', error: failure })
-      const diagnosticSummary = profileMutationBlocked
-        ? { diagnosticCode: 'desktop.profile-lock-busy' }
-        : desktopMutations.recoveryRequired
-          ? { diagnosticCode: 'desktop.profile-transaction-rollback-failed' }
-          : readRecoveryFailureSummary(dshHome) ?? { diagnosticCode: 'desktop.harness-startup-failed' }
-      const detailedFailure = {
-        ...failure,
-        ...diagnosticSummary,
-        logPath: harnessLogPath,
-      }
-      if (pluginSnapshotManager === undefined) {
-        showLoading('failed', detailedFailure)
-        showNotification('failed', notificationCopy.failed)
-        return
-      }
-      void pluginSnapshotManager.handleHarnessFailure(failure.message).then((handled) => {
-        if (handled) return
-        showLoading('failed', detailedFailure)
-        showNotification('failed', notificationCopy.failed)
-      }, (error: unknown) => {
-        console.error('desktop: plugin snapshot rollback after startup failure failed', error)
-        showLoading('failed', detailedFailure)
-        showNotification('failed', notificationCopy.failed)
-      })
-    },
-  })
-  let restoreLeaseToken: string | undefined
-  pluginSnapshotManager = new PluginSnapshotManager({
-    listSnapshots: () => runSnapshotCommand<readonly PluginSnapshotSummary[]>(['list'], SNAPSHOT_COMMAND_TIMEOUT_MS),
-    createSnapshot: (kind, label) => runSnapshotCommand<{ snapshotId: string; kind: typeof kind }>(
-      kind === 'manual'
-        ? ['create', ...(label === undefined ? [] : [label])]
-        : [kind === 'bootable' ? 'mark-bootable' : 'create-safety'],
-      SNAPSHOT_COMMAND_TIMEOUT_MS,
-    ),
-    removeSnapshot: async (snapshotId) => { await runSnapshotCommand(['remove', snapshotId], SNAPSHOT_COMMAND_TIMEOUT_MS) },
-    restoreFiles: async (snapshotId) => { await runSnapshotCommand(['restore-files', snapshotId], SNAPSHOT_COMMAND_TIMEOUT_MS) },
-    settleSafety: async (snapshotId) => { await runSnapshotCommand(['settle-safety', snapshotId], SNAPSHOT_COMMAND_TIMEOUT_MS) },
-    beginMutationLease: async () => {
-      if (restoreLeaseToken !== undefined) throw new Error('desktop: plugin snapshot restore lease is already active')
-      const token = randomUUID()
-      restoreLeaseToken = token
-      harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = token
-      harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID = String(process.pid)
-      try {
-        await runSnapshotCommand(['begin-restore-lease'], SNAPSHOT_COMMAND_TIMEOUT_MS)
-      } catch (error) {
-        restoreLeaseToken = undefined
-        delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
-        delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
-        throw error
-      }
-    },
-    endMutationLease: async () => {
-      if (restoreLeaseToken === undefined) return
-      try {
-        await runSnapshotCommand(['end-restore-lease'], SNAPSHOT_COMMAND_TIMEOUT_MS)
-      } finally {
-        restoreLeaseToken = undefined
-        delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
-        delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
-      }
-    },
-    suspendHarness: async () => { await supervisor?.stop() },
-    resumeHarness: () => { supervisor?.resume() },
-    installProfile: async (offline) => {
-      await runPackageManagerInvocation(
-        ['install', ...(offline ? ['--offline'] : []), '--frozen-lockfile'],
-        join(dshHome, 'profiles', 'web'),
-        harnessEnvironment,
-        launchOptions,
-        120_000,
-      )
-    },
-    doctorHealthy: async () => {
-      const output = await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment, [
-        'plugin', '--profile', 'web', 'doctor',
-      ], launchOptions), 'snapshot-restore-doctor', PROFILE_CHECK_TIMEOUT_MS, [0, 2])
-      return parseDiagnosticLabDoctorOutput(output).status === 'healthy'
-    },
-    onStatus: (snapshot) => {
-      snapshotMutationActive = !['needs-network', 'succeeded', 'rolled-back', 'failed'].includes(snapshot.phase)
-      applicationMenu?.refresh()
-      mainSurface?.send(DESKTOP_IPC.pluginSnapshotsStatus, snapshot)
-    },
-    journalPath: join(dshHome, 'plugin-snapshots', 'v1', 'restore-journal.json'),
-  })
-  diagnosticLabManager = new DiagnosticLabManager({
-    root: join(app.getPath('userData'), 'diagnostic-lab'),
-    activeDshHome: dshHome,
-    logDirectory: join(app.getPath('logs'), 'diagnostic-lab'),
-    suspendHarness: async () => { await supervisor?.stop() },
-    resumeHarness: () => { supervisor?.resume() },
-    runTransactionInterruptionExercise: async () => {
-      const home = await mkdtemp(join(tmpdir(), 'dsh-transaction-lab-'))
-      const environment: NodeJS.ProcessEnv = { ...harnessEnvironment, DSH_HOME: home, DSH_DIAGNOSTIC_LAB: '1' }
-      delete environment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
-      try {
-        const output = await runDesktopInvocation(resolveHarnessInvocation(environment, [
-          'plugin', '--profile', 'web', 'transaction', 'exercise',
-        ], launchOptions), 'diagnostic-transaction-interrupt', 15_000)
-        const record = parsePluginSnapshotJson(output) as { id?: unknown }
-        if (typeof record.id !== 'string' || !/^[a-f0-9-]{36}$/u.test(record.id)) throw new Error('invalid diagnostic transaction ID')
-        const journal = join(home, 'plugin-transactions', 'web', 'pending.json')
-        const generation = join(home, 'profiles', 'web', 'node_modules', 'diagnostic-generation')
-        const interrupted = await readFile(generation, 'utf8') === 'unconfirmed'
-          && (JSON.parse(await readFile(journal, 'utf8')) as { phase?: unknown }).phase === 'checking-startup'
-        await runDesktopInvocation(resolveHarnessInvocation(environment, [
-          'plugin', '--profile', 'web', 'transaction', 'rollback', record.id,
-        ], launchOptions), 'diagnostic-transaction-recover', 15_000)
-        const recovered = await readFile(generation, 'utf8') === 'healthy'
-          && !await lstat(journal).then(() => true, () => false)
-        return { interrupted, recovered }
-      } finally { await rm(home, { recursive: true, force: true }) }
-    },
-    runStartupTimeoutExercise: async () => {
-      const directory = await mkdtemp(join(tmpdir(), 'dsh-startup-timeout-lab-'))
-      const marker = join(directory, 'mutation.marker')
-      const script = join(directory, 'fake-cli.cjs')
-      try {
-        await writeFile(script, [
-          "const { writeFileSync } = require('node:fs')",
-          `writeFileSync(${JSON.stringify(marker)}, 'partial mutation')`,
-          'setInterval(() => {}, 1000)',
-          '',
-        ].join('\n'), { mode: 0o600 })
-        const nodeCommand = launchOptions.nodeCommand
-          ?? harnessEnvironment.DSH_DESKTOP_NODE_BIN
-          ?? process.execPath
-        let cancelled = false
-        try {
-          await runDesktopInvocation({
-            command: nodeCommand,
-            args: [script],
-            environment: { ...harnessEnvironment, ELECTRON_RUN_AS_NODE: '1' },
-          }, 'diagnostic-startup-timeout', 250)
-        } catch (error) {
-          if (!(error instanceof HarnessInvocationError) || !error.timedOut) throw error
-          cancelled = true
-        }
-        const mutationObserved = await lstat(marker).then(stat => stat.isFile(), () => false)
-        await rm(marker, { force: true })
-        const rolledBack = mutationObserved && !await lstat(marker).then(() => true, () => false)
-        return {
-          actualCode: 'runtime.profile-check-timeout' as const,
-          cancelled,
-          rolledBack,
-          continued: true,
-        }
-      } finally {
-        await rm(directory, { recursive: true, force: true })
-      }
-    },
-    installProfile: async (home, force) => {
-      await runPackageManagerInvocation(
-        ['install', '--offline', '--ignore-scripts', ...(force ? ['--force'] : [])],
-        join(home, 'profiles', 'web'),
-        { ...harnessEnvironment, DSH_HOME: home },
-        launchOptions,
-        90_000,
-      )
-    },
-    installDiagnosticPlugin: async (home, packageName) => {
-      const entry = manifest.plugins.find(candidate => (
-        candidate.installPolicy === 'diagnostic'
-        && candidate.profile === 'web'
-        && candidate.packageName === packageName
-      ))
-      if (entry === undefined) throw new Error(`desktop: packaged diagnostic plugin ${packageName} is unavailable`)
-      const archivePath = await verifyBundledPluginArchive(bundledDirectory, entry)
-      await runDesktopInvocation(resolveHarnessInvocation(
-        { ...harnessEnvironment, DSH_HOME: home },
-        ['plugin', '--profile', entry.profile, 'add', '--save-exact', archivePath],
-        launchOptions,
-      ), `diagnostic-plugin-install:${entry.packageName}`, BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS)
-    },
-    runDoctor: async (home, repair) => {
-      const environment = { ...harnessEnvironment, DSH_HOME: home }
-      const output = await runDesktopInvocation(resolveHarnessInvocation(environment, [
-        'plugin', '--profile', 'web', 'doctor', ...(repair ? ['--repair'] : []),
-      ], launchOptions), repair ? 'diagnostic-doctor-repair' : 'diagnostic-doctor-check',
-      repair ? PROFILE_REPAIR_TIMEOUT_MS : PROFILE_CHECK_TIMEOUT_MS,
-      repair ? [0, 10, 11] : [0, 2])
-      return parseDiagnosticLabDoctorOutput(output)
-    },
-    onSnapshot: (snapshot: DiagnosticLabRunSnapshot) => {
-      applicationMenu?.refresh()
-      mainSurface?.send(DESKTOP_IPC.diagnosticLabStatus, snapshot)
-    },
-  })
-  try {
-    await diagnosticLabManager.recoverPending()
-  } catch (error) {
-    console.error('desktop: diagnostic lab startup recovery failed; continuing with supervised Harness startup', error)
-  }
-  try {
-    await pluginSnapshotManager.recoverPending()
-  } catch (error) {
-    console.error('desktop: plugin snapshot startup recovery failed; retaining the failure for manual recovery', error)
-  }
-  supervisor.start()
 
-  app.on('activate', () => {
-    lifecycle?.showWindow()
+  if (app.isPackaged || process.env.DSH_DESKTOP_DEV_APP === '1') app.setAsDefaultProtocolClient('dsh')
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    if (url === 'dsh://open' || url === 'dsh://open/') focusPrimaryWindow()
   })
-}
 
-if (!app.requestSingleInstanceLock()) {
-  app.quit()
-} else {
-  app.on('second-instance', () => {
-    lifecycle?.showWindow()
+  app.on('activate', (_event, hasVisibleWindows) => {
+    if (!hasVisibleWindows) focusPrimaryWindow()
   })
   app.on('window-all-closed', () => {
-    // The tray owns application lifetime on every platform.
+    if (process.platform !== 'darwin') app.quit()
   })
+  if (process.platform !== 'win32') powerMonitor.on('shutdown', () => { sessionEnding = true })
+  const finishQuit = (): void => {
+    quitting = true
+    shuttingDown = true
+    updateJournal?.action('quit-requested')
+    quitConfirmation.dispose()
+    backgroundNotice?.dispose()
+    tray?.dispose()
+    stopAccount?.()
+    if (welcomeWindow !== undefined && !welcomeWindow.isDestroyed()) welcomeWindow.hide()
+    if (mainWindow !== undefined && !mainWindow.isDestroyed()) mainWindow.hide()
+    updateSchedule.dispose()
+    updateDialog.dispose()
+    mandatoryUI?.dispose()
+    void Promise.all([Promise.resolve(mandatoryPolicy?.dispose()).then(() => policyAuth?.dispose()), backend.close(),
+      // A Platform cleanup failure is logged without cutting the remaining Host shutdown short.
+      platformView.dispose().catch((error: unknown) => { console.error(error) })])
+      .catch((error: unknown) => { console.error(error) }).finally(() => { app.quit() })
+  }
   app.on('before-quit', (event) => {
-    if (quitReleased) return
-    event.preventDefault()
-    void lifecycle?.requestQuit()
-  })
-  app.on('will-quit', () => {
-    stopReleaseChecks?.()
-    desktopLogSession.close('application-quit')
-  })
-  void startApplication().catch((error: unknown) => {
-    if (!(error instanceof DesktopDataHomeSelectionCancelledError)) console.error(error)
-    if (lifecycle === undefined) {
-      quitReleased = true
-      app.quit()
-    } else {
-      void lifecycle.requestQuit()
+    if (shellInstallerOwnsQuit) {
+      shuttingDown = true
+      quitConfirmation.dispose()
+      backgroundNotice?.dispose()
+      updateJournal?.action('quit-requested')
+      tray?.dispose()
+      updateDialog.dispose()
+      mandatoryUI?.dispose()
+      // Installation preparation already awaited Platform storage cleanup.
+      void platformView.dispose().catch((error: unknown) => { console.error(error) })
+      return
     }
+    if (quitting) return
+    event.preventDefault()
+    if (skipQuitConfirmation || sessionEnding) { finishQuit(); return }
+    void quitConfirmation.confirm().then((approved) => {
+      if (quitting || shellInstallerOwnsQuit) return
+      if (approved) { finishQuit(); return }
+      // A quit that started from closing the welcome window destroyed it; a cancelled quit needs it back.
+      if (!enteredWorkspace && !recovery.active) void showWelcome().catch((error: unknown) => { reportFatal(error, 'main') })
+    }).catch((error: unknown) => { console.error(error); if (!quitting && !shellInstallerOwnsQuit) finishQuit() })
   })
+
+  mainWindow = createMainWindow()
+  const manifest: unknown = JSON.parse(await readFile(join(app.getAppPath(), 'package.json'), 'utf8'))
+  if (typeof manifest !== 'object' || manifest === null) throw new Error('desktop policy: invalid application manifest')
+  const developmentPolicy = app.isPackaged ? undefined : process.env.DSH_DESKTOP_MANDATORY_UPDATE_CONFIG
+  const policyInput: unknown = app.isPackaged
+    ? ('dshMandatoryUpdatePolicy' in manifest ? manifest.dshMandatoryUpdatePolicy : undefined)
+    : developmentPolicy === undefined ? undefined : JSON.parse(developmentPolicy) as unknown
+  const policyConfig = resolveDesktopPolicyConfig(policyInput, !app.isPackaged)
+  if (policyConfig !== undefined) {
+    if (policyConfig.authentication === 'feishu-test') {
+      policyAuth = new DesktopPolicyTestAuth(policyConfig.origin, policyConfig.allowedAuthOrigins, locale,
+        () => mandatoryUI?.confirmationWindow ?? currentDialogWindow(),
+        (event) => { console.info(`desktop policy authentication: ${event}`); updateJournal?.action(`policy-login-${event}`) })
+    }
+    if (!['win32', 'darwin'].includes(process.platform) || !['x64', 'arm64'].includes(process.arch)) throw new Error('desktop policy: unsupported platform')
+    let wasBlocking = false
+    mandatoryPolicy = new DesktopMandatoryUpdatePolicy(policyConfig, {
+      platform: process.platform as 'win32' | 'darwin', arch: process.arch as 'x64' | 'arm64',
+      bundledDshVersion: app.isPackaged ? readDesktopRuntime(resources.dsh).release.version : app.getVersion(),
+    }, (state) => {
+      if (state.error !== 'authentication-required') policyAuthenticationQueued = false
+      if (state.blocking) {
+        for (const controller of ordinaryDialogs) controller.abort()
+        if (!wasBlocking) updateDialog.cancel()
+      }
+      mandatoryUI?.sync()
+      if (state.blocking && !wasBlocking) void updateSchedule.check(false, true).catch((error: unknown) => { console.error(error) })
+      wasBlocking = state.blocking
+    }, policyAuth?.request, () => desktopClientMetadata(locale.id))
+    const policy = mandatoryPolicy
+    mandatoryUI = new DesktopMandatoryUpdateWindow({
+      overlays: updateOverlays,
+      preload: fileURLToPath(new URL('./preload-mandatory.cjs', import.meta.url)), locale,
+      allowedPageOrigins: policyConfig.allowedPageOrigins, parent: () => mainWindow,
+      policy: () => policy.state, update: () => updates.state,
+      refresh: async () => { await Promise.all([checkPolicyManually(), updateSchedule.check(true)]) },
+      download: downloadUpdate, install: version => updates.install(version),
+    })
+    void mandatoryPolicy.check('launch').then((state) => {
+      if (app.isPackaged && state.error === 'authentication-required' && !isQuitting()) queuePolicyAuthentication()
+    }).catch((error: unknown) => { console.error(error) })
+  }
+  automaticCheck()
+  await reconcileBackend().catch(() => undefined)
+  // Window lifecycle callbacks run while backend startup is pending.
+  if (isQuitting()) return
+  const window = currentMainWindow()
+  if (window !== undefined && development && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
+    window.webContents.openDevTools({ mode: 'detach' })
+  }
+  publishUpdate(updateState)
 }
+
+const ownsDesktopInstance = claimDesktopSingleInstance(app, () => { focusPrimaryWindow() })
+
+if (ownsDesktopInstance) void app.whenReady().then(main).catch(async (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  console.error(error)
+  const diagnosticFile = process.env.DSH_DESKTOP_DIAGNOSTIC_FILE
+  if (diagnosticFile !== undefined) {
+    await writeFile(diagnosticFile, `${error instanceof Error ? error.stack ?? message : message}\n`).catch(() => undefined)
+  }
+  reportFatal(error, 'main')
+}).catch((error: unknown) => {
+  console.error(error)
+  app.exit(1)
+})

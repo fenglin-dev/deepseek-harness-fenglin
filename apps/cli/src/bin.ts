@@ -9,7 +9,6 @@
 import { getDshRuntimeVersion, loadLayeredEnv, StartupError } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { parseDshArgs } from './args.ts'
-import { claimDesktopWebLaunch } from './desktop-web-launch.ts'
 import { reportStartupFailure } from './startup-diagnostics.ts'
 
 /**
@@ -22,10 +21,6 @@ export async function runCli(): Promise<void> {
 
   switch (invocation.mode) {
     case 'profile': {
-      if (!claimDesktopWebLaunch(invocation.profile, resolveDshHome(), process.env)) {
-        console.error('dsh: Web replacement delegated to Desktop supervisor; no second service started')
-        return
-      }
       const { runProfile } = await import('./profile-boot.ts')
       try {
         await runProfile({
@@ -34,20 +29,17 @@ export async function runCli(): Promise<void> {
           fromDefaultProfile: invocation.fromDefaultProfile,
           patchFiles: invocation.patches,
           args: invocation.args,
-          diagnosticMode: process.env.DSH_PROFILE_DIAGNOSTIC_MODE === '1',
-          diagnosticModeOnFailure: process.env.DSH_PROFILE_DIAGNOSTIC_MODE_ON_FAILURE === '1',
         })
       } catch (error) {
         if (!(error instanceof StartupError)) throw error
         await reportStartupFailure(error, { home: resolveDshHome(), version, profile: invocation.profile })
-        process.exitCode = 1
+        process.exit(1)
       }
       break
     }
     case 'plugin': {
       const { runPlugin } = await import('./plugin.ts')
-      // Let native handles and output drain before Node tears down the process.
-      process.exitCode = await runPlugin(invocation.profile, invocation.args)
+      process.exit(await runPlugin(invocation.profile, invocation.args))
       break
     }
     case 'dump-config': {
@@ -66,7 +58,7 @@ export async function runCli(): Promise<void> {
       break
     }
     default:
-    invocation satisfies never
+      invocation satisfies never
       throw new Error(`dsh: unhandled invocation mode ${JSON.stringify(invocation)}`)
   }
 }

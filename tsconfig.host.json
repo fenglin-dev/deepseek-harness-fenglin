@@ -187,8 +187,16 @@
   // suffixes are mutually exclusive, so each aggregate excludes the other's
   // and the package test glob above needs no per-file entry.
   "exclude": [
+    "packages/experimental/inspector/tests/**",
+    "packages/api/gateway/tests/**",
+    "apps/desktop/tests/desktop-upload-run.spec.ts",
+    "apps/desktop/tests/installed-update-cos.spec.ts",
+    "apps/desktop/tests/cos-loopback.ts",
+    "apps/desktop/tests/account-backend.spec.ts",
+    "apps/desktop/tests/windows-asar-unpack.spec.ts",
     "apps/desktop/tests/keyboard.spec.ts",
     "packages/client/*/src/**",
+    "apps/desktop/src/type-stubs-optional-deps.d.ts",
     "benchmarks/**/*.client.ts",
     "benchmarks/**/*.client.tsx",
     "packages/*/*/tests/**/*.client.ts",
@@ -199,7 +207,8 @@
     "scripts/*.client.spec.ts",
     "scripts/client-bundle-css.spec.ts",
     "packages/typert/generator/tests/fixtures/**",
-    "scripts/client-bundle-purity.spec.ts"
+    "scripts/client-bundle-purity.spec.ts",
+    "apps/desktop/tests/cos-operation.spec.ts",
   ],
   "references": [
     { "path": "./packages/experimental/speech-to-text" },

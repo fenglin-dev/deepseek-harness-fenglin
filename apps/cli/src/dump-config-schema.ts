@@ -8,8 +8,7 @@
 
 import { generateConfigSchema, type ConfigSchemaDump } from '@deepseek-ai/dsh-app-boot'
 import { collectConfigDumpLayers } from './dump-config.ts'
-import { prepareProfile } from './profile-boot.ts'
-import { INSTALL_ANCHOR } from './install-anchor.ts'
+import { INSTALL_ANCHOR, prepareProfile } from './profile-boot.ts'
 
 const NAME = 'dsh'
 

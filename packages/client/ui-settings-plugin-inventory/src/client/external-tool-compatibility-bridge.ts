@@ -1,6 +1,12 @@
 /** Desktop-owned compatibility resolution for official external-tool connectors. */
 
-import type { ExperimentalCapabilityRecipe, PluginInstallRequest } from '@deepseek-ai/dsh-host-plugin-inventory/types'
+export type ExperimentalCapabilityRecipe = 'browser-use-playwright-visible' | 'browser-use-devtools-visible' | 'computer-use-native' | 'computer-use-mcp'
+export interface PluginInstallRequest {
+  readonly packageSpec: string
+  readonly dependencies?: readonly string[]
+  readonly experimentalCapability?: string
+  readonly profile?: string
+}
 
 /** Official external-tool connectors the reviewed Desktop manifest may install. */
 export type OfficialExternalToolId = 'codex' | 'claude-code'
