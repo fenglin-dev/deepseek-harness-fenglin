@@ -1,8 +1,8 @@
 /**
  * Models settings section: the provider rows joined from the configurable
  * directory, settings namespaces, and credential states, with one editor
- * card at a time. The official DeepSeek provider appears first; other rows
- * retain directory order. Rows expose only confirmed API-key state through accessible
+ * card at a time. Rows retain the account-first order supplied by the store
+ * and expose only confirmed API-key state through accessible
  * solid configured or missing dots. A whole-section provider without a
  * configured key renders as its open setup card instead of a row, but only in
  * the first-run posture — no provider on the page can serve requests yet — and
@@ -23,7 +23,7 @@
 
 import { useId, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, IconPlusOutlineRegular, Modal, SegmentedControl, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutlineRegular, Modal, SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls this package's SlotMap merge (the two Models child slots).
@@ -167,7 +167,7 @@ export async function removeProviderProfile(
  * @returns whether to render the setup card.
  */
 export function needsSetup(row: ProviderRow, anyUsable: boolean): boolean {
-  if (anyUsable) return false
+  if (anyUsable || row.entry.provider === 'deepseek-account') return false
   if (row.entry.settingsPath.length > 0) return false
   return row.credential?.configured !== true
 }
@@ -231,7 +231,9 @@ export function ModelsSection(props: ModelsSectionProps): ReactNode {
 
 function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderSlot: ModelsRenderSlot }): ReactNode {
   const { controller, operations, schema, t } = injected
-  const state = injected.useSnapshot(snapshot => snapshot)
+  const snapshot = injected.useSnapshot(value => value)
+  const state = { ...snapshot, rows: snapshot.rows.map(row => row.entry.provider === 'deepseek-account'
+    ? { ...row, entry: { ...row.entry, displayName: t('deepSeekAccount') } } : row) }
   const [editing, setEditing] = useState<EditorTarget | undefined>(undefined)
   const [addOpen, setAddOpen] = useState(false)
   const [addMode, setAddMode] = useState<AddMode>('catalog')
@@ -247,8 +249,6 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const [deleteFailure, setDeleteFailure] = useState<string | undefined>(undefined)
   const [savedTarget, setSavedTarget] = useState<ProviderIdentity | undefined>(undefined)
   const [dismissedSetup, setDismissedSetup] = useState<ReadonlySet<string>>(() => new Set())
-  const [sessionLogSaving, setSessionLogSaving] = useState(false)
-  const [sessionLogError, setSessionLogError] = useState<string | undefined>(undefined)
 
   const announceSaved = (target: ProviderIdentity): void => {
     // Announced only once the refreshed directory is in the snapshot the
@@ -338,12 +338,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
-  const configured = state.rows.filter(row => row.configured).sort((left, right) => (
-    Number(right.entry.provider === 'deepseek-official') - Number(left.entry.provider === 'deepseek-official')
-  ))
-  const unavailableNamespaces = [...new Set(state.rows
-    .map(row => row.entry.settingsNs)
-    .filter(ns => ns !== '' && !state.namespaces.has(ns)))]
+  const configured = state.rows.filter(row => row.configured)
   const configurable = state.rows.filter(row => state.namespaces.has(row.entry.settingsNs))
   const addable: AddableRow[] = state.rows.flatMap((row) => {
     const namespace = state.namespaces.get(row.entry.settingsNs)
@@ -386,57 +381,12 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const addRow = draft === undefined
     ? undefined
     : state.rows.find(row => row.entry.provider === draft.target.provider)
-  const sessionLogNamespace = state.namespaces.get('session-log-deepseek')
-  const sessionLogEnabled = sessionLogNamespace === undefined
-    ? undefined
-    : schema.getPath(sessionLogNamespace.value, ['enabled']) === true
-
-  const setSessionLogEnabled = async (enabled: boolean): Promise<void> => {
-    if (sessionLogNamespace === undefined) return
-    setSessionLogSaving(true)
-    setSessionLogError(undefined)
-    const outcome = await operations.writeSettings(
-      sessionLogNamespace.ns,
-      [{ op: 'set', path: ['enabled'], value: enabled }],
-      sessionLogNamespace.revision,
-    )
-    if (outcome.kind !== 'written') setSessionLogError(outcome.message)
-    await controller.load()
-    setSessionLogSaving(false)
-  }
 
   return (
     <div className={styles['section']}>
       <h2 className={styles['title']}>{t('title')}</h2>
       <p className={styles['intro']}>{t('intro')}</p>
-      {state.status === 'ready' && unavailableNamespaces.length > 0 ? (
-        <div role="alert">
-          <p className={styles['error']}>
-            {t('providerSettingsUnavailable')} {unavailableNamespaces.join(', ')}
-          </p>
-          <button type="button" className={styles['secondaryButton']} onClick={() => { void controller.load() }}>
-            {t('retry')}
-          </button>
-        </div>
-      ) : null}
       {!state.writable && state.status === 'ready' ? <p className={styles['notice']}>{t('readOnly')}</p> : null}
-      {sessionLogEnabled === undefined ? null : (
-        <div className={styles['privacyCard']}>
-          <div className={styles['privacyCopy']}>
-            <span className={styles['privacyTitle']}>{t('sessionLogUploadTitle')}</span>
-            <p className={styles['privacyDescription']}>{t('sessionLogUploadDescription')}</p>
-          </div>
-          <Switch
-            checked={sessionLogEnabled}
-            label={t('sessionLogUploadTitle')}
-            disabled={!state.writable || sessionLogSaving}
-            onChange={(enabled) => { void setSessionLogEnabled(enabled) }}
-          />
-          {sessionLogError === undefined
-            ? null
-            : <p className={styles['error']} role="alert">{sessionLogError}</p>}
-        </div>
-      )}
       {savedIdentity === undefined
         ? null
         : (
@@ -731,7 +681,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
         className={styles['deleteDialog'] as string}
         footer={(
           <>
-            <Button variant="outline" autoFocus disabled={deleting} onClick={closeDelete}>
+            <Button variant="outline" data-modal-autofocus disabled={deleting} onClick={closeDelete}>
               {t('cancel')}
             </Button>
             <Button

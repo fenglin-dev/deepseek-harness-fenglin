@@ -17,13 +17,12 @@ const icons = Object.fromEntries(
 const iconNames = Object.keys(icons)
 
 describe('product icon set', () => {
-  const weightedNames = iconNames.filter(name => name.endsWith('Regular') || name.endsWith('Medium'))
-  it('exports both weights for upstream glyphs and retains community glyph names', () => {
-    expect(weightedNames.length).toBe(186)
-    const regular = weightedNames.filter(name => name.endsWith('Regular')).map(name => name.slice(0, -'Regular'.length))
-    const medium = weightedNames.filter(name => name.endsWith('Medium')).map(name => name.slice(0, -'Medium'.length))
+  it('exports regular and medium variants for all 94 public glyphs', () => {
+    expect(iconNames.length).toBe(188)
+    expect(iconNames.some(name => /\d+$/.test(name))).toBe(false)
+    const regular = iconNames.filter(name => name.endsWith('Regular')).map(name => name.slice(0, -'Regular'.length))
+    const medium = iconNames.filter(name => name.endsWith('Medium')).map(name => name.slice(0, -'Medium'.length))
     expect(medium.sort()).toEqual(regular.sort())
-    expect(iconNames).toEqual(expect.arrayContaining(['IconPlanOutline14', 'IconCompactOutline16', 'IconShieldOutline16']))
     expect(iconNames).toEqual(expect.arrayContaining([
       'IconMicrophoneOutlineRegular',
       'IconPlanOutlineRegular', 'IconCompactOutlineRegular', 'IconShieldOutlineRegular', 'IconDeliverDocRegular',
@@ -52,7 +51,7 @@ describe('product icon set', () => {
     expect(container.querySelector('svg')?.getAttribute('stroke-width')).toBe(String(primitives.ICON_REGULAR_STROKE))
   })
 
-  it.each(weightedNames)('%s renders an svg with currentColor fills and no hardcoded palette', (name) => {
+  it.each(iconNames)('%s renders an svg with currentColor fills and no hardcoded palette', (name) => {
     const Icon = icons[name]!
     const { container } = render(<Icon />)
     const svg = container.querySelector('svg')

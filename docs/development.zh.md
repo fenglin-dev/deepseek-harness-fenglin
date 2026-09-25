@@ -28,42 +28,18 @@
 在仓库根目录安装依赖：
 
 ```sh
-node scripts/install-dependencies.mjs
+pnpm install
 ```
 
-公开 npm 包可以通过 `registry.npmjs.org` 或 `registry.npmmirror.com` 解析。安装器先尝试当前配置的公共 registry；该次失败后，会切换到另一个公共 registry 重试一次。自定义 registry 可能承载私有包或认证，因此不会被自动替换。锁文件保留精确包版本和 SHA-512 integrity，但省略来自两个公共 registry 的普通 tarball URL，使任一公共 registry 都可以提供通过同一内容校验的文件。非标准 tarball 主机仍需显式记录并固定 integrity；内容不一致时，pnpm 会在运行生命周期脚本前失败。`pnpm run verify-lockfile-registry-portability` 负责检查这项规则。
+安装过程还会通过 `scripts/install-lefthook.mjs` 配置 worktree 本地的 Lefthook 钩子。[worktree 本地钩子 Agent Note](../.agents/notes/implemented/process/2026-07-27-worktree-local-lefthook.zh.md) 负责钩子路径的安全约定。
 
-安装过程还会通过 `scripts/install-lefthook.mjs` 配置 worktree 本地的 Lefthook 钩子和 `dsh-translation-pairing` Git 合并驱动。[worktree 本地钩子 Agent Note](../.agents/notes/implemented/process/2026-07-27-worktree-local-lefthook.zh.md) 负责钩子路径的安全约定；[自动配对合并 Agent Note](../.agents/notes/implemented/process/2026-08-08-automatic-translation-pairing-merges.zh.md) 负责合并驱动。
-
-如果手动执行依赖操作后缺少任一 Git 集成，请单独安装：
+如果依赖是从缓存恢复或 `postinstall` 被跳过而导致钩子缺失，请手动安装：
 
 ```sh
 node scripts/install-lefthook.mjs
 ```
 
 如果包装脚本拒绝现有 Git 配置或报告陈旧锁，请遵循其诊断和所链接的 Agent Note，不要凭猜测编辑 worktree 元数据。移动检出目录后，请重新运行包装脚本以重新生成自有路径。
-
-### 链接 worktree 的依赖
-
-Git 链接 worktree 拥有独立且被忽略的 `node_modules` 布局，但 pnpm 会复用共享的内容寻址 store。使用冻结的锁文件初始化该布局，并避免再次运行依赖生命周期脚本：
-
-```sh
-node scripts/setup-worktree.mjs
-```
-
-默认的 worktree 搭建会优先使用本地 store，并在需要获取内容或元数据时使用相同的公共 registry 回退。无法访问 registry 时可使用严格离线模式；它会把 pnpm 的所有 registry 与代理请求指向已关闭的本机回环端点，并关闭重试。pnpm 11 的锁文件策略复核原本仍需要 registry 元数据，因此这个显式模式会信任仓库已提交且冻结的锁文件，并仅从本地 store 物化依赖；默认搭建模式的安全策略不会因此降低。只有全部所需依赖包都已存在于本地 store 中时，离线搭建才会成功：
-
-```sh
-node scripts/setup-worktree.mjs --offline
-```
-
-如果 workspace 布局变化导致 pnpm 拒绝运行，请执行仅依赖 Node 的诊断脚本。它会读取检出目录、锁文件、pnpm workspace 状态、当前工具版本与本地 store 路径，不修改 Git 或依赖：
-
-```sh
-node scripts/worktree-doctor.mjs
-```
-
-两种 worktree 搭建模式都会在依赖链接成功后配置本 worktree 的 Git 集成。不要在 worktree 之间共享或软链接 `node_modules`，因为 workspace 包链接必须解析到实际执行命令的检出目录。
 
 新克隆后请先运行一次类型检查：
 
@@ -102,12 +78,13 @@ Host 与 Client 保持两个 aggregate program，是因为两侧在相同键下�
 ```sh
 tsc -b tsconfig.host.json
 tsdown --env.DSH_BUILD_FACE host
+pnpm --filter @deepseek-ai/dsh-desktop run bundle
 tsc -b tsconfig.client.json
 tsdown --env.DSH_BUILD_FACE client
 pnpm run build:web
 ```
 
-两次 tsdown 都使用同一组完整 workspace 匹配，不扫描构建产物来发现 Client 包，也不维护 Host/Client 包过滤表。包内 tsdown 配置根据 `DSH_BUILD_FACE` 决定当前阶段的入口：普通 Client 插件在 Client 阶段同时生成 Node loader 与 browser bundle；`api-remotes` 通过 `hostPhase: true` 提前生成 Host 入口，再在 Client 阶段只生成 browser bundle。tsdown 只消费 `lib/types` 中由前置 tsc 发射的 JavaScript。
+两次 tsdown 都匹配 `vendor/*`、`packages/*/*` 与 `apps/cli`，Host 阶段另外匹配 `apps/desktop-host`；两者都不扫描构建产物来发现 Client 包，也不维护 Host/Client 包过滤表。包内 tsdown 配置根据 `DSH_BUILD_FACE` 决定当前阶段的入口：普通 Client 插件在 Client 阶段同时生成 Node loader 与 browser bundle；`api-remotes` 通过 `hostPhase: true` 提前生成 Host 入口，再在 Client 阶段只生成 browser bundle。tsdown 只消费 `lib/types` 中由前置 tsc 发射的 JavaScript。tsdown 并发构建匹配到的 workspace 成员；`apps/desktop` 的主进程 bundle 需要从工作区 devDependencies 的 `lib/` 产物内联这些包，因此在 Host 阶段之后单独一步打 bundle（[Desktop README](../apps/desktop/README.zh.md#bundled-workspace-dependencies)）。
 
 Typert 只在 Host tsdown 中以 `tsconfig.host.json` 为种子运行。它分析 Host 类型并生成 Host 反射产物及 Host-for-Client Remote 投影；Client tsdown 不启动 Typert。`pnpm run typecheck` 因此先执行完整 Host lib 阶段，再运行 Client tsc；`pnpm run build` 继续执行 Client tsdown 和 Web 构建。
 
@@ -138,9 +115,7 @@ DEEPSEEK_BASE_URL=https://... # optional
 
 ### Git 集成
 
-当两种语言的文件都使用 Git 默认文本策略且能干净合并时，配对合并驱动会根据已确认的祖先、当前和另一侧的配对文档 blob，推导出发生冲突的 `.i18n.yaml` 记录。配对文档发生冲突、存在非文本合并配置或记录无效时，它会拒绝处理并保留冲突；如果合并已经因冲突而停止，请运行 `pnpm run resolve-translation-pairing-conflicts`，该命令会暂存每份可安全生成的配对记录；如果其他配对冲突仍需手工处理，则以非零状态退出。[双语文档约定](i18n/README.zh.md#the-pairing-contract)列出该驱动接受的确切文件和状态。
-
-安装脚本在发布 worktree 配置前，会探测确切的 Node/tsx 驱动入口点。如果该运行时之后变得不可用，不依赖 Node 的启动器会写入 Git 的普通文本合并结果、让伴随文件保持未解决状态，并打印恢复路径；请恢复依赖后运行 `pnpm run resolve-translation-pairing-conflicts`，或运行 `git merge --abort`。如果 `pre-merge-commit` 拒绝原本能干净完成的合并，Git 会把完整结果留在暂存区但不创建提交；请修复失败后运行 `git commit`，或中止合并。确切的索引与 `MERGE_HEAD` 状态由[自动配对合并 Agent Note](../.agents/notes/implemented/process/2026-08-08-automatic-translation-pairing-merges.zh.md#failure-contract)负责记录。
+`.i18n.yaml` 记录使用 Git 默认文本合并。只有当两个分支都修改了同一标题分节中的语言特有内容时，记录才会冲突；先解决 Markdown 冲突，再重新运行 `pnpm run verify-translation-pairing --write <pair>`。如果 `pre-merge-commit` 拒绝原本能干净完成的合并，Git 会把完整结果留在暂存区但不创建提交；请修复失败后运行 `git commit`，或运行 `git merge --abort`。
 
 lefthook 在 `lefthook.yml` 中配置，作为快速的本地检查点：
 
@@ -156,7 +131,9 @@ vendor manifest 守卫检查 `vendor/*/src` 下的改动是否连同对应的 `v
 
 ### CI 门禁
 
-keyless [CI 工作流](../.github/workflows/ci.yml) 将独立门禁分组到若干宽粒度 lane，并在受支持的 Node 版本上运行一组较小的兼容性检查。产物消费方在各自 lane 内等待一次 build。真实 API 套件保留为通过 `pnpm run test:e2e` 显式运行的本地检查；仓库 Actions 不接收或消耗 DeepSeek API key。当前门禁和 job 清单以 [scripts/run-gates.ts](../scripts/run-gates.ts) 和工作流文件为准。
+keyless [CI 工作流](../.github/workflows/ci.yml) 将独立门禁分组到若干宽粒度 lane，并在受支持的 Node 版本上运行一组较小的兼容性检查。产物消费方在各自 lane 内等待一次 build。必需 benchmark 在标准 GitHub 托管 Linux 上独立运行；[benchmark 运行器决策](../.agents/notes/implemented/testing/2026-09-06-standard-hosted-benchmark-runner.zh.md)拥有路由及 job 超时。单独的真实 API 工作流按其配置的 worker 上限运行 `pnpm run test:e2e`。当前门禁和 job 清单以 [scripts/run-gates.ts](../scripts/run-gates.ts) 和工作流文件为准。
+
+不带凭据的 dsh 依赖布局检查与 dsh/vendor 打包演练仅在 `DSH_CI_FAILOVER_LINUX=selfhosted`，且事件为受信任的 master 推送或同仓库、非 fork、非 Dependabot 拉取请求时使用现有 Linux 自托管池。其余情况（包括手动触发）均使用 `ubuntu-24.04`；手动发布仍使用托管运行器。持久化存储隔离与回退限制见[发布演练运行器决策](../.agents/notes/implemented/process/2026-09-06-release-rehearsal-selfhosted.zh.md)。
 
 ### 日常命令
 

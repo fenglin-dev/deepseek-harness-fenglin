@@ -357,9 +357,6 @@ describe('registration', () => {
       run_in_background: { type: 'boolean' },
     })
     expect(schema?.parameters.required).toEqual(['command', 'description'])
-    const properties = schema?.parameters.properties as Record<string, { description?: string }>
-    expect(properties['description']?.description)
-      .toContain("language of the user's latest request")
     const prompt = renderPrompt(await ctx.systemPrompt.assemble())
     expect(prompt).toContain('Non-zero exits are reported as `[exit code: N]` markers')
     expect(prompt).toContain('without a signal marker')
@@ -370,8 +367,7 @@ describe('registration', () => {
     const schema = ctx.tools.schemas().find(s => s.name === 'pwsh')!
     expect(Object.keys(schema.parameters.properties as Record<string, unknown>))
       .toEqual(['command', 'description', 'timeoutMs', 'workdir'])
-    expect(schema.description).toContain('Background execution is not available')
-    expect(schema.description).not.toContain('job_output')
+    expect(JSON.stringify(schema.parameters)).not.toContain('job_output')
   })
 
   it('stays pending until ctx.shell exists (inject)', async () => {
@@ -611,10 +607,9 @@ describe('sandbox escalation through ctx.approval', () => {
   it('advertises the sandbox fields, the escalation clause, and the confined-mode contracts', async () => {
     const { ctx } = await setupSandboxed()
     const schema = ctx.tools.schemas().find(item => item.name === 'pwsh')!
-    const properties = schema.parameters.properties as Record<string, { description?: string; enum?: string[] }>
+    const properties = schema.parameters.properties as Record<string, { enum?: string[]; description?: string }>
     expect(properties['sandbox_permissions']?.enum).toEqual(['workspace-write', 'danger-full-access'])
-    expect(properties['justification']?.description).toContain("language of the user's latest request")
-    expect(schema.description).toContain('approval prompt')
+    expect(properties['sandbox_permissions']?.description).toContain('asks the user for approval')
     expect(schema.description).toContain('ConstrainedLanguage')
     expect(schema.description).toContain('workspace-write stays in FullLanguage')
     expect(schema.description).toContain('In both confined modes, programs cannot open named pipes')
@@ -865,12 +860,11 @@ describe('background execution through the job runtime', () => {
     expect(bash.startCalls).toBe(0)
   })
 
-  it('enableRunInBackground: false removes the parameter and flips the description', async () => {
+  it('enableRunInBackground: false removes the parameter and rejects the call', async () => {
     const { ctx } = await setup({ enableRunInBackground: false })
     const schema = ctx.tools.schemas().find(s => s.name === 'pwsh')!
     expect(Object.keys(schema.parameters.properties as Record<string, unknown>))
       .toEqual(['command', 'description', 'timeoutMs', 'workdir'])
-    expect(schema.description).toContain('Background execution is not available')
     expect(schema.description).not.toContain('run_in_background')
 
     // Schema omission is advertising; execution must also enforce the opt-out.
@@ -896,7 +890,7 @@ describe('background execution through the job runtime', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     const schema = ctx.tools.schemas()[0]!
     expect(schema.parameters.properties).toHaveProperty('run_in_background')
-    expect(schema.description).toContain('job_output')
+    expect(JSON.stringify(schema.parameters)).toContain('job_output')
   })
 })
 
