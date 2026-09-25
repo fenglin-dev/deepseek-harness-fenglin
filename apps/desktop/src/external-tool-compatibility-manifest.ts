@@ -45,7 +45,7 @@ export const EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY: ExternalToolCompatibilityMani
   "schema": "dsh/desktop-external-tool-compatibility/v2",
   "revision": 9,
   "desktopVersion": "3.0.3",
-  "reviewedSourceVersion": "0.1.7-rc.1",
+  "reviewedSourceVersion": "0.1.7-rc.2",
   "issuedAt": "2026-09-24T00:00:00.000Z",
   "expiresAt": "2027-03-17T00:00:00.000Z",
   "tools": {
