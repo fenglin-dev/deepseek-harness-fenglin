@@ -224,6 +224,17 @@ async function main(): Promise<void> {
   console.log(`bundled-plugin refresh: resolved ${manifest.plugins.length} offline plugin archive(s)`)
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await main()
+const invoked = process.argv[1] !== undefined
+  && (import.meta.url === pathToFileURL(process.argv[1]).href
+    || import.meta.url.endsWith('/refresh-bundled-plugins.ts')
+    || import.meta.url.endsWith('\\refresh-bundled-plugins.ts'))
+if (invoked || process.argv.includes('--if-enabled')) {
+  try {
+    await main()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`bundled-plugin refresh failed: ${message}`)
+    if (error instanceof Error && error.stack) console.error(error.stack)
+    process.exitCode = 1
+  }
 }
