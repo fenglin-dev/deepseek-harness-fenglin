@@ -68,12 +68,24 @@ export const RELEASED_V3_EVENT_TYPES: ReadonlySet<string> = new Set([
 /* jscpd:ignore-end */
 
 /**
+ * First-party types newer than the frozen V3 vocabulary that already landed in
+ * released V3 logs without `ignorable`. Readers namespace them as opaque so
+ * history/terminal resume does not refuse an otherwise intact Session.
+ */
+const POST_V3_COMPAT_TYPES: ReadonlySet<string> = new Set([
+  'external-tools/resolved',
+])
+
+/**
  * Keep unknown ignorable events opaque after header promotion.
  * @param event - original V3 event; this incoming identity conversion is applied once.
  * @returns the same event or an ignorable namespaced event retaining its payload and coordinates.
  */
 export function namespaceV3OpaqueEvent(event: SessionFormatEvent): SessionFormatEvent {
-  return event['ignorable'] === true && !RELEASED_V3_EVENT_TYPES.has(event.type)
+  const unknownToV3 = !RELEASED_V3_EVENT_TYPES.has(event.type)
+  const shouldOpaque = unknownToV3
+    && (event['ignorable'] === true || POST_V3_COMPAT_TYPES.has(event.type))
+  return shouldOpaque
     ? { ...event, type: `plugin:${event.type}`, ignorable: true }
     : event
 }
