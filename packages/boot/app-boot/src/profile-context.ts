@@ -27,8 +27,6 @@ export interface ProfileContext {
   readonly overlays: readonly PatchOptions[]
   /** Launch-time DSH_TELEMETRY_DISABLED value; any non-empty value opts out. */
   readonly telemetryDisabledEnv: string | undefined
-  /** Product-owned projection reapplied to every startup and HMR composition. */
-  readonly projectPatches?: (patches: readonly PatchOptions[]) => PatchOptions[]
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -73,5 +71,5 @@ export function readProfilePatches(binName: string, context: ProfileContext, ini
   const telemetryPatch = resolveTelemetryPatch(context.telemetryDisabledEnv,
     composeEntries([patches]).some(row => row.id === TELEMETRY_ROW_ID))
   if (telemetryPatch !== undefined) patches.push(telemetryPatch)
-  return context.projectPatches?.(patches) ?? patches
+  return patches
 }

@@ -272,7 +272,8 @@
     "vitest": "^4.1.8",
     "@deepseek-ai/dsh-skill-office": "workspace:*",
     "@deepseek-ai/dsh-tool-workspace-dependencies": "workspace:*",
-    "yaml": "^2.8.0"
+    "yaml": "^2.8.0",
+    "es-module-lexer": "^1.7.0"
   },
   "dependencies": {}
 }

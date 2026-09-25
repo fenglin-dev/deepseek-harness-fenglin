@@ -5,9 +5,9 @@ import { pathToFileURL } from 'node:url'
 import { inspect } from 'node:util'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import SystemPrompt, { HARNESS_IDENTITY_TEXT, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import {
-  addHarnessSourceSection, auditStartupEntries, boot, OPTIONAL_STARTUP_FAILURES_MARKER, StartupError,
+  addHarnessSourceSection, auditStartupEntries, boot, StartupError,
   FAIL_LOUD_RELEASE_TIMEOUT_MS, HARNESS_SOURCE_SECTION,
   installFailLoud, loadEnv, loadLayeredEnv, loadOverlayPatches, resolveConfigPath, type FailLoudEvent, type FailLoudProcess,
 } from '../src/index.ts'
@@ -618,7 +618,6 @@ describe('auditStartupEntries', () => {
     ]), NAME, warn)
     expect(warn).toHaveBeenCalledOnce()
     expect(warn).toHaveBeenCalledWith([
-      `${OPTIONAL_STARTUP_FAILURES_MARKER}[{"id":"missing-tool","name":"./missing.mjs"},{"id":"tool-todo","name":"@deepseek-ai/dsh-tool-todo"},{"id":"waiting-tool","name":"./waiting.mjs"}]`,
       `${NAME}: warning: 3 entries did not activate`,
       'missing-tool (./missing.mjs): failed to import',
       `tool-todo (@deepseek-ai/dsh-tool-todo): ${original.stack!}`,
@@ -643,7 +642,7 @@ describe('auditStartupEntries', () => {
       expect(warn).not.toHaveBeenCalled()
     } else {
       await expect(result).resolves.toBeUndefined()
-      expect(warn).toHaveBeenCalledExactlyOnceWith(`${OPTIONAL_STARTUP_FAILURES_MARKER}[{"id":"${id}","name":"./plugin.mjs"}]\n${NAME}: warning: 1 entry did not activate\n${detail}\n`)
+      expect(warn).toHaveBeenCalledExactlyOnceWith(`${NAME}: warning: 1 entry did not activate\n${detail}\n`)
     }
   })
 
@@ -658,7 +657,6 @@ describe('auditStartupEntries', () => {
       { fiber: fiber(3, wrapper), options: { id: 'wrapped-plugin', name: './wrapped.mjs' } },
     ]), NAME, warn)
     expect(warn).toHaveBeenCalledWith([
-      `${OPTIONAL_STARTUP_FAILURES_MARKER}[{"id":"wrapped-plugin","name":"./wrapped.mjs"}]`,
       `${NAME}: warning: 1 entry did not activate`,
       `wrapped-plugin (./wrapped.mjs): ${wrapper.stack!}`,
       aggregate.stack!,
@@ -723,7 +721,7 @@ describe('auditStartupEntries', () => {
     expect(diagnostic).toContain('unexpected-state (./unexpected-state.mjs): fiber state 1')
   })
 
-  it.each(requiredIds)('combines required %s failures and emits the optional-failure supervisor marker', async (id) => {
+  it.each(requiredIds)('combines required %s and optional failures without a separate warning', async (id) => {
     const warn = vi.fn()
     const requiredError = new Error('address already in use')
     const optionalError = new Error('todo unavailable')
@@ -736,7 +734,7 @@ describe('auditStartupEntries', () => {
     expect((error as Error).message).toContain(`  ${id} (required)\n    Package: ./required.mjs`)
     expect((error as Error).message).toContain('  tool-todo\n    Package: @deepseek-ai/dsh-tool-todo')
     expect(((error as Error).cause as AggregateError).errors).toEqual([requiredError, optionalError])
-    expect(warn).toHaveBeenCalledWith(`${OPTIONAL_STARTUP_FAILURES_MARKER}[{"id":"tool-todo","name":"@deepseek-ai/dsh-tool-todo"}]\n${NAME}: warning: 1 entry did not activate\ntool-todo (@deepseek-ai/dsh-tool-todo): ${optionalError.stack!}\n`)
+    expect(warn).not.toHaveBeenCalled()
   })
 
   it('omits an error cause when required plugins are only waiting for services', async () => {
@@ -1286,7 +1284,7 @@ describe('addHarnessSourceSection', () => {
       expect(rendered).toContain(EXPECTED)
       // The >= 0 guards keep a drifted opener/persona string from a false pass
       // through `-1 < n`.
-      const identityAt = rendered.indexOf(HARNESS_IDENTITY_TEXT)
+      const identityAt = rendered.indexOf('You are an AI agent powered by DeepSeek Harness.')
       const sourceAt = rendered.indexOf(EXPECTED)
       const personaAt = rendered.indexOf('You are a coding agent.')
       expect(identityAt).toBeGreaterThanOrEqual(0)
