@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { access, readFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
-import { parse } from 'yaml'
+import { load as parse } from 'js-yaml'
 
 const root = resolve(import.meta.dirname, '../../..')
 const contractPath = join(import.meta.dirname, 'packaged-resource-contract.json')
