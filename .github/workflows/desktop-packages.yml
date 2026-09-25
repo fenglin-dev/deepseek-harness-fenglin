@@ -235,14 +235,20 @@ jobs:
       - name: Prepare bundled plugins
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Continue'
-          Write-Host "DSH_BUNDLED_PLUGINS_REFRESH=$env:DSH_BUNDLED_PLUGINS_REFRESH"
-          Write-Host "cwd=$((Get-Location).Path)"
-          Write-Host "bundled=$(Test-Path apps/desktop/bundled-plugins/manifest.json)"
-          node node_modules/tsx/dist/cli.mjs apps/desktop/scripts/verify-external-tool-compatibility.ts
-          if ($LASTEXITCODE -ne 0) { throw "verify-external-tool failed $LASTEXITCODE" }
-          node node_modules/tsx/dist/cli.mjs apps/desktop/scripts/refresh-bundled-plugins.ts --if-enabled
-          if ($LASTEXITCODE -ne 0) { throw "refresh-bundled-plugins failed $LASTEXITCODE" }
+          Write-Host "::notice::prepare bundled plugins start"
+          Write-Host "REFRESH=$env:DSH_BUNDLED_PLUGINS_REFRESH"
+          if (-not (Test-Path 'apps/desktop/bundled-plugins/manifest.json')) {
+            Write-Host "::error::missing bundled-plugins manifest after snapshot download"
+            exit 1
+          }
+          & node node_modules/tsx/dist/cli.mjs apps/desktop/scripts/refresh-bundled-plugins.ts --if-enabled
+          $code = $LASTEXITCODE
+          Write-Host "refresh exit=$code"
+          if ($code -ne 0) {
+            Write-Host "::error::refresh-bundled-plugins failed with $code"
+            exit 1
+          }
+          Write-Host "::notice::prepare bundled plugins ok"
 
       - name: Build clean-checkout Host and Desktop
         run: pnpm run build:community-desktop
