@@ -35,7 +35,6 @@
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/dsh-credentials": "workspace:*",
-    "@deepseek-ai/dsh-nas-protocol": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
     "zod": "^4.4.3"
   },
