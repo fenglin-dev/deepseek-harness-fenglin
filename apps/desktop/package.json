@@ -5,7 +5,7 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "main": "lib/main.js",
+  "main": "lib/entry.js",
   "scripts": {
     "test:installer": "node scripts/test-windows-installer.mjs",
     "build": "tsc -b && pnpm run bundle",
