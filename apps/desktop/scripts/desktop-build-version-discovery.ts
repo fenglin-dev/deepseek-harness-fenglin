@@ -112,7 +112,7 @@ async function remoteVersions(options: DesktopBuildVersionSuggestionOptions): Pr
             if (error !== null && error !== undefined) rejectListing(error instanceof Error ? error : new Error(String(error)))
             else {
               resolveListing({
-                keys: (data?.Contents ?? []).map((object: { Key?: string }) => object.Key),
+                keys: (data?.Contents ?? []).flatMap((object: { Key?: string }) => object.Key == null ? [] : [object.Key]),
                 next: data?.IsTruncated === 'true' ? data.NextMarker ?? data.Contents?.at(-1)?.Key : undefined,
               })
             }
