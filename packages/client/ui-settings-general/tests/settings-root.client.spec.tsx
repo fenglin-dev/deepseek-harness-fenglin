@@ -105,6 +105,7 @@ function mount({
     usePanelInfo, useSessionRetainInfo: () => undefined, useResource,
     useWorkspaces: unusedHook,
     wide,
+    dismissSidebar: () => {},
     reconnect,
     openDesktopUpdate: () => {},
     useDesktopUpdate: (select: any) => select(desktopUpdate),
