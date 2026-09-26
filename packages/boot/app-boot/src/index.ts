@@ -81,7 +81,7 @@ export {
   type RuntimeResolutionEntry,
   type RuntimeResolution,
   type ProfileTemplate,
-} from './profile.ts'
+, reportSkippedBundles } from './profile.ts'
 export {
   PluginPackages,
   type PluginPackage,
