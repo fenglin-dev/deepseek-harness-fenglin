@@ -522,6 +522,7 @@ async function verifyRuntime() {
     ],
     files: [],
   }, undefined, 2) + '\n')
+  await cp(join(dshOut, 'desktop-runtime.json'), join(harnessRoot, 'desktop-runtime.json'))
   console.log(`prepare-windows-runtime: wrote dsh/desktop-runtime.json for ${releaseVersion}`)
   console.log(`prepare-windows-runtime: verified ${manifest.name}@${manifest.version} with Node ${nodeVersion} and pnpm ${pnpmVersion}`)
 }

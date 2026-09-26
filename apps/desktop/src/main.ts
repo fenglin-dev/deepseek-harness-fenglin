@@ -156,8 +156,8 @@ function runtimeResources(): RuntimeResources {
     ?? (development ? join(app.getAppPath(), '.desktop-build', 'development', 'project') : join(app.getAppPath(), 'dsh'))
   if (!development) {
     // extraResources/dsh ships outside asar; prefer it when present.
-    const resourcesDsh = join(process.resourcesPath, 'dsh')
-    if (existsSync(resourcesDsh)) dsh = resourcesDsh
+    const resourcesDsh = join(process.resourcesPath, 'harness')
+    if (existsSync(join(resourcesDsh, 'node_modules'))) dsh = resourcesDsh
   }
   return { node, nodeBin, pnpm, dsh }
 }
