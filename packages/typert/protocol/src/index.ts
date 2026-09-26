@@ -231,6 +231,10 @@ function applyRemoteDecorator(
   throw new TypeError('typert-protocol: Remote decorator received an unsupported call shape')
 }
 
+function remoteOptionMode(options: object): unknown {
+  return Reflect.get(options, 'mode') as unknown
+}
+
 function makeDecorator(
   invocation: RemoteInvocationMarker,
   mode?: 'stream',

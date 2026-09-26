@@ -35,7 +35,21 @@ export type InjectKey = keyof {
  * @returns the class or method decorator.
  */
 export function Inject<K extends InjectKey>(name: K, config?: Context[K] extends { [symbols.config]: infer T } ? T : never) {
-  return function (value: any, decorator: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any>) {
+  return function (value: any, decorator?: ClassDecoratorContext<any> | ClassMethodDecoratorContext<any> | string | symbol, _descriptor?: unknown) {
+    // Legacy decorators (experimentalDecorators): (target, key?, descriptor?)
+    if (decorator === undefined || typeof decorator === 'string' || typeof decorator === 'symbol') {
+      if (typeof value === 'function' || (value !== null && typeof value === 'object' && typeof decorator !== 'string' && typeof decorator !== 'symbol')) {
+        const ctor = typeof value === 'function' ? value : (value as { constructor: unknown }).constructor
+        if (typeof ctor === 'function') {
+          if (!Object.hasOwn(ctor, 'inject')) {
+            defineProperty(ctor, 'inject', Object.create(Object.getPrototypeOf(ctor).inject ?? null))
+            defineProperty((ctor as { inject: object }).inject, symbols.checkProto, true)
+          }
+          ;(ctor as { inject: Record<string, unknown> }).inject[name] = config
+        }
+      }
+      return value
+    }
     if (decorator.kind === 'class') {
       if (!Object.hasOwn(value, 'inject')) {
         defineProperty(value, 'inject', Object.create(Object.getPrototypeOf(value).inject ?? null))
