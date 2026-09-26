@@ -97,7 +97,7 @@ function mount({
   }
   const unusedHook = (() => { throw new Error('unused by SettingsRoot') }) as never
   const shell = createSettingsShellStore().create()
-  const props: SettingsRootComponentProps = {
+  const props = {
     useStore: bindSnapshotSelector(shell), actions: shell.actions,
     useShortcuts: select => select(shortcuts),
     useSessions: select => select(sessions),
@@ -130,7 +130,7 @@ function mount({
     },
     renderSlot,
   }
-  const view = render(<SettingsRoot {...props} />)
+  const view = render(<SettingsRoot {...(props as SettingsRootComponentProps)} />)
   const bump = (next: Row[]) => {
     act(() => {
       current = next

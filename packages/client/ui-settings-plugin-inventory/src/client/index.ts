@@ -225,7 +225,7 @@ export function apply(ctx: ClientContext): void {
       return result.value
     },
     installExternalTool: async (toolId, experimentalCapability) => startControlledInstall(
-      await resolveExternalToolInstallRequest(toolId, experimentalCapability),
+      await resolveExternalToolInstallRequest(toolId, experimentalCapability) as Parameters<typeof startPluginInstall>[0],
     ),
     externalTools: async () => {
       const result = await ctx.remote.pluginInventory.externalTools()

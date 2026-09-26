@@ -53,6 +53,7 @@ const storedView: AccountView = {
 }
 const theme: ThemeSnapshot = {
   preference: 'light', fontSize: 14, active: { id: 'light', colorScheme: 'light', tokens: {} }, themes: [], revision: 0,
+  background: { id: 'none', url: '' },
 }
 
 /** The account settings commands, trimmed to what this composition renders. */
