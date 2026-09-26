@@ -97,19 +97,19 @@ function mount({
   }
   const unusedHook = (() => { throw new Error('unused by SettingsRoot') }) as never
   const shell = createSettingsShellStore().create()
-  const props = {
+  const props: SettingsRootComponentProps = {
     useStore: bindSnapshotSelector(shell), actions: shell.actions,
-    useShortcuts: select => select(shortcuts),
-    useSessions: select => select(sessions),
+    useShortcuts: (select: any) => select(shortcuts),
+    useSessions: (select: any) => select(sessions),
     useSessionStatus,
     usePanelInfo, useSessionRetainInfo: () => undefined, useResource,
     useWorkspaces: unusedHook,
     wide,
     reconnect,
     openDesktopUpdate: () => {},
-    useDesktopUpdate: select => select(desktopUpdate),
+    useDesktopUpdate: (select: any) => select(desktopUpdate),
     t: makeTranslate(dictionary),
-    useConnectionState: (select) => {
+    useConnectionState: (select: any) => {
       const [, force] = useState(0)
       useEffect(() => {
         const listener = () => { force(n => n + 1) }
@@ -118,8 +118,8 @@ function mount({
       }, [])
       return select(currentConnectionState)
     },
-    useOnboardingSteps: select => select(steps),
-    useSections: (select) => {
+    useOnboardingSteps: (select: any) => select(steps),
+    useSections: (select: any) => {
       const [, force] = useState(0)
       useEffect(() => {
         const listener = () => { force(n => n + 1) }
@@ -130,7 +130,7 @@ function mount({
     },
     renderSlot,
   }
-  const view = render(<SettingsRoot {...(props as SettingsRootComponentProps)} />)
+  const view = render(<SettingsRoot {...props} />)
   const bump = (next: Row[]) => {
     act(() => {
       current = next
