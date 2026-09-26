@@ -5,11 +5,20 @@
     "declaration": false,
     "declarationMap": false,
     "rootDir": "src",
-    "outDir": "lib"
+    "outDir": "lib",
+    "jsx": "react-jsx"
   },
   "include": ["src"],
+  "exclude": ["src/client"],
   "references": [
     { "path": "../../packages/nas/nas-protocol" },
-    { "path": "../../packages/subprocess/subprocess" }
+    { "path": "../../packages/subprocess/subprocess" },
+    { "path": "../../packages/boot/app-boot" },
+    { "path": "../../packages/util/home-paths" },
+    { "path": "../../packages/credentials/deepseek-account" },
+    { "path": "../../packages/api/gateway/tsconfig.host.json" },
+    { "path": "../../packages/client/ui-sidebar-browser/tsconfig.host.json" },
+    { "path": "../../packages/client/shortcuts/tsconfig.host.json" },
+    { "path": "../../packages/util/atomic-write" }
   ]
 }
