@@ -362,7 +362,7 @@ export class AgentPresetRegistry extends TypertRemoteService {
         rows: record.generation === undefined ? ('rows' in read ? read.rows : []) : mountedCompositionRows(record.generation.mount.tree) }
     }))
   }
-}
+
   private readonly externalToolProjectors = new Set<(agent: Agent, tool: 'codex' | 'claude-code') => () => void>()
   private externalToolState = { codex: false, claudeCode: false }
 
@@ -389,5 +389,6 @@ export class AgentPresetRegistry extends TypertRemoteService {
     const disposes = [...this.externalToolProjectors].map(fn => fn(agent, tool))
     return () => { for (const dispose of disposes) dispose() }
   }
+}
 
 export default AgentPresetRegistry
