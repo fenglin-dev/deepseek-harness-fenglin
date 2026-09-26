@@ -195,50 +195,57 @@ function provideInvocationAccessor(ctx: Context): void {
  * @param _method - decorated method; retained only by the class itself.
  * @param context - standard decorator context used to schedule private marking.
  */
-export function Remote<This extends object, Args extends unknown[], Result>(
-  _method: (this: This, ...args: Args) => Result,
-  context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Result>,
-): void
-/**
- * Mark one public instance method under an exported name or as a logical stream.
- * @param option - endpoint method name or stream delivery mode.
- * @returns a standard method decorator.
- */
-export function Remote(option: string | RemoteMethodOptions): RemoteMethodDecorator
-export function Remote<This extends object, Args extends unknown[], Result>(
-  methodExportOrOptions: string | RemoteMethodOptions | ((this: This, ...args: Args) => Result),
-  context?: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Result>,
-): void | RemoteMethodDecorator {
-  if (typeof methodExportOrOptions === 'string') {
-    validateName('Remote export name', methodExportOrOptions)
-    return remoteDecorator({ kind: 'direct' }, undefined, methodExportOrOptions)
+export function Remote(...args: unknown[]): unknown {
+  return applyRemoteDecorator(undefined, undefined, ...args)
+}
+
+function applyRemoteDecorator(
+  invocation: RemoteInvocationMarker | undefined,
+  fixedMode: 'stream' | undefined,
+  ...args: unknown[]
+): unknown {
+  const [first, second, third] = args
+  // Legacy decorator application: (target, key, descriptor)
+  if (args.length === 3 && typeof second === 'string') {
+    markLegacyMethod(first as object, second, invocation ?? { kind: 'direct' }, fixedMode)
+    return first
   }
-  if (typeof methodExportOrOptions === 'object') {
-    if (remoteOptionMode(methodExportOrOptions) !== 'stream'
-      || Reflect.ownKeys(methodExportOrOptions).length !== 1) {
+  // Standard (stage-3) decorator application: (method, context)
+  if (args.length === 2 && second !== null && typeof second === 'object' && 'addInitializer' in (second as object)) {
+    const context = second as RemoteInitializerContext<object>
+    addMarkerInitializer(context, invocation ?? { kind: 'direct' }, fixedMode)
+    return
+  }
+  // Factory: Remote('name') or Remote({ mode: 'stream' })
+  if (args.length === 1 && typeof first === 'string') {
+    validateName('Remote export name', first)
+    return makeDecorator({ kind: 'direct' }, undefined, first)
+  }
+  if (args.length === 1 && first !== null && typeof first === 'object') {
+    if (remoteOptionMode(first) !== 'stream' || Reflect.ownKeys(first as object).length !== 1) {
       throw new TypeError('typert-protocol: Remote options must contain exactly mode: "stream"')
     }
-    return remoteDecorator({ kind: 'direct' }, 'stream')
+    return makeDecorator({ kind: 'direct' }, 'stream')
   }
-  if (context === undefined) throw new TypeError('typert-protocol: Remote decorator context is missing')
-  addMarkerInitializer(context, { kind: 'direct' })
+  throw new TypeError('typert-protocol: Remote decorator received an unsupported call shape')
 }
 
-function remoteOptionMode(options: object): unknown {
-  return Reflect.get(options, 'mode') as unknown
-}
-
-function remoteDecorator(
+function makeDecorator(
   invocation: RemoteInvocationMarker,
   mode?: 'stream',
   exportName?: string,
-): RemoteMethodDecorator {
-  return function <This extends object, Args extends unknown[], Result>(
-    _method: (this: This, ...args: Args) => Result,
-    context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Result>,
-  ): void {
-    addMarkerInitializer(context, invocation, mode, exportName)
+): (methodOrTarget: unknown, contextOrKey?: unknown, descriptor?: unknown) => unknown {
+  return function remoteDecoratorApply(methodOrTarget: unknown, contextOrKey?: unknown, descriptor?: unknown): unknown {
+    return applyRemoteDecorator(invocation, mode, methodOrTarget, contextOrKey, descriptor)
   }
+}
+
+function markLegacyMethod(target: object, method: string, invocation: RemoteInvocationMarker, mode?: 'stream', exportName?: string): void {
+  const prototype = typeof target === 'function' ? (target as { prototype?: object }).prototype : target
+  if (prototype === null || prototype === undefined || typeof prototype !== 'object') {
+    throw new TypeError('typert-protocol: cannot mark Remote method on a missing prototype')
+  }
+  mark(prototype, method, invocation, mode, exportName)
 }
 
 /**
@@ -253,7 +260,7 @@ export function RemoteScope(
 ): RemoteMethodDecorator {
   validateName('Scope key', key)
   if (exportName !== undefined) validateName('Remote export name', exportName)
-  return remoteDecorator({ kind: 'context', context: key }, undefined, exportName)
+  return makeDecorator({ kind: 'context', context: key }, undefined, exportName)
 }
 
 /**
