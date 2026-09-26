@@ -155,6 +155,10 @@ async function injectWorkspaceClosure() {
   if (packages.has('@deepseek-ai/dsh-subprocess-local')) {
     queue.push('@deepseek-ai/dsh-subprocess-local')
   }
+  // Desktop startup resolves the private Host from the packaged dsh runtime.
+  if (packages.has('@deepseek-ai/dsh-desktop-host')) {
+    queue.push('@deepseek-ai/dsh-desktop-host')
+  }
   // Desktop main imports dsh-subprocess, whose ESM entry loads these peers.
   // pnpm records them as peerDependencies, so electron-builder omits them.
   for (const peer of ['@deepseek-ai/cordis', '@deepseek-ai/cosmokit', '@deepseek-ai/dsh-http-proxy', '@deepseek-ai/dsh-nas-protocol']) {
