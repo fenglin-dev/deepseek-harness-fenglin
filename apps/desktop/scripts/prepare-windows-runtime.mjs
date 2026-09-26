@@ -414,6 +414,23 @@ async function patchPnpmUndiciFetch() {
   console.log('prepare-windows-runtime: patched pnpm undici fetch to use globalThis.fetch')
 }
 
+/** Stage office-skills and a primary-runtime node shim the Desktop Host resolves at startup. */
+async function stageOfficeRuntime() {
+  const officeSource = join(repositoryRoot, 'packages', 'skill', 'skill-office', 'assets')
+  const officeDest = join(outputRoot, 'runtime', 'office-skills')
+  await rm(officeDest, { recursive: true, force: true })
+  await cp(officeSource, officeDest, { recursive: true, dereference: true })
+  console.log('prepare-windows-runtime: staged office-skills assets')
+  const primaryRoot = join(outputRoot, 'runtime', 'primary-runtime')
+  const nodeBin = join(primaryRoot, 'dependencies', 'node', 'bin')
+  const nodeModules = join(primaryRoot, 'dependencies', 'node', 'node_modules')
+  await mkdir(nodeBin, { recursive: true })
+  await mkdir(nodeModules, { recursive: true })
+  await cp(join(runtimeRoot, 'node.exe'), join(nodeBin, 'node.exe'), { force: true })
+  await writeFile(join(nodeModules, 'README.txt'), 'Reserved for bundled Node packages.\n')
+  console.log('prepare-windows-runtime: staged primary-runtime node shim')
+}
+
 async function smokeHarness() {
   const entry = join(harnessRoot, 'lib', 'bin.js')
   const smokeHome = join(outputRoot, 'smoke-home')
@@ -553,4 +570,5 @@ await pruneRuntimeBloat()
 await stageNodeRuntime()
 await stagePackageManager()
 await patchPnpmUndiciFetch()
+await stageOfficeRuntime()
 await verifyRuntime()
