@@ -227,6 +227,13 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
     const yamlText = await readFile(pnpmWorkspacePath, 'utf8')
     const doc = parseDocument(yamlText)
     doc.set('ignoredOptionalDependencies', [...ignore])
+    // Transitive ranges may ask npm for older sidebar builds; pin the bundled archive.
+    const overrides = doc.get('overrides')
+    const overrideMap = (overrides && typeof overrides === 'object' && !Array.isArray(overrides))
+      ? { ...overrides }
+      : {}
+    overrideMap['dsh-better-sidebar'] = 'file:../../bundled-plugins/dsh-better-sidebar-0.21.1.tgz'
+    doc.set('overrides', overrideMap)
     await writeFile(pnpmWorkspacePath, String(doc), 'utf8')
   }
   // Never deliver package-manager stores, logs, locks, snapshots, or user settings.

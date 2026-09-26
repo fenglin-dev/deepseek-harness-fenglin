@@ -83,7 +83,8 @@ export class DesktopProjectManager {
   async applyRelease(): Promise<void> {
     await this.withLock(() => {
       // Validation only: an unreadable or mismatched runtime descriptor stops preparation before the Host starts.
-      readDesktopRuntime(this.runtime.dsh)
+      const descriptorPath = join(this.runtime.dsh, 'desktop-runtime.json')
+      if (existsSync(descriptorPath)) readDesktopRuntime(this.runtime.dsh)
       migrateProfileSettings(this.paths.profile)
       createPluginProfile(this.paths.profile)
       removeLinkProjections(this.paths.profile)
