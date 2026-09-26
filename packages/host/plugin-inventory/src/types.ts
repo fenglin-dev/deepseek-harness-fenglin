@@ -1,5 +1,5 @@
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { PluginLocalizedMeta } from '@deepseek-ai/dsh-package-manifest'
+import type { ProfileDiagnostic, ProfileDiagnosticRuleSummary } from '@deepseek-ai/dsh-app-boot'
 
 /** Stable Loader-tree identity of one configured plugin entry. */
 export type PluginEntryId = Branded<'PluginEntryId'>
@@ -18,8 +18,6 @@ export interface PluginInventoryEntry {
   readonly entryId: PluginEntryId
   /** Exact module specifier imported by the Loader entry. */
   readonly moduleName: string
-  /** Local package display metadata, independent of whether the entry is enabled. */
-  readonly meta?: PluginLocalizedMeta
   /** Effective Loader enablement, including disabled ancestor groups. */
   readonly enabled: boolean
   readonly fiberPhase: PluginFiberPhase
@@ -74,15 +72,158 @@ export interface PluginInventorySnapshot {
   readonly agentPresets?: readonly AgentPresetPluginGroup[]
 }
 
+/** Point-in-time inventory returned by the plugin inventory Remote. */
+export interface PluginInventorySnapshot {
+  readonly entries: readonly PluginInventoryEntry[]
+  readonly dependencyHealth: PluginDependencyHealthSnapshot
+}
+
+/** Client-safe shared Host dependency conflict projection. */
+export interface PluginDependencyConflict {
+  readonly rootPackage: string
+  readonly dependencyChain: readonly string[]
+  readonly dependency: string
+  readonly declaredRange: string
+  readonly declaredIn: 'dependencies' | 'optionalDependencies'
+  readonly hostVersion: string
+  readonly compatible: boolean
+}
+
+/** Client-safe retained repair result. */
+export interface PluginDependencyRepairNotice {
+  readonly status: 'repaired' | 'quarantined' | 'failed'
+  readonly conflicts: readonly PluginDependencyConflict[]
+  readonly diagnostic?: string
+  readonly issues: readonly ProfileDiagnostic[]
+}
+
+/** Client-safe durable quarantine record. */
+export interface PluginQuarantineRecord {
+  readonly quarantineId: string
+  readonly profile: string
+  readonly packageName: string
+  readonly packageSpec: string
+  readonly installedVersion?: string
+  readonly quarantinedAt: string
+  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable'
+  readonly buildApprovalKey?: string
+  readonly conflicts: readonly PluginDependencyConflict[]
+}
+
+/** Dependency-health state shown by trusted clients. */
+export interface PluginDependencyHealthSnapshot {
+  readonly lastRepair: PluginDependencyRepairNotice | null
+  readonly quarantined: readonly PluginQuarantineRecord[]
+  readonly issues: readonly ProfileDiagnostic[]
+  readonly safeMode: {
+    readonly enteredAt: string
+    readonly skippedBundles: readonly string[]
+    readonly skippedUserLayers: boolean
+  } | null
+}
+
+/** One Loader bundle that remains configured without a manageable profile dependency. */
+export interface PluginOrphanedBundle {
+  readonly profile: string
+  readonly packageName: string
+  readonly bundleIndex: number
+  readonly installedVersion?: string
+}
+
+/** Client-safe result returned by the core profile dependency doctor. */
+export interface PluginDependencyDoctorReport {
+  readonly schema: 'dsh/profile-dependency-repair/v1'
+  readonly diagnosticSchema: 'dsh/profile-diagnostic/v2'
+  readonly profile: string
+  readonly status: 'healthy' | 'repaired' | 'quarantined' | 'failed'
+  readonly conflicts: readonly PluginDependencyConflict[]
+  readonly orphanedBundles: readonly PluginOrphanedBundle[]
+  readonly quarantined: readonly PluginQuarantineRecord[]
+  readonly issues: readonly ProfileDiagnostic[]
+  readonly diagnostic?: string
+}
+
+/** Stable identity of one background dependency-doctor operation. */
+export type PluginDoctorId = Branded<'PluginDoctorId'>
+
+/** Requested profile check mode. */
+export interface PluginDoctorRequest {
+  readonly profile: string
+  readonly repair: boolean
+}
+
+/** Observable lifecycle of one current-profile dependency check. */
+export interface PluginDoctorSnapshot {
+  readonly doctorId: PluginDoctorId
+  readonly profile: string
+  readonly command: string
+  readonly phase: 'running' | 'healthy' | 'issues' | 'repaired' | 'quarantined' | 'failed'
+  readonly report?: PluginDependencyDoctorReport
+  readonly exitCode?: number | null
+  readonly diagnostic?: string
+}
+
+/** Opaque durable quarantine selection. */
+export interface PluginQuarantineRequest {
+  readonly quarantineId: string
+}
+
+/** Explicit approval of the exact build key retained by one quarantine. */
+export interface PluginBuildApprovalRequest {
+  readonly quarantineId: string
+}
+
+/** Explicit approval of a build key retained by a failed package operation. */
+export interface PluginDiagnosticBuildApprovalRequest {
+  readonly diagnosticId: string
+}
+
+/** Browser-boot failure that can be recovered only by deactivating its owning Profile bundle. */
+export interface PluginClientLoadFailureRequest {
+  /** Direct active Profile bundle named by the failed client Loader entry. */
+  readonly packageName: string
+  /** Opaque client Loader entry id retained only for diagnostic attribution. */
+  readonly entryId: string
+  /** Exact module request that the client module table could not satisfy. */
+  readonly requestedModule: string
+  /** Closed failure vocabulary; arbitrary browser errors cannot request quarantine. */
+  readonly code: 'client-module-unavailable'
+}
+
+/** Result of one guarded browser-boot recovery transaction. */
+export interface PluginClientLoadRecoveryResult {
+  readonly packageName: string
+  readonly status: 'quarantined' | 'failed'
+  /** True when the Host accepted a bounded restart request after persisting quarantine. */
+  readonly restartScheduled: boolean
+}
+
+/** Redacted, portable diagnostics export assembled by the trusted Host. */
+export interface PluginDiagnosticExport {
+  readonly schema: 'dsh/profile-diagnostic-export/v1'
+  readonly diagnosticSchema: 'dsh/profile-diagnostic/v2'
+  readonly rulesVersion: 2
+  readonly rules: readonly ProfileDiagnosticRuleSummary[]
+  readonly generatedAt: string
+  readonly runtime: {
+    readonly platform: string
+    readonly architecture: string
+    readonly node: string
+  }
+  readonly profile: string
+  readonly safeMode: PluginDependencyHealthSnapshot['safeMode']
+  readonly issues: readonly ProfileDiagnostic[]
+  readonly quarantined: readonly PluginQuarantineRecord[]
+  readonly entries: readonly PluginInventoryEntry[]
+}
+
+/** Profile whose retained repair notification should be dismissed. */
+export interface PluginRepairNoticeRequest {
+  readonly profile: string
+}
+
 /** Stable identity of one background profile-plugin installation. */
 export type PluginInstallId = Branded<'PluginInstallId'>
-
-/** Closed desktop recipes that install and compose an official experimental provider. */
-export type ExperimentalCapabilityRecipe =
-  | 'browser-use-playwright-visible'
-  | 'browser-use-devtools-visible'
-  | 'computer-use-native'
-  | 'computer-use-mcp'
 
 /** Registry package request accepted by the profile plugin installer. */
 export interface PluginInstallRequest {
@@ -90,8 +231,6 @@ export interface PluginInstallRequest {
   readonly profile: string
   /** npm registry package specifier, optionally with a version or dist-tag. */
   readonly packageSpec: string
-  /** Optional fixed composition recipe; arbitrary module names and config never cross the wire. */
-  readonly experimentalCapability?: ExperimentalCapabilityRecipe
 }
 
 /** Exact registry package removal accepted by the profile plugin manager. */
@@ -112,36 +251,6 @@ export type PluginInstallPhase =
   | 'quarantined'
   | 'failed'
 
-/** User-visible stage within one running package-manager operation. */
-export type PluginInstallProgressStage = 'preparing' | 'resolving' | 'downloading' | 'installing' | 'verifying'
-
-/** Determinate progress is published only after pnpm has established a stable total. */
-export interface PluginInstallProgress {
-  readonly stage: PluginInstallProgressStage
-  /** Integer percentage from 0 through 100; absent means indeterminate. */
-  readonly percent?: number
-  /** Completed dependency units when pnpm exposes a stable total. */
-  readonly completed?: number
-  /** Total dependency units paired with {@link completed}. */
-  readonly total?: number
-}
-
-/** Cursor request for bounded live installer output. */
-export interface PluginInstallOutputRequest {
-  readonly installId: PluginInstallId
-  /** Byte offset returned by the previous read; zero starts at retained output. */
-  readonly offset: number
-}
-
-/** Incremental, sanitized terminal output for one installer job. */
-export interface PluginInstallOutputRead {
-  readonly text: string
-  readonly nextOffset: number
-  /** True when output before the requested offset is no longer retained. */
-  readonly lossy: boolean
-  readonly settled: boolean
-}
-
 /** Point-in-time state returned when starting or polling an installation. */
 export interface PluginInstallSnapshot {
   readonly installId: PluginInstallId
@@ -150,8 +259,6 @@ export interface PluginInstallSnapshot {
   /** Exact CLI command represented by the structured request. */
   readonly command: string
   readonly phase: PluginInstallPhase
-  /** Current package-manager stage and optional determinate dependency progress. */
-  readonly installProgress?: PluginInstallProgress
   /** Exit code when the package-manager process settled normally. */
   readonly exitCode?: number | null
   /** Bounded package-manager output for local troubleshooting after failure. */
@@ -172,4 +279,29 @@ export interface ExternalToolsSnapshot {
 export interface ExternalToolToggleRequest {
   readonly tool: ExternalToolId
   readonly enabled: boolean
+}
+
+/** User-visible stage within one running package-manager operation. */
+export type PluginInstallProgressStage = 'preparing' | 'resolving' | 'downloading' | 'installing' | 'verifying'
+
+/** Determinate progress is published only after pnpm has established a stable total. */
+export interface PluginInstallProgress {
+  readonly stage: PluginInstallProgressStage
+  readonly percent?: number
+  readonly completed?: number
+  readonly total?: number
+}
+
+/** Cursor request for bounded live installer output. */
+export interface PluginInstallOutputRequest {
+  readonly installId: PluginInstallId
+  readonly offset: number
+}
+
+/** Incremental, sanitized terminal output for one installer job. */
+export interface PluginInstallOutputRead {
+  readonly text: string
+  readonly nextOffset: number
+  readonly lossy: boolean
+  readonly settled: boolean
 }
