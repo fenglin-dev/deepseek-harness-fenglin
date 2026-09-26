@@ -250,7 +250,18 @@ jobs:
           }
 
       - name: Build clean-checkout Host and Desktop
-        run: pnpm run build:community-desktop
+        shell: pwsh
+        run: |
+          $out = & pnpm run build:community-desktop 2>&1 | Tee-Object -Variable captured
+          $code = $LASTEXITCODE
+          Write-Host "build_exit=$code"
+          if ($code -ne 0) {
+            $lines = @($captured | Select-Object -Last 60)
+            foreach ($line in $lines) {
+              Write-Host "::error::BUILD::$line"
+            }
+            exit $code
+          }
 
       - name: Prepare bundled Python runtime and Office metadata
         run: pnpm exec tsx apps/desktop/scripts/prepare-workspace-runtime.ts win-x64
