@@ -295,7 +295,7 @@ const EXTERNAL_TOOL_CONFIGS = {
     backgroundMode: 'one-shot',
     maxDepth: 'provider-managed',
   },
-} as const satisfies Record<ExternalToolId, ToolSubagent.Config>
+} as const
 
 /** Reject paths, URLs, flags, and shell text at the Host wire boundary. */
 function validateInstallRequest(request: PluginInstallRequest): void {
@@ -560,8 +560,8 @@ export class PluginInventoryGateway extends TypertRemoteService {
       }
     }, 'pluginInventory.installProgressFiles()')
     ctx.inject(['agentPresets'], (presetCtx) => {
-      const dispose = presetCtx.agentPresets.registerExternalToolProjector((agent, tool) => {
-        const fiber = agent.ctx.plugin(ToolSubagent, EXTERNAL_TOOL_CONFIGS[tool])
+      const dispose = presetCtx.agentPresets.registerExternalToolProjector((agent: { ctx: Context }, tool: ExternalToolId) => {
+        const fiber = agent.ctx.plugin(ToolSubagent, EXTERNAL_TOOL_CONFIGS[tool] as unknown as ToolSubagent.Config)
         return () => fiber.dispose()
       })
       presetCtx.effect(() => dispose, 'pluginInventory.externalToolProjector()')

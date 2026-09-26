@@ -363,4 +363,31 @@ export class AgentPresetRegistry extends TypertRemoteService {
     }))
   }
 }
+  private readonly externalToolProjectors = new Set<(agent: Agent, tool: 'codex' | 'claude-code') => () => void>()
+  private externalToolState = { codex: false, claudeCode: false }
+
+  /** Register a projector that mounts fixed tool bindings onto an Agent. */
+  registerExternalToolProjector(fn: (agent: Agent, tool: 'codex' | 'claude-code') => () => void): () => void {
+    this.externalToolProjectors.add(fn)
+    return () => { this.externalToolProjectors.delete(fn) }
+  }
+
+  /** Fixed-provider enablement for complete Agent Presets. */
+  async externalToolsState(): Promise<{ scope: 'complete-presets'; codex: boolean; claudeCode: boolean }> {
+    return { scope: 'complete-presets', ...this.externalToolState }
+  }
+
+  /** Toggle one supported provider at the next safe Agent boundary. */
+  async setExternalTool(tool: 'codex' | 'claude-code', enabled: boolean): Promise<{ scope: 'complete-presets'; codex: boolean; claudeCode: boolean }> {
+    if (tool === 'codex') this.externalToolState = { ...this.externalToolState, codex: enabled }
+    else this.externalToolState = { ...this.externalToolState, claudeCode: enabled }
+    return this.externalToolsState()
+  }
+
+  /** Fire registered projectors for one agent/tool pair; returns dispose. */
+  projectExternalTool(agent: Agent, tool: 'codex' | 'claude-code'): () => void {
+    const disposes = [...this.externalToolProjectors].map(fn => fn(agent, tool))
+    return () => { for (const dispose of disposes) dispose() }
+  }
+
 export default AgentPresetRegistry
