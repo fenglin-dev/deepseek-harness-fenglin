@@ -4,6 +4,7 @@
   // every extending package project and narrow the facade's match-all scope.
   "compilerOptions": {
     "target": "es2024",
+    "experimentalDecorators": true,
     "module": "esnext",
     "moduleResolution": "bundler",
     "declaration": true,
