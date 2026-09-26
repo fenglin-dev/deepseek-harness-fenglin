@@ -1,16 +1,27 @@
 /** Host plugin inventory and controlled profile-plugin installation. */
 
 import { randomUUID } from 'node:crypto'
-import { extname } from 'node:path'
+import {
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { extname, join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import type { Context, FiberState } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import {
+  approveQuarantinedProfilePluginHostVersion,
   clearLastProfileRepairReport,
   clearQuarantinedProfilePlugin,
   classifyProfileDiagnostic,
+  inspectProfileImmutableAgentInputMutation,
+  inspectProfileLegacySessionApi,
   profileDiagnosticRuleCatalog,
   listQuarantinedProfilePlugins,
+  reconcileRestoredQuarantinedProfilePlugins,
   readLastProfileRepairReport,
   readProfileDiagnosticReport,
   uninstallQuarantinedProfilePlugin,
@@ -20,13 +31,15 @@ import {
   type ProfileDiagnostic,
   type ProfileDiagnosticReport,
 } from '@deepseek-ai/dsh-app-boot'
-import type {} from '@deepseek-ai/dsh-subprocess'
-import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
+// Type-only: the optional agent-preset roster resolved through `ctx.get`.
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
 import type {
+  AgentPresetPluginGroup,
   PluginEntryId,
   PluginDoctorId,
   PluginDoctorRequest,
@@ -40,6 +53,8 @@ import type {
   PluginInventoryEntry,
   PluginInventorySnapshot,
   PluginInstallId,
+  PluginInstallOutputRead,
+  PluginInstallOutputRequest,
   PluginInstallRequest,
   PluginInstallSnapshot,
   PluginQuarantineRequest,
@@ -48,12 +63,18 @@ import type {
   ExternalToolsSnapshot,
   ExternalToolId,
   ExternalToolToggleRequest,
+  ExperimentalCapabilityRecipe,
 } from './types.ts'
+import { InstallProgressTracker } from './install-progress.ts'
 
 export type * from './types.ts'
 
-/** Brand an existing Loader-tree entry id at the owning boundary. */
-function pluginEntryId(value: string): PluginEntryId {
+/**
+ * Brand an existing Loader-tree entry id at the owning boundary.
+ * @param value - Raw Loader-tree entry id.
+ * @returns the branded entry id used by the inventory protocol.
+ */
+export function pluginEntryId(value: string): PluginEntryId {
   return value as PluginEntryId
 }
 
@@ -77,6 +98,52 @@ const FIBER_PHASE = {
   [FIBER_STATE.UNLOADING]: 'unloading',
 } as const satisfies Record<FiberState, PluginFiberPhase>
 
+type LoaderPluginInventory = Pick<
+  PluginInventorySnapshot,
+  'entries' | 'agentPresets' | 'managementAvailable'
+>
+
+/**
+ * Read the loader-facing portion of the inventory for the shared profile
+ * manager. The diagnostic gateway below remains the owner of retained repair,
+ * quarantine, and dependency-health projections.
+ * @param ctx - Active Host context that owns the Loader and optional preset roster.
+ * @returns the current Loader entries plus available preset and management metadata.
+ */
+export async function readPluginInventory(ctx: Context): Promise<LoaderPluginInventory> {
+  const entries: PluginInventoryEntry[] = []
+  const packages = ctx.get('pluginPackages')
+  for (const entry of ctx.loader.entries()) {
+    if (entry.options.group) continue
+    const base = entry.parent.tree.ctx.baseUrl
+    const meta = base === undefined ? undefined : packages?.metaOf(entry.options.name, base)
+    entries.push({
+      entryId: pluginEntryId(entry.id),
+      moduleName: entry.options.name,
+      enabled: !entry.disabled,
+      fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
+      ...meta === undefined ? {} : { meta },
+    })
+  }
+  const presets = ctx.get('agentPresets')
+  const management = ctx.get('pluginManager') === undefined ? {} : { managementAvailable: true as const }
+  if (presets === undefined) return { entries, ...management }
+  const agentPresets: AgentPresetPluginGroup[] = (await presets.compositionInventory()).map(
+    composition => ({
+      ...composition,
+      rows: composition.rows.map(({ fiberState, ...row }) => {
+        const meta = ctx.baseUrl === undefined ? undefined : packages?.metaOf(row.moduleName, ctx.baseUrl)
+        return {
+          ...row,
+          fiberPhase: fiberState === undefined ? null : FIBER_PHASE[fiberState],
+          ...meta === undefined ? {} : { meta },
+        }
+      }),
+    }),
+  )
+  return { entries, agentPresets, ...management }
+}
+
 /** Default cap for each collected package-manager stream. */
 export const DEFAULT_INSTALL_OUTPUT_MAX_BYTES = 64 * 1024
 
@@ -97,11 +164,71 @@ export interface Config {
 interface InstallJob {
   snapshot: PluginInstallSnapshot
   target: string
+  readonly progress: InstallProgressTracker
+  handle?: SubprocessHandle
+  completion?: Promise<void>
+  requestedControl?: 'pause' | 'cancel'
+  progressFile?: string
   steps: readonly {
     readonly args: readonly string[]
     readonly acceptedExitCodes?: readonly number[]
   }[]
   quarantineId?: string
+}
+
+const INSTALL_PROGRESS_DIRECTORY = '.desktop-install-progress'
+const INSTALL_PROGRESS_MAX_AGE_MS = 24 * 60 * 60 * 1000
+const INSTALL_PROGRESS_FILE = /^[0-9a-f-]{36}\.ndjson$/u
+
+function progressDirectory(environment: NodeJS.ProcessEnv = process.env): string | undefined {
+  const home = environment.DSH_HOME?.trim()
+  return home === undefined || home === '' ? undefined : join(home, INSTALL_PROGRESS_DIRECTORY)
+}
+
+function ensureProgressDirectory(environment: NodeJS.ProcessEnv = process.env): string | undefined {
+  const directory = progressDirectory(environment)
+  if (directory === undefined) return undefined
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const metadata = lstatSync(directory)
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+    throw new Error('pluginInventory: install progress directory is not a real directory')
+  }
+  return directory
+}
+
+function createProgressFile(installId: PluginInstallId): string | undefined {
+  try {
+    const directory = ensureProgressDirectory()
+    if (directory === undefined) return undefined
+    const path = join(directory, `${String(installId)}.ndjson`)
+    writeFileSync(path, '', { flag: 'wx', mode: 0o600 })
+    return path
+  } catch {
+    // Progress observation is optional and must never block the guarded install.
+    return undefined
+  }
+}
+
+function cleanupStaleProgressFiles(now = Date.now()): void {
+  const directory = progressDirectory()
+  if (directory === undefined) return
+  let names: string[]
+  try {
+    names = readdirSync(directory)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    if (!INSTALL_PROGRESS_FILE.test(name)) continue
+    const path = join(directory, name)
+    try {
+      const metadata = lstatSync(path)
+      if (metadata.isFile() && !metadata.isSymbolicLink()
+        && now - metadata.mtimeMs > INSTALL_PROGRESS_MAX_AGE_MS) unlinkSync(path)
+    } catch {
+      // Another installer or cleanup pass may have removed the exact file.
+    }
+  }
 }
 
 const CLIENT_LOADER_ENTRY_ID = /^[A-Za-z0-9._~-]{1,128}$/u
@@ -130,6 +257,28 @@ const REGISTRY_PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[
 const QUARANTINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
 const REPAIR_REPORT_PREFIX = 'dsh: profile dependency health '
 
+const EXPERIMENTAL_CAPABILITY_RECIPES = {
+  'browser-use-playwright-visible': {
+    packageSpec: '@deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.1.6-alpha.2',
+    dependencies: ['@deepseek-ai/dsh-browser-use@0.1.6-alpha.2'],
+  },
+  'browser-use-devtools-visible': {
+    packageSpec: '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp@0.1.6-alpha.2',
+    dependencies: ['@deepseek-ai/dsh-browser-use@0.1.6-alpha.2'],
+  },
+  'computer-use-native': {
+    packageSpec: '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native@0.1.6-alpha.2',
+    dependencies: ['@deepseek-ai/dsh-computer-use@0.1.6-alpha.2'],
+  },
+  'computer-use-mcp': {
+    packageSpec: '@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp@0.1.6-alpha.2',
+    dependencies: ['@deepseek-ai/dsh-computer-use@0.1.6-alpha.2'],
+  },
+} as const satisfies Record<ExperimentalCapabilityRecipe, {
+  readonly packageSpec: string
+  readonly dependencies: readonly string[]
+}>
+
 /** Product-specific tool bindings kept out of the generic preset package. */
 const EXTERNAL_TOOL_CONFIGS = {
   codex: {
@@ -153,6 +302,15 @@ function validateInstallRequest(request: PluginInstallRequest): void {
   validateProfile(request.profile)
   if (!REGISTRY_PACKAGE_SPEC.test(request.packageSpec)) {
     throw new TypeError(`pluginInventory: invalid registry package spec ${JSON.stringify(request.packageSpec)}`)
+  }
+  if (request.experimentalCapability !== undefined) {
+    const recipe = (EXPERIMENTAL_CAPABILITY_RECIPES as Partial<Record<string, {
+      readonly packageSpec: string
+      readonly dependencies: readonly string[]
+    }>>)[request.experimentalCapability]
+    if (recipe === undefined || request.profile !== 'web' || recipe.packageSpec !== request.packageSpec) {
+      throw new TypeError('pluginInventory: invalid experimental capability install request')
+    }
   }
 }
 
@@ -207,6 +365,20 @@ function projectQuarantine(record: QuarantinedProfilePlugin) {
     ...(record.installedVersion === undefined ? {} : { installedVersion: record.installedVersion }),
     quarantinedAt: record.quarantinedAt,
     reason: record.reason,
+    ...(record.hostCompatibility === undefined
+      ? {}
+      : {
+        hostCompatibility: {
+          hostVersion: record.hostCompatibility.hostVersion,
+          supportedHostVersions: record.hostCompatibility.supportedHostVersions,
+          ...(record.hostCompatibility.recommendedHostVersion === undefined
+            ? {}
+            : { recommendedHostVersion: record.hostCompatibility.recommendedHostVersion }),
+          ...(record.hostCompatibility.previewTag === undefined
+            ? {}
+            : { previewTag: record.hostCompatibility.previewTag }),
+        },
+      }),
     ...(record.buildApprovalKey === undefined ? {} : { buildApprovalKey: record.buildApprovalKey }),
     conflicts: record.conflicts.map(projectConflict),
   }
@@ -332,9 +504,21 @@ function profileCommandEnvironment(environment: NodeJS.ProcessEnv = process.env)
   if (environment.DSH_PNPM_BIN !== undefined && environment.DSH_PNPM_BIN.trim() !== '') {
     forwarded.DSH_PNPM_BIN = environment.DSH_PNPM_BIN
   }
+  if (environment.DSH_DESKTOP_MUTATION_OWNER_PID !== undefined) {
+    forwarded.DSH_DESKTOP_MUTATION_OWNER_PID = environment.DSH_DESKTOP_MUTATION_OWNER_PID
+  }
+  for (const name of ['DSH_DESKTOP_APPLICATION_VERSION', 'DSH_DESKTOP_PNPM_VERSION'] as const) {
+    if (environment[name] !== undefined) forwarded[name] = environment[name]
+  }
   if (environment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR !== undefined
     && environment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR.trim() !== '') {
     forwarded.DSH_DESKTOP_BUNDLED_PLUGINS_DIR = environment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR
+  }
+  for (const name of [
+    'DSH_DESKTOP_PACKAGE_PROXY_URL', 'DSH_DESKTOP_DOWNLOAD_NETWORK_FILE', 'npm_config_registry',
+  ] as const) {
+    const value = environment[name]
+    if (value !== undefined && value.trim() !== '') forwarded[name] = value
   }
   return forwarded
 }
@@ -362,6 +546,19 @@ export class PluginInventoryGateway extends TypertRemoteService {
     this.terminationGraceMs = config.installTerminationGraceMs ?? DEFAULT_INSTALL_TERMINATION_GRACE_MS
     this.profile = config.profile ?? 'web'
     validateProfile(this.profile)
+    cleanupStaleProgressFiles()
+    ctx.effect(() => () => {
+      for (const job of this.jobs.values()) {
+        if (job.progressFile === undefined) continue
+        try {
+          unlinkSync(job.progressFile)
+        } catch {
+          // Windows may keep the sidecar open until the managed installer exits;
+          // bounded startup cleanup is the final fallback for that case.
+        }
+        delete job.progressFile
+      }
+    }, 'pluginInventory.installProgressFiles()')
     ctx.inject(['agentPresets'], (presetCtx) => {
       const dispose = presetCtx.agentPresets.registerExternalToolProjector((agent, tool) => {
         const fiber = agent.ctx.plugin(ToolSubagent, EXTERNAL_TOOL_CONFIGS[tool])
@@ -375,33 +572,44 @@ export class PluginInventoryGateway extends TypertRemoteService {
    * Read the Loader directly on every call. Cordis's internal plugin/status
    * events already maintain Entry.fiber and Fiber.state, so a second cache
    * would only add another lifecycle truth to keep synchronized.
-   * @returns Current non-group Loader entries in Loader order.
+   *
+   * When an agent-preset roster is composed, the snapshot also carries each
+   * preset's composition rows, because those rows — not the Loader's own
+   * entries — are where a deployment that mounts the roster runs its
+   * model-facing plugins. A composed Profile manager is reported explicitly
+   * so clients can distinguish a manageable profile from a read-only deployment.
+   * @returns Current non-group Loader entries in Loader order, with per-preset
+   * compositions, management availability, and profile diagnostics.
    */
   @Remote('list')
-  list(): PluginInventorySnapshot {
-    const entries: PluginInventoryEntry[] = []
+  async list(): Promise<PluginInventorySnapshot> {
+    const loaderInventory = await readPluginInventory(this.ctx)
     const liveIssues: ProfileDiagnostic[] = []
+    const activePackageNames = new Set<string>()
     for (const entry of this.ctx.loader.entries()) {
+      if (entry.fiber?.state === FIBER_STATE.ACTIVE) activePackageNames.add(entry.options.name)
       if (entry.options.group) continue
-      entries.push({
-        entryId: pluginEntryId(entry.id),
-        moduleName: entry.options.name,
-        enabled: !entry.disabled,
-        fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
-      })
       const liveIssue = liveLoaderDiagnostic(entry)
       if (liveIssue !== undefined) liveIssues.push(liveIssue)
     }
+    reconcileRestoredQuarantinedProfilePlugins(
+      { binName: 'dsh', profile: this.profile },
+      activePackageNames,
+    )
     const lastRepair = readLastProfileRepairReport(this.profile)
     const currentDiagnostics = readCurrentDiagnostics(this.profile)
-    const issues = [...(currentDiagnostics?.issues ?? [])]
+    const issues = [
+      ...(currentDiagnostics?.issues ?? []),
+      ...inspectProfileLegacySessionApi({ binName: 'dsh', profile: this.profile }),
+      ...inspectProfileImmutableAgentInputMutation({ binName: 'dsh', profile: this.profile }),
+    ]
     for (const issue of liveIssues) {
       if (issues.some(candidate => candidate.code === issue.code
         && candidate.attribution?.entryId === issue.attribution?.entryId)) continue
       issues.push(issue)
     }
     return {
-      entries,
+      ...loaderInventory,
       dependencyHealth: {
         lastRepair: lastRepair === undefined || lastRepair.status === 'healthy' || lastRepair.status === 'repaired'
           ? null
@@ -415,7 +623,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
           .filter(record => record.profile === this.profile)
           .map(projectQuarantine),
         issues,
-        safeMode: currentDiagnostics?.safeMode ?? null,
+        diagnosticMode: currentDiagnostics?.diagnosticMode ?? currentDiagnostics?.safeMode ?? null,
       },
     }
   }
@@ -529,13 +737,34 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const job: InstallJob = {
       snapshot,
       target,
+      progress: new InstallProgressTracker(this.outputMaxBytes),
       steps: [{ args: ['doctor', '--retry', request.quarantineId] }],
       quarantineId: request.quarantineId,
     }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
-    void this.runInstall(job)
+    this.launchInstall(job)
     return snapshot
+  }
+
+  /**
+   * Record an exact Host/plugin-version risk approval, then retry that quarantined plugin.
+   * Only compatibility-manifest exclusions can use this path; dependency and Loader failures remain blocked.
+   * @param request - opaque incompatible-version quarantine selected after explicit user confirmation.
+   * @returns initial running state for the ordinary transactional retry.
+   */
+  @Remote('startHostVersionOverride')
+  startHostVersionOverride(request: PluginQuarantineRequest): PluginInstallSnapshot {
+    validateQuarantineId(request.quarantineId)
+    const record = this.expectQuarantine(request.quarantineId)
+    if (record.profile !== this.profile) throw new TypeError('pluginInventory: quarantine belongs to another profile')
+    if (record.reason !== 'incompatible-host-version') {
+      throw new TypeError('pluginInventory: only a Host version declaration can be overridden')
+    }
+    if (!approveQuarantinedProfilePluginHostVersion(request.quarantineId)) {
+      throw new Error('pluginInventory: quarantine no longer exists')
+    }
+    return this.startQuarantineRetry(request)
   }
 
   /**
@@ -567,6 +796,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const job: InstallJob = {
       snapshot,
       target,
+      progress: new InstallProgressTracker(this.outputMaxBytes),
       steps: [
         { args: ['approve-build-key', record.buildApprovalKey], acceptedExitCodes: [0] },
         { args: ['doctor', '--retry', request.quarantineId] },
@@ -575,7 +805,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
-    void this.runInstall(job)
+    this.launchInstall(job)
     return snapshot
   }
 
@@ -615,6 +845,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const job: InstallJob = {
       snapshot,
       target,
+      progress: new InstallProgressTracker(this.outputMaxBytes),
       steps: [
         { args: ['approve-build-key', diagnostic.buildApprovalKey], acceptedExitCodes: [0] },
         { args: ['add', packageSpec] },
@@ -622,17 +853,17 @@ export class PluginInventoryGateway extends TypertRemoteService {
     }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
-    void this.runInstall(job)
+    this.launchInstall(job)
     return snapshot
   }
 
   /**
    * Export the current redacted incident, runtime facts, quarantine state, and Loader summary.
    * @returns Portable JSON that intentionally excludes local paths, credentials, and raw configuration bodies.
-   */
+  */
   @Remote('exportDiagnostics')
-  exportDiagnostics(): string {
-    const snapshot = this.list()
+  async exportDiagnostics(): Promise<string> {
+    const snapshot = await this.list()
     const report: PluginDiagnosticExport = {
       schema: 'dsh/profile-diagnostic-export/v1',
       diagnosticSchema: 'dsh/profile-diagnostic/v2',
@@ -645,7 +876,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
         node: process.version,
       },
       profile: this.profile,
-      safeMode: snapshot.dependencyHealth.safeMode,
+      diagnosticMode: snapshot.dependencyHealth.diagnosticMode,
       issues: snapshot.dependencyHealth.issues,
       quarantined: snapshot.dependencyHealth.quarantined,
       entries: snapshot.entries,
@@ -663,7 +894,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
   @Remote('startInstall')
   startInstall(request: PluginInstallRequest): PluginInstallSnapshot {
     validateInstallRequest(request)
-    const target = `add\0${request.profile}\0${request.packageSpec}`
+    const target = `add\0${request.profile}\0${request.packageSpec}\0${request.experimentalCapability ?? ''}`
     const activeId = this.activeTargets.get(target)
     if (activeId !== undefined) return this.expectJob(activeId).snapshot
 
@@ -674,11 +905,26 @@ export class PluginInventoryGateway extends TypertRemoteService {
       packageSpec: request.packageSpec,
       command: `dsh plugin --profile ${request.profile} add ${request.packageSpec}`,
       phase: 'running',
+      installProgress: { stage: 'preparing' },
     }
-    const job: InstallJob = { snapshot, target, steps: [{ args: ['add', request.packageSpec] }] }
+    const experimentalCapability = request.experimentalCapability
+    const steps: InstallJob['steps'] = experimentalCapability === undefined
+      ? [{ args: ['add', request.packageSpec] }]
+      : [
+        ...EXPERIMENTAL_CAPABILITY_RECIPES[experimentalCapability].dependencies
+          .map(packageSpec => ({ args: ['add', packageSpec] as const })),
+        { args: ['add', request.packageSpec] },
+        { args: ['configure-experimental-capability', experimentalCapability] },
+      ]
+    const job: InstallJob = {
+      snapshot,
+      target,
+      progress: new InstallProgressTracker(this.outputMaxBytes),
+      steps,
+    }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
-    void this.runInstall(job)
+    this.launchInstall(job)
     return snapshot
   }
 
@@ -702,10 +948,15 @@ export class PluginInventoryGateway extends TypertRemoteService {
       command: `dsh plugin --profile ${request.profile} remove ${request.packageName}`,
       phase: 'running',
     }
-    const job: InstallJob = { snapshot, target, steps: [{ args: ['remove', request.packageName] }] }
+    const job: InstallJob = {
+      snapshot,
+      target,
+      progress: new InstallProgressTracker(this.outputMaxBytes),
+      steps: [{ args: ['remove', request.packageName] }],
+    }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
-    void this.runInstall(job)
+    this.launchInstall(job)
     return snapshot
   }
 
@@ -754,7 +1005,42 @@ export class PluginInventoryGateway extends TypertRemoteService {
    */
   @Remote('getInstall')
   getInstall(installId: PluginInstallId): PluginInstallSnapshot {
-    return this.expectJob(installId).snapshot
+    const job = this.expectJob(installId)
+    this.refreshInstallProgress(job)
+    return job.snapshot
+  }
+
+  /**
+   * Read bounded live output without retransmitting earlier terminal text.
+   * @param request - Host-issued install id and the preceding opaque byte offset.
+   * @returns Sanitized incremental output and the cursor for the next read.
+   */
+  @Remote('getInstallOutput')
+  getInstallOutput(request: PluginInstallOutputRequest): PluginInstallOutputRead {
+    const job = this.expectJob(request.installId)
+    this.refreshInstallProgress(job)
+    return job.progress.read(request.offset, job.snapshot.phase !== 'running')
+  }
+
+  /**
+   * Pause one running install after its managed process range is empty.
+   * Resuming starts the same request again and lets pnpm reuse its cache.
+   * @param installId - id returned by {@link startInstall}.
+   * @returns settled paused state, or the existing terminal state.
+   */
+  @Remote('pauseInstall')
+  async pauseInstall(installId: PluginInstallId): Promise<PluginInstallSnapshot> {
+    return this.controlInstall(installId, 'pause')
+  }
+
+  /**
+   * Stop one running install after its managed process range is empty.
+   * @param installId - id returned by {@link startInstall}.
+   * @returns settled cancelled state, or the existing terminal state.
+   */
+  @Remote('cancelInstall')
+  async cancelInstall(installId: PluginInstallId): Promise<PluginInstallSnapshot> {
+    return this.controlInstall(installId, 'cancel')
   }
 
   /** Resolve one known job or fail loud for stale and fabricated ids. */
@@ -762,6 +1048,35 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const job = this.jobs.get(installId)
     if (job === undefined) throw new Error(`pluginInventory: unknown install ${installId}`)
     return job
+  }
+
+  private refreshInstallProgress(job: InstallJob): void {
+    if (job.progressFile !== undefined) job.progress.refresh(job.progressFile)
+    if (job.snapshot.phase === 'running') {
+      job.snapshot = { ...job.snapshot, installProgress: job.progress.progress }
+    }
+  }
+
+  private launchInstall(job: InstallJob): void {
+    const completion = this.runInstall(job)
+    job.completion = completion
+    void completion
+  }
+
+  private async controlInstall(
+    installId: PluginInstallId,
+    control: 'pause' | 'cancel',
+  ): Promise<PluginInstallSnapshot> {
+    const job = this.expectJob(installId)
+    if (job.snapshot.phase !== 'running') return job.snapshot
+    job.requestedControl = control
+    const handle = job.handle
+    if (handle !== undefined) {
+      handle.terminate()
+      await handle.waitForExit()
+    }
+    await job.completion
+    return job.snapshot
   }
 
   /** Resolve one durable quarantine record or reject a stale client selection. */
@@ -777,14 +1092,22 @@ export class PluginInventoryGateway extends TypertRemoteService {
       const launcher = dshLauncherArgv()
       const outputs: string[] = []
       let exitCode: number | null = 1
-      for (const [index, step] of job.steps.entries()) {
+      const environment = profileCommandEnvironment()
+      const progressFile = createProgressFile(job.snapshot.installId)
+      if (progressFile !== undefined) job.progressFile = progressFile
+      if (job.progressFile !== undefined) environment.DSH_DESKTOP_INSTALL_PROGRESS_FILE = job.progressFile
+      const staged = environment.DSH_DESKTOP_MUTATION_OWNER_PID !== undefined
+      const steps: InstallJob['steps'] = staged && job.steps.length > 1
+        ? [{ args: ['batch', JSON.stringify(job.steps)] }] : job.steps
+      for (const [index, step] of steps.entries()) {
+        if (job.requestedControl !== undefined) break
         const handle = this.ctx.subprocess.spawn({
           argv: [
             ...launcher,
             'plugin', '--profile', job.snapshot.profile, ...step.args,
           ],
           cwd: process.cwd(),
-          env: profileCommandEnvironment(),
+          env: environment,
           stdio: {
             stdin: 'ignore',
             stdout: { maxBytes: this.outputMaxBytes },
@@ -792,15 +1115,31 @@ export class PluginInventoryGateway extends TypertRemoteService {
           },
           graceMs: this.terminationGraceMs,
         })
+        job.handle = handle
         const outcome = await handle.done
+        delete job.handle
+        this.refreshInstallProgress(job)
         exitCode = outcome.exitCode
         const stdout = handle.collected.stdout?.readFrom(0).text.trim() ?? ''
         const stderr = handle.collected.stderr?.readFrom(0).text.trim() ?? ''
         outputs.push(...[stdout, stderr].filter(value => value !== ''))
-        const accepted = step.acceptedExitCodes ?? (index + 1 < job.steps.length ? [0] : undefined)
+        const accepted = step.acceptedExitCodes ?? (index + 1 < steps.length ? [0] : undefined)
         if (accepted !== undefined && !accepted.includes(exitCode ?? -1)) break
       }
       const diagnostic = outputs.join('\n')
+      const requestedControl = job.requestedControl
+      if (requestedControl !== undefined) {
+        const message = requestedControl === 'pause' ? 'Download paused by user.' : 'Download stopped by user.'
+        job.progress.appendDiagnostic(message)
+        job.progress.settle(false)
+        job.snapshot = {
+          ...job.snapshot,
+          phase: requestedControl === 'pause' ? 'paused' : 'cancelled',
+          exitCode,
+          installProgress: job.progress.progress,
+        }
+        return
+      }
       const repair = parseRepairReport(diagnostic)
       const repairSucceeded = repair?.status === 'repaired' && exitCode === 10
         || repair?.status === 'quarantined' && exitCode === 11
@@ -812,22 +1151,53 @@ export class PluginInventoryGateway extends TypertRemoteService {
           : repair?.status === 'repaired'
             ? 'repaired'
             : 'succeeded'
+      job.progress.appendDiagnostic(diagnostic)
+      job.progress.settle(phase === 'succeeded' || phase === 'repaired')
       job.snapshot = {
         ...job.snapshot,
         phase,
         exitCode,
+        installProgress: phase === 'succeeded' || phase === 'repaired'
+          ? { stage: 'verifying', percent: 100 }
+          : job.progress.progress,
         ...(diagnostic !== '' && (exitCode !== 0 || repair !== undefined) ? { diagnostic } : {}),
       }
-      if (job.quarantineId !== undefined && (phase === 'succeeded' || phase === 'repaired')) {
+      if (!staged && job.quarantineId !== undefined && (phase === 'succeeded' || phase === 'repaired')) {
         clearQuarantinedProfilePlugin(job.quarantineId)
       }
     } catch (error) {
+      delete job.handle
+      const requestedControl = job.requestedControl
+      if (requestedControl !== undefined) {
+        const message = requestedControl === 'pause' ? 'Download paused by user.' : 'Download stopped by user.'
+        job.progress.appendDiagnostic(message)
+        job.progress.settle(false)
+        job.snapshot = {
+          ...job.snapshot,
+          phase: requestedControl === 'pause' ? 'paused' : 'cancelled',
+          installProgress: job.progress.progress,
+        }
+        return
+      }
+      const diagnostic = error instanceof Error ? error.message : String(error)
+      job.progress.appendDiagnostic(diagnostic)
+      job.progress.settle(false)
       job.snapshot = {
         ...job.snapshot,
         phase: 'failed',
-        diagnostic: error instanceof Error ? error.message : String(error),
+        installProgress: job.progress.progress,
+        diagnostic,
       }
     } finally {
+      this.refreshInstallProgress(job)
+      if (job.progressFile !== undefined) {
+        try {
+          unlinkSync(job.progressFile)
+        } catch {
+          // The CLI or an earlier cleanup may already have removed the exact file.
+        }
+        delete job.progressFile
+      }
       this.activeTargets.delete(job.target)
     }
   }
@@ -848,6 +1218,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const job: InstallJob = {
       snapshot,
       target,
+      progress: new InstallProgressTracker(this.outputMaxBytes),
       steps: [{
         args: [
           'doctor', '--quarantine-client-module',
@@ -860,6 +1231,9 @@ export class PluginInventoryGateway extends TypertRemoteService {
     await this.runInstall(job)
     if (job.snapshot.phase !== 'quarantined') {
       return { packageName: request.packageName, status: 'failed', restartScheduled: false }
+    }
+    if (process.env.DSH_DESKTOP_MUTATION_OWNER_PID !== undefined) {
+      return { packageName: request.packageName, status: 'quarantined', restartScheduled: true }
     }
     const exit = this.ctx.get('appExit') as ((code: number) => void) | undefined
     if (exit === undefined) {
