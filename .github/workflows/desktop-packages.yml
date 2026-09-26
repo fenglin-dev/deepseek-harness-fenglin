@@ -272,6 +272,18 @@ jobs:
       - name: Deploy Windows runtime
         run: node apps/desktop/scripts/prepare-windows-runtime.mjs
 
+      - name: Prepare desktop package set and dsh runtime tree
+        working-directory: apps/desktop
+        env:
+          DSH_DESKTOP_TARGET_PLATFORM: win32
+          DSH_DESKTOP_TARGET_ARCH: x64
+        shell: pwsh
+        run: |
+          pnpm run prepare:packages
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::prepare:packages failed"; exit $LASTEXITCODE }
+          pnpm run prepare:dsh
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::prepare:dsh failed"; exit $LASTEXITCODE }
+
       - name: Build Windows installer
         working-directory: apps/desktop
         run: node node_modules/electron-builder/out/cli/cli.js --win nsis --x64 --publish never

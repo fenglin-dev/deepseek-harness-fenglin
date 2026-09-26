@@ -9,6 +9,14 @@ files:
   - lib/**/*
   - scripts/primary-runtime-lock.json
   - package.json
+  - from: .desktop-build/targets/win-x64/dsh
+    to: dsh
+    filter:
+      - "**/*"
+  - from: .desktop-build/targets/win-x64/dsh/node_modules
+    to: dsh/node_modules
+    filter:
+      - "**/*"
   # pnpm peerDependencies are not packed automatically; desktop main imports
   # dsh-subprocess which requires these at runtime.
   - "node_modules/@deepseek-ai/cordis/**/*"
