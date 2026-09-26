@@ -829,7 +829,7 @@ export function composeEntries(
 }
 
 export function reportSkippedBundles(binName: string, profile: Pick<Profile, 'skippedBundles'>): void {
-  for (const { packageName, reason } of profile.skippedBundles) {
+  for (const { packageName, reason } of (profile.skippedBundles ?? [])) {
     process.stderr.write(`${binName}: skipping profile bundle ${JSON.stringify(packageName)}: ${reason}\n`)
   }
 }
