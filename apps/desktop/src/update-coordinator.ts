@@ -162,7 +162,7 @@ export class DesktopUpdateCoordinator {
     return state
   }
 
-  private failure(error: unknown, failedOperation: 'check' | 'download' | 'install'): DesktopUpdateState {
+  private failure(error: any, failedOperation: 'check' | 'download' | 'install'): DesktopUpdateState {
     return { phase: 'error', ...this.target(), failedOperation,
       message: error instanceof Error ? error.message : String(error),
       ...(error instanceof DesktopUpdatePreparationError ? {

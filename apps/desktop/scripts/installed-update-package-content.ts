@@ -18,7 +18,7 @@ const { createTransformer } = builderRequire('app-builder-lib/out/fileTransforme
   (file: string) => string | null | Promise<string | null>
 }
 
-function object(value: unknown): Record<string, unknown> {
+function object(value: any): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('installed update: invalid package metadata')
   return value as Record<string, unknown>
 }
@@ -116,7 +116,7 @@ export async function verifyInstalledUpdatePackageContent(manifest: string, vers
   }
   return { version, appId: run.appId, applicationFiles: inventory.files.length, dependencies, dependenciesFrozen: false,
     runtimeFiles: runtime.files.length, feedUrl: `${run.origin}/${run.feedKey}`, installed: false,
-    resignedExecutables: runtime.files.filter(file => file.path.endsWith('.exe')).map((file) => {
+    resignedExecutables: runtime.files.filter(file => file.path.endsWith('.exe')).map((file: any) => {
       if (archive.getFile(join('dsh', file.path), false).unpacked !== true) {
         throw new Error('installed update: executable runtime file must be outside ASAR')
       }

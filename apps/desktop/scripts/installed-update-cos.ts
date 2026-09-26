@@ -11,7 +11,7 @@ const BUCKET = 'bj-toc-download-test-1320056602'
 const ORIGIN = 'https://download-test.deepseek.com'
 
 /** COS reports a missing key through this error code; no other status means absence. */
-function isMissingObject(error: unknown): boolean {
+function isMissingObject(error: any): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'NoSuchKey'
 }
 

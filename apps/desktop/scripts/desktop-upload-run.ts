@@ -28,9 +28,9 @@ async function fingerprint(artifact: DesktopUploadArtifact) {
   return { size, sha512: sha512.digest('base64'), md5: md5.digest('base64') }
 }
 
-function receipt(value: unknown): object {
+function receipt(value: any): object {
   if (typeof value !== 'object' || value === null) return {}
-  const response = value as { statusCode?: unknown; RequestId?: unknown }
+  const response = value as { statusCode?: any; RequestId?: any }
   return {
     ...(typeof response.statusCode === 'number' ? { httpStatus: response.statusCode } : {}),
     ...(typeof response.RequestId === 'string' && /^[\w+/=.-]{1,256}$/u.test(response.RequestId)
@@ -38,7 +38,7 @@ function receipt(value: unknown): object {
   }
 }
 
-function failureReceipt(error: unknown): object {
+function failureReceipt(error: any): object {
   const codes = typeof error === 'object' && error !== null
     ? ['code' in error ? error.code : undefined, 'name' in error ? error.name : undefined] : []
   const errorCode = codes.find(code => typeof code === 'string' && FAILURE_CODES.has(code)) ?? 'UNCLASSIFIED'
