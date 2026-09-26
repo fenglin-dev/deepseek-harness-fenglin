@@ -108,11 +108,11 @@ async function remoteVersions(options: DesktopBuildVersionSuggestionOptions): Pr
           cos.getBucket({
             Bucket: update.bucket, Region: DESKTOP_COS_REGION, MaxKeys: LISTING_PAGE_SIZE,
             Prefix: `${update.binaryKeyPrefix}/deepseek-harness-`, ...marker === undefined ? {} : { Marker: marker },
-          }, (error, data) => {
+          }, (error: unknown, data: { Contents?: { Key?: string }[]; IsTruncated?: string | boolean; NextMarker?: string } | undefined) => {
             if (error !== null && error !== undefined) rejectListing(error instanceof Error ? error : new Error(String(error)))
             else {
               resolveListing({
-                keys: (data?.Contents ?? []).map(object => object.Key),
+                keys: (data?.Contents ?? []).map((object: { Key?: string }) => object.Key),
                 next: data?.IsTruncated === 'true' ? data.NextMarker ?? data.Contents?.at(-1)?.Key : undefined,
               })
             }

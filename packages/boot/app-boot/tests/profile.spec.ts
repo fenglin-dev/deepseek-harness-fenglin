@@ -415,7 +415,7 @@ describe('loadProfile', () => {
       expect(profile.layers.map(layer => layer.packageName)).toEqual(['before', 'after'])
       expect(composeEntries(profile.layers.map(layer => layer.patches)))
         .toEqual([{ id: 'a', name: 'pkg-a', config: { value: 'after' } }])
-      expect(profile.skippedBundles.map(skipped => skipped.packageName)).toEqual(['broken'])
+      expect((profile.skippedBundles ?? []).map(skipped => skipped.packageName)).toEqual(['broken'])
       reportSkippedBundles('t', profile)
       expect(warn.mock.calls).toEqual([[`t: skipping profile bundle "broken": ${profile.skippedBundles[0]?.reason}\n`]])
       expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(saved)

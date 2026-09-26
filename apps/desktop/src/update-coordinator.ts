@@ -59,7 +59,7 @@ export class DesktopUpdateCoordinator {
       const transportOwner = updater as AppUpdater & { httpExecutor: DesktopUpdateHttpExecutor }
       transportOwner.httpExecutor = new DesktopUpdateHttpExecutor(
         Number(process.env.DSH_DESKTOP_UPDATE_HTTP_IDLE_TIMEOUT_MS ?? 60_000),
-        (authInfo, callback) => { updater.emit('login', authInfo, callback) },
+        (authInfo: { host: string; port: number; realm: string; scheme: string; isProxy: boolean; isIntranet: boolean }, callback: (username: string, password: string) => void) => { updater.emit('login', authInfo, callback) },
       )
     }
     this.updater.autoDownload = false

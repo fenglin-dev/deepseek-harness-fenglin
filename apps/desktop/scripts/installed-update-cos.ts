@@ -46,7 +46,7 @@ export function createInstalledUpdateCos(): InstalledUpdatePublicationStore {
   return {
     async versioningDisabled() {
       const cos = client()
-      const response = await cosOperation(cos, 30_000, () => cos.getBucketVersioning({ Bucket: BUCKET, Region: DESKTOP_COS_REGION }))
+      const response = await cosOperation<any>(cos, 30_000, () => cos.getBucketVersioning({ Bucket: BUCKET, Region: DESKTOP_COS_REGION }))
       const status: 'Enabled' | 'Suspended' | undefined = response.VersioningConfiguration.Status
       return response.statusCode === 200 && status === undefined
     },
@@ -101,7 +101,7 @@ export function createInstalledUpdateCos(): InstalledUpdatePublicationStore {
         : Readable.from([Buffer.from(object.source.contents)])
       try {
         const cos = client()
-        const response = await cosOperation(cos, 900_000, () => cos.putObject({
+        const response = await cosOperation<any>(cos, 900_000, () => cos.putObject({
           Bucket: BUCKET, Region: DESKTOP_COS_REGION, Key: key, Body: body,
           ContentLength: object.size, ContentType: key.endsWith('.yml') ? 'application/yaml' : 'application/octet-stream',
           CacheControl: 'no-store', Headers: headers }))

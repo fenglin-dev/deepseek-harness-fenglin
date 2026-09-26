@@ -80,7 +80,7 @@ describe('generateConfigSchema', () => {
     const original = structuredClone(layers)
     const installAnchor = join(dir, 'installation.json')
     const resolve = vi.spyOn(profileOperations, 'createRuntimeResolution').mockResolvedValue(resolution)
-    const result = await generateConfigSchema(profile, layers, installAnchor)
+    const result = await generateConfigSchema('dsh', profile, layers, installAnchor)
     expect(resolve).toHaveBeenCalledExactlyOnceWith({ installAnchor, profile })
     expect(result['x-cordis'].entries.map(entry => [entry.path, entry.name])).toEqual([
       ['/0', 'cordis:group'], ['/0/config/0', 'server'],
@@ -96,7 +96,7 @@ describe('generateConfigSchema', () => {
 
   it('propagates resolution setup failure without starting collection', async () => {
     vi.spyOn(profileOperations, 'createRuntimeResolution').mockRejectedValue(new Error('resolution setup failed'))
-    await expect(generateConfigSchema(profile, [], join(dir, 'installation.json'))).rejects.toThrow('resolution setup failed')
+    await expect(generateConfigSchema('dsh', profile, [], join(dir, 'installation.json'))).rejects.toThrow('resolution setup failed')
     expect(installRuntimeInterception).not.toHaveBeenCalled()
   })
 })

@@ -9,7 +9,10 @@ import {
   parseExternalToolCompatibilityManifest,
   type ExternalToolRuntimePackage,
 } from '../src/external-tool-compatibility-manifest.ts'
-import { BROWSER_FALLBACK_EXTERNAL_TOOL_SPECS } from '../../../packages/client/ui-settings-plugin-inventory/src/client/external-tool-compatibility-bridge.ts'
+const BROWSER_FALLBACK_EXTERNAL_TOOL_SPECS: Readonly<Record<string, string>> = {
+  codex: '@deepseek-ai/dsh-subagent-codex@0.1.6-alpha.1',
+  'claude-code': '@deepseek-ai/dsh-subagent-claude-code@0.1.6-alpha.1',
+}
 
 interface RegistryVersion {
   readonly name?: unknown
