@@ -4,6 +4,7 @@
     "lib/**/*",
     "scripts/primary-runtime-lock.json",
     "package.json",
+    "dsh/**/*",
     "node_modules/@deepseek-ai/cordis/**/*",
     "node_modules/@deepseek-ai/cosmokit/**/*",
     "node_modules/@deepseek-ai/dsh-http-proxy/**/*",

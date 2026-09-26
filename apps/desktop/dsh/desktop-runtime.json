@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "release": {
+    "schemaVersion": 1,
+    "version": "0.1.7-rc.2",
+    "hostProtocolVersion": 4,
+    "nodeVersion": "24.21.0",
+    "pnpmVersion": "11.7.0"
+  },
+  "platform": "win32",
+  "arch": "x64",
+  "sharedPackages": [
+    {
+      "name": "@deepseek-ai/dsh",
+      "version": "0.1.7-rc.2",
+      "path": "node_modules/@deepseek-ai/dsh"
+    },
+    {
+      "name": "@deepseek-ai/dsh-desktop-host",
+      "version": "0.1.7-rc.2",
+      "path": "node_modules/@deepseek-ai/dsh-desktop-host"
+    }
+  ],
+  "files": []
+}
