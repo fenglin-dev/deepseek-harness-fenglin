@@ -110,7 +110,6 @@ export interface RemoteMethodOptions {
   readonly mode: 'stream'
 }
 
-type RemoteMethodDecorator = any
 
 interface RemoteInitializerContext<This extends object> {
   readonly private: boolean
