@@ -1,6 +1,7 @@
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
+import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -151,8 +152,12 @@ function runtimeResources(): RuntimeResources {
   const pnpm = (development ? process.env.DSH_DESKTOP_PNPM_ENTRY : undefined)
     ?? (development ? join(app.getAppPath(), 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
       : join(process.resourcesPath, 'runtime', 'pnpm', 'bin', 'pnpm.mjs'))
-  const dsh = (development ? process.env.DSH_DESKTOP_DSH_DIR : undefined)
+  let dsh = (development ? process.env.DSH_DESKTOP_DSH_DIR : undefined)
     ?? (development ? join(app.getAppPath(), '.desktop-build', 'development', 'project') : join(app.getAppPath(), 'dsh'))
+  if (!development && !existsSync(join(dsh, 'desktop-runtime.json'))) {
+    const resourcesDsh = join(process.resourcesPath, 'dsh')
+    if (existsSync(join(resourcesDsh, 'desktop-runtime.json'))) dsh = resourcesDsh
+  }
   return { node, nodeBin, pnpm, dsh }
 }
 
