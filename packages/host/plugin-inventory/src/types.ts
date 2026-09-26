@@ -73,3 +73,8 @@ export interface PluginInventorySnapshot {
    */
   readonly agentPresets?: readonly AgentPresetPluginGroup[]
 }
+
+// Fenglin: types expected by install-progress.ts
+export type PluginInstallOutputRead = any
+export type PluginInstallProgress = any
+export type PluginInstallProgressStage = any

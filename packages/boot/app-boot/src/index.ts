@@ -81,7 +81,7 @@ export {
   type RuntimeResolutionEntry,
   type RuntimeResolution,
   type ProfileTemplate,
-, reportSkippedBundles } from './profile.ts'
+} from './profile.ts'
 export {
   PluginPackages,
   type PluginPackage,
@@ -1225,3 +1225,4 @@ export function addHarnessSourceSection(ctx: Context, sourceRoot: string): (() =
     text: `The DeepSeek Harness implementation checkout is at ${sourceRoot}. The checkout location and current working directory are separate values and may differ; never infer the working directory from this path. Use pwd to determine the current working directory. Use this checkout only to inspect or extend DSH itself.`,
   })
 }
+export { reportSkippedBundles } from './profile.ts'

@@ -15,7 +15,7 @@ export class DesktopUpdateHttpExecutor extends ElectronHttpExecutor {
     }
   }
 
-  override addErrorAndTimeoutHandlers(request: ClientRequest, reject: (error: Error) => void): void {
+  addErrorAndTimeoutHandlers(request: ClientRequest, reject: (error: Error) => void): void {
     // The upstream socket timer is for Node HTTP; Electron ClientRequest has response/close events instead.
     super.addErrorAndTimeoutHandlers(request, reject, this.idleTimeoutMs)
     let response: IncomingMessage | undefined
