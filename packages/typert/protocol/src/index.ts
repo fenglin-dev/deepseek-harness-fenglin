@@ -195,25 +195,26 @@ function provideInvocationAccessor(ctx: Context): void {
  * @param _method - decorated method; retained only by the class itself.
  * @param context - standard decorator context used to schedule private marking.
  */
-export function Remote(...args: unknown[]): unknown {
-  return applyRemoteDecorator(undefined, undefined, ...args)
+export function Remote(...args: any[]): any {
+  return applyRemoteDecorator(undefined, undefined, undefined, ...args)
 }
 
 function applyRemoteDecorator(
   invocation: RemoteInvocationMarker | undefined,
   fixedMode: 'stream' | undefined,
-  ...args: unknown[]
-): unknown {
-  const [first, second, third] = args
+  fixedExportName: string | undefined,
+  ...args: any[]
+): any {
+  const [first, second] = args
   // Legacy decorator application: (target, key, descriptor)
   if (args.length === 3 && typeof second === 'string') {
-    markLegacyMethod(first as object, second, invocation ?? { kind: 'direct' }, fixedMode)
+    markLegacyMethod(first as object, second, invocation ?? { kind: 'direct' }, fixedMode, fixedExportName)
     return first
   }
   // Standard (stage-3) decorator application: (method, context)
   if (args.length === 2 && second !== null && typeof second === 'object' && 'addInitializer' in (second as object)) {
     const context = second as RemoteInitializerContext<object>
-    addMarkerInitializer(context, invocation ?? { kind: 'direct' }, fixedMode)
+    addMarkerInitializer(context, invocation ?? { kind: 'direct' }, fixedMode, fixedExportName)
     return
   }
   // Factory: Remote('name') or Remote({ mode: 'stream' })
@@ -234,9 +235,9 @@ function makeDecorator(
   invocation: RemoteInvocationMarker,
   mode?: 'stream',
   exportName?: string,
-): (methodOrTarget: unknown, contextOrKey?: unknown, descriptor?: unknown) => unknown {
-  return function remoteDecoratorApply(methodOrTarget: unknown, contextOrKey?: unknown, descriptor?: unknown): unknown {
-    return applyRemoteDecorator(invocation, mode, methodOrTarget, contextOrKey, descriptor)
+): any {
+  return function remoteDecoratorApply(...decArgs: any[]): any {
+    return applyRemoteDecorator(invocation, mode, exportName, ...decArgs)
   }
 }
 
