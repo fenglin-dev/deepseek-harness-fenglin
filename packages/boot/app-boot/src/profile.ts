@@ -89,7 +89,9 @@ export interface ProfileLayer {
 }
 
 /** A loaded profile: resolved bundle layers plus the user's own patch layer. */
+export interface SkippedBundle { packageName: string; reason: string }
 export interface Profile {
+  skippedBundles: SkippedBundle[]
   /** The profile name (its directory basename). */
   name: string
   /** Absolute profile directory. */

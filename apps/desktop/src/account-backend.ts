@@ -98,11 +98,11 @@ export function desktopAccountBackend(origin: string, invoke: AccountInvoke, coo
           const url = new URL(REMOTE_STREAM_MUX_PATH, origin)
           url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
           socket = new WebSocket(url, { headers: { cookie, origin }, maxPayload: 65_536 })
-          socket?.on?.('open', () => {
+          (socket as any).on('open', () => {
             socket?.send(JSON.stringify({ type: 'open', streamId: expiryStreamId, endpoint: 'account/watchExpiry', payload: { args: {} } }))
             socket?.send(JSON.stringify({ type: 'open', streamId, endpoint: 'account/watch', payload: { args: {} } }))
           })
-          socket?.on?.('message', (data: any) => {
+          (socket as any).on('message', (data: any) => {
             try {
               const bytes = Array.isArray(data) ? Buffer.concat(data) : Buffer.isBuffer(data) ? data : Buffer.from(data)
               const frame = parseRemoteStreamServerMessage(bytes.toString('utf8'))
@@ -112,8 +112,8 @@ export function desktopAccountBackend(origin: string, invoke: AccountInvoke, coo
               else socket?.close()
             } catch { socket?.close() }
           })
-          socket?.on?.('error', () => { socket?.close() })
-          socket?.on?.('close', () => { if (!closed) { failed(); retry = setTimeout(connect, 1000) } })
+          (socket as any).on('error', () => { socket?.close() })
+          (socket as any).on('close', () => { if (!closed) { failed(); retry = setTimeout(connect, 1000) } })
         }).catch(() => { if (!closed) { failed(); retry = setTimeout(connect, 1000) } })
       }
       connect()

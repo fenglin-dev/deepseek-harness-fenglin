@@ -19,7 +19,7 @@ export async function cosOperation<T>(cos: COS, timeoutMs: number, operation: ()
     ...transport,
     request(options: http.RequestOptions) {
       const request = transport.request({ ...options, signal: controller.signal })
-      closed.push(new Promise<void>((resolve) => { request.once('close', resolve) }))
+      closed.push(new Promise<void>((resolve: any) => { request.once('close', resolve) }))
       return request
     },
   })
