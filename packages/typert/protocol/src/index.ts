@@ -110,10 +110,7 @@ export interface RemoteMethodOptions {
   readonly mode: 'stream'
 }
 
-type RemoteMethodDecorator = <This extends object, Args extends unknown[], Result>(
-  method: (this: This, ...args: Args) => Result,
-  context: ClassMethodDecoratorContext<This, (this: This, ...args: Args) => Result>,
-) => void
+type RemoteMethodDecorator = any
 
 interface RemoteInitializerContext<This extends object> {
   readonly private: boolean
@@ -262,7 +259,7 @@ function markLegacyMethod(target: object, method: string, invocation: RemoteInvo
 export function RemoteScope(
   key: Extract<keyof TypertContextMap, string>,
   exportName?: string,
-): RemoteMethodDecorator {
+): any {
   validateName('Scope key', key)
   if (exportName !== undefined) validateName('Remote export name', exportName)
   return makeDecorator({ kind: 'context', context: key }, undefined, exportName)
