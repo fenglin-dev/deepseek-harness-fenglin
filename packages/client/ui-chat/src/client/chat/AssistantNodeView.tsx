@@ -42,9 +42,6 @@ export const AssistantNodeView = memo(function AssistantNodeView({
       usePresentation={usePresentation}
       revealProcess={revealProcess}
       mentions={mentions}
-      cwd={cwd}
-      openFile={openFile}
-      revealFile={revealFile}
       t={t}
     />
   )

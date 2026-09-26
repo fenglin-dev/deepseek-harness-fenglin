@@ -300,6 +300,7 @@ export function SidebarRoot({
         {renderSlot('sidebar.workspaces', {
           wide,
           expandSidebar: () => { if (collapsed) toggleSidebar() },
+          dismissSidebar: () => {},
         })}
       </div>
 
@@ -309,7 +310,7 @@ export function SidebarRoot({
           {renderSlot('sidebar.footer.action', { wide })}
         </div>
         <div className={css.settingsArea}>
-          {renderSlot('sidebar.settings', { wide })}
+          {renderSlot('sidebar.settings', { wide, dismissSidebar: () => {} })}
         </div>
       </div>
     </div>

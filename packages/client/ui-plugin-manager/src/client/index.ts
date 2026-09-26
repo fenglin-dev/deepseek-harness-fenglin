@@ -115,7 +115,7 @@ export function apply(ctx: ClientContext): void {
         'plugins.detail.badge': { kind: 'list', scope: 'root' },
         'plugins.detail.section': { kind: 'list', scope: 'root' },
       },
-    }, PluginManagerPage)
+    } as never, PluginManagerPage)
     yield ctx.layout.panelInfo.subscribe(() => {
       if (ctx.layout.panelInfo.getSnapshot().activePanelId !== PANEL_ID) instance.actions.setView({ kind: 'list' })
     })

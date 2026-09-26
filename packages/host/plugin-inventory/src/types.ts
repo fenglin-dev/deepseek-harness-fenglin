@@ -74,7 +74,102 @@ export interface PluginInventorySnapshot {
   readonly agentPresets?: readonly AgentPresetPluginGroup[]
 }
 
-// Fenglin: types expected by install-progress.ts
-export type PluginInstallOutputRead = any
-export type PluginInstallProgress = any
-export type PluginInstallProgressStage = any
+/** Stable identity of one background profile-plugin installation. */
+export type PluginInstallId = Branded<'PluginInstallId'>
+
+/** Closed desktop recipes that install and compose an official experimental provider. */
+export type ExperimentalCapabilityRecipe =
+  | 'browser-use-playwright-visible'
+  | 'browser-use-devtools-visible'
+  | 'computer-use-native'
+  | 'computer-use-mcp'
+
+/** Registry package request accepted by the profile plugin installer. */
+export interface PluginInstallRequest {
+  /** Profile that will receive the dependency and bundle layer. */
+  readonly profile: string
+  /** npm registry package specifier, optionally with a version or dist-tag. */
+  readonly packageSpec: string
+  /** Optional fixed composition recipe; arbitrary module names and config never cross the wire. */
+  readonly experimentalCapability?: ExperimentalCapabilityRecipe
+}
+
+/** Exact registry package removal accepted by the profile plugin manager. */
+export interface PluginUninstallRequest {
+  /** Profile from which the dependency and bundle layer will be removed. */
+  readonly profile: string
+  /** Exact installed npm package name. Versions, paths, and URLs are rejected. */
+  readonly packageName: string
+}
+
+/** Observable lifecycle of one package-manager process. */
+export type PluginInstallPhase =
+  | 'running'
+  | 'paused'
+  | 'cancelled'
+  | 'succeeded'
+  | 'repaired'
+  | 'quarantined'
+  | 'failed'
+
+/** User-visible stage within one running package-manager operation. */
+export type PluginInstallProgressStage = 'preparing' | 'resolving' | 'downloading' | 'installing' | 'verifying'
+
+/** Determinate progress is published only after pnpm has established a stable total. */
+export interface PluginInstallProgress {
+  readonly stage: PluginInstallProgressStage
+  /** Integer percentage from 0 through 100; absent means indeterminate. */
+  readonly percent?: number
+  /** Completed dependency units when pnpm exposes a stable total. */
+  readonly completed?: number
+  /** Total dependency units paired with {@link completed}. */
+  readonly total?: number
+}
+
+/** Cursor request for bounded live installer output. */
+export interface PluginInstallOutputRequest {
+  readonly installId: PluginInstallId
+  /** Byte offset returned by the previous read; zero starts at retained output. */
+  readonly offset: number
+}
+
+/** Incremental, sanitized terminal output for one installer job. */
+export interface PluginInstallOutputRead {
+  readonly text: string
+  readonly nextOffset: number
+  /** True when output before the requested offset is no longer retained. */
+  readonly lossy: boolean
+  readonly settled: boolean
+}
+
+/** Point-in-time state returned when starting or polling an installation. */
+export interface PluginInstallSnapshot {
+  readonly installId: PluginInstallId
+  readonly profile: string
+  readonly packageSpec: string
+  /** Exact CLI command represented by the structured request. */
+  readonly command: string
+  readonly phase: PluginInstallPhase
+  /** Current package-manager stage and optional determinate dependency progress. */
+  readonly installProgress?: PluginInstallProgress
+  /** Exit code when the package-manager process settled normally. */
+  readonly exitCode?: number | null
+  /** Bounded package-manager output for local troubleshooting after failure. */
+  readonly diagnostic?: string
+}
+
+/** Official native coding products exposed by the external-tools surface. */
+export type ExternalToolId = 'codex' | 'claude-code'
+
+/** Host connection state projected beside Profile Bundle installation state. */
+export interface ExternalToolsSnapshot {
+  readonly scope: 'complete-presets'
+  readonly codex: boolean
+  readonly claudeCode: boolean
+}
+
+/** Fixed-provider toggle accepted by the guarded managed-preset operation. */
+export interface ExternalToolToggleRequest {
+  readonly tool: ExternalToolId
+  readonly enabled: boolean
+}

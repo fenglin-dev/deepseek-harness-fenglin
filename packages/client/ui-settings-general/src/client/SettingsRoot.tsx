@@ -259,7 +259,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
         stepId: onboardingStep.id,
         explicit: requestedOnboarding !== undefined,
         complete: () => { completeOnboardingStep(onboardingStep.id) },
-        openSection,
+        openSection: (request) => { openSection(request.sectionId) },
       }, { only: onboardingStep.id })}
     </>
   )
