@@ -157,7 +157,7 @@ function runtimeResources(): RuntimeResources {
   if (!development) {
     // extraResources/dsh ships outside asar; prefer it when present.
     const resourcesDsh = join(process.resourcesPath, 'dsh')
-    if (existsSync(join(resourcesDsh, 'desktop-runtime.json'))) dsh = resourcesDsh
+    if (existsSync(resourcesDsh)) dsh = resourcesDsh
   }
   return { node, nodeBin, pnpm, dsh }
 }
