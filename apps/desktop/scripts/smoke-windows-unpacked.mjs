@@ -57,7 +57,23 @@ async function runProbe(argument, marker, timeoutMs = 30_000) {
     const entryLogPath = join(root, 'desktop-entry.log')
     const entryLog = await readFile(entryLogPath, 'utf8').catch(() => '')
     if (result.timedOut || result.code !== 0 || !result.stdout.includes(marker)) {
-      throw new Error(`${argument} failed with ${result.code} (timedOut=${result.timedOut})\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}\nentry:\n${entryLog}`)
+      let asarDiag = ''
+      try {
+        const { extractFile } = require(require.resolve('@electron/asar', { paths: [electronBuilderRoot] }))
+        const mainJs = extractFile(asarPath, 'lib/main.js')
+        const entryJs = extractFile(asarPath, 'lib/entry.js')
+        const { SourceTextModule } = await import('node:vm')
+        asarDiag += `\nasar main.js bytes=${mainJs.length} entry.js bytes=${entryJs.length}`
+        try {
+          new SourceTextModule(mainJs.toString('utf8'), { identifier: 'asar:lib/main.js' })
+          asarDiag += '\nasar main.js parses as ESM'
+        } catch (parseError) {
+          asarDiag += `\nasar main.js PARSE FAIL: ${parseError}`
+        }
+      } catch (diagError) {
+        asarDiag += `\nasar diag failed: ${diagError}`
+      }
+      throw new Error(`${argument} failed with ${result.code} (timedOut=${result.timedOut})\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}\nentry:\n${entryLog}${asarDiag}`)
     }
     console.log(`${marker}\n${entryLog}`)
   } finally {
