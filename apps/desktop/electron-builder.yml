@@ -23,11 +23,11 @@ extraResources:
     to: bundled-plugins
     filter:
       - "**/*"
-  - from: .desktop-build/targets/win-x64/dsh
+  - from: .artifacts/desktop-runtime-win-x64/dsh
     to: dsh
     filter:
       - "**/*"
-  - from: .desktop-build/targets/win-x64/dsh/node_modules
+  - from: .artifacts/desktop-runtime-win-x64/dsh/node_modules
     to: dsh/node_modules
     filter:
       - "**/*"

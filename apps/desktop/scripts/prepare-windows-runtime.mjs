@@ -496,6 +496,29 @@ async function verifyRuntime() {
   await smokeHarness()
   const manifest = JSON.parse(await readFile(join(harnessRoot, 'package.json'), 'utf8'))
   await writeFile(join(outputRoot, '.desktop-runtime-v4'), `${manifest.name}@${manifest.version}\ntarget=win32-x64\nnode@${nodeVersion}\npnpm@${pnpmVersion}\n`)
+  // Installed-app applyRelease() reads app dsh/desktop-runtime.json (or resources/dsh).
+  // The full prepare:dsh chain is official-publish only; ship a valid descriptor here.
+  const dshOut = join(outputRoot, 'dsh')
+  await mkdir(dshOut, { recursive: true })
+  const releaseVersion = String(manifest.version)
+  await writeFile(join(dshOut, 'desktop-runtime.json'), JSON.stringify({
+    schemaVersion: 1,
+    release: {
+      schemaVersion: 1,
+      version: releaseVersion,
+      hostProtocolVersion: 4,
+      nodeVersion,
+      pnpmVersion,
+    },
+    platform: 'win32',
+    arch: 'x64',
+    sharedPackages: [
+      { name: '@deepseek-ai/dsh', version: releaseVersion, path: 'node_modules/@deepseek-ai/dsh' },
+      { name: '@deepseek-ai/dsh-desktop-host', version: releaseVersion, path: 'node_modules/@deepseek-ai/dsh-desktop-host' },
+    ],
+    files: [],
+  }, undefined, 2) + '\n')
+  console.log(`prepare-windows-runtime: wrote dsh/desktop-runtime.json for ${releaseVersion}`)
   console.log(`prepare-windows-runtime: verified ${manifest.name}@${manifest.version} with Node ${nodeVersion} and pnpm ${pnpmVersion}`)
 }
 

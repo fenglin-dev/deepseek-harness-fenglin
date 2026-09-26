@@ -272,33 +272,6 @@ jobs:
       - name: Deploy Windows runtime
         run: node apps/desktop/scripts/prepare-windows-runtime.mjs
 
-      - name: Prepare desktop package set and dsh runtime tree
-        env:
-          DSH_DESKTOP_TARGET_PLATFORM: win32
-          DSH_DESKTOP_TARGET_ARCH: x64
-        shell: pwsh
-        run: |
-          $packed = 'apps/desktop/.desktop-build/targets/win-x64/packed'
-          New-Item -ItemType Directory -Force -Path "$packed/dsh","$packed/vendor" | Out-Null
-          pnpm run release:pack --family dsh --out "$packed/dsh"
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::release:pack dsh failed"; exit $LASTEXITCODE }
-          pnpm --dir apps/desktop-host pack --pack-destination "$packed/dsh"
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::desktop-host pack failed"; exit $LASTEXITCODE }
-          pnpm run release:pack --family vendor --out "$packed/vendor"
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::release:pack vendor failed"; exit $LASTEXITCODE }
-          pnpm --dir native/system run build:ts
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::landlock build failed"; exit $LASTEXITCODE }
-          $landlock = 'apps/desktop/.desktop-build/targets/win-x64/packed/landlock'
-          New-Item -ItemType Directory -Force -Path $landlock | Out-Null
-          pnpm --dir native/system/packages/entry pack --pack-destination $landlock
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::landlock pack failed"; exit $LASTEXITCODE }
-          pnpm --dir apps/desktop run prepare:runtime
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::prepare:runtime failed"; exit $LASTEXITCODE }
-          pnpm --dir apps/desktop run prepare:packages
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::prepare:packages failed"; exit $LASTEXITCODE }
-          pnpm --dir apps/desktop run prepare:dsh
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::prepare:dsh failed"; exit $LASTEXITCODE }
-
       - name: Build Windows installer
         working-directory: apps/desktop
         run: node node_modules/electron-builder/out/cli/cli.js --win nsis --x64 --publish never
