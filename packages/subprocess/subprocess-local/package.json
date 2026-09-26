@@ -27,6 +27,10 @@
     "./output": {
       "types": "./lib/types/output.d.ts",
       "default": "./lib/output.js"
+    },
+    "./process-control": {
+      "types": "./lib/types/process-control.d.ts",
+      "default": "./lib/process-control.js"
     }
   },
   "files": [
@@ -35,7 +39,8 @@
     "lib/runner-*.js",
     "lib/output.js",
     "scripts/ensure-spawn-helper.mjs",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "lib/process-control.js"
   ],
   "scripts": {
     "postinstall": "node scripts/ensure-spawn-helper.mjs"
