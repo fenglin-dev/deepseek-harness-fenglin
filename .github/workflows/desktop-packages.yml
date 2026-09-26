@@ -256,13 +256,16 @@ jobs:
           $code = $LASTEXITCODE
           Write-Host "build_exit=$code"
           if ($code -ne 0) {
-            $lines = @($captured | Select-Object -Last 60)
-            foreach ($line in $lines) {
-              Write-Host "::error::BUILD::$line"
+            $errs = @($captured | Where-Object {
+              $_ -match 'error|Error|ERR_|exited with|Cannot find|failed|FAIL|panic|ENOENT|TypeError'
+            })
+            if ($errs.Count -eq 0) { $errs = @($captured | Select-Object -Last 40) }
+            foreach ($line in ($errs | Select-Object -First 30)) {
+              Write-Host ("::error::BUILD::" + $line)
             }
+            Write-Host ("::error::BUILD::exit=" + $code)
             exit $code
           }
-
       - name: Prepare bundled Python runtime and Office metadata
         run: pnpm exec tsx apps/desktop/scripts/prepare-workspace-runtime.ts win-x64
 
