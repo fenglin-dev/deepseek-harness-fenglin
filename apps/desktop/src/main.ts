@@ -154,7 +154,8 @@ function runtimeResources(): RuntimeResources {
       : join(process.resourcesPath, 'runtime', 'pnpm', 'bin', 'pnpm.mjs'))
   let dsh = (development ? process.env.DSH_DESKTOP_DSH_DIR : undefined)
     ?? (development ? join(app.getAppPath(), '.desktop-build', 'development', 'project') : join(app.getAppPath(), 'dsh'))
-  if (!development && !existsSync(join(dsh, 'desktop-runtime.json'))) {
+  if (!development) {
+    // extraResources/dsh ships outside asar; prefer it when present.
     const resourcesDsh = join(process.resourcesPath, 'dsh')
     if (existsSync(join(resourcesDsh, 'desktop-runtime.json'))) dsh = resourcesDsh
   }
