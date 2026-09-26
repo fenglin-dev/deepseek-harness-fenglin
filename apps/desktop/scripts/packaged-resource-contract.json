@@ -38,7 +38,7 @@
           ]
         },
         {
-          "from": ".artifacts/desktop-runtime-win-x64/dsh/node_modules",
+          "from": ".artifacts/desktop-runtime-win-x64/harness/node_modules",
           "to": "dsh/node_modules",
           "filter": [
             "**/*"
