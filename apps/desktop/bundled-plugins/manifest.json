@@ -4,25 +4,25 @@
     {
       "seedId": "dshmarket",
       "packageName": "dshmarket",
-      "version": "1.64.0",
+      "version": "1.66.2",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dshmarket@1.64.0",
-      "archive": "dshmarket-1.64.0.tgz",
-      "integrity": "sha512-mBxjGr8EXqVpIuOk4GUkY/2+qrT3v8psRkgQQ2MzelD6SxI0N77/HAREWDkKSsTLxBn2SWkADfbCWqBkqWPnIw=="
+      "registrySpec": "dshmarket@1.66.2",
+      "archive": "dshmarket-1.66.2.tgz",
+      "integrity": "sha512-BPA03LIJvxBIn+zw2cqTOmpY0Ua6pCeO94iIL4Jg5Y18xXX8niQbyJU9fTkxZRWhm7mpFczPlpuHjYaIRG0vgw=="
     },
     {
       "seedId": "xmanrui-dsh-im",
       "packageName": "@xmanrui/dsh-im",
-      "version": "4.28.0",
+      "version": "4.28.1",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "@xmanrui/dsh-im@4.28.0",
+      "registrySpec": "@xmanrui/dsh-im@4.28.1",
       "managedUpgradeFrom": [
         "3.0.6"
       ],
-      "archive": "xmanrui-dsh-im-4.28.0.tgz",
-      "integrity": "sha512-nuAXCkm/y+J+zNo81rer092COR4jvwAM8yzbAvCJIeIc7um4ZrU0RE9MXy8keMayBp+1q8oLolZoc6mFNvwSnQ=="
+      "archive": "xmanrui-dsh-im-4.28.1.tgz",
+      "integrity": "sha512-wrKufO3V+OGFOPuBjbYNHeRI26YqYktiZt/ZdplK3wbgTRKV/4bvfnAobYGvWNh9kcyIkxPxC4cZuOX+PDrjXQ=="
     },
     {
       "seedId": "dsh-better-sidebar",
@@ -56,12 +56,12 @@
     {
       "seedId": "ychris12138-dsh-usage-stats",
       "packageName": "@ychris12138/dsh-usage-stats",
-      "version": "0.3.3",
+      "version": "0.3.4",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "@ychris12138/dsh-usage-stats@0.3.3",
-      "archive": "ychris12138-dsh-usage-stats-0.3.3.tgz",
-      "integrity": "sha512-HMjAAc5fy7RglztdHfgUh4I2ul3a5N2wSz1H2JSqpCqxxdCmHJwC1AwX06eb16AGBgixpcwfnZBcegx/oVbs0A=="
+      "registrySpec": "@ychris12138/dsh-usage-stats@0.3.4",
+      "archive": "ychris12138-dsh-usage-stats-0.3.4.tgz",
+      "integrity": "sha512-aHh2jqK89NymscB5Ooc3oKqMH1R61irpDNOKm19drvLtNK7YbqqTFj3IC/338nME556KLq63k3YBAc9nDjXY7g=="
     },
     {
       "seedId": "dsh-smooth-stream",
@@ -86,12 +86,12 @@
     {
       "seedId": "dsh-whale-widget",
       "packageName": "dsh-whale-widget",
-      "version": "0.3.11",
+      "version": "0.3.16",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dsh-whale-widget@0.3.11",
-      "archive": "dsh-whale-widget-0.3.11.tgz",
-      "integrity": "sha512-f7uI5dIF5ymx+2FdGmxsBTMqAADwrEXDvu1xEtCmzEVE5iNevCbOtq+mkM6IJhWb/PPTagK/RZcQBvKbLSIdWw=="
+      "registrySpec": "dsh-whale-widget@0.3.16",
+      "archive": "dsh-whale-widget-0.3.16.tgz",
+      "integrity": "sha512-I6gHmH951u2dhDRn+BI6QZpbAyYkB2+OCgVC+QGR3L90op3Z826XsfdAg1FSLjBVGDk22rE1r4y940q32jOL5A=="
     },
     {
       "seedId": "diagnostic-dsh-font",

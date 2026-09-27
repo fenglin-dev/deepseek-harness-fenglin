@@ -195,10 +195,13 @@ async function main(): Promise<void> {
   const repositoryRoot = resolve(desktopRoot, '../..')
   const directory = join(desktopRoot, 'bundled-plugins')
   const { values } = parseArgs({
-    options: { 'if-enabled': { type: 'boolean', default: false } },
+    options: {
+      'if-enabled': { type: 'boolean', default: false },
+      'verify-only': { type: 'boolean', default: false },
+    },
     allowPositionals: false,
   })
-  if (values['if-enabled'] && process.env.DSH_BUNDLED_PLUGINS_REFRESH === '0') {
+  if (values['verify-only'] || (values['if-enabled'] && process.env.DSH_BUNDLED_PLUGINS_REFRESH === '0')) {
     const manifest = await verifyBundledPluginSnapshot(directory)
     console.log(`bundled-plugin refresh: using resolved offline snapshot with ${manifest.plugins.length} plugin(s)`)
     return
