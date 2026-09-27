@@ -463,6 +463,7 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
       if (error !== '') throw new Error(error)
       return
     }
+    case 'reload': mainWindow?.webContents.reload(); return
     case 'about': {
       const manifest = JSON.parse(await readFile(new URL('./harness-version.json', import.meta.url), 'utf8')) as { version: string }
       await dialog.showMessageBox({ type: 'info', title: menuCopy(menuLocale).about,
@@ -470,9 +471,9 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
         detail: `版本 ${app.getVersion()}\nHarness ${manifest.version}\n\n基于 DeepSeek Harness 0.1.7-rc.2\n枫林社区定制版` })
       return
     }
-    case 'docs': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop#readme'); return
-    case 'repository': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop'); return
-    case 'feedback': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop/issues'); return
+    case 'docs': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin#readme'); return
+    case 'repository': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin'); return
+    case 'feedback': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin/issues'); return
     default: throw new Error(`desktop: unhandled menu command ${command}`)
   }
 }
@@ -1813,7 +1814,7 @@ async function startApplication(): Promise<void> {
     development: !app.isPackaged,
     metadataBaseUrls: () => {
       const tag = `odsh-v${app.getVersion()}`
-      const github = `https://github.com/flaqai/open-deepseek-harness-desktop/releases/download/${tag}`
+      const github = `https://github.com/fenglin-dev/deepseek-harness-fenglin/releases/download/${tag}`
       const cnb = `https://cnb.cool/hecoococ/open-deepseek-harness-desktop/-/releases/download/${tag}`
       return downloadNetworkStore?.read().application.source === 'cnb' ? [cnb, github] : [github, cnb]
     },
