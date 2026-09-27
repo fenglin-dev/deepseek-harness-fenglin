@@ -239,6 +239,10 @@ allowBuilds:
   ssh2: true
   node-pty: true
   koffi: true
+  node-hid: true
+  usb: true
+  serialport: true
+  bluetooth-hci-socket: true
 `
 
 /**
