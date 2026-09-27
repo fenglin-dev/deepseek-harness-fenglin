@@ -4,6 +4,7 @@ import type { ApplicationMenuCopy } from '../application-menu.ts'
 const ja: ApplicationMenuCopy = {
   app: 'Open DeepSeek Harness Desktop', file: 'ファイル', edit: '編集', view: '表示', tools: 'ツール', window: 'ウインドウ', help: 'ヘルプ', more: 'その他',
   about: 'Open DeepSeek Harness Desktop について', settings: '設定…', updates: 'アップデートを確認…', 'new-session': '新しい会話',
+  reload: '再読み込み',
   'open-config': '設定ファイルを開く', 'open-web': 'ブラウザで開く', close: 'ウインドウを閉じる', quit: '完全に終了',
   undo: '取り消す', redo: 'やり直す', cut: '切り取り', copy: 'コピー', paste: 'ペースト', 'select-all': 'すべてを選択',
   'zoom-in': '拡大', 'zoom-out': '縮小', 'zoom-reset': '実際のサイズ', fullscreen: 'フルスクリーンにする', 'leave-fullscreen': 'フルスクリーンを解除',
@@ -22,6 +23,7 @@ const ja: ApplicationMenuCopy = {
 const ko: ApplicationMenuCopy = {
   app: 'Open DeepSeek Harness Desktop', file: '파일', edit: '편집', view: '보기', tools: '도구', window: '창', help: '도움말', more: '더 보기',
   about: 'Open DeepSeek Harness Desktop 정보', settings: '설정…', updates: '업데이트 확인…', 'new-session': '새 대화',
+  reload: '새로고침',
   'open-config': '구성 파일 열기', 'open-web': '브라우저에서 열기', close: '창 닫기', quit: '완전히 종료', undo: '실행 취소', redo: '다시 실행',
   cut: '잘라내기', copy: '복사', paste: '붙여넣기', 'select-all': '모두 선택', 'zoom-in': '확대', 'zoom-out': '축소', 'zoom-reset': '실제 크기',
   fullscreen: '전체 화면 시작', 'leave-fullscreen': '전체 화면 종료', market: '플러그인 마켓', 'plugin-restore': '플러그인 복구', diagnostics: '진단 센터',
@@ -39,6 +41,7 @@ const ko: ApplicationMenuCopy = {
 const es: ApplicationMenuCopy = {
   app: 'Open DeepSeek Harness Desktop', file: 'Archivo', edit: 'Edición', view: 'Ver', tools: 'Herramientas', window: 'Ventana', help: 'Ayuda', more: 'Más',
   about: 'Acerca de Open DeepSeek Harness Desktop', settings: 'Ajustes…', updates: 'Buscar actualizaciones…', 'new-session': 'Nueva conversación',
+  reload: 'Actualizar',
   'open-config': 'Abrir archivo de configuración', 'open-web': 'Abrir en el navegador', close: 'Cerrar ventana', quit: 'Salir completamente',
   undo: 'Deshacer', redo: 'Rehacer', cut: 'Cortar', copy: 'Copiar', paste: 'Pegar', 'select-all': 'Seleccionar todo',
   'zoom-in': 'Ampliar', 'zoom-out': 'Reducir', 'zoom-reset': 'Tamaño real', fullscreen: 'Entrar en pantalla completa', 'leave-fullscreen': 'Salir de pantalla completa',
@@ -57,6 +60,7 @@ const es: ApplicationMenuCopy = {
 const fr: ApplicationMenuCopy = {
   app: 'Open DeepSeek Harness Desktop', file: 'Fichier', edit: 'Édition', view: 'Présentation', tools: 'Outils', window: 'Fenêtre', help: 'Aide', more: 'Plus',
   about: 'À propos d’Open DeepSeek Harness Desktop', settings: 'Réglages…', updates: 'Rechercher les mises à jour…', 'new-session': 'Nouvelle conversation',
+  reload: 'Actualiser',
   'open-config': 'Ouvrir le fichier de configuration', 'open-web': 'Ouvrir dans le navigateur', close: 'Fermer la fenêtre', quit: 'Quitter complètement',
   undo: 'Annuler', redo: 'Rétablir', cut: 'Couper', copy: 'Copier', paste: 'Coller', 'select-all': 'Tout sélectionner',
   'zoom-in': 'Zoom avant', 'zoom-out': 'Zoom arrière', 'zoom-reset': 'Taille réelle', fullscreen: 'Activer le plein écran', 'leave-fullscreen': 'Quitter le plein écran',
@@ -75,6 +79,7 @@ const fr: ApplicationMenuCopy = {
 const de: ApplicationMenuCopy = {
   app: 'Open DeepSeek Harness Desktop', file: 'Datei', edit: 'Bearbeiten', view: 'Ansicht', tools: 'Werkzeuge', window: 'Fenster', help: 'Hilfe', more: 'Mehr',
   about: 'Über Open DeepSeek Harness Desktop', settings: 'Einstellungen…', updates: 'Nach Updates suchen…', 'new-session': 'Neue Unterhaltung',
+  reload: 'Neu laden',
   'open-config': 'Konfigurationsdatei öffnen', 'open-web': 'Im Browser öffnen', close: 'Fenster schließen', quit: 'Vollständig beenden',
   undo: 'Rückgängig', redo: 'Wiederholen', cut: 'Ausschneiden', copy: 'Kopieren', paste: 'Einfügen', 'select-all': 'Alles auswählen',
   'zoom-in': 'Vergrößern', 'zoom-out': 'Verkleinern', 'zoom-reset': 'Originalgröße', fullscreen: 'Vollbild aktivieren', 'leave-fullscreen': 'Vollbild beenden',
@@ -93,6 +98,7 @@ const de: ApplicationMenuCopy = {
 const ptBR: ApplicationMenuCopy = {
   app: 'Open DeepSeek Harness Desktop', file: 'Arquivo', edit: 'Editar', view: 'Visualizar', tools: 'Ferramentas', window: 'Janela', help: 'Ajuda', more: 'Mais',
   about: 'Sobre o Open DeepSeek Harness Desktop', settings: 'Configurações…', updates: 'Verificar atualizações…', 'new-session': 'Nova conversa',
+  reload: 'Actualizar',
   'open-config': 'Abrir arquivo de configuração', 'open-web': 'Abrir no navegador', close: 'Fechar janela', quit: 'Sair completamente',
   undo: 'Desfazer', redo: 'Refazer', cut: 'Recortar', copy: 'Copiar', paste: 'Colar', 'select-all': 'Selecionar tudo',
   'zoom-in': 'Ampliar', 'zoom-out': 'Reduzir', 'zoom-reset': 'Tamanho real', fullscreen: 'Entrar em tela cheia', 'leave-fullscreen': 'Sair da tela cheia',
