@@ -112,6 +112,8 @@ export interface OptionalRuntimeManagerOptions {
   readonly fetch: (input: string, init?: RequestInit) => Promise<Response>
   /** Installed target-specific archives. Python uses this source before any network route. */
   readonly bundledArtifactsRoot?: string
+  /** Installed Harness node_modules containing the platform Office engine. */
+  readonly bundledOfficeNodeModules?: string
   /** Treat a missing bundled Python archive as an invalid application installation. */
   readonly requireBundledPython?: boolean
   readonly target?: WorkspaceRuntimeTarget
@@ -280,7 +282,8 @@ export class OptionalRuntimeManager {
       if (reference.state === 'pending-remove') {
         return { capabilityId, phase: 'waiting-restart' }
       }
-      if (capabilityId === 'office' && reference.officePayloadDigest === undefined) {
+      if (capabilityId === 'office' && this.#options.bundledOfficeNodeModules === undefined
+        && reference.officePayloadDigest === undefined) {
         return { capabilityId, phase: 'needs-update' }
       }
       if (reference.state === 'pending-enable') return { capabilityId, phase: 'waiting-restart' }
@@ -288,7 +291,7 @@ export class OptionalRuntimeManager {
         && reference.payloadDigest !== currentArtifact.payloadDigest) {
         return { capabilityId, phase: 'needs-update' }
       }
-      if (capabilityId === 'office' && currentArtifact !== undefined
+      if (capabilityId === 'office' && this.#options.bundledOfficeNodeModules === undefined && currentArtifact !== undefined
         && reference.officePayloadDigest !== currentArtifact.office.payloadDigest) {
         return { capabilityId, phase: 'needs-update' }
       }
@@ -450,11 +453,14 @@ export class OptionalRuntimeManager {
       await this.#validatePythonPayload(payloadRoot, artifact)
     }
     if (capabilityId === 'office') {
-      const officeRoot = this.#payloadRoot(artifact.office, target)
-      if (!await exists(join(officeRoot, 'office-runtime.json'))) {
-        throw new Error('desktop: official Office engine must be downloaded before activation')
+      if (this.#options.bundledOfficeNodeModules !== undefined) await this.#verifyBundledOffice(artifact.office)
+      else {
+        const officeRoot = this.#payloadRoot(artifact.office, target)
+        if (!await exists(join(officeRoot, 'office-runtime.json'))) {
+          throw new Error('desktop: official Office engine must be downloaded before activation')
+        }
+        await this.#validateOfficePayload(officeRoot, artifact.office, target)
       }
-      await this.#validateOfficePayload(officeRoot, artifact.office, target)
     }
     if (state.pendingCleanup.includes(artifact.payloadDigest)) {
       await this.#collectUnused()
@@ -481,7 +487,8 @@ export class OptionalRuntimeManager {
       payloadDigest: record.python === undefined
         ? artifact.payloadDigest
         : createHash('sha256').update(record.python.executable).digest('hex'),
-      ...(capabilityId === 'office' ? { officePayloadDigest: artifact.office.payloadDigest } : {}),
+      ...(capabilityId === 'office' && this.#options.bundledOfficeNodeModules === undefined
+        ? { officePayloadDigest: artifact.office.payloadDigest } : {}),
       desktopVersion: manifest.desktopVersion,
       state: 'pending-enable',
       source: record.python === undefined ? 'managed' : 'custom',
@@ -533,11 +540,45 @@ export class OptionalRuntimeManager {
   }
 
   async officeNodeModules(home = this.#options.getHome()): Promise<string | undefined> {
+    if (this.#options.bundledOfficeNodeModules !== undefined) {
+      const manifest = await this.#options.loadManifest()
+      this.#assertManifest(manifest)
+      const target = this.#target()
+      if (target === undefined) return undefined
+      return this.#verifyBundledOffice(manifest.artifacts[target].office)
+    }
     const target = this.#target()
     const value = (await this.#readState()).homes[normalizedHome(home)]?.office
     if (target === undefined || value === undefined || value.state === 'pending-remove' || value.state === 'cleaning') return undefined
     if (value.officePayloadDigest === undefined) return undefined
     return join(this.#options.cacheRoot, value.officePayloadDigest, target, 'office', 'node_modules')
+  }
+
+  async #verifyBundledOffice(artifact: WorkspaceRuntimeOfficeArtifact): Promise<string> {
+    const nodeModules = this.#options.bundledOfficeNodeModules
+    if (nodeModules === undefined) throw new Error('desktop: bundled Office engine path is unavailable')
+    const kitPath = join(nodeModules, '@deepseek-ai', 'libreoffice-kit', 'package.json')
+    const kit = JSON.parse(await readFile(kitPath, 'utf8')) as {
+      version?: string
+      optionalDependencies?: Record<string, string>
+    }
+    const native = `@deepseek-ai/libreoffice-kit-${this.#options.platform}-${this.#options.arch}`
+    const enginePackage = Object.hasOwn(kit.optionalDependencies ?? {}, native)
+      ? native : '@deepseek-ai/libreoffice-kit-wasm'
+    if (kit.version !== artifact.engineVersion || enginePackage !== artifact.enginePackage
+      || kit.optionalDependencies?.[enginePackage] !== kit.version) {
+      throw new Error(`desktop: bundled Office engine identity does not match ${artifact.enginePackage}@${artifact.engineVersion}`)
+    }
+    const engineRoot = join(nodeModules, ...enginePackage.split('/'))
+    const engine = JSON.parse(await readFile(join(engineRoot, 'package.json'), 'utf8')) as {
+      name?: string
+      version?: string
+    }
+    if (engine.name !== enginePackage || engine.version !== kit.version
+      || !await exists(join(engineRoot, 'prebuilds.json'))) {
+      throw new Error(`desktop: bundled Office engine ${enginePackage}@${kit.version} is incomplete`)
+    }
+    return nodeModules
   }
 
   async commitPending(home = this.#options.getHome()): Promise<void> {
@@ -604,8 +645,13 @@ export class OptionalRuntimeManager {
         root => this.#validatePythonPayload(root, artifact))
     }
     if (job.snapshot.capabilityId === 'office') {
-      await this.#ensureArtifact(job, artifact.office, target, 'official Office engine', signal,
-        root => this.#validateOfficePayload(root, artifact.office, target))
+      if (this.#options.bundledOfficeNodeModules !== undefined) {
+        await this.#verifyBundledOffice(artifact.office)
+        this.#append(job, 'Verified the platform Office engine bundled with Desktop.\n')
+      } else {
+        await this.#ensureArtifact(job, artifact.office, target, 'official Office engine', signal,
+          root => this.#validateOfficePayload(root, artifact.office, target))
+      }
     }
     job.snapshot = { ...job.snapshot, phase: 'succeeded', stage: 'ready', percent: 100 }
     this.#append(job, 'Workspace runtime components are verified. Choose activate, then quick restart.\n')

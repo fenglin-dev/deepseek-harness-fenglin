@@ -11,7 +11,9 @@ import { parseArgs } from 'node:util'
 import { preparePrebuiltProfile } from './prepare-prebuilt-profile.mjs'
 import { nodeRuntimeArchivesByTarget, nodeVersion } from './node-runtime-pins.mjs'
 import { createPackagedArchive } from './create-packaged-archive.mjs'
+import { pruneDesktopRuntime } from './runtime-file-policy.mjs'
 import { preservePnpmWorkspaceState } from '../../../scripts/preserve-pnpm-workspace-state.mjs'
+import { officePackageDirectories, selectOfficeEngine } from '../../../scripts/libreoffice-packages.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = resolve(desktopRoot, '../..')
@@ -178,7 +180,7 @@ async function injectWorkspaceClosure() {
   console.log(`prepare-unix-runtime: injected ${injected.size} workspace packages`)
 }
 
-async function removeOptionalOfficeEngines(directory = join(staging, 'node_modules')) {
+async function pruneOtherOfficeEngines(selectedPackage, directory = join(staging, 'node_modules')) {
   if (!existsSync(directory)) return 0
   let removed = 0
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -186,24 +188,31 @@ async function removeOptionalOfficeEngines(directory = join(staging, 'node_modul
     const candidate = join(directory, entry.name)
     const manifestPath = join(candidate, 'package.json')
     if (!existsSync(manifestPath)) {
-      removed += await removeOptionalOfficeEngines(candidate)
+      removed += await pruneOtherOfficeEngines(selectedPackage, candidate)
       continue
     }
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    if (typeof manifest.name === 'string' && manifest.name.startsWith('@deepseek-ai/libreoffice-kit-')) {
+    if (typeof manifest.name === 'string' && manifest.name.startsWith('@deepseek-ai/libreoffice-kit-')
+      && manifest.name !== selectedPackage) {
       await rm(candidate, { recursive: true, force: true })
       removed += 1
       continue
     }
-    removed += await removeOptionalOfficeEngines(join(candidate, 'node_modules'))
+    removed += await pruneOtherOfficeEngines(selectedPackage, join(candidate, 'node_modules'))
   }
   if (directory === join(staging, 'node_modules')) {
-    console.log(`prepare-unix-runtime: removed ${removed} optional LibreOffice engine packages from the installer runtime`)
+    console.log(`prepare-unix-runtime: retained ${selectedPackage}; removed ${removed} other platform Office engines`)
   }
   return removed
 }
 
-async function verifyRuntime() {
+async function selectedOfficePackage() {
+  const manifest = JSON.parse(await readFile(join(staging, 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'package.json'), 'utf8'))
+  const [platform, arch] = target.split('-')
+  return `@deepseek-ai/libreoffice-kit-${selectOfficeEngine(manifest, { platform, arch })}`
+}
+
+async function verifyRuntime(selectedPackage) {
   const entry = join(staging, 'lib', 'bin.js')
   if (!existsSync(entry)) throw new Error(`desktop package runtime is missing ${entry}`)
   const require = createRequire(entry)
@@ -216,9 +225,26 @@ async function verifyRuntime() {
   for (const secretName of ['.env', 'auth.json']) {
     if (existsSync(join(staging, secretName))) throw new Error(`desktop package runtime contains forbidden ${secretName}`)
   }
-  const officeScope = join(staging, 'node_modules', '@deepseek-ai')
-  if (existsSync(officeScope) && (await readdir(officeScope)).some(name => name.startsWith('libreoffice-kit-'))) {
-    throw new Error('desktop package runtime contains an optional LibreOffice engine')
+  const [platform, arch] = target.split('-')
+  await officePackageDirectories(staging, { platform, arch })
+  const engine = join(staging, 'node_modules', ...selectedPackage.split('/'))
+  if (!existsSync(join(engine, 'prebuilds.json'))) {
+    throw new Error(`desktop package runtime is missing ${selectedPackage}/prebuilds.json`)
+  }
+  const officeCli = join(staging, 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'lib', 'cli.js')
+  const officeOutput = join(staging, '.office-smoke.pdf')
+  const officeInput = join(repositoryRoot, 'packages', 'bundle', 'web-app', 'tests', 'fixtures', 'document-conversion.docx')
+  if (!existsSync(officeCli)) throw new Error(`desktop package runtime is missing ${officeCli}`)
+  try {
+    await run(join(staging, 'package-runtime', 'bin', 'node'), [officeCli, 'convert', '--input', officeInput, '--output', officeOutput], {
+      env: { ...process.env, PATH: '' },
+    })
+    const pdf = await readFile(officeOutput)
+    if (!pdf.subarray(0, 5).equals(Buffer.from('%PDF-')) || !pdf.subarray(-1024).toString().trimEnd().endsWith('%%EOF')) {
+      throw new Error('desktop package runtime Office CLI produced an invalid PDF')
+    }
+  } finally {
+    await rm(officeOutput, { force: true })
   }
   const manifest = JSON.parse(await readFile(join(staging, 'package.json'), 'utf8'))
   for (const runtimePath of [
@@ -254,9 +280,15 @@ await preservePnpmWorkspaceState(repositoryRoot, () => run('pnpm', [
   staging,
 ]))
 await injectWorkspaceClosure()
-await removeOptionalOfficeEngines()
+const officeEngine = await selectedOfficePackage()
+await pruneOtherOfficeEngines(officeEngine)
+const [runtimePlatform, runtimeArch] = target.split('-')
+const pruned = await pruneDesktopRuntime(join(staging, 'node_modules'), {
+  platform: runtimePlatform, arch: runtimeArch,
+}, officeEngine)
+console.log(`prepare-unix-runtime: pruned ${pruned.packages} foreign packages, ${pruned.directories} directories, and ${pruned.files} files`)
 await stagePackageRuntime()
-await verifyRuntime()
+await verifyRuntime(officeEngine)
 await preparePrebuiltProfile({
   destination: prebuilt,
   harnessRoot: staging,

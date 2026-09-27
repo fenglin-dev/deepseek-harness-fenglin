@@ -6,7 +6,7 @@ import test from 'node:test'
 const root = resolve(import.meta.dirname, '../../..')
 const read = path => readFile(join(root, path), 'utf8')
 
-test('desktop installers embed one native Python payload while the Harness closure keeps adapters', async () => {
+test('desktop installers embed Python and retain the target Office engine in the Harness closure', async () => {
   const builderConfigs = await Promise.all([
     'apps/desktop/electron-builder.yml',
     'apps/desktop/electron-builder.macos.yml',
@@ -37,13 +37,24 @@ test('desktop installers embed one native Python payload while the Harness closu
     read('apps/desktop/scripts/prepare-windows-runtime.mjs'),
     read('apps/desktop/scripts/prepare-workspace-runtime.ts'),
   ])
-  assert.match(unixRuntime, /removeOptionalOfficeEngines/u)
-  assert.match(windowsRuntime, /libreoffice-kit-/u)
+  for (const runtime of [unixRuntime, windowsRuntime]) {
+    assert.match(runtime, /pruneDesktopRuntime\(/u)
+    assert.match(runtime, /selectOfficeEngine/u)
+    assert.match(runtime, /officePackageDirectories/u)
+    assert.match(runtime, /prebuilds\.json/u)
+    assert.match(runtime, /document-conversion\.docx/u)
+    assert.match(runtime, /'convert', '--input'/u)
+    assert.match(runtime, /PATH: ''/u)
+    assert.doesNotMatch(runtime, /optional LibreOffice engine remained in the installer runtime/u)
+  }
+  assert.match(unixRuntime, /const \[runtimePlatform, runtimeArch\] = target\.split\('-'\)/u)
+  assert.match(unixRuntime, /platform: runtimePlatform, arch: runtimeArch/u)
+  assert.doesNotMatch(unixRuntime, /pruneDesktopRuntime\([\s\S]*?platform: process\.platform, arch: process\.arch/u)
   assert.match(optionalRuntime, /officialOfficeArtifact/u)
   assert.doesNotMatch(optionalRuntime, /DeepSeek-Harness-office-runtime/u)
 })
 
-test('Python is built into each desktop target while Office retains its official npm source', async () => {
+test('Python is built into each desktop target while Office metadata identifies its official npm source', async () => {
   const lock = JSON.parse(await read('apps/desktop/scripts/primary-runtime-lock.json'))
   assert.equal(lock.pythonVersion.startsWith('3.12.'), true)
   assert.deepEqual(Object.keys(lock.targets).sort(), ['linux-x64', 'mac-arm64', 'mac-x64', 'win-x64'])

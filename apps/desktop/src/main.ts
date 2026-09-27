@@ -1844,6 +1844,7 @@ async function startApplication(): Promise<void> {
     },
     fetch: async (input, init) => (await applicationFetch())(input, init),
     bundledArtifactsRoot: bundledWorkspaceRuntimeRoot,
+    ...(app.isPackaged ? { bundledOfficeNodeModules: join(process.resourcesPath, 'harness', 'node_modules') } : {}),
     requireBundledPython: app.isPackaged,
     ...(nativeWorkspaceTarget === undefined ? {} : { target: nativeWorkspaceTarget }),
   })

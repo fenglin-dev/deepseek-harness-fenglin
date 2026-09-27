@@ -10,7 +10,9 @@ import { fileURLToPath } from 'node:url'
 import { preparePrebuiltProfile } from './prepare-prebuilt-profile.mjs'
 import { nodeRuntimeArchivesByTarget, nodeVersion } from './node-runtime-pins.mjs'
 import { createPackagedArchive } from './create-packaged-archive.mjs'
+import { pruneDesktopRuntime } from './runtime-file-policy.mjs'
 import { preservePnpmWorkspaceState } from '../../../scripts/preserve-pnpm-workspace-state.mjs'
+import { officePackageDirectories, selectOfficeEngine } from '../../../scripts/libreoffice-packages.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = resolve(desktopRoot, '../..')
@@ -235,18 +237,18 @@ function packageSupportsWindowsX64(manifest) {
   return allows(manifest.os, 'win32') && allows(manifest.cpu, 'x64')
 }
 
-async function prunePackageContents(directory, packageName, counters) {
+async function prunePackageContents(directory, packageName, counters, selectedOfficePackage) {
   const isInBoxPackage = packageName.startsWith('@deepseek-ai/')
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) {
       if (entry.name === 'node_modules') {
-        await pruneNodeModules(path, counters)
+        await pruneNodeModules(path, counters, selectedOfficePackage)
       } else if (REMOVABLE_PACKAGE_DIRECTORIES.has(entry.name) || (isInBoxPackage && entry.name === 'src')) {
         await rm(path, { recursive: true, force: true })
         counters.directories += 1
       } else {
-        await prunePackageContents(path, packageName, counters)
+        await prunePackageContents(path, packageName, counters, selectedOfficePackage)
       }
     } else if (entry.isFile() && (entry.name.endsWith('.map') || REMOVABLE_DOCUMENTATION.test(entry.name))) {
       await rm(path, { force: true })
@@ -255,7 +257,7 @@ async function prunePackageContents(directory, packageName, counters) {
   }
 }
 
-async function pruneNodeModules(directory, counters) {
+async function pruneNodeModules(directory, counters, selectedOfficePackage) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
     const candidate = join(directory, entry.name)
@@ -263,11 +265,12 @@ async function pruneNodeModules(directory, counters) {
     if (!existsSync(manifestPath)) {
       // Scoped package containers (for example @deepseek-ai) are not package
       // roots themselves; walk them to find their children.
-      await pruneNodeModules(candidate, counters)
+      await pruneNodeModules(candidate, counters, selectedOfficePackage)
       continue
     }
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    if (typeof manifest.name === 'string' && manifest.name.startsWith('@deepseek-ai/libreoffice-kit-')) {
+    if (typeof manifest.name === 'string' && manifest.name.startsWith('@deepseek-ai/libreoffice-kit-')
+      && manifest.name !== selectedOfficePackage) {
       await rm(candidate, { recursive: true, force: true })
       counters.foreignPackages += 1
       continue
@@ -277,18 +280,23 @@ async function pruneNodeModules(directory, counters) {
       counters.foreignPackages += 1
       continue
     }
-    await prunePackageContents(candidate, typeof manifest.name === 'string' ? manifest.name : entry.name, counters)
+    // Preserve all engine assets, licenses, and notices as published by the kit.
+    if (manifest.name === selectedOfficePackage) continue
+    await prunePackageContents(candidate, typeof manifest.name === 'string' ? manifest.name : entry.name, counters, selectedOfficePackage)
   }
 }
 
 /** Remove source-only material and manifest-declared non-Windows packages from the staged runtime. */
 async function pruneRuntimeBloat() {
+  const kit = JSON.parse(await readFile(join(harnessRoot, 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'package.json'), 'utf8'))
+  const selectedOfficePackage = `@deepseek-ai/libreoffice-kit-${selectOfficeEngine(kit, { platform: 'win32', arch: 'x64' })}`
   const counters = { directories: 0, files: 0, foreignPackages: 0 }
-  await pruneNodeModules(join(harnessRoot, 'node_modules'), counters)
+  await pruneNodeModules(join(harnessRoot, 'node_modules'), counters, selectedOfficePackage)
   console.log(
     `prepare-windows-runtime: pruned ${counters.directories} source/test directories, ${counters.files} docs/maps, `
-    + `and ${counters.foreignPackages} non-Windows package payloads`,
+    + `and ${counters.foreignPackages} non-Windows package payloads; retained ${selectedOfficePackage}`,
   )
+  return selectedOfficePackage
 }
 
 async function stagePackageManager() {
@@ -363,7 +371,7 @@ async function smokeBundledPlugins() {
   await rm(prebuilt, { recursive: true, force: true })
 }
 
-async function verifyRuntime() {
+async function verifyRuntime(selectedOfficePackage) {
   const entry = join(harnessRoot, 'lib', 'bin.js')
   if (!existsSync(entry)) throw new Error(`prepare-windows-runtime: missing ${entry}`)
   const require = createRequire(entry)
@@ -382,9 +390,25 @@ async function verifyRuntime() {
   for (const secretName of ['.env', 'auth.json']) {
     if (existsSync(join(harnessRoot, secretName))) throw new Error(`prepare-windows-runtime: contains forbidden ${secretName}`)
   }
-  const officeScope = join(harnessRoot, 'node_modules', '@deepseek-ai')
-  if (existsSync(officeScope) && (await readdir(officeScope)).some(name => name.startsWith('libreoffice-kit-'))) {
-    throw new Error('prepare-windows-runtime: optional LibreOffice engine remained in the installer runtime')
+  await officePackageDirectories(harnessRoot, { platform: 'win32', arch: 'x64' })
+  const engine = join(harnessRoot, 'node_modules', ...selectedOfficePackage.split('/'))
+  if (!existsSync(join(engine, 'prebuilds.json'))) {
+    throw new Error(`prepare-windows-runtime: missing ${selectedOfficePackage}/prebuilds.json`)
+  }
+  const officeCli = join(harnessRoot, 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'lib', 'cli.js')
+  const officeOutput = join(outputRoot, '.office-smoke.pdf')
+  const officeInput = join(repositoryRoot, 'packages', 'bundle', 'web-app', 'tests', 'fixtures', 'document-conversion.docx')
+  if (!existsSync(officeCli)) throw new Error(`prepare-windows-runtime: missing ${officeCli}`)
+  try {
+    await run(nodeExecutable, [officeCli, 'convert', '--input', officeInput, '--output', officeOutput], {
+      env: { ...process.env, PATH: '' },
+    })
+    const pdf = await readFile(officeOutput)
+    if (!pdf.subarray(0, 5).equals(Buffer.from('%PDF-')) || !pdf.subarray(-1024).toString().trimEnd().endsWith('%%EOF')) {
+      throw new Error('prepare-windows-runtime: Office CLI produced an invalid PDF')
+    }
+  } finally {
+    await rm(officeOutput, { force: true })
   }
   await run(nodeExecutable, ['--version'])
   await run(nodeExecutable, [stagedPnpmEntry, '--version'])
@@ -417,7 +441,11 @@ await materializeLinks()
 await injectWorkspaceClosure()
 await injectVendoredDependencies()
 await pruneForeignNativePackages()
-await pruneRuntimeBloat()
+const officeEngine = await pruneRuntimeBloat()
+const pruned = await pruneDesktopRuntime(join(harnessRoot, 'node_modules'), {
+  platform: 'win32', arch: 'x64',
+}, officeEngine)
+console.log(`prepare-windows-runtime: pruned ${pruned.packages} additional foreign packages, ${pruned.directories} directories, and ${pruned.files} files`)
 await stageNodeRuntime()
 await stagePackageManager()
-await verifyRuntime()
+await verifyRuntime(officeEngine)

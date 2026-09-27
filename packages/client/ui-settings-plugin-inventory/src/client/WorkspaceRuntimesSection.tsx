@@ -175,7 +175,9 @@ export function WorkspaceRuntimesSection(props: Props): ReactNode {
                   <IconCodeOutline16 size={20} />
                 </span>
                 <span className={css.status} data-state={enabled ? 'connected' : 'idle'}>
-                  {status === undefined ? props.t('external.loading') : props.t(statusKey(status.phase))}
+                  {status === undefined ? props.t('external.loading')
+                    : definition.id === 'office' && status.phase === 'not-installed'
+                      ? props.t('external.runtime.office.inactive') : props.t(statusKey(status.phase))}
                 </span>
               </div>
               <div className={css.cardBody}>
@@ -187,7 +189,9 @@ export function WorkspaceRuntimesSection(props: Props): ReactNode {
               <div className={css.cardAction}>
                 {job !== undefined ? <Button variant="toolbar" onClick={() => { setProgress(definition.id) }}>{props.t('external.action.viewProgress')}</Button> : null}
                 {waiting ? <Button variant="primary" onClick={() => { void restart() }}>{props.t('external.runtime.action.quickRestart')}</Button>
-                  : enabled ? <Button variant="outline" onClick={() => { void remove(definition.id) }}>{props.t('external.runtime.action.remove')}</Button>
+                  : enabled ? <Button variant="outline" onClick={() => { void remove(definition.id) }}>
+                    {props.t(definition.id === 'office' ? 'external.runtime.office.disable' : 'external.runtime.action.remove')}
+                  </Button>
                     : downloaded && !unavailable ? <Button variant="primary" onClick={() => {
                       if (definition.id === 'ptc') setRiskOpen(true)
                       else void activate(definition.id)

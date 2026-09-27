@@ -20,6 +20,7 @@ async function fixture(options: {
   slowDownload?: boolean
   pythonEnvironment?: PythonEnvironmentPort
   bundledPython?: boolean
+  bundledOffice?: boolean
 } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workspace-runtime-'))
   roots.push(root)
@@ -99,11 +100,25 @@ async function fixture(options: {
     ...(options.bundledPython === true
       ? { bundledArtifactsRoot: join(root, 'bundled'), requireBundledPython: true }
       : {}),
+    ...(options.bundledOffice === true ? { bundledOfficeNodeModules: join(root, 'harness', 'node_modules') } : {}),
     ...(options.pythonEnvironment === undefined ? {} : { pythonEnvironment: options.pythonEnvironment }),
   })
   if (options.bundledPython === true) {
     await mkdir(join(root, 'bundled'), { recursive: true })
     await copyFile(archive, join(root, 'bundled', artifact.fileName))
+  }
+  if (options.bundledOffice === true) {
+    const scope = join(root, 'harness', 'node_modules', '@deepseek-ai')
+    await mkdir(join(scope, 'libreoffice-kit-darwin-arm64'), { recursive: true })
+    await mkdir(join(scope, 'libreoffice-kit'), { recursive: true })
+    await writeFile(join(scope, 'libreoffice-kit', 'package.json'), JSON.stringify({
+      name: '@deepseek-ai/libreoffice-kit', version: '0.0.1',
+      optionalDependencies: { '@deepseek-ai/libreoffice-kit-darwin-arm64': '0.0.1' },
+    }))
+    await writeFile(join(scope, 'libreoffice-kit-darwin-arm64', 'package.json'), JSON.stringify({
+      name: '@deepseek-ai/libreoffice-kit-darwin-arm64', version: '0.0.1',
+    }))
+    await writeFile(join(scope, 'libreoffice-kit-darwin-arm64', 'prebuilds.json'), '{}')
   }
   return {
     manager, root, digest, officeDigest, stateFile, fetchCount: () => fetchCount,
@@ -123,6 +138,32 @@ async function settle(manager: OptionalRuntimeManager, jobId: string) {
 }
 
 describe('OptionalRuntimeManager', () => {
+  it('uses the packaged Office engine without fetching its npm tarball', async () => {
+    const { manager, root, fetchCount, setOfficeDigest } = await fixture({ bundledPython: true, bundledOffice: true })
+    const job = await manager.start('office')
+    await expect(settle(manager, job.jobId)).resolves.toMatchObject({ phase: 'succeeded', stage: 'ready' })
+    expect(fetchCount()).toBe(0)
+    await manager.activate('office')
+    await manager.commitPending()
+    expect((await manager.get()).capabilities.office.phase).toBe('enabled')
+    expect(await manager.officeNodeModules()).toBe(join(root, 'harness', 'node_modules'))
+    setOfficeDigest('d'.repeat(64))
+    expect((await manager.get()).capabilities.office.phase).toBe('enabled')
+    await manager.remove('office')
+    await manager.commitPending()
+    expect(await manager.officeNodeModules()).toBe(join(root, 'harness', 'node_modules'))
+  })
+
+  it('rejects a missing packaged Office engine instead of downloading it', async () => {
+    const { manager, root, fetchCount } = await fixture({ bundledPython: true, bundledOffice: true })
+    await rm(join(root, 'harness', 'node_modules', '@deepseek-ai', 'libreoffice-kit-darwin-arm64', 'prebuilds.json'))
+    const job = await manager.start('office')
+    const result = await settle(manager, job.jobId)
+    expect(result.phase).toBe('failed')
+    expect(result.message).toMatch(/incomplete/u)
+    expect(fetchCount()).toBe(0)
+  })
+
   it('prepares bundled Python without fetching it from a release', async () => {
     const { manager, fetchCount } = await fixture({ bundledPython: true })
     const job = await manager.start('ptc')
