@@ -5,7 +5,7 @@ import { mkdirSync, createWriteStream, type WriteStream } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 import { desktopNodeEnvironment } from './node-environment.ts'
-import { formatPersistentLogLine, TimestampedLogWriter } from './persistent-log.ts'
+import { TimestampedLogWriter } from './persistent-log.ts'
 
 interface ReadyEvent {
   readonly type: 'ready'
@@ -219,7 +219,7 @@ export class DesktopHostProcess {
     const logStream = this.logPath === undefined ? undefined : this.#ensureLogStream()
     const stdoutLog = logStream === undefined ? undefined
       : new TimestampedLogWriter((line) => { logStream.write(line) }, 'harness-stdout')
-    if (child.stdout !== undefined) {
+    if (child.stdout != null) {
       child.stdout.setEncoding('utf8')
       child.stdout.on('data', (chunk: string) => {
         stdoutLog?.write(chunk)
