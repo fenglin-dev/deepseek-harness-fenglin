@@ -53,6 +53,8 @@ After plugin activation, a cold Harness launch has up to 180 seconds to publish 
 
 New desktop-managed Profiles must prepare every startup preset before opening the client. Native builds supply a checksummed, relocatable Profile template. Archive hashing, entry path and link validation, and extraction share one streaming read; the loading page and persistent log identify this first-start operation and record its duration. A matching template is copied into one same-disk candidate, adapted to its destination, checked by read-only Doctor, and activated without pnpm installation. Explicit build denials or incompatible templates use one bounded local-archive batch instead; damaged templates block preparation. A durable pending marker survives interruption. After confirming the previous owner is dead, a matching preparation can reuse verified complete files; validation runs again before activation. Only normal readiness followed by transaction commit clears the marker. Existing and reused Profiles retain user-initiated updates, uninstalls, and version choices; subsequent launches of the same desktop version do not provision presets again. Templates never share writable files with application resources and do not contain a pnpm store, credentials, or sessions.
 
+The bundled startup set also includes the original `@weibaohui/skills-management` archive. Its Skills Market can manage locally discovered coding-agent skills and browse an online catalog. By default the plugin starts a background catalog sync at launch and repeats it daily; users can turn off those sync options in the plugin settings. Bundling the plugin archive does not bundle its online catalog or ordinary transitive dependencies.
+
 <a id="application-menus"></a>
 ## Application menus
 

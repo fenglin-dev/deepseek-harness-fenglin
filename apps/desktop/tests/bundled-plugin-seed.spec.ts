@@ -169,6 +169,7 @@ describe('bundled plugin seed', () => {
       ['dsh-smooth-stream', 'startup'],
       ['dsh-mermaid', 'startup'],
       ['dsh-whale-widget', 'startup'],
+      ['@weibaohui/skills-management', 'startup'],
       ['dsh-font', 'diagnostic'],
       ['@dsh-diagnostic-lab/scoped-loader-mismatch', 'diagnostic'],
       ['@dsh-diagnostic-lab/loader-dependency-unavailable', 'diagnostic'],
@@ -195,13 +196,15 @@ describe('bundled plugin seed', () => {
     expect(manifest.plugins.find(entry => entry.packageName === '@dsh-diagnostic-lab/immutable-agent-input-mutation'))
       .toMatchObject({ version: '1.0.0', installPolicy: 'diagnostic' })
     expect(manifest.plugins.find(entry => entry.packageName === '@ychris12138/dsh-usage-stats'))
-      .toMatchObject({ version: '0.3.3', installPolicy: 'startup' })
+      .toMatchObject({ version: '0.3.4', installPolicy: 'startup' })
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-smooth-stream'))
       .toMatchObject({ version: '0.6.1', installPolicy: 'startup' })
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-mermaid'))
       .toMatchObject({ version: '0.4.1', installPolicy: 'startup' })
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-whale-widget'))
-      .toMatchObject({ version: '0.3.11', installPolicy: 'startup' })
+      .toMatchObject({ version: '0.3.16', installPolicy: 'startup' })
+    expect(manifest.plugins.find(entry => entry.packageName === '@weibaohui/skills-management'))
+      .toMatchObject({ version: '0.6.11', installPolicy: 'startup' })
     expect(new Set(manifest.plugins.map(entry => entry.seedId)).size).toBe(manifest.plugins.length)
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-better-sidebar')?.approvedBuilds)
       .toEqual(['node-pty'])
