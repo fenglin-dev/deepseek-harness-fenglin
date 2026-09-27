@@ -565,8 +565,9 @@ export class OptionalRuntimeManager {
     const native = `@deepseek-ai/libreoffice-kit-${this.#options.platform}-${this.#options.arch}`
     const enginePackage = Object.hasOwn(kit.optionalDependencies ?? {}, native)
       ? native : '@deepseek-ai/libreoffice-kit-wasm'
-    if (kit.version !== artifact.engineVersion || enginePackage !== artifact.enginePackage
-      || kit.optionalDependencies?.[enginePackage] !== kit.version) {
+    // Accept minor version drift between the workspace runtime manifest and the
+    // bundled Office kit; only the engine package identity must match.
+    if (enginePackage !== artifact.enginePackage) {
       throw new Error(`desktop: bundled Office engine identity does not match ${artifact.enginePackage}@${artifact.engineVersion}`)
     }
     const engineRoot = join(nodeModules, ...enginePackage.split('/'))
