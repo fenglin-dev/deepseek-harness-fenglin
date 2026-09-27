@@ -100,7 +100,8 @@
       "profile": "web",
       "installPolicy": "startup",
       "registrySpec": "@linxin666/dsh-web-all@0.3.23",
-      "archive": "dsh-web-all-0.3.23.tgz"
+      "archive": "dsh-web-all-0.3.23.tgz",
+      "integrity": "sha512-lrkXMQmcnfQRQS6APUWMLK62cifglg95NE+0K+mAJUnNzMHXtme9N13yeqqvHmaWxOr9aFvhgFXi+O/ad07vpw=="
     },
     {
       "seedId": "dsh-liangshen",
@@ -109,7 +110,8 @@
       "profile": "web",
       "installPolicy": "startup",
       "registrySpec": "@linxin666/dsh-liangshen@0.3.23",
-      "archive": "dsh-liangshen-0.3.23.tgz"
+      "archive": "dsh-liangshen-0.3.23.tgz",
+      "integrity": "sha512-/EpO5GPUvbLcwZkBNxSRhkOTXFdCULsWB6uPgiX/2gkfvhmf9EklbJktJLHCvySeN7IIWF0ugjmYBtmvPWEPkA=="
     },
     {
       "seedId": "dsh-music-huazai",
@@ -118,7 +120,8 @@
       "profile": "web",
       "installPolicy": "startup",
       "registrySpec": "dsh-music-huazai@0.1.0",
-      "archive": "dsh-music-huazai-0.1.0.tgz"
+      "archive": "dsh-music-huazai-0.1.0.tgz",
+      "integrity": "sha512-SjV88gS/gSE+v4ZthionmCp/H4ZZoM65GXmgRnPMwF/LvspbF26ZtUgCLE2tVR9P0Ua75V/tHbQgicfxWmjzaQ=="
     },
     {
       "seedId": "dsh-whale-widget-bowl",
@@ -127,7 +130,8 @@
       "profile": "web",
       "installPolicy": "startup",
       "registrySpec": "dsh-whale-widget-bowl@0.4.1",
-      "archive": "dsh-whale-widget-bowl-0.4.1.tgz"
+      "archive": "dsh-whale-widget-bowl-0.4.1.tgz",
+      "integrity": "sha512-erpyly3E+WQf2IdsYJvV3Jx6dJMD2mPhOw5p/NOXPpUeRCTvMZAKj+tyjcu45uGnWIKq2SFSwAj66jLY4/6QTw=="
     },
     {
       "seedId": "diagnostic-dsh-font",
