@@ -233,6 +233,12 @@ const PROFILE_PNPM_WORKSPACE = `packages:
 
 nodeLinker: hoisted
 autoInstallPeers: false
+allowBuilds:
+  cloudflared: true
+  cpu-features: true
+  ssh2: true
+  node-pty: true
+  koffi: true
 `
 
 /**
