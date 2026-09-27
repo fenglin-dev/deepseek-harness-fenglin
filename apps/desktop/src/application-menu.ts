@@ -10,7 +10,7 @@ export const DESKTOP_COMMANDS = [
   'undo', 'redo', 'cut', 'copy', 'paste', 'select-all', 'zoom-in', 'zoom-out', 'zoom-reset',
   'fullscreen', 'market', 'plugin-restore', 'diagnostics', 'snapshots', 'external-tools',
   'phone', 'im', 'data-home', 'restart', 'show', 'minimize', 'maximize',
-  'docs', 'repository', 'feedback', 'logs', 'devtools', 'emoji',
+  'docs', 'repository', 'feedback', 'logs', 'devtools', 'emoji', 'reload',
 ] as const
 /** Whitelisted desktop command identifier. */
 export type DesktopCommand = typeof DESKTOP_COMMANDS[number]
@@ -22,7 +22,7 @@ export const CLIENT_COMMANDS = [
 
 const en = {
   app: DESKTOP_PRODUCT_NAME, file: 'File', edit: 'Edit', view: 'View', tools: 'Tools', window: 'Window', help: 'Help', more: 'More',
-  about: `About ${DESKTOP_PRODUCT_NAME}`, settings: 'Settings…', updates: 'Check for Updates…',
+  about: `About ${DESKTOP_PRODUCT_NAME}`, settings: 'Settings…', updates: 'Check for Updates…', reload: 'Refresh',
   'new-session': 'New Conversation', 'open-config': 'Open Configuration File', 'open-web': 'Open in Browser', close: 'Close Window', quit: 'Quit Completely',
   undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', 'select-all': 'Select All',
   'zoom-in': 'Zoom In', 'zoom-out': 'Zoom Out', 'zoom-reset': 'Actual Size', fullscreen: 'Enter Full Screen',
@@ -43,7 +43,7 @@ const en = {
 export type ApplicationMenuCopy = typeof en
 const zh: typeof en = {
   app: DESKTOP_PRODUCT_NAME, file: '文件', edit: '编辑', view: '视图', tools: '工具', window: '窗口', help: '帮助', more: '更多',
-  about: `关于 ${DESKTOP_PRODUCT_NAME}`, settings: '设置…', updates: '检查更新…', 'new-session': '新对话',
+  about: `关于 ${DESKTOP_PRODUCT_NAME}`, settings: '设置…', updates: '检查更新…', 'new-session': '新对话',, reload: '刷新',
   'open-config': '打开配置文件', 'open-web': '在浏览器中打开', close: '关闭窗口', quit: '完整退出', undo: '撤销', redo: '重做', cut: '剪切',
   copy: '复制', paste: '粘贴', 'select-all': '全选', 'zoom-in': '放大', 'zoom-out': '缩小', 'zoom-reset': '实际大小',
   fullscreen: '进入全屏', 'leave-fullscreen': '退出全屏', market: '插件市场', 'plugin-restore': '插件恢复',
