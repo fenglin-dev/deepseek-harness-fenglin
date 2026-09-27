@@ -24,6 +24,8 @@ import {
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
 import { resolveDesktopDataHomeLayout, desktopDataHomeSetup } from './desktop-data-home.ts'
+import { ensureFenglinLiangShenPreset } from './liangshen-preset-ensure.ts'
+import { applyFenglinRuntimeOverlays } from './fenglin-runtime-overlays.ts'
 import { deployPrebuiltProfile, readPrebuiltProfile } from './prebuilt-profile.ts'
 import { ensurePackagedPrebuiltProfile, packagedPrebuiltProfileArchiveRoot } from './packaged-runtime.ts'
 import { DesktopProjectManager } from './project-manager.ts'
@@ -452,6 +454,35 @@ async function main(): Promise<void> {
               console.warn('desktop: prebuilt profile deployment failed', error)
             }
           }
+        }
+        // Fenglin: ensure LiangShen preset and runtime overlays after profile deploy.
+        try {
+          const presetSummary = await ensureFenglinLiangShenPreset(dataHomeLayout.dshHome)
+          console.log('desktop:', presetSummary)
+        } catch (error) {
+          console.warn('desktop: liangshen preset ensure skipped', error)
+        }
+        try {
+          const overlaySummary = await applyFenglinRuntimeOverlays(dataHomeLayout.dshHome)
+          console.log('desktop:', overlaySummary)
+        } catch (error) {
+          console.warn('desktop: fenglin overlays skipped', error)
+        }
+        // Fenglin: seed fenglin-ui-guard.yml into the active home.
+        try {
+          const { copyFile, lstat } = await import('node:fs/promises')
+          const guardTarget = join(dataHomeLayout.dshHome, 'fenglin-ui-guard.yml')
+          let guardExists = false
+          try { guardExists = (await lstat(guardTarget)).isFile() } catch { guardExists = false }
+          if (!guardExists) {
+            const guardSource = join(process.resourcesPath, 'bundled-plugins', 'fenglin-fixes', 'fenglin-ui-guard.yml')
+            try {
+              await copyFile(guardSource, guardTarget)
+              console.log('desktop: seeded fenglin-ui-guard.yml')
+            } catch { /* optional */ }
+          }
+        } catch (error) {
+          console.warn('desktop: fenglin-ui-guard seed skipped', error)
         }
         const ready = await host.start()
         hostCookie = await authenticateWebHost(ready.url)
