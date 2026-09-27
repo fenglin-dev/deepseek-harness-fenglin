@@ -84,16 +84,6 @@
       "integrity": "sha512-w415yRAbeZe0cRLD0aKIF33K6a8gZNZx83ciLUqdliyj1/C3PAzekrbD6UUIQO3AT26HFXWbtMPtXAEfZvSufg=="
     },
     {
-      "seedId": "dsh-whale-widget",
-      "packageName": "dsh-whale-widget",
-      "version": "0.3.16",
-      "profile": "web",
-      "installPolicy": "startup",
-      "registrySpec": "dsh-whale-widget@0.3.16",
-      "archive": "dsh-whale-widget-0.3.16.tgz",
-      "integrity": "sha512-I6gHmH951u2dhDRn+BI6QZpbAyYkB2+OCgVC+QGR3L90op3Z826XsfdAg1FSLjBVGDk22rE1r4y940q32jOL5A=="
-    },
-    {
       "seedId": "weibaohui-skills-management",
       "packageName": "@weibaohui/skills-management",
       "version": "0.6.11",
@@ -102,6 +92,42 @@
       "registrySpec": "@weibaohui/skills-management@0.6.11",
       "archive": "weibaohui-skills-management-0.6.11.tgz",
       "integrity": "sha512-oW2NddfnU8o4qC8i7ulA60Wi8eLVIlKuQzs3/sl9vbAeM4EhN5uNZ5IAfp5suKXELqm3wS/qp8eeLTYcmyJYhA=="
+    },
+    {
+      "seedId": "dsh-web-all",
+      "packageName": "@linxin666/dsh-web-all",
+      "version": "0.3.23",
+      "profile": "web",
+      "installPolicy": "startup",
+      "registrySpec": "@linxin666/dsh-web-all@0.3.23",
+      "archive": "dsh-web-all-0.3.23.tgz"
+    },
+    {
+      "seedId": "dsh-liangshen",
+      "packageName": "@linxin666/dsh-liangshen",
+      "version": "0.3.23",
+      "profile": "web",
+      "installPolicy": "startup",
+      "registrySpec": "@linxin666/dsh-liangshen@0.3.23",
+      "archive": "dsh-liangshen-0.3.23.tgz"
+    },
+    {
+      "seedId": "dsh-music-huazai",
+      "packageName": "dsh-music-huazai",
+      "version": "0.1.0",
+      "profile": "web",
+      "installPolicy": "startup",
+      "registrySpec": "dsh-music-huazai@0.1.0",
+      "archive": "dsh-music-huazai-0.1.0.tgz"
+    },
+    {
+      "seedId": "dsh-whale-widget-bowl",
+      "packageName": "dsh-whale-widget-bowl",
+      "version": "0.4.1",
+      "profile": "web",
+      "installPolicy": "startup",
+      "registrySpec": "dsh-whale-widget-bowl@0.4.1",
+      "archive": "dsh-whale-widget-bowl-0.4.1.tgz"
     },
     {
       "seedId": "diagnostic-dsh-font",

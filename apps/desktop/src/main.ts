@@ -6,7 +6,7 @@ import {
   quarantineProcessRecoveryJournal,
   type DesktopProcessObserver,
 } from './process-observer.ts'
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir, release, tmpdir, userInfo } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -78,6 +78,8 @@ import {
 } from './plugin-download-proxy.ts'
 import { SourceUpdater } from './source-updater.ts'
 import { DesktopIconManager, type DesktopIconImages } from './desktop-icons.ts'
+import { ensureFenglinLiangShenPreset } from './liangshen-preset-ensure.ts'
+import { applyFenglinRuntimeOverlays } from './fenglin-runtime-overlays.ts'
 import { loadDefaultApplicationIcon } from './icon-image.ts'
 import { updateIconShortcuts } from './icon-shortcuts.ts'
 import type { IconSurfaceResult, IconTarget } from './icon-protocol.ts'
@@ -464,8 +466,8 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
     case 'about': {
       const manifest = JSON.parse(await readFile(new URL('./harness-version.json', import.meta.url), 'utf8')) as { version: string }
       await dialog.showMessageBox({ type: 'info', title: menuCopy(menuLocale).about,
-        message: shellMessages(menuLocale).productName,
-        detail: `${app.getVersion()}\nHarness ${manifest.version}\n\n${menuCopy(menuLocale).community}` })
+        message: 'DeepSeek Harness Desktop 3.0.3 枫林',
+        detail: `版本 ${app.getVersion()}\nHarness ${manifest.version}\n\n基于 DeepSeek Harness 0.1.7-rc.2\n枫林社区定制版` })
       return
     }
     case 'docs': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop#readme'); return
@@ -4190,6 +4192,34 @@ async function startApplication(): Promise<void> {
     await pluginSnapshotManager.recoverPending()
   } catch (error) {
     console.error('desktop: plugin snapshot startup recovery failed; retaining the failure for manual recovery', error)
+  }
+  // Fenglin: ensure LiangShen preset and runtime overlays before supervisor starts.
+  try {
+    const presetSummary = await ensureFenglinLiangShenPreset(dshHome)
+    await appendDesktopStartupLog(presetSummary)
+  } catch (error) {
+    await appendDesktopStartupLog(`liangshen preset ensure skipped: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  try {
+    const overlaySummary = await applyFenglinRuntimeOverlays(dshHome)
+    await appendDesktopStartupLog(overlaySummary)
+  } catch (error) {
+    await appendDesktopStartupLog(`fenglin overlays skipped: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  // Fenglin: seed fenglin-ui-guard.yml into the active home.
+  try {
+    const guardTarget = join(dshHome, 'fenglin-ui-guard.yml')
+    let guardExists = false
+    try { guardExists = (await lstat(guardTarget)).isFile() } catch { guardExists = false }
+    if (!guardExists) {
+      const guardSource = join(process.resourcesPath, 'bundled-plugins', 'fenglin-fixes', 'fenglin-ui-guard.yml')
+      try {
+        await copyFile(guardSource, guardTarget)
+        await appendDesktopStartupLog('Seeded fenglin-ui-guard.yml into active home')
+      } catch { /* optional */ }
+    }
+  } catch (error) {
+    await appendDesktopStartupLog(`fenglin-ui-guard seed skipped: ${error instanceof Error ? error.message : String(error)}`)
   }
   supervisor.start()
 
