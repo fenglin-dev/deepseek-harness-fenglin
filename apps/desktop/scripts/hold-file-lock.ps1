@@ -12,12 +12,21 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$stream = [System.IO.File]::Open(
-  $Path,
-  [System.IO.FileMode]::Open,
-  [System.IO.FileAccess]::Read,
-  [System.IO.FileShare]::None
-)
+$deadline = [DateTime]::UtcNow.AddSeconds(30)
+$stream = $null
+while ($stream -eq $null) {
+  try {
+    $stream = [System.IO.File]::Open(
+      $Path,
+      [System.IO.FileMode]::Open,
+      [System.IO.FileAccess]::Read,
+      [System.IO.FileShare]::None
+    )
+  } catch [System.IO.IOException] {
+    if ([DateTime]::UtcNow -ge $deadline) { throw }
+    Start-Sleep -Milliseconds 500
+  }
+}
 try {
   [System.IO.File]::WriteAllText($ReadyPath, 'ready')
   Start-Sleep -Seconds $Seconds
