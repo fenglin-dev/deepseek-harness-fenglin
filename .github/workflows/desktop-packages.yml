@@ -47,6 +47,8 @@ concurrency:
 env:
   PRIMARY_NODE_VERSION: '24.17.0'
   DSH_TELEMETRY_DISABLED: '1'
+  PNPM_CONFIG_REGISTRY: https://registry.npmjs.org
+  NO_PROXY: 127.0.0.1,localhost,::1
 
 jobs:
   bundled-plugins:
@@ -75,6 +77,14 @@ jobs:
       - name: Verify embedded Node runtime pins
         run: node --test apps/desktop/scripts/node-runtime-pins.test.mjs
 
+      - name: Verify desktop runtime file selection
+        run: >-
+          node --test
+          apps/desktop/scripts/runtime-file-policy.test.mjs
+          apps/desktop/scripts/workspace-runtime-packaging.test.mjs
+          apps/desktop/scripts/desktop-packaging-workflow.test.mjs
+          apps/desktop/scripts/report-package-sizes.test.mjs
+
       - name: Verify reused bundled plugin snapshot commit
         if: ${{ inputs.bundled_plugin_run_id != '' }}
         env:
@@ -102,6 +112,9 @@ jobs:
       - name: Resolve latest stable plugin archives
         if: ${{ inputs.bundled_plugin_run_id == '' && inputs.refresh_plugins }}
         run: pnpm run refresh:desktop:bundled-plugins
+
+      - name: Verify bundled plugin snapshot before handoff
+        run: pnpm run verify:desktop:bundled-plugin-snapshot
 
       - uses: actions/upload-artifact@v4
         with:
@@ -177,11 +190,25 @@ jobs:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
 
-      - name: Build macOS package
+      - name: Verify resolved bundled plugin snapshot
+        run: pnpm run verify:desktop:bundled-plugin-snapshot
+
+      - name: Build macOS Host, Client and Desktop
+        run: pnpm run build:community-desktop
+
+      - name: Prepare macOS Python and Office resources
+        run: pnpm exec tsx apps/desktop/scripts/prepare-workspace-runtime.ts mac-${{ matrix.arch }}
+
+      - name: Prepare macOS Harness runtime and preset Profile
         run: |
           ulimit -n 65536
           echo "macOS packaging open-file limit: $(ulimit -n)"
-          pnpm run package:desktop:macos:${{ matrix.arch }}
+          node apps/desktop/scripts/prepare-unix-runtime.mjs --target darwin-${{ matrix.arch }}
+
+      - name: Build macOS DMG and ZIP
+        run: |
+          ulimit -n 65536
+          CSC_IDENTITY_AUTO_DISCOVERY=false node apps/desktop/node_modules/electron-builder/out/cli/cli.js --projectDir apps/desktop --config electron-builder.macos.yml --mac dmg zip --${{ matrix.arch }} --publish never
 
       - name: Verify macOS Helper lookup regression
         run: node --test apps/desktop/scripts/smoke-macos-package.test.mjs
@@ -189,6 +216,12 @@ jobs:
       - name: Smoke final macOS DMG and ZIP
         run: >-
           node apps/desktop/scripts/smoke-macos-package.mjs
+          .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.dmg
+          .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.zip
+
+      - name: Record qualified macOS installer sizes
+        run: >-
+          node apps/desktop/scripts/report-package-sizes.mjs
           .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.dmg
           .artifacts/desktop-macos/DeepSeek-Harness-macos-${{ matrix.arch }}.zip
 
@@ -233,7 +266,7 @@ jobs:
           path: apps/desktop/bundled-plugins
 
       - name: Prepare bundled plugins
-        run: pnpm run prepare:desktop:bundled-plugins
+        run: pnpm run verify:desktop:bundled-plugin-snapshot
 
       - name: Build clean-checkout Host and Desktop
         run: pnpm run build:community-desktop
@@ -330,6 +363,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
+      - name: Record qualified Windows installer size
+        run: >-
+          node apps/desktop/scripts/report-package-sizes.mjs
+          .artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe
+
       - name: Publish qualified Windows artifact
         uses: actions/upload-artifact@v4
         with:
@@ -375,11 +413,29 @@ jobs:
           name: bundled-plugin-snapshot
           path: apps/desktop/bundled-plugins
 
-      - name: Build Linux packages
-        run: pnpm run package:desktop:linux:x64
+      - name: Verify resolved bundled plugin snapshot
+        run: pnpm run verify:desktop:bundled-plugin-snapshot
+
+      - name: Build Linux Host, Client and Desktop
+        run: pnpm run build:community-desktop
+
+      - name: Prepare Linux Python and Office resources
+        run: pnpm exec tsx apps/desktop/scripts/prepare-workspace-runtime.ts linux-x64
+
+      - name: Prepare Linux Harness runtime and preset Profile
+        run: node apps/desktop/scripts/prepare-unix-runtime.mjs --target linux-x64
+
+      - name: Build Linux installers
+        run: node apps/desktop/node_modules/electron-builder/out/cli/cli.js --projectDir apps/desktop --config electron-builder.linux.yml --linux deb rpm --x64 --publish never
 
       - name: Verify packaged preset resources
         run: node apps/desktop/scripts/verify-prebuilt-profile.mjs .artifacts/desktop-linux/linux-unpacked/resources
+
+      - name: Record qualified Linux installer sizes
+        run: >-
+          node apps/desktop/scripts/report-package-sizes.mjs
+          .artifacts/desktop-linux/DeepSeek-Harness-linux-x64.deb
+          .artifacts/desktop-linux/DeepSeek-Harness-linux-x64.rpm
 
       - uses: actions/upload-artifact@v4
         with:

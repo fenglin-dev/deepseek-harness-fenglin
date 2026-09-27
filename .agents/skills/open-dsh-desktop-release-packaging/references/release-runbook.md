@@ -124,7 +124,7 @@ The accepted jobs are:
 - SHA-256 checksum generation;
 - artifact upload.
 
-Each native job builds and verifies the Python archive for its own target before electron-builder runs. The archive is an installer resource, not a separate Actions or Release artifact, so `SHA256SUMS` continues to describe only the seven installers. The official Office engine is resolved from its official npm package when requested; do not add a runtime catalog assembly or independent Python publication step.
+Each native job builds and verifies the Python archive for its own target before electron-builder runs. The archive is an installer resource, not a separate Actions or Release artifact, so `SHA256SUMS` continues to describe only the seven installers. The target's official LibreOffice Kit engine is retained and verified inside the Harness runtime; do not add independent Office or Python Release assets to the seven-installer desktop handoff.
 
 If a run fails:
 
@@ -146,6 +146,8 @@ Each native target builds its complete preset Profile using the packaged Node, p
 
 Copy to a different path containing spaces, run read-only Doctor, start the ordinary Harness, verify its client HTTP response, and perform offline plugin removal before accepting the template. Check `verify-prebuilt-profile.mjs <installed-resources>` after electron-builder resource copying and signing, not only before packaging. The macOS and Windows smoke scripts and Linux workflow include this inventory check. Never bypass a missing-file check by regenerating the manifest from incomplete installed resources.
 
+Keep one effective pnpm registry throughout Profile installation and offline-removal smoke. `PNPM_CONFIG_REGISTRY` overrides pnpm's configured registry; `npm_config_registry` alone does not override pnpm 11's effective registry. If offline removal reports `ERR_PNPM_NO_MATCHING_VERSION` or `ERR_PNPM_NO_OFFLINE_META`, identify the exact package and registry, compare them with the lockfile and published metadata, then repair the registry/cache or the underlying removal path. A successful startup does not turn a failed maintenance smoke into a qualified package.
+
 For full startup qualification, use a newly created private directory with `--dsh-package-smoke-root=<absolute-directory>` and a separate `DSH_HOME`. Record both readiness markers, HTTP reachability, continued Electron survival, and clean exit. Verify a second launch does not repeat template deployment. Test interruption before activation and confirm completed files are reused only after the prior owner has exited. Keep installation time, template deployment time, server/client readiness, package size, installed size and temporary peak space separate. Missing native platform evidence remains unverified; local `.app` qualification does not replace final DMG/ZIP or installer qualification.
 
 ### macOS native startup qualification
@@ -158,7 +160,28 @@ The native probe establishes Electron initialization, not Harness or UI readines
 
 The first workflow run resolves registry-backed entries at their current stable version and passes one offline snapshot to that run's native builders. Pass that run as `bundled_plugin_run_id` to later same-commit platform runs. A mismatched source commit is rejected before packaging. Independent runs without this input can still resolve different snapshots if a plugin publishes between them.
 
+Native jobs verify that snapshot without refreshing it again and separate Host/Client build, Python/Office preparation, Profile creation, and installer assembly into named steps. The workflow uses the canonical npm registry and excludes loopback from proxies. Exact byte and MiB counts are recorded only after each platform's qualification steps pass.
+
 The download helper computes one complete content digest for each run's `bundled-plugin-snapshot` artifact in temporary storage. The three digests must match. If they differ, do not combine those artifacts into one release. Re-run the stale targets close together, or use one `target=all` run when a single shared snapshot is more important than staged platform diagnosis.
+
+## Local retries and size probes
+
+For a local retry, record the source revision, dirty files, effective registry (`pnpm config get registry`), proxy route, selected plugin manifest digest, target, and preexisting installer byte size before running a command that may overwrite artifacts. A normal `package:desktop:*` command verifies but does not refresh the plugin snapshot. Refresh explicitly only when a new preset set is intended; compare the manifest and archives before attributing a size change to runtime pruning.
+
+### Installer size accounting
+
+After qualification, run the read-only calculator against the exact installer directory. An optional baseline must be a separately identified, qualified installer set; the calculator compares only matching platform-and-format filenames:
+
+```sh
+node .agents/skills/open-dsh-desktop-release-packaging/scripts/compare-package-sizes.mjs \
+  release/<current-version> [release/<previous-version>]
+```
+
+The report prints each installer's exact file bytes, binary MiB (`bytes / 1,048,576`), and percentage change from its matching baseline. Its “download total” is the sum of listed installers, including both DMG and ZIP for a macOS architecture; it is **not** the size of one user's download or the installed application. The matched-only aggregate excludes formats absent from the baseline. Identify each set by version, source commit, platform, plugin snapshot, and qualification status. For local probes, pass their separate output directory and label reused resources and missing smoke evidence; never present a probe as a qualified installer. Measure unpacked application footprint, embedded runtime/Profile archives, and temporary peak space separately when investigating causes; do not add nested resources to installer bytes.
+
+When using Node's environment-proxy support for external npm requests, carry the chosen proxy consistently into children and exclude `127.0.0.1`, `localhost`, and `::1` through `NO_PROXY`/`no_proxy` before Profile relocation smoke. Probe the external registry and a temporary loopback HTTP server separately; success on one route does not prove the other. Do not bake a local proxy port into scripts. If a proxy resets many parallel pnpm requests, lower `PNPM_CONFIG_NETWORK_CONCURRENCY` for that retry and report the selected value; do not change the user's global pnpm configuration or silently switch registries.
+
+Resume at the earliest failed named phase when its input artifacts and source revision are unchanged. Profile qualification remains a gate: a failure leaves the old final installer untouched. A local `pnpm deploy` may also leave workspace package `node_modules` directories absent; if a later `pnpm run` reports `ERR_PNPM_VERIFY_DEPS_BEFORE_RUN`, first inspect those directories and restore the checkout with `pnpm install --frozen-lockfile` using the same verified registry before retrying the failed phase. Do not treat that workspace-state error as evidence that source compilation failed, and do not skip the original Profile smoke. For a size-only probe, use a separate output directory and name every reused resource archive, especially a previous Profile. Report exact bytes for both old and new artifacts, the percentage change, and the missing qualification evidence. A size-probe DMG or ZIP is never a releasable replacement. On macOS, `hdiutil: create failed - 设备未配置` may be a sandbox/device-access failure; retry the same packaging command with narrowly approved host access before attributing it to application code.
 
 ## 6. Download one flat release set
 

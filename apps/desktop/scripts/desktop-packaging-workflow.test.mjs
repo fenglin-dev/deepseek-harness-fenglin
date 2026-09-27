@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import test from 'node:test'
+import { parse } from 'yaml'
+
+const root = resolve(import.meta.dirname, '../../..')
+
+test('local package commands verify a fixed plugin snapshot without refreshing it', async () => {
+  const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'))
+  assert.match(pkg.scripts['verify:desktop:bundled-plugin-snapshot'], /--verify-only/u)
+  for (const target of ['win:x64', 'macos:arm64', 'macos:x64', 'linux:x64']) {
+    const command = pkg.scripts[`package:desktop:${target}`]
+    assert.match(command, /pnpm run verify:desktop:bundled-plugin-snapshot/u)
+    assert.doesNotMatch(command, /prepare:desktop:bundled-plugins|refresh:desktop:bundled-plugins/u)
+  }
+})
+
+test('native workflow isolates package phases, uses one registry, and reports only qualified sizes', async () => {
+  const workflow = parse(await readFile(resolve(root, '.github/workflows/desktop-packages.yml'), 'utf8'))
+  assert.equal(workflow.env.PNPM_CONFIG_REGISTRY, 'https://registry.npmjs.org')
+  assert.match(workflow.env.NO_PROXY, /127\.0\.0\.1/u)
+  for (const jobName of ['macos', 'windows', 'linux']) {
+    const steps = workflow.jobs[jobName].steps
+    const names = steps.map(step => step.name)
+    const verification = names.findIndex(name => /Verify resolved bundled plugin snapshot|Prepare bundled plugins/u.test(name))
+    const build = names.findIndex(name => /Build macOS Host|Build clean-checkout Host|Build Linux Host/u.test(name))
+    assert.ok(verification >= 0 && verification < build, `${jobName}: snapshot verification precedes build`)
+    if (jobName !== 'windows') {
+      const size = names.findIndex(name => /Record qualified .*installer size/u.test(name))
+      const upload = steps.findIndex(step => step.uses?.startsWith('actions/upload-artifact@'))
+      assert.ok(size > build && size < upload, `${jobName}: size follows qualification and precedes upload`)
+      const finalCheck = names.findIndex(name => jobName === 'macos'
+        ? name === 'Smoke final macOS DMG and ZIP'
+        : name === 'Verify packaged preset resources')
+      assert.ok(finalCheck > build && finalCheck < size, `${jobName}: final package check precedes size report`)
+    }
+  }
+  const windowsSmokeNames = workflow.jobs['windows-smoke'].steps.map(step => step.name)
+  assert.ok(windowsSmokeNames.indexOf('Smoke test installed Windows package')
+    < windowsSmokeNames.indexOf('Record qualified Windows installer size'))
+  assert.ok(windowsSmokeNames.indexOf('Record qualified Windows installer size')
+    < windowsSmokeNames.indexOf('Publish qualified Windows artifact'))
+  const mac = workflow.jobs.macos.steps.map(step => step.name)
+  assert.ok(mac.indexOf('Prepare macOS Harness runtime and preset Profile') < mac.indexOf('Build macOS DMG and ZIP'))
+  const linux = workflow.jobs.linux.steps.map(step => step.name)
+  assert.ok(linux.indexOf('Prepare Linux Harness runtime and preset Profile') < linux.indexOf('Build Linux installers'))
+})
