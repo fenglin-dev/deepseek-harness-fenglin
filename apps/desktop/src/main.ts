@@ -24,6 +24,8 @@ import {
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
 import { resolveDesktopDataHomeLayout, desktopDataHomeSetup } from './desktop-data-home.ts'
+import { deployPrebuiltProfile, readPrebuiltProfile } from './prebuilt-profile.ts'
+import { ensurePackagedPrebuiltProfile, packagedPrebuiltProfileArchiveRoot } from './packaged-runtime.ts'
 import { DesktopProjectManager } from './project-manager.ts'
 import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
 import { DesktopPlatformView, PLATFORM_IPC, platformBounds } from './platform-view.ts'
@@ -428,6 +430,29 @@ async function main(): Promise<void> {
       resources, (next) => { platformView.setSession(next) }, hostLogPath)
     return {
       start: async () => {
+        // Deploy the prebuilt web profile on first start so the CLI and plugin seed see it.
+        {
+          const webProfileManifest = join(dataHomeLayout.dshHome, 'profiles', 'web', 'package.json')
+          if (!existsSync(webProfileManifest) && app.isPackaged) {
+            const prebuiltRoot = packagedPrebuiltProfileArchiveRoot(process.platform, process.arch)
+            const prebuiltCache = join(app.getPath('userData'), 'prebuilt-profile', app.getVersion(), prebuiltRoot)
+            try {
+              const prebuiltDir = await ensurePackagedPrebuiltProfile({
+                archivePath: join(process.resourcesPath, 'prebuilt-profile.tar'),
+                checksumPath: join(process.resourcesPath, 'prebuilt-profile.tar.sha256'),
+                destination: prebuiltCache,
+                archiveRoot: prebuiltRoot,
+              })
+              const manifest = await readPrebuiltProfile(prebuiltDir)
+              if (manifest !== undefined) {
+                await deployPrebuiltProfile(prebuiltDir, dataHomeLayout.dshHome, manifest,
+                  new AbortController().signal, () => {})
+              }
+            } catch (error) {
+              console.warn('desktop: prebuilt profile deployment failed', error)
+            }
+          }
+        }
         const ready = await host.start()
         hostCookie = await authenticateWebHost(ready.url)
         hostUrl = ready.url
