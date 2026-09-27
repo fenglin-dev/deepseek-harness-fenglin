@@ -1,7 +1,7 @@
 import { WINDOWS_TITLEBAR_HEIGHT } from './windows-layout.ts'
 /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
 
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -23,7 +23,7 @@ import {
   type MenuItemConstructorOptions,
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
-import { resolveDesktopDataHomeLayout, desktopDataHomeSetup, writeDesktopDataHomeSetup } from './desktop-data-home.ts'
+import { resolveDesktopDataHomeLayout, desktopDataHomeSetup } from './desktop-data-home.ts'
 import { DesktopProjectManager } from './project-manager.ts'
 import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
 import { DesktopPlatformView, PLATFORM_IPC, platformBounds } from './platform-view.ts'
@@ -418,8 +418,8 @@ async function main(): Promise<void> {
       app.getPath('appData'), app.getPath('home'), app.isPackaged, process.env,
     )
     if (dataHomeLayout.explicitDshHome && !existsSync(dataHomeLayout.setupFile)) {
-      await writeDesktopDataHomeSetup(dataHomeLayout.setupFile,
-        desktopDataHomeSetup('explicit', dataHomeLayout.dshHome))
+      mkdirSync(join(dataHomeLayout.setupFile, '..'), { recursive: true })
+      writeFileSync(dataHomeLayout.setupFile, JSON.stringify(desktopDataHomeSetup('explicit', dataHomeLayout.dshHome), undefined, 2) + '\n')
     }
     const hostLogPath = join(dataHomeLayout.logs, 'harness.log')
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
