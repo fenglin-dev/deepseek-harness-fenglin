@@ -23,6 +23,7 @@ import {
   type MenuItemConstructorOptions,
 } from 'electron'
 import { resolveDesktopPaths } from './paths.ts'
+import { resolveDesktopDataHomeLayout } from './desktop-data-home.ts'
 import { DesktopProjectManager } from './project-manager.ts'
 import { DesktopHostFatalError, DesktopHostProcess, DesktopHostUncleanExitError } from './host-process.ts'
 import { DesktopPlatformView, PLATFORM_IPC, platformBounds } from './platform-view.ts'
@@ -413,10 +414,14 @@ async function main(): Promise<void> {
     () => locale.id === 'zh-CN' ? 'zh_CN' : 'en_US', process.platform === 'win32' ? 'win32' : 'darwin')
   const backend = new DesktopBackendController((onFailure) => {
     const hostInspectPort = developmentHostInspectPort(development)
+    const dataHomeLayout = resolveDesktopDataHomeLayout(
+      app.getPath('appData'), app.getPath('home'), app.isPackaged, process.env,
+    )
+    const hostLogPath = join(dataHomeLayout.logs, 'harness.log')
     const host = new DesktopHostProcess(resources.node, resources.dsh, activeProject,
       hostInspectPort, process.env, onFailure,
       primaryRuntime,
-      resources, (next) => { platformView.setSession(next) })
+      resources, (next) => { platformView.setSession(next) }, hostLogPath)
     return {
       start: async () => {
         const ready = await host.start()

@@ -1,9 +1,11 @@
 /** Electron Node-mode child lifecycle for the shared Web application. */
 
 import { spawn, type ChildProcess } from 'node:child_process'
-import { join } from 'node:path'
+import { mkdirSync, createWriteStream, type WriteStream } from 'node:fs'
+import { dirname, join } from 'node:path'
 import type { PlatformSession } from '@deepseek-ai/dsh-deepseek-account'
 import { desktopNodeEnvironment } from './node-environment.ts'
+import { formatPersistentLogLine, TimestampedLogWriter } from './persistent-log.ts'
 
 interface ReadyEvent {
   readonly type: 'ready'
@@ -177,7 +179,19 @@ export class DesktopHostProcess {
     private readonly packageManager?: { readonly pnpm: string; readonly nodeBin: string },
 
     private readonly onPlatformSession?: (session: PlatformSession | null) => void,
+    private readonly logPath?: string,
   ) {}
+
+  #logStream: WriteStream | undefined
+
+  #ensureLogStream(): WriteStream | undefined {
+    if (this.logPath === undefined) return undefined
+    this.#logStream ??= (() => {
+      mkdirSync(dirname(this.logPath!), { recursive: true })
+      return createWriteStream(this.logPath!, { flags: 'a' })
+    })()
+    return this.#logStream
+  }
 
   /**
    * Start this child once and await its Web application URL.
@@ -202,7 +216,17 @@ export class DesktopHostProcess {
     this.child = child
     child.stderr?.setEncoding('utf8')
     child.stderr?.on('data', (chunk: string) => { this.stderr = (this.stderr + chunk).slice(-MAX_HOST_DIAGNOSTIC_CHARS) })
-    child.stdout?.pipe(process.stdout)
+    const logStream = this.logPath === undefined ? undefined : this.#ensureLogStream()
+    const stdoutLog = logStream === undefined ? undefined
+      : new TimestampedLogWriter((line) => { logStream.write(line) }, 'harness-stdout')
+    if (child.stdout !== undefined) {
+      child.stdout.setEncoding('utf8')
+      child.stdout.on('data', (chunk: string) => {
+        stdoutLog?.write(chunk)
+        process.stdout.write(chunk)
+      })
+      child.stdout.on('end', () => { stdoutLog?.flush() })
+    }
     child.on('message', (message: unknown) => {
       if (!isDesktopHostEvent(message)) {
         this.fail(new Error('dsh desktop host sent an invalid IPC event'))
