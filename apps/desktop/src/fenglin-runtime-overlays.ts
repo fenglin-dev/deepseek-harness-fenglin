@@ -23,7 +23,7 @@ const RUNTIME_COPIES: ReadonlyArray<readonly [string, string]> = [
   ['dsh-better-sidebar/lib/client.js', 'dsh-better-sidebar/lib/client.js'],
   ['dsh-better-sidebar/lib/client-terminal.js', 'dsh-better-sidebar/lib/client-terminal.js'],
   ['dsh-better-sidebar/lib/index.js', 'dsh-better-sidebar/lib/index.js'],
-  ['dshmarket/lib/hot.js', 'dshmarket/lib/hot.js'],
+  // ['dshmarket/lib/hot.js', 'dshmarket/lib/hot.js'], // disabled: incompatible with market 1.66.2
   ['@linxin666/dsh-web-all/lib/client.js', '@linxin666/dsh-web-all/lib/client.js'],
 ]
 
