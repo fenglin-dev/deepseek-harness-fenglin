@@ -180,7 +180,7 @@ export function FilesBody({
     state,
     onToggle: (parent, path) => { toggle(tab.id, parent, path, state.expanded, signal) },
     // Every row is under the tree's root, so its address is session-relative.
-    onOpen: (path) => { tabActions.openResource(fileAddressFor(sessionId, state.root, path)) },
+    onOpen: (path) => { tabActions.openResource(fileAddressFor(sessionId, state.root, path), { replaceTab: true }) },
     t,
   }
   const reload = (): void => {

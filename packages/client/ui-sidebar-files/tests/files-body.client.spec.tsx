@@ -145,14 +145,15 @@ describe('FilesBody', () => {
     expect(names(view.container)).not.toContain(`${ROOT}/src/a.ts`)
   })
 
-  it('a file click opens its session-scoped file: address through the owner; an other entry offers no button', async () => {
+  it('a file click replaces the Files tab with its session-scoped preview; an other entry offers no button', async () => {
     const { view, script, tabActions } = mountBody()
     await act(() => script.watches.ready(ROOT))
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
     fireEvent.click(view.container.querySelector(`[data-files-path="${ROOT}/README.md"] > button`)!)
     // Every row sits under the tree's root, so the address is the path relative to it.
-    expect(tabActions.openResource).toHaveBeenCalledWith(fileAddressFor(SESSION, ROOT, `${ROOT}/README.md`))
-    expect(tabActions.openResource).toHaveBeenCalledWith('dsh-resource://file/session/s-test/README.md')
+    expect(tabActions.openResource).toHaveBeenCalledExactlyOnceWith(
+      fileAddressFor(SESSION, ROOT, `${ROOT}/README.md`), { replaceTab: true },
+    )
     const other = view.container.querySelector(`[data-files-path="${ROOT}/pipe"]`)!
     expect(other.querySelector('button')).toBeNull()
     expect(other.querySelector('[aria-disabled="true"]')?.getAttribute('title')).toBe(zh['entry.other'])
