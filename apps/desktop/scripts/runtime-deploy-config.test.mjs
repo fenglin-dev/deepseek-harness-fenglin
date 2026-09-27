@@ -74,6 +74,6 @@ test('Desktop ships the runtime peers required by dsh-subprocess', async () => {
   const desktop = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
   const subprocess = JSON.parse(await readFile(new URL('../../../packages/subprocess/subprocess/package.json', import.meta.url), 'utf8'))
   for (const peer of Object.keys(subprocess.peerDependencies ?? {})) {
-    assert.equal(desktop.dependencies?.[peer], 'workspace:^', `${peer} must be packaged with Desktop`)
+    assert.equal(desktop.dependencies?.[peer], subprocess.peerDependencies[peer], `${peer} must be packaged with Desktop`)
   }
 })

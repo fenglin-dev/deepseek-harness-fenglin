@@ -2,6 +2,7 @@
   "schema": "open-deepseek-harness-desktop/packaged-resource-contract/v1",
   "asarFiles": [
     "lib/**/*",
+    "renderer/**/*",
     "scripts/primary-runtime-lock.json",
     "package.json"
   ],
