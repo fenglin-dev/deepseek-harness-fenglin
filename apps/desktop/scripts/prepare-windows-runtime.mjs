@@ -12,7 +12,7 @@ import { nodeRuntimeArchivesByTarget, nodeVersion } from './node-runtime-pins.mj
 import { createPackagedArchive } from './create-packaged-archive.mjs'
 import { pruneDesktopRuntime } from './runtime-file-policy.mjs'
 import { preservePnpmWorkspaceState } from '../../../scripts/preserve-pnpm-workspace-state.mjs'
-import { officePackageDirectories, selectOfficeEngine } from '../../../scripts/libreoffice-packages.mjs'
+import { officePackageDirectories, selectOfficeEngine, verifyBundledOfficeIdentity } from '../../../scripts/libreoffice-packages.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = resolve(desktopRoot, '../..')
@@ -391,6 +391,10 @@ async function verifyRuntime(selectedOfficePackage) {
     if (existsSync(join(harnessRoot, secretName))) throw new Error(`prepare-windows-runtime: contains forbidden ${secretName}`)
   }
   await officePackageDirectories(harnessRoot, { platform: 'win32', arch: 'x64' })
+  const verifiedOfficePackage = await verifyBundledOfficeIdentity(harnessRoot, {
+    release: 'win32-x64', platform: 'win32', arch: 'x64',
+  }, join(repositoryRoot, '.artifacts', 'workspace-runtime', 'workspace-runtime-win32-x64.json'))
+  if (verifiedOfficePackage !== selectedOfficePackage) throw new Error('prepare-windows-runtime: selected Office engine changed')
   const engine = join(harnessRoot, 'node_modules', ...selectedOfficePackage.split('/'))
   if (!existsSync(join(engine, 'prebuilds.json'))) {
     throw new Error(`prepare-windows-runtime: missing ${selectedOfficePackage}/prebuilds.json`)

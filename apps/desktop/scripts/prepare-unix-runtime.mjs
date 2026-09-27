@@ -13,7 +13,7 @@ import { nodeRuntimeArchivesByTarget, nodeVersion } from './node-runtime-pins.mj
 import { createPackagedArchive } from './create-packaged-archive.mjs'
 import { pruneDesktopRuntime } from './runtime-file-policy.mjs'
 import { preservePnpmWorkspaceState } from '../../../scripts/preserve-pnpm-workspace-state.mjs'
-import { officePackageDirectories, selectOfficeEngine } from '../../../scripts/libreoffice-packages.mjs'
+import { officePackageDirectories, selectOfficeEngine, verifyBundledOfficeIdentity } from '../../../scripts/libreoffice-packages.mjs'
 
 const desktopRoot = fileURLToPath(new URL('..', import.meta.url))
 const repositoryRoot = resolve(desktopRoot, '../..')
@@ -227,6 +227,10 @@ async function verifyRuntime(selectedPackage) {
   }
   const [platform, arch] = target.split('-')
   await officePackageDirectories(staging, { platform, arch })
+  const verifiedOfficePackage = await verifyBundledOfficeIdentity(staging, {
+    release: target, platform, arch,
+  }, join(repositoryRoot, '.artifacts', 'workspace-runtime', `workspace-runtime-${target}.json`))
+  if (verifiedOfficePackage !== selectedPackage) throw new Error('prepare-unix-runtime: selected Office engine changed')
   const engine = join(staging, 'node_modules', ...selectedPackage.split('/'))
   if (!existsSync(join(engine, 'prebuilds.json'))) {
     throw new Error(`desktop package runtime is missing ${selectedPackage}/prebuilds.json`)

@@ -41,6 +41,7 @@ test('desktop installers embed Python and retain the target Office engine in the
     assert.match(runtime, /pruneDesktopRuntime\(/u)
     assert.match(runtime, /selectOfficeEngine/u)
     assert.match(runtime, /officePackageDirectories/u)
+    assert.match(runtime, /verifyBundledOfficeIdentity/u)
     assert.match(runtime, /prebuilds\.json/u)
     assert.match(runtime, /document-conversion\.docx/u)
     assert.match(runtime, /'convert', '--input'/u)
@@ -67,4 +68,22 @@ test('Python is built into each desktop target while Office metadata identifies 
   assert.doesNotMatch(workflow, /DeepSeek-Harness-office-runtime/u)
   assert.match(await read('apps/desktop/scripts/official-office-runtime.ts'), /registry\.npmjs\.org/u)
   await assert.rejects(read('.github/workflows/workspace-runtime-release.yml'), /ENOENT/u)
+})
+
+test('production Office consumers pin the signed catalog engine version exactly', async () => {
+  const lock = await read('pnpm-lock.yaml')
+  const resolved = /'@deepseek-ai\/libreoffice-kit':\s*\n\s*specifier: ([^\n]+)\s*\n\s*version: ([^\n]+)/u.exec(lock)
+  assert.ok(resolved, 'Office kit must appear in the workspace lockfile')
+  assert.equal(resolved[1], resolved[2], 'Office kit lockfile specifier must be exact')
+  for (const path of [
+    'packages/bundle/web-app/package.json',
+    'packages/document/office-to-pdf/package.json',
+    'packages/skill/skill-office/package.json',
+  ]) {
+    const manifest = JSON.parse(await read(path))
+    const declared = manifest.dependencies?.['@deepseek-ai/libreoffice-kit']
+      ?? manifest.optionalDependencies?.['@deepseek-ai/libreoffice-kit']
+      ?? manifest.devDependencies?.['@deepseek-ai/libreoffice-kit']
+    assert.equal(declared, resolved[2], `${path} must pin the signed Office version`)
+  }
 })

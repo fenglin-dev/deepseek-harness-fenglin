@@ -2755,7 +2755,7 @@ importers:
         specifier: workspace:*
         version: link:../../typert/registry
       '@deepseek-ai/libreoffice-kit':
-        specifier: ^0.1.1
+        specifier: 0.1.1
         version: 0.1.1
 
   packages/client/connection:
@@ -7233,7 +7233,7 @@ importers:
         specifier: workspace:*
         version: link:../../typert/protocol
       '@deepseek-ai/libreoffice-kit':
-        specifier: ^0.1.1
+        specifier: 0.1.1
         version: 0.1.1
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
@@ -11867,7 +11867,7 @@ importers:
   packages/skill/skill-office:
     dependencies:
       '@deepseek-ai/libreoffice-kit':
-        specifier: ^0.1.1
+        specifier: 0.1.1
         version: 0.1.1
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
