@@ -60,7 +60,7 @@ const zh: typeof en = {
 }
 const ru: typeof en = {
   app: DESKTOP_PRODUCT_NAME, file: 'Файл', edit: 'Правка', view: 'Вид', tools: 'Инструменты', window: 'Окно', help: 'Справка', more: 'Ещё',
-  about: `Об ${DESKTOP_PRODUCT_NAME}`, settings: 'Настройки…', updates: 'Проверить обновления…', 'new-session': 'Новый диалог',
+  about: `Об ${DESKTOP_PRODUCT_NAME}`, settings: 'Настройки…', updates: 'Проверить обновления…', 'new-session': 'Новый диалог', reload: 'Обновить',
   'open-config': 'Открыть файл конфигурации', 'open-web': 'Открыть в браузере', close: 'Закрыть окно', quit: 'Полностью выйти', undo: 'Отменить', redo: 'Повторить', cut: 'Вырезать',
   copy: 'Копировать', paste: 'Вставить', 'select-all': 'Выбрать всё', 'zoom-in': 'Увеличить', 'zoom-out': 'Уменьшить', 'zoom-reset': 'Реальный размер',
   fullscreen: 'Во весь экран', 'leave-fullscreen': 'Выйти из полноэкранного режима', market: 'Плагины', 'plugin-restore': 'Восстановление плагинов',
