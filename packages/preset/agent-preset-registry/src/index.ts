@@ -75,8 +75,7 @@ export class AgentPresetRegistry extends TypertRemoteService {
     if (this.userPresetsLoaded) return
     this.userPresetsLoaded = true
     try {
-      const { dshHomePath } = await import('@deepseek-ai/dsh-home-paths')
-      const discovered = await discoverUserPresets(dshHomePath())
+      const discovered = await discoverUserPresets()
       for (const definition of discovered) {
         if (this.definitions.has(definition.id)) continue
         try { await this.register(definition) } catch (error) {

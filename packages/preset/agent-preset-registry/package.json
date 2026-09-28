@@ -68,7 +68,6 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-app-boot": "workspace:*",
-    "@deepseek-ai/dsh-home-paths": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
     "zod": "^4.4.3",
     "js-yaml": "^4.2.0"

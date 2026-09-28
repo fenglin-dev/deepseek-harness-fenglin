@@ -1,7 +1,8 @@
 /** Fenglin: filesystem discovery of user agent presets under `$DSH_HOME/.agent-presets`. */
 
 import { readdir, readFile, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { load } from 'js-yaml'
 import { entryListProblem } from './definition.ts'
 import type { PresetDefinition } from './definition.ts'
@@ -16,6 +17,13 @@ export const COMPOSITION_FILE = 'agent.cordis.yml'
 export const METADATA_FILE = 'preset.yml'
 
 const PRESET_ID = /^[a-z0-9][a-z0-9-]*$/
+
+/** Resolve the Harness home without a home-paths dependency (DSH_HOME, else ~/.dsh). */
+export function resolveUserPresetHome(): string {
+  const fromEnv = process.env.DSH_HOME
+  const selected = fromEnv !== undefined && fromEnv.trim().length > 0 ? fromEnv : join(homedir(), '.dsh')
+  return resolve(selected.startsWith('~') ? join(homedir(), selected.slice(1).replace(/^[\\/]/, '')) : selected)
+}
 
 async function isFile(path: string): Promise<boolean> {
   try { return (await stat(path)).isFile() } catch { return false }
@@ -55,7 +63,7 @@ export async function readPresetMetadata(directory: string): Promise<{
  * @param dshHome - Active Harness data home.
  * @returns Definitions ready for registry.register(), missing files skipped.
  */
-export async function discoverUserPresets(dshHome: string): Promise<PresetDefinition[]> {
+export async function discoverUserPresets(dshHome: string = resolveUserPresetHome()): Promise<PresetDefinition[]> {
   const root = join(dshHome, USER_PRESET_DIR)
   let children: Awaited<ReturnType<typeof readdir>>
   try {
