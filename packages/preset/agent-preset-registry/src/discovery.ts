@@ -3,6 +3,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { load } from 'js-yaml'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { entryListProblem } from './definition.ts'
@@ -64,7 +65,9 @@ export async function readPresetMetadata(directory: string): Promise<{
  * @param dshHome - Active Harness data home.
  * @returns Definitions ready for registry.register(), missing files skipped.
  */
-export async function discoverUserPresets(dshHome: string = resolveUserPresetHome()): Promise<PresetDefinition[]> {
+export type DiscoveredPreset = PresetDefinition & { baseUrl: string }
+
+export async function discoverUserPresets(dshHome: string = resolveUserPresetHome()): Promise<DiscoveredPreset[]> {
   const root = join(dshHome, USER_PRESET_DIR)
   let children: Array<{ name: string; isDirectory(): boolean }>
   try {
@@ -72,7 +75,7 @@ export async function discoverUserPresets(dshHome: string = resolveUserPresetHom
   } catch {
     return []
   }
-  const found: PresetDefinition[] = []
+  const found: DiscoveredPreset[] = []
   for (const child of children) {
     const name = typeof child.name === 'string' ? child.name : String(child.name)
     if (!child.isDirectory() || !PRESET_ID.test(name)) continue
@@ -90,6 +93,7 @@ export async function discoverUserPresets(dshHome: string = resolveUserPresetHom
     const metadata = await readPresetMetadata(directory)
     found.push({
       id: name,
+      baseUrl: pathToFileURL(directory + '/').href,
       ...(metadata.name === undefined ? {} : { name: metadata.name }),
       ...(metadata.description === undefined ? {} : { description: metadata.description }),
       ...(metadata.order === undefined ? {} : { order: metadata.order }),

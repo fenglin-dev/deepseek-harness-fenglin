@@ -40,6 +40,8 @@ interface Generation {
 interface Definition {
   config: PresetDefinition
   context: Context
+  /** Filesystem preset root (file URL) so relative plugin names resolve. */
+  baseUrl?: string
   ready: Promise<void>
   generation?: Generation
   /** Mount failure; unset while a tree is mounted, whose rows {@link AgentPresetRegistry.diagnostic} re-audits on read. */
@@ -202,7 +204,13 @@ export class AgentPresetRegistry extends TypertRemoteService {
     const context = this.ctx
     if (!definition.id.trim()) throw new Error('Preset id must not be empty')
     if (this.definitions.has(definition.id)) throw new Error(`Duplicate agent preset: ${definition.id}`)
-    const record: Definition = { config: definition, context, ready: Promise.resolve() }
+    const { baseUrl: definitionBaseUrl, ...config } = definition as PresetDefinition & { baseUrl?: string }
+    const record: Definition = {
+      config: config as PresetDefinition,
+      context,
+      ...(definitionBaseUrl === undefined ? {} : { baseUrl: definitionBaseUrl }),
+      ready: Promise.resolve(),
+    }
     this.definitions.set(definition.id, record)
     let disposed = false
     const unregister = async (): Promise<void> => {
@@ -226,7 +234,7 @@ export class AgentPresetRegistry extends TypertRemoteService {
     try {
       const problem = entryListProblem(record.config.plugins)
       if (problem !== undefined) throw new Error(problem)
-      const context = scope.ctx.extend({ baseUrl: record.context.baseUrl })
+      const context = scope.ctx.extend({ baseUrl: record.baseUrl ?? record.context.baseUrl })
       const mount = await mountPreset(context, record.config.id, record.config.plugins)
       const generation: Generation = { scope, key, mount, users: 0, retired: false }
       this.generations.set(key, generation)
@@ -255,7 +263,11 @@ export class AgentPresetRegistry extends TypertRemoteService {
     const tree = record.generation.mount.tree
     let audit = await auditRows(tree)
     if (audit.pending.length > 0) {
-      await this.owner.loader.await()
+      // Bound the wait so one slow/broken preset cannot freeze settings load.
+      await Promise.race([
+        this.owner.loader.await(),
+        new Promise<void>(resolve => { setTimeout(resolve, 2_000) }),
+      ])
       audit = await auditRows(tree)
     }
     const lines = [...audit.failed, ...audit.pending]
