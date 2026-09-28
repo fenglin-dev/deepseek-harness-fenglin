@@ -42,7 +42,7 @@ export async function readPresetMetadata(directory: string): Promise<{
   order?: number
 }> {
   let raw: string
-  try { raw = await readFile(join(directory, METADATA_FILE), 'utf8') } catch { return {} }
+  try { raw = await readFile(join(directory, METADATA_FILE), { encoding: 'utf8' }) } catch { return {} }
   let parsed: unknown
   try { parsed = load(raw) } catch { return {} }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
@@ -65,26 +65,27 @@ export async function readPresetMetadata(directory: string): Promise<{
  */
 export async function discoverUserPresets(dshHome: string = resolveUserPresetHome()): Promise<PresetDefinition[]> {
   const root = join(dshHome, USER_PRESET_DIR)
-  let children: Awaited<ReturnType<typeof readdir>>
+  let children: Array<{ name: string; isDirectory(): boolean }>
   try {
-    children = await readdir(root, { withFileTypes: true })
+    children = await readdir(root, { withFileTypes: true, encoding: 'utf8' })
   } catch {
     return []
   }
   const found: PresetDefinition[] = []
   for (const child of children) {
-    if (!child.isDirectory() || !PRESET_ID.test(child.name)) continue
-    const directory = join(root, child.name)
+    const name = typeof child.name === 'string' ? child.name : String(child.name)
+    if (!child.isDirectory() || !PRESET_ID.test(name)) continue
+    const directory = join(root, name)
     const composition = join(directory, COMPOSITION_FILE)
     if (!await isFile(composition)) continue
     let raw: string
-    try { raw = await readFile(composition, 'utf8') } catch { continue }
+    try { raw = await readFile(composition, { encoding: 'utf8' }) } catch { continue }
     let plugins: unknown
     try { plugins = load(raw) } catch { continue }
     if (entryListProblem(plugins) !== undefined) continue
     const metadata = await readPresetMetadata(directory)
     found.push({
-      id: child.name,
+      id: name,
       ...(metadata.name === undefined ? {} : { name: metadata.name }),
       ...(metadata.description === undefined ? {} : { description: metadata.description }),
       ...(metadata.order === undefined ? {} : { order: metadata.order }),
