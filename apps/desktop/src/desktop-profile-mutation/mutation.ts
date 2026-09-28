@@ -575,7 +575,7 @@ export class DesktopProfileMutation {
       DSH_PLUGIN_TRANSACTION_ORIGIN: undefined,
     }
     if (token !== undefined) environment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = token
-    return this.#options.commands.run(environment, args, 'profile-transaction', 60_000).then(() => undefined)
+    return this.#options.commands.run(environment, args, 'profile-transaction', this.#options.timeouts.installMs).then(() => undefined)
   }
 
   #assertAvailable(): void {

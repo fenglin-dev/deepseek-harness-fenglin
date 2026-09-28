@@ -4,6 +4,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { load } from 'js-yaml'
+import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { entryListProblem } from './definition.ts'
 import type { PresetDefinition } from './definition.ts'
 
@@ -44,7 +45,7 @@ export async function readPresetMetadata(directory: string): Promise<{
   let raw: string
   try { raw = await readFile(join(directory, METADATA_FILE), { encoding: 'utf8' }) } catch { return {} }
   let parsed: unknown
-  try { parsed = load(raw) } catch { return {} }
+  try { parsed = load(raw, { schema: entryListSchema }) } catch { return {} }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
   const record = parsed as Record<string, unknown>
   const name = text(record.name)
@@ -81,7 +82,10 @@ export async function discoverUserPresets(dshHome: string = resolveUserPresetHom
     let raw: string
     try { raw = await readFile(composition, { encoding: 'utf8' }) } catch { continue }
     let plugins: unknown
-    try { plugins = load(raw) } catch { continue }
+    try { plugins = load(raw, { schema: entryListSchema }) } catch (error) {
+      console.warn(`agent-presets: cannot parse ${composition}: ${String(error)}`)
+      continue
+    }
     if (entryListProblem(plugins) !== undefined) continue
     const metadata = await readPresetMetadata(directory)
     found.push({

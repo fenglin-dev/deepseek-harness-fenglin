@@ -65,7 +65,16 @@ function parseAuthority(authority: string): { host: string; port: number } | und
 
 function connectDirect(host: string, port: number, ready: (socket: Socket) => void, fail: (error: Error) => void): Socket {
   const onError = (error: Error): void => { fail(error) }
-  const socket = connectTcp({ host, port }, () => { socket.off('error', onError); ready(socket) })
+  const socket = connectTcp({ host, port }, () => {
+    socket.setTimeout(0)
+    socket.setTimeout(0)
+    socket.off('error', onError)
+    ready(socket)
+  })
+  socket.setTimeout(30_000, () => {
+    socket.destroy()
+    fail(new Error(`Direct connect to ${host}:${port} timed out after 30s`))
+  })
   socket.once('error', onError)
   return socket
 }
@@ -100,6 +109,10 @@ function connectThroughProxy(
     socket.off('error', onError)
     ready(socket)
   }
+  socket.setTimeout(30_000, () => {
+    socket.destroy()
+    fail(new Error(`Upstream proxy CONNECT to ${authority} timed out after 30s`))
+  })
   socket.on('data', onData)
   socket.once('error', onError)
   return socket

@@ -35,6 +35,7 @@
     "presets/ptc.patch.yml",
     "presets/minimal.patch.yml",
     "presets/cordis.patch.yml",
+    "presets/liangshen.patch.yml",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
@@ -45,7 +46,8 @@
         "./presets/standard.patch.yml",
         "./presets/ptc.patch.yml",
         "./presets/minimal.patch.yml",
-        "./presets/cordis.patch.yml"
+        "./presets/cordis.patch.yml",
+        "./presets/liangshen.patch.yml"
       ]
     }
   },
