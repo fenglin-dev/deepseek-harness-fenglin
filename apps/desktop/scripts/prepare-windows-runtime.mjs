@@ -314,6 +314,30 @@ async function stagePackageManager() {
   await writeFile(pnpmCommand, '@echo off\r\n"%~dp0node.exe" "%~dp0node_modules\\pnpm\\bin\\pnpm.mjs" %*\r\n')
 }
 
+async function patchPnpmUndiciFetch() {
+  const targets = [
+    join(runtimeRoot, 'node_modules', 'pnpm', 'dist', 'pnpm.mjs'),
+    join(runtimeRoot, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'),
+  ]
+  let patched = 0
+  for (const target of targets) {
+    let source
+    try { source = await readFile(target, 'utf8') } catch { continue }
+    if (source.includes('/* fenglin: globalThis.fetch */')) continue
+    const needle = 'fetchImpl = require_fetch().fetch;'
+    if (source.includes(needle)) {
+      source = source.replaceAll(needle, 'fetchImpl = globalThis.fetch.bind(globalThis); /* fenglin: globalThis.fetch */')
+      await writeFile(target, source, 'utf8')
+      patched += 1
+    } else if (source.includes('require_fetch().fetch')) {
+      source = source.replaceAll('require_fetch().fetch', 'globalThis.fetch.bind(globalThis)')
+      await writeFile(target, source, 'utf8')
+      patched += 1
+    }
+  }
+  console.log(`prepare-windows-runtime: patched pnpm undici fetch in ${patched} file(s)`)
+}
+
 async function smokeHarness() {
   const entry = join(harnessRoot, 'lib', 'bin.js')
   const smokeHome = join(outputRoot, 'smoke-home')
@@ -448,4 +472,5 @@ const pruned = await pruneDesktopRuntime(join(harnessRoot, 'node_modules'), {
 console.log(`prepare-windows-runtime: pruned ${pruned.packages} additional foreign packages, ${pruned.directories} directories, and ${pruned.files} files`)
 await stageNodeRuntime()
 await stagePackageManager()
+  await patchPnpmUndiciFetch()
 await verifyRuntime(officeEngine)

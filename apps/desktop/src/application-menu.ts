@@ -10,7 +10,7 @@ export const DESKTOP_COMMANDS = [
   'undo', 'redo', 'cut', 'copy', 'paste', 'select-all', 'zoom-in', 'zoom-out', 'zoom-reset',
   'fullscreen', 'market', 'plugin-restore', 'diagnostics', 'snapshots', 'external-tools',
   'phone', 'im', 'data-home', 'restart', 'show', 'minimize', 'maximize',
-  'docs', 'repository', 'feedback', 'logs', 'devtools', 'emoji',
+  'docs', 'repository', 'feedback', 'logs', 'devtools', 'emoji', 'reload',
 ] as const
 /** Whitelisted desktop command identifier. */
 export type DesktopCommand = typeof DESKTOP_COMMANDS[number]
@@ -22,7 +22,7 @@ export const CLIENT_COMMANDS = [
 
 const en = {
   app: DESKTOP_PRODUCT_NAME, file: 'File', edit: 'Edit', view: 'View', tools: 'Tools', window: 'Window', help: 'Help', more: 'More',
-  about: `About ${DESKTOP_PRODUCT_NAME}`, settings: 'Settings…', updates: 'Check for Updates…',
+  about: `About ${DESKTOP_PRODUCT_NAME}`, reload: 'Refresh', settings: 'Settings…', updates: 'Check for Updates…',
   'new-session': 'New Conversation', 'open-config': 'Open Configuration File', 'open-web': 'Open in Browser', close: 'Close Window', quit: 'Quit Completely',
   undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', 'select-all': 'Select All',
   'zoom-in': 'Zoom In', 'zoom-out': 'Zoom Out', 'zoom-reset': 'Actual Size', fullscreen: 'Enter Full Screen',
@@ -43,7 +43,7 @@ const en = {
 export type ApplicationMenuCopy = typeof en
 const zh: typeof en = {
   app: DESKTOP_PRODUCT_NAME, file: '文件', edit: '编辑', view: '视图', tools: '工具', window: '窗口', help: '帮助', more: '更多',
-  about: `关于 ${DESKTOP_PRODUCT_NAME}`, settings: '设置…', updates: '检查更新…', 'new-session': '新对话',
+  about: `关于 ${DESKTOP_PRODUCT_NAME}`, reload: '刷新', settings: '设置…', updates: '检查更新…', 'new-session': '新对话',
   'open-config': '打开配置文件', 'open-web': '在浏览器中打开', close: '关闭窗口', quit: '完整退出', undo: '撤销', redo: '重做', cut: '剪切',
   copy: '复制', paste: '粘贴', 'select-all': '全选', 'zoom-in': '放大', 'zoom-out': '缩小', 'zoom-reset': '实际大小',
   fullscreen: '进入全屏', 'leave-fullscreen': '退出全屏', market: '插件市场', 'plugin-restore': '插件恢复',
@@ -60,7 +60,7 @@ const zh: typeof en = {
 }
 const ru: typeof en = {
   app: DESKTOP_PRODUCT_NAME, file: 'Файл', edit: 'Правка', view: 'Вид', tools: 'Инструменты', window: 'Окно', help: 'Справка', more: 'Ещё',
-  about: `Об ${DESKTOP_PRODUCT_NAME}`, settings: 'Настройки…', updates: 'Проверить обновления…', 'new-session': 'Новый диалог',
+  about: `Об ${DESKTOP_PRODUCT_NAME}`, reload: 'Обновить', settings: 'Настройки…', updates: 'Проверить обновления…', 'new-session': 'Новый диалог',
   'open-config': 'Открыть файл конфигурации', 'open-web': 'Открыть в браузере', close: 'Закрыть окно', quit: 'Полностью выйти', undo: 'Отменить', redo: 'Повторить', cut: 'Вырезать',
   copy: 'Копировать', paste: 'Вставить', 'select-all': 'Выбрать всё', 'zoom-in': 'Увеличить', 'zoom-out': 'Уменьшить', 'zoom-reset': 'Реальный размер',
   fullscreen: 'Во весь экран', 'leave-fullscreen': 'Выйти из полноэкранного режима', market: 'Плагины', 'plugin-restore': 'Восстановление плагинов',
@@ -122,7 +122,7 @@ export function applicationMenuTemplate(
   const t = menuCopy(state.locale)
   const mac = state.platform === 'darwin'
   const shortcuts: Partial<Record<DesktopCommand, string>> = {
-    'new-session': 'CmdOrCtrl+N', settings: 'CmdOrCtrl+,', quit: mac ? 'Command+Q' : 'Ctrl+Q',
+    'new-session': 'CmdOrCtrl+N', settings: 'CmdOrCtrl+,', quit: mac ? 'Command+Q' : 'Ctrl+Q', reload: 'CmdOrCtrl+R',
     undo: 'CmdOrCtrl+Z', redo: mac ? 'Command+Shift+Z' : 'Ctrl+Y', cut: 'CmdOrCtrl+X', copy: 'CmdOrCtrl+C',
     paste: 'CmdOrCtrl+V', 'select-all': 'CmdOrCtrl+A', 'zoom-in': 'CmdOrCtrl+Plus',
     'zoom-out': 'CmdOrCtrl+-', 'zoom-reset': 'CmdOrCtrl+0', fullscreen: mac ? 'Control+Command+F' : 'F11',
@@ -147,11 +147,12 @@ export function applicationMenuTemplate(
       ...(['darwin', 'win32'].includes(state.platform) ? [item('open-web')] : []), separator,
       ...(!mac ? [item('settings'), separator] : []), item('close'), ...(!mac ? [item('quit')] : [])]),
     group('edit', [item('undo'), item('redo'), separator, item('cut'), item('copy'), item('paste'), item('select-all'),
+      separator, item('reload'),
       ...(mac ? [separator, item('emoji')] : [])]),
     group('view', [item('zoom-in'), item('zoom-out'), item('zoom-reset'), separator, item('fullscreen'),
       ...(state.development ? [separator, item('devtools')] : [])]),
     group('tools', ['market', 'plugin-restore', 'diagnostics', 'snapshots', 'external-tools', 'phone', 'im', 'data-home', 'restart'].map(command => item(command as DesktopCommand))),
     group('window', [item('show'), item('minimize'), item('maximize')]),
-    group('help', [item('docs'), item('repository'), item('feedback'), item('logs'), ...(!mac ? [separator, item('updates'), item('about')] : [])]),
+    group('help', [item('docs'), item('repository'), item('feedback'), item('logs'), separator, item('reload'), ...(!mac ? [separator, item('updates'), item('about')] : [])]),
   ]
 }

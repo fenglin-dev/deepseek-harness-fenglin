@@ -215,7 +215,7 @@ import { registerNasRuntimeIpc } from './nas-runtime-ipc.ts'
 const APP_NAME = DESKTOP_PRODUCT_NAME
 const DESKTOP_WEB_SUPPORTED = process.platform === 'darwin' || process.platform === 'win32'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
-const WINDOW_ICON = fileURLToPath(new URL('./icon.png', import.meta.url))
+const WINDOW_ICON = app.isPackaged ? join(process.resourcesPath, 'icon.png') : fileURLToPath(new URL('./icon.png', import.meta.url))
 const MACOS_TRAY_ICON = fileURLToPath(new URL('./tray-iconTemplate.png', import.meta.url))
 const PRELOAD = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const TITLEBAR_PAGE = fileURLToPath(new URL('./titlebar.html', import.meta.url))
@@ -461,6 +461,7 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
       if (error !== '') throw new Error(error)
       return
     }
+    case 'reload': { const w = mainWindow ?? BrowserWindow.getAllWindows()[0]; w?.webContents.reload(); return }
     case 'about': {
       const manifest = JSON.parse(await readFile(new URL('./harness-version.json', import.meta.url), 'utf8')) as { version: string }
       await dialog.showMessageBox({ type: 'info', title: menuCopy(menuLocale).about,
@@ -468,9 +469,9 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
         detail: `${app.getVersion()}\nHarness ${manifest.version}\n\n${menuCopy(menuLocale).community}` })
       return
     }
-    case 'docs': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop#readme'); return
-    case 'repository': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop'); return
-    case 'feedback': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop/issues'); return
+    case 'docs': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin#readme'); return
+    case 'repository': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin'); return
+    case 'feedback': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin/issues'); return
     default: throw new Error(`desktop: unhandled menu command ${command}`)
   }
 }
@@ -827,7 +828,7 @@ function refreshTrayMenu(): void {
 
 function createTray(): void {
   const images = iconManager?.images()
-  tray = new Tray(images === undefined ? nativeImage.createFromPath(WINDOW_ICON) : desktopTrayImage(images))
+  tray = new Tray(images === undefined ? nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : (app.isPackaged ? join(process.resourcesPath, 'tray.ico') : join(app.getAppPath(), 'resources', 'tray-windows.ico'))) : desktopTrayImage(images))
   tray.setToolTip(APP_NAME)
   refreshTrayMenu()
   // A macOS tray with a context menu opens that menu on a primary click. Do
@@ -1538,7 +1539,7 @@ async function startApplication(): Promise<void> {
     iconManager = new DesktopIconManager({
       directory: join(app.getPath('userData'), 'icons'), platform: process.platform, packaged: app.isPackaged,
       defaultApplication: loadDefaultApplicationIcon(process.platform),
-      defaultTray: nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : WINDOW_ICON),
+      defaultTray: nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : (app.isPackaged ? join(process.resourcesPath, 'tray.ico') : join(app.getAppPath(), 'resources', 'tray-windows.ico'))),
       apply: applyDesktopIcons,
       notify: status => mainSurface?.send(DESKTOP_IPC.iconsStatus, status),
     })
@@ -1656,6 +1657,7 @@ async function startApplication(): Promise<void> {
   let harnessEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: dshHome,
+    PNPM_HOME: join(dshHome, 'pnpm-home'),
     DSH_DESKTOP_APPLICATION_VERSION: app.getVersion(),
     DSH_DESKTOP_PNPM_VERSION: DESKTOP_PNPM_VERSION,
     ...(app.isPackaged ? { DSH_PROFILE_RESOLUTION_MODE: 'runtime' } : {}),
