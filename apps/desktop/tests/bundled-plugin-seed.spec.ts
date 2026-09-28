@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { list } from 'tar'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   appendBundledPluginFailure,
@@ -170,6 +171,7 @@ describe('bundled plugin seed', () => {
       ['dsh-mermaid', 'startup'],
       ['dsh-whale-widget', 'startup'],
       ['@weibaohui/skills-management', 'startup'],
+      ['@dsh-plugins/mcp-panel', 'startup'],
       ['dsh-font', 'diagnostic'],
       ['@dsh-diagnostic-lab/scoped-loader-mismatch', 'diagnostic'],
       ['@dsh-diagnostic-lab/loader-dependency-unavailable', 'diagnostic'],
@@ -178,7 +180,9 @@ describe('bundled plugin seed', () => {
       ['@dsh-diagnostic-lab/immutable-agent-input-mutation', 'diagnostic'],
     ])
     for (const entry of manifest.plugins.filter(candidate => (
-      candidate.installPolicy !== 'diagnostic' && !candidate.registrySpec?.startsWith('github:')
+      candidate.installPolicy !== 'diagnostic'
+      && candidate.registrySpec !== undefined
+      && !candidate.registrySpec.startsWith('github:')
     ))) {
       expect(entry.registrySpec).toBe(`${entry.packageName}@${entry.version}`)
     }
@@ -205,6 +209,26 @@ describe('bundled plugin seed', () => {
       .toMatchObject({ version: '0.3.16', installPolicy: 'startup' })
     expect(manifest.plugins.find(entry => entry.packageName === '@weibaohui/skills-management'))
       .toMatchObject({ version: '0.6.11', installPolicy: 'startup' })
+    expect(manifest.plugins.find(entry => entry.packageName === '@dsh-plugins/mcp-panel'))
+      .toMatchObject({ version: '0.1.0', installPolicy: 'startup' })
+    expect(manifest.plugins.find(entry => entry.packageName === '@dsh-plugins/mcp-panel')?.registrySpec)
+      .toBeUndefined()
+    const mcpArchive = manifest.plugins.find(entry => entry.packageName === '@dsh-plugins/mcp-panel')?.archive
+    expect(mcpArchive).toBeDefined()
+    const archivePaths = new Set<string>()
+    let hostEntry = ''
+    await list({
+      file: fileURLToPath(new URL(`../bundled-plugins/${mcpArchive}`, import.meta.url)),
+      onReadEntry: (entry) => {
+        archivePaths.add(entry.path)
+        if (entry.path === 'package/lib/index.js') {
+          entry.on('data', (chunk: Buffer) => { hostEntry += chunk.toString('utf8') })
+        } else entry.resume()
+      },
+    })
+    const generatedHostChunk = /from "\.\/(types-[^"/]+\.js)"/u.exec(hostEntry)?.[1]
+    expect(generatedHostChunk).toBeDefined()
+    expect(archivePaths).toContain(`package/lib/${generatedHostChunk}`)
     expect(new Set(manifest.plugins.map(entry => entry.seedId)).size).toBe(manifest.plugins.length)
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-better-sidebar')?.approvedBuilds)
       .toEqual(['node-pty'])
