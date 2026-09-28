@@ -92,7 +92,7 @@ const de: ApplicationMenuCopy = {
 
 const ptBR: ApplicationMenuCopy = {
   app: 'Open DeepSeek Harness Desktop', file: 'Arquivo', edit: 'Editar', view: 'Visualizar', tools: 'Ferramentas', window: 'Janela', help: 'Ajuda', more: 'Mais',
-  about: 'Sobre o Open DeepSeek Harness Desktop', settings: 'Configurações…', updates: 'Verificar atualizações…', 'new-session': 'Nova conversa',
+  about: 'Sobre o Open DeepSeek Harness Desktop', reload: 'Atualizar', settings: 'Configurações…', updates: 'Verificar atualizações…', 'new-session': 'Nova conversa',
   'open-config': 'Abrir arquivo de configuração', 'open-web': 'Abrir no navegador', close: 'Fechar janela', quit: 'Sair completamente',
   undo: 'Desfazer', redo: 'Refazer', cut: 'Recortar', copy: 'Copiar', paste: 'Colar', 'select-all': 'Selecionar tudo',
   'zoom-in': 'Ampliar', 'zoom-out': 'Reduzir', 'zoom-reset': 'Tamanho real', fullscreen: 'Entrar em tela cheia', 'leave-fullscreen': 'Sair da tela cheia',
