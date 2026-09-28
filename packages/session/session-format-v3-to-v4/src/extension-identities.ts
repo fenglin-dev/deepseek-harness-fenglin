@@ -20,6 +20,7 @@ export const RELEASED_V3_EVENT_TYPES: ReadonlySet<string> = new Set([
   'compaction/start',
   'compaction/summary',
   'deliverables/presented',
+  'external-tools/resolved',
   'feedback/message-delete',
   'feedback/message-put',
   'feedback/record',

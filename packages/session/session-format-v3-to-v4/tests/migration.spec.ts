@@ -40,6 +40,17 @@ function restoreHistorical(events: readonly SessionFormatEvent[], sourceHeader: 
 }
 
 describe('V3 to V4 source preservation', () => {
+  it('restores the released external-tools resolution event without changing its source', () => {
+    const row: SessionFormatEvent = {
+      type: 'external-tools/resolved', seq: 0, time: 2,
+      data: { turn: 1, step: 1, tools: ['codex', 'claude-code'] },
+    }
+    const before = structuredClone(row)
+    expect(migrate([row]).events).toEqual([row])
+    expect(restore([row]).events).toEqual([row])
+    expect(row).toEqual(before)
+  })
+
   it('rejects required V3 developer events while preserving ignorable events and native V4 admission', () => {
     const rows: SessionFormatEvent[] = [
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },

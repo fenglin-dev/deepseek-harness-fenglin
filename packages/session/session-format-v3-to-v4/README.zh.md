@@ -186,6 +186,8 @@ Stage 之前先执行 V3 物理解码与 header 校验。Stage 按上述规范�
 
 只转换列明的消息及字段。无关事件及任意 JSON 不会因字符串或数字匹配而获得新含义。固定的 `RELEASED_V3_EVENT_TYPES` 集合独立于当前 writer 区分源事件和扩展。Stage 在解释载荷或查询 V4 词汇之前拒绝 V3 未知必需事件，包括 V4 已认识的名称。未知可忽略事件名称变为 `plugin:<original-name>`，载荷不变。不隐含通用源 schema 校验或递归数字字段推断。
 
+已发布的 `external-tools/resolved` 事件作为具名的第一方 V3 事件完成转换，保留记录的回合、步骤、工具列表及信封字段。接纳该事件不会放行其他未知必需事件，也不会增加通用载荷校验。
+
 只有 canonical V3 `tool/result` wrapper 具有保留信息的转换。其他被解释位置中的已退役 `tool-result` block 由目标接纳拒绝，不作为无效 V4 block 保留。原生 V4 在 recoverable 后缀抑制前应用同样的标签拒绝。检查只覆盖以下位置：
 
 | 所有者 | 检查退役标签的内容 |

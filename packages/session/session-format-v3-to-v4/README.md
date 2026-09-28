@@ -186,6 +186,8 @@ V3 physical decoding and header validation run before the stage. The stage check
 
 Only the enumerated messages and fields are converted. Unrelated events and arbitrary JSON do not acquire new meanings from matching strings or numbers. The fixed `RELEASED_V3_EVENT_TYPES` set separates source events from extensions independently of the current writer. The stage rejects unknown required V3 event types before interpreting their payloads or consulting the V4 vocabulary, including names that V4 recognizes. Unknown ignorable names become `plugin:<original-name>` with their payload unchanged. No generic source-schema validation or recursive numeric-field inference is implied.
 
+The released `external-tools/resolved` event remains a named first-party V3 event through conversion, retaining its recorded turn, step, tool list, and envelope fields. Its admission does not permit other unknown required events or add generic payload validation.
+
 Only the canonical V3 `tool/result` wrapper has a preserving conversion. A retired `tool-result` block in another interpreted position is refused by target admission rather than retained as an invalid V4 block. Native V4 applies the same tag refusal before recoverable suffix suppression. The check covers only these positions:
 
 | Owner | Content inspected for the retired tag |

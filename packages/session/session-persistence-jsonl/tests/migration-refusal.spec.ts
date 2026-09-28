@@ -327,6 +327,13 @@ describe.each(modes)('EOF migration refusal ($compression, $access)', ({ compres
     })
   })
 
+  it('opens a released V3 external-tool resolution without changing the source artifact', async () => {
+    const row = { type: 'external-tools/resolved', data: { turn: 1, step: 1, tools: ['codex', 'claude-code'] } }
+    await expectV3Conversion([...releasedPrefix, row], (events) => {
+      expect(events).toEqual([...nativePrefix, row].map((event, seq) => ({ ...event, seq, time: 1001 + seq })))
+    })
+  })
+
   it.each([false, true])('refuses own V3 tool-definition deferLoading=%s without publishing a successor', async (deferLoading) => {
     const tool = { name: 'example', description: 'Saved tool definition.', parameters: { type: 'object' }, deferLoading }
     const request = { type: 'request/header', data: { header: { config, tools: [tool] }, reason: 'change' } }
