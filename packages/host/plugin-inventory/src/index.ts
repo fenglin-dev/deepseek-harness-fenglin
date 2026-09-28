@@ -1235,7 +1235,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     if (process.env.DSH_DESKTOP_MUTATION_OWNER_PID !== undefined) {
       return { packageName: request.packageName, status: 'quarantined', restartScheduled: true }
     }
-    const exit = this.ctx.get('appExit') as ((code: number) => void) | undefined
+    const exit = this.ctx.get('appExit')
     if (exit === undefined) {
       return { packageName: request.packageName, status: 'quarantined', restartScheduled: false }
     }

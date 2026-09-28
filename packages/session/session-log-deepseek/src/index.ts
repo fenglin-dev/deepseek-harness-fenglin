@@ -182,7 +182,7 @@ export function acceptedThrough(session: Session): SessionSeqCursor {
 export function apply(ctx: Context, config: Config): void {
   ctx.deepseekLlmApiExtensions.register('dsh_session_log', {
     prepare: (request) => {
-      if (config.enabled.get() !== true) return undefined
+      if (!config.enabled.get()) return undefined
       const maxBytes = config.maxBytes.get()
       // TODO: Define an explicit wire result for direct or stale-session calls if they become a supported product path.
       if (request.sessionId === undefined) return undefined

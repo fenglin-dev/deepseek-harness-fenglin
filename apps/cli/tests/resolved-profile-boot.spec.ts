@@ -72,12 +72,16 @@ describe('runProfile with an application-owned profile', () => {
       resolvedProfile: { profile, installAnchor: join(home, 'runtime/package.json') },
     })).rejects.toBe(failure)
     if (enabled) {
-      expect(quarantineProfilePluginAfterLoadFailure).toHaveBeenCalledWith(
-        expect.any(Object), 'dsh-mysql', expect.objectContaining({
-          code: 'loader.lifecycle-failed',
-          attribution: expect.objectContaining({ moduleName: 'dsh-mysql', rootPackage: 'dsh-mysql' }),
-        }), 'loader-lifecycle-failed',
-      )
+      const calls = vi.mocked(quarantineProfilePluginAfterLoadFailure).mock.calls
+      expect(calls).toHaveLength(1)
+      const [context, packageName, diagnostic, reason] = calls[0]!
+      expect(context).toMatchObject({ profile: 'web' })
+      expect(packageName).toBe('dsh-mysql')
+      expect(diagnostic).toMatchObject({
+        code: 'loader.lifecycle-failed',
+        attribution: { moduleName: 'dsh-mysql', rootPackage: 'dsh-mysql' },
+      })
+      expect(reason).toBe('loader-lifecycle-failed')
       expect(release).toHaveBeenCalledOnce()
     } else {
       expect(quarantineProfilePluginAfterLoadFailure).not.toHaveBeenCalled()

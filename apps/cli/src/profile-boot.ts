@@ -646,15 +646,17 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
   let disposal: Promise<void> | undefined
   const dispose = (): Promise<void> => disposal ??= (async () => {
     const failures: unknown[] = []
-    for (const release of [
-      () => app.current?.fiber.dispose(),
+    const releases: Array<() => Promise<void>> = [
+      async () => { await app.current?.fiber.dispose() },
       disposeProxy,
       () => {
         if (composed.diagnosticRuntimeRoot !== undefined) {
           rmSync(composed.diagnosticRuntimeRoot, { recursive: true, force: true })
         }
+        return Promise.resolve()
       },
-    ]) {
+    ]
+    for (const release of releases) {
       try { await release() } catch (error) { failures.push(error) }
     }
     if (failures.length === 1) throw failures[0]

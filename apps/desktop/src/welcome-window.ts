@@ -118,6 +118,7 @@ export async function openWelcomeWindow(
     if (!window.isDestroyed()) window.destroy()
     throw error
   }
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- The closed callback can clear active during either awaited operation.
   if (active && !window.isDestroyed()) {
     if (maximized) window.maximize()
     window.show()

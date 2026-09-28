@@ -364,13 +364,13 @@ describe('typert loader', () => {
     try { await mountTypertLoader(ctx) } catch (error) { failure = error }
     expect(failure).toBeInstanceOf(AggregateError)
     const errors = (failure as AggregateError).errors as Error[]
-    expect(errors).toContainEqual(expect.objectContaining({
+    const contributorFailure = errors.find(error => error instanceof TypertContributorFailure && error.entryName === 'dsh-mysql')
+    expect(contributorFailure).toMatchObject({
       entryName: 'dsh-mysql',
       stage: 'manifest',
-      cause: expect.objectContaining({ message: expect.stringContaining('parameter codec has no create() factory') }),
-    }))
-    expect(errors.find(error => error instanceof TypertContributorFailure && error.entryName === 'dsh-mysql'))
-      .toBeInstanceOf(TypertContributorFailure)
+    })
+    expect(contributorFailure?.cause).toBeInstanceOf(Error)
+    expect((contributorFailure?.cause as Error).message).toContain('parameter codec has no create() factory')
   })
 
   it('fails loud when the declared typert module cannot be imported', LOADER_TEST_TIMEOUT, async () => {
@@ -465,11 +465,13 @@ describe('typert loader', () => {
     await ctx.loader.await()
     // The failing contributor's error is reported on the post-await flush.
     await vi.waitFor(() => {
-      expect(logged).toHaveBeenCalledWith(expect.objectContaining({
-        entryName: '@fixture/steady-failure',
-        stage: 'registration',
-        cause: expect.objectContaining({ message: 'register failed' }),
-      }))
+      expect(logged.mock.calls.some(([error]) =>
+        error instanceof TypertContributorFailure
+        && error.entryName === '@fixture/steady-failure'
+        && error.stage === 'registration'
+        && error.cause instanceof Error
+        && error.cause.message === 'register failed',
+      )).toBe(true)
     }, { timeout: 10_000 })
     expect(ctx.typert.getPackage('@fixture/steady-failure')).toBeUndefined()
   })
