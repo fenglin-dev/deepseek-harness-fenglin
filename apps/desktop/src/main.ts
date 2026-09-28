@@ -49,7 +49,7 @@ import {
   isTrustedHarnessPermissionRequest,
   type HarnessPermissionDetails,
 } from './permissions.ts'
-import { ensurePackagedPrebuiltProfile, ensurePackagedRuntime, packagedPrebuiltProfileArchiveRoot, packagedRuntimeArchiveRoot } from './packaged-runtime.ts'
+import { ensurePackagedPrebuiltProfile, ensurePackagedRuntime, packagedOfficeNodeModules, packagedPrebuiltProfileArchiveRoot, packagedRuntimeArchiveRoot } from './packaged-runtime.ts'
 import { HarnessSupervisor, type HarnessFailure, type HarnessState } from './supervisor.ts'
 import { readRecoveryFailureSummary, type RecoveryFailureSummary } from './recovery-failure.ts'
 import { parseClientBootFailure } from './client-boot-failure.ts'
@@ -1823,6 +1823,7 @@ async function startApplication(): Promise<void> {
   const bundledWorkspaceRuntimeRoot = app.isPackaged
     ? join(process.resourcesPath, 'workspace-runtime')
     : join(fileURLToPath(new URL('../../..', import.meta.url)), '.artifacts', 'workspace-runtime')
+  const packagedRuntimeSelection: { path: string | undefined } = { path: undefined }
   workspaceRuntimeManager = new OptionalRuntimeManager({
     cacheRoot: join(app.getPath('userData'), 'optional-runtimes'),
     stateFile: join(app.getPath('userData'), 'optional-runtimes', 'state-v1.json'),
@@ -1844,7 +1845,9 @@ async function startApplication(): Promise<void> {
     },
     fetch: async (input, init) => (await applicationFetch())(input, init),
     bundledArtifactsRoot: bundledWorkspaceRuntimeRoot,
-    ...(app.isPackaged ? { bundledOfficeNodeModules: join(process.resourcesPath, 'harness', 'node_modules') } : {}),
+    ...(app.isPackaged ? {
+      bundledOfficeNodeModules: () => packagedOfficeNodeModules(packagedRuntimeSelection.path, process.resourcesPath),
+    } : {}),
     requireBundledPython: app.isPackaged,
     ...(nativeWorkspaceTarget === undefined ? {} : { target: nativeWorkspaceTarget }),
   })
@@ -3109,6 +3112,7 @@ async function startApplication(): Promise<void> {
       },
     })
     : undefined
+  packagedRuntimeSelection.path = packagedRuntime
   const packageRuntimeBin = packagedRuntime === undefined
     ? undefined
     : join(packagedRuntime, 'package-runtime', 'bin')
@@ -3814,7 +3818,12 @@ async function startApplication(): Promise<void> {
     }
     runtimePendingApplied = hasRuntimePending
   }
-  const officeNodeModules = await workspaceRuntimeManager.officeNodeModules(dshHome)
+  let officeNodeModules: string | undefined
+  try {
+    officeNodeModules = await workspaceRuntimeManager.officeNodeModules(dshHome)
+  } catch (error) {
+    console.warn('desktop: optional Office runtime could not be resolved during startup', error)
+  }
   if (officeNodeModules === undefined) delete harnessEnvironment.NODE_PATH
   else harnessEnvironment.NODE_PATH = [officeNodeModules, harnessEnvironment.NODE_PATH]
     .filter((value): value is string => typeof value === 'string' && value !== '')

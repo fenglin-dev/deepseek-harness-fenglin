@@ -2,10 +2,10 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { create } from 'tar'
-import { ensurePackagedRuntime, isPackagedRuntimeReady, packagedRuntimeArchiveRoot } from '../src/packaged-runtime.ts'
+import { ensurePackagedRuntime, isPackagedRuntimeReady, packagedOfficeNodeModules, packagedRuntimeArchiveRoot } from '../src/packaged-runtime.ts'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -41,6 +41,12 @@ describe('packaged desktop runtime', () => {
     await writeFile(join(cached, '.desktop-runtime-v3'), 'runtime')
     expect(await ensurePackagedRuntime({ expandedPath: join(cached, 'absent'), destination: cached, archivePath: 'missing.tar.gz', archiveRoot: 'unused' })).toBe(cached)
   })
+  it('resolves packaged Office from the selected archive cache or expanded resources', () => {
+    expect(packagedOfficeNodeModules('/user-data/runtime/version', '/app/Resources'))
+      .toBe('/user-data/runtime/version/node_modules')
+    expect(packagedOfficeNodeModules(undefined, '/app/Resources'))
+      .toBe('/app/Resources/harness/node_modules')
+  })
   it('selects embedded runtime archives for macOS and Linux only', () => {
     expect(packagedRuntimeArchiveRoot('darwin', 'arm64')).toBe('desktop-runtime-darwin-arm64')
     expect(packagedRuntimeArchiveRoot('darwin', 'x64')).toBe('desktop-runtime-darwin-x64')
@@ -59,22 +65,42 @@ describe('packaged desktop runtime', () => {
     expect(await isPackagedRuntimeReady(runtime)).toBe(true)
   })
 
-  it('extracts a checksummed single-root runtime archive into the versioned cache', async () => {
+  it.each([
+    ['darwin', 'arm64'],
+    ['darwin', 'x64'],
+    ['linux', 'x64'],
+  ] as const)('resolves Office from the extracted %s-%s runtime, not application resources', async (platform, arch) => {
     const parent = await mkdtemp(join(tmpdir(), 'dsh-packaged-archive-'))
     roots.push(parent)
-    const source = join(parent, 'desktop-runtime-darwin-arm64')
-    await mkdir(source)
+    const archiveRoot = packagedRuntimeArchiveRoot(platform, arch)
+    if (archiveRoot === undefined) throw new Error(`unsupported runtime target ${platform}-${arch}`)
+    const source = join(parent, archiveRoot)
     const staged = await createRuntime()
-    await rm(source, { recursive: true })
     await cp(staged, source, { recursive: true })
     await writeFile(join(source, '.desktop-runtime-v3'), 'runtime')
+    const officePackage = join(source, 'node_modules', '@deepseek-ai', 'libreoffice-kit', 'package.json')
+    await mkdir(dirname(officePackage), { recursive: true })
+    await writeFile(officePackage, '{}')
     const archive = join(parent, 'runtime.tar')
-    await create({ cwd: parent, file: archive }, ['desktop-runtime-darwin-arm64'])
+    await create({ cwd: parent, file: archive }, [archiveRoot])
     const checksum = createHash('sha256').update(readFileSync(archive)).digest('hex')
     await writeFile(`${archive}.sha256`, `${checksum}  runtime.tar\n`)
     const destination = join(parent, 'cache', 'runtime')
-    expect(await ensurePackagedRuntime({ archivePath: archive, checksumPath: `${archive}.sha256`, destination, archiveRoot: 'desktop-runtime-darwin-arm64' })).toBe(destination)
+    const resources = join(parent, 'application', 'Resources')
+    const selected = await ensurePackagedRuntime({
+      expandedPath: join(resources, 'harness'),
+      archivePath: archive,
+      checksumPath: `${archive}.sha256`,
+      destination,
+      archiveRoot,
+    })
+    expect(selected).toBe(destination)
     expect(await isPackagedRuntimeReady(destination)).toBe(true)
+    expect(readFileSync(join(packagedOfficeNodeModules(selected, resources), '@deepseek-ai', 'libreoffice-kit', 'package.json'), 'utf8'))
+      .toBe('{}')
+    expect(await ensurePackagedRuntime({
+      expandedPath: join(resources, 'harness'), archivePath: archive, destination, archiveRoot,
+    })).toBe(destination)
   })
 
   it('reports verification and extraction while materializing an archive', async () => {

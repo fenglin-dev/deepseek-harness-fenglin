@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { c } from 'tar'
@@ -21,6 +21,7 @@ async function fixture(options: {
   pythonEnvironment?: PythonEnvironmentPort
   bundledPython?: boolean
   bundledOffice?: boolean
+  bundledOfficePath?: (root: string) => string
 } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-workspace-runtime-'))
   roots.push(root)
@@ -68,6 +69,7 @@ async function fixture(options: {
     artifacts: { 'darwin-arm64': artifact },
   } as unknown as WorkspaceRuntimeManifest
   let home = join(root, 'home-one')
+  const bundledOfficePath = options.bundledOfficePath
   const stateFile = join(root, 'user-data', 'state.json')
   let fetchCount = 0
   const manager = new OptionalRuntimeManager({
@@ -100,7 +102,9 @@ async function fixture(options: {
     ...(options.bundledPython === true
       ? { bundledArtifactsRoot: join(root, 'bundled'), requireBundledPython: true }
       : {}),
-    ...(options.bundledOffice === true ? { bundledOfficeNodeModules: join(root, 'harness', 'node_modules') } : {}),
+    ...(options.bundledOffice === true ? { bundledOfficeNodeModules: bundledOfficePath === undefined
+      ? join(root, 'harness', 'node_modules')
+      : () => bundledOfficePath(root) } : {}),
     ...(options.pythonEnvironment === undefined ? {} : { pythonEnvironment: options.pythonEnvironment }),
   })
   if (options.bundledPython === true) {
@@ -138,6 +142,27 @@ async function settle(manager: OptionalRuntimeManager, jobId: string) {
 }
 
 describe('OptionalRuntimeManager', () => {
+  it('does not abort desktop startup when its configured packaged Office directory is absent', async () => {
+    const { manager, root, fetchCount } = await fixture({ bundledOffice: true, bundledPython: true })
+    await rm(join(root, 'harness'), { recursive: true })
+    await expect(manager.officeNodeModules()).resolves.toBeUndefined()
+    const job = await manager.start('office')
+    await expect(settle(manager, job.jobId)).resolves.toMatchObject({ phase: 'failed' })
+    expect(fetchCount()).toBe(0)
+  })
+
+  it('resolves bundled Office from the runtime location selected after archive extraction', async () => {
+    const { manager, root } = await fixture({
+      bundledOffice: true,
+      bundledOfficePath: root => join(root, 'runtime-cache', 'node_modules'),
+    })
+    await cp(join(root, 'harness', 'node_modules'), join(root, 'runtime-cache', 'node_modules'), { recursive: true })
+    await rm(join(root, 'harness'), { recursive: true })
+    await expect(manager.officeNodeModules()).resolves.toBe(join(root, 'runtime-cache', 'node_modules'))
+    const job = await manager.start('office')
+    await expect(settle(manager, job.jobId)).resolves.toMatchObject({ phase: 'succeeded' })
+  })
+
   it('uses the packaged Office engine without fetching its npm tarball', async () => {
     const { manager, root, fetchCount, setOfficeDigest } = await fixture({ bundledPython: true, bundledOffice: true })
     const job = await manager.start('office')

@@ -40,6 +40,11 @@ export function packagedPrebuiltProfileArchiveRoot(platform: NodeJS.Platform, ar
   return `desktop-prebuilt-${platform}-${arch}`
 }
 
+/** Resolve Office from the runtime selected by startup, or the expanded Windows resources. */
+export function packagedOfficeNodeModules(runtime: string | undefined, resourcesPath: string): string {
+  return join(runtime ?? join(resourcesPath, 'harness'), 'node_modules')
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path, constants.F_OK)

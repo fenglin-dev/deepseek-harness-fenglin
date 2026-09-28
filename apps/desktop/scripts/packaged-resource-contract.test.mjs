@@ -26,3 +26,24 @@ test('every desktop builder config satisfies the packaged resource contract', as
 test('the contract is colocated with its static source roots', () => {
   assert.equal(dirname(contractPath), join(root, 'apps/desktop/scripts'))
 })
+
+function assertOfficeResourceLayout(candidate) {
+  for (const platform of ['macos', 'linux']) {
+    const destinations = candidate.platforms[platform].resources.map(resource => resource.to)
+    assert.ok(destinations.includes('harness-runtime.tar'), `${platform} needs an archive for versioned extraction`)
+    assert.ok(!destinations.includes('harness/node_modules'), `${platform} must use the extracted runtime`)
+  }
+  const windowsDestinations = candidate.platforms.windows.resources.map(resource => resource.to)
+  assert.ok(windowsDestinations.includes('harness/node_modules'), 'Windows needs expanded Office modules')
+  assert.ok(!windowsDestinations.includes('harness-runtime.tar'), 'Windows does not extract a Harness archive')
+}
+
+test('Unix archives and Windows expanded resources match the packaged Office lookup', () => {
+  assertOfficeResourceLayout(contract)
+})
+
+test('the Office layout guard rejects a Unix package that reintroduces expanded modules', () => {
+  const invalid = structuredClone(contract)
+  invalid.platforms.linux.resources.push({ from: 'fixture', to: 'harness/node_modules' })
+  assert.throws(() => assertOfficeResourceLayout(invalid), /linux must use the extracted runtime/u)
+})

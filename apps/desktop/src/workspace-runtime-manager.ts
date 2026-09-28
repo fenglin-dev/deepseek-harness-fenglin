@@ -112,8 +112,8 @@ export interface OptionalRuntimeManagerOptions {
   readonly fetch: (input: string, init?: RequestInit) => Promise<Response>
   /** Installed target-specific archives. Python uses this source before any network route. */
   readonly bundledArtifactsRoot?: string
-  /** Installed Harness node_modules containing the platform Office engine. */
-  readonly bundledOfficeNodeModules?: string
+  /** Installed Harness node_modules containing the platform Office engine; a resolver follows archive extraction. */
+  readonly bundledOfficeNodeModules?: string | (() => string)
   /** Treat a missing bundled Python archive as an invalid application installation. */
   readonly requireBundledPython?: boolean
   readonly target?: WorkspaceRuntimeTarget
@@ -545,7 +545,12 @@ export class OptionalRuntimeManager {
       this.#assertManifest(manifest)
       const target = this.#target()
       if (target === undefined) return undefined
-      return this.#verifyBundledOffice(manifest.artifacts[target].office)
+      try {
+        return await this.#verifyBundledOffice(manifest.artifacts[target].office)
+      } catch (error) {
+        console.warn('desktop: optional bundled Office engine is unavailable during startup', error)
+        return undefined
+      }
     }
     const target = this.#target()
     const value = (await this.#readState()).homes[normalizedHome(home)]?.office
@@ -555,7 +560,8 @@ export class OptionalRuntimeManager {
   }
 
   async #verifyBundledOffice(artifact: WorkspaceRuntimeOfficeArtifact): Promise<string> {
-    const nodeModules = this.#options.bundledOfficeNodeModules
+    const configured = this.#options.bundledOfficeNodeModules
+    const nodeModules = typeof configured === 'function' ? configured() : configured
     if (nodeModules === undefined) throw new Error('desktop: bundled Office engine path is unavailable')
     const kitPath = join(nodeModules, '@deepseek-ai', 'libreoffice-kit', 'package.json')
     const kit = JSON.parse(await readFile(kitPath, 'utf8')) as {

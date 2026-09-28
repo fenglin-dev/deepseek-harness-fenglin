@@ -96,7 +96,7 @@ Windows 辅助卸载向导默认保留本地配置和数据。用户可以主动
 
 每个原生安装包都内置一份根据 `primary-runtime-lock.json` 构建的目标平台 Python 3.12 归档，其中包含 NumPy、pandas、Pillow、lxml、python-docx、python-pptx、openpyxl、XlsxWriter 及锁定的传递依赖。打包流程会先使用原生解释器验证依赖，再把归档及其目标元数据加入 Electron 资源。已发布客户端只接受匹配原生目标、预期文件名、大小上限、SHA-256 和载荷摘要的归档；安装包缺少归档时视为安装损坏，不会回退到联网下载 Python。
 
-`OptionalRuntimeManager` 统一拥有有界输出、归档策略、原子解压、共享的 `userData/optional-runtimes` 缓存，以及按规范化 `DSH_HOME` 保存的独立引用。渲染层 IPC 只能提交 `office` 或 `ptc`，不能提交 URL、路径或包坐标。托管 Python 与目标平台的官方 LibreOffice Kit 引擎随安装包提供；Office 文档预览无需为 Profile 启用 Office 技能，即可使用已安装的引擎。在本地 Profile 启用 Office 技能时也使用这些已安装资源，无需下载引擎。启用操作通过现有启动 Profile 事务写入受管块；只有普通客户端与事件分发都正常就绪并提交事务后，状态才会从等待重启变为已启用。Office 加载 `@deepseek-ai/dsh-host-workspace-runtime`，由它发布 `load_workspace_dependencies` 和内置 Office Skill，并显式指向经过校验的载荷以及安装包 Node/pnpm。PTC 使用独立受管块，Windows 不支持。实验性 PTC 适配包不在默认 CLI 依赖中；用户手动启用后，Desktop 会在重启事务中通过 npm 把同一发行版本的适配包安装到该 Profile。此 PTC 启用操作需要联网；安装失败时保留先前的 Profile。停用一项不会影响另一项。NAS 模式中的两张卡片仅展示不可用状态。
+`OptionalRuntimeManager` 统一拥有有界输出、归档策略、原子解压、共享的 `userData/optional-runtimes` 缓存，以及按规范化 `DSH_HOME` 保存的独立引用。渲染层 IPC 只能提交 `office` 或 `ptc`，不能提交 URL、路径或包坐标。托管 Python 与目标平台的官方 LibreOffice Kit 引擎随安装包提供；Office 文档预览无需为 Profile 启用 Office 技能，即可使用已安装的引擎。启动时从实际选中的 Harness 运行时定位 Office；引擎不可用会记录日志，但不会中断桌面启动，用户明确启用 Office 时仍会得到校验错误。在本地 Profile 启用 Office 技能时也使用这些已安装资源，无需下载引擎。启用操作通过现有启动 Profile 事务写入受管块；只有普通客户端与事件分发都正常就绪并提交事务后，状态才会从等待重启变为已启用。Office 加载 `@deepseek-ai/dsh-host-workspace-runtime`，由它发布 `load_workspace_dependencies` 和内置 Office Skill，并显式指向经过校验的载荷以及安装包 Node/pnpm。PTC 使用独立受管块，Windows 不支持。实验性 PTC 适配包不在默认 CLI 依赖中；用户手动启用后，Desktop 会在重启事务中通过 npm 把同一发行版本的适配包安装到该 Profile。此 PTC 启用操作需要联网；安装失败时保留先前的 Profile。停用一项不会影响另一项。NAS 模式中的两张卡片仅展示不可用状态。
 
 自定义 CPython 的探测和 pip 命令会显式使用 UTF-8 模式，Windows 也一样。启动变更遇到缺少单侧应用受管标记的 Office 块时，仅在对应受管条目唯一的情况下重建；条目含糊时保持原文件不变，并要求手动恢复。
 
@@ -136,7 +136,7 @@ npm run package:desktop:macos:arm64
 npm run package:desktop:macos:x64
 ```
 
-产物写入 `.artifacts/desktop-macos/`。原生安装包携带展开后的 Harness 生产依赖、Node 24.21.0、pnpm 11.7.0、目标平台 Python 归档和官方 LibreOffice Kit 引擎、小型工作运行时适配模块、内置 Office Skill 资源，以及独立的预构建 Profile 模板。打包在 Harness 运行时中保留并校验针对目标平台选择的引擎；缺少引擎会使安装包校验失败。复制 `.app` 时一并安装核心资源。Linux deb/rpm 使用相同的展开 Harness 布局，Windows 保留 NSIS 资源部署。安装程序不执行用户插件脚本，也不选择配置目录。准备阶段验证固定 Node 与 Python 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
+产物写入 `.artifacts/desktop-macos/`。原生安装包携带 Harness 生产依赖、Node 24.21.0、pnpm 11.7.0、目标平台 Python 归档和官方 LibreOffice Kit 引擎、小型工作运行时适配模块、内置 Office Skill 资源，以及独立的预构建 Profile 模板。macOS 与 Linux 将 Harness 存在 `harness-runtime.tar` 中，启动时先解压到按版本划分的用户数据目录，再从实际运行时定位 Office 引擎；Windows 使用展开的 `Resources/harness`。打包在 Harness 运行时中保留并校验针对目标平台选择的引擎；缺少引擎会使安装包校验失败。复制 `.app` 时一并安装核心资源。安装程序不执行用户插件脚本，也不选择配置目录。准备阶段验证固定 Node 与 Python 校验值，将模板迁移到含空格的路径，检查正常启动和离线卸载插件。最终资源校验在打包及 macOS 签名后执行。安装、文件部署、Doctor、服务端就绪、客户端就绪和第二次启动分别记录耗时；部署加快不代表整个启动已经加快。
 
 暂存的生产 `node_modules` 会排除由 OS/CPU 清单标记为不兼容的包、其他平台的 Office 引擎及原生预构建文件、源映射、TypeScript 声明与构建缓存、包管理器元数据，以及已识别的测试、编译器和调试文件。未知运行时资源、许可证、目标平台二进制文件和选定的 Office 引擎仍会保留。此筛选不修改内置插件归档或用户的 Profile。
 
