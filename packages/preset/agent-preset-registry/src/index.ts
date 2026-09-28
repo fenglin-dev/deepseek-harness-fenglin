@@ -284,7 +284,8 @@ export class AgentPresetRegistry extends TypertRemoteService {
    * @returns Display metadata and loading diagnostics.
    */
   async list(): Promise<AgentPreset[]> {
-    await this.ensureUserPresets()
+    // Fenglin: never block roster reads on filesystem preset mounts (settings load).
+    void this.ensureUserPresets()
     const rows = await Promise.all([...this.definitions.values()].map(async (record) => {
       const broken = await this.diagnostic(record)
       return {
@@ -312,7 +313,8 @@ export class AgentPresetRegistry extends TypertRemoteService {
    * @returns Current metadata, including failure when activation failed.
    */
   async resolve(id?: string): Promise<AgentPreset> {
-    await this.ensureUserPresets()
+    // Fenglin: never block roster reads on filesystem preset mounts (settings load).
+    void this.ensureUserPresets()
     const wanted = id ?? this.defaultId
     const record = this.definitions.get(wanted)
     if (record === undefined) throw new RemoteError('agent-preset/not-found', `Unknown agent preset: ${wanted}`,
