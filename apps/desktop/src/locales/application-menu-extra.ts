@@ -69,7 +69,7 @@ const fr: ApplicationMenuCopy = {
   busy: 'Une opération de plugin ou une récupération est en cours. Attendez sa fin avant de redémarrer ou de quitter.',
   tray: 'La zone de notification est indisponible. Annulez pour garder la fenêtre ouverte ou quittez complètement.', cancel: 'Annuler',
   shutdownFailed: 'Le nettoyage des processus en arrière-plan n’est pas terminé. La fermeture et le redémarrage ont été bloqués. Consultez les journaux, puis réessayez de quitter.',
-  community: '枫林个人维护版 (Fenglin personal edition) ; n'est pas un produit officiel DeepSeek.',
+  community: "枫林个人维护版 (Fenglin personal edition) — not an official DeepSeek product.",
 }
 
 const de: ApplicationMenuCopy = {
