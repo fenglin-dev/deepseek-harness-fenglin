@@ -153,6 +153,6 @@ export function applicationMenuTemplate(
       ...(state.development ? [separator, item('devtools')] : [])]),
     group('tools', ['market', 'plugin-restore', 'diagnostics', 'snapshots', 'external-tools', 'phone', 'im', 'data-home', 'restart'].map(command => item(command as DesktopCommand))),
     group('window', [item('show'), item('minimize'), item('maximize')]),
-    group('help', [item('docs'), item('repository'), item('feedback'), item('logs'), separator, item('reload'), ...(!mac ? [separator, item('updates'), item('about')] : [])]),
+    group('help', [item('docs'), item('repository'), item('feedback'), item('logs'), ...(!mac ? [separator, item('updates'), item('about')] : [])]),
   ]
 }
