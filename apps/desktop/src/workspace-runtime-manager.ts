@@ -541,11 +541,17 @@ export class OptionalRuntimeManager {
 
   async officeNodeModules(home = this.#options.getHome()): Promise<string | undefined> {
     if (this.#options.bundledOfficeNodeModules !== undefined) {
-      const manifest = await this.#options.loadManifest()
-      this.#assertManifest(manifest)
-      const target = this.#target()
-      if (target === undefined) return undefined
-      return this.#verifyBundledOffice(manifest.artifacts[target].office)
+      try {
+        const manifest = await this.#options.loadManifest()
+        this.#assertManifest(manifest)
+        const target = this.#target()
+        if (target === undefined) return undefined
+        return await this.#verifyBundledOffice(manifest.artifacts[target].office)
+      } catch (error) {
+        // Fenglin: never abort desktop startup over Office identity drift.
+        console.warn('desktop: bundled Office engine unavailable; continuing without it', error)
+        return undefined
+      }
     }
     const target = this.#target()
     const value = (await this.#readState()).homes[normalizedHome(home)]?.office

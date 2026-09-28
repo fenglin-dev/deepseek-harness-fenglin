@@ -6,6 +6,7 @@ import {
   quarantineProcessRecoveryJournal,
   type DesktopProcessObserver,
 } from './process-observer.ts'
+import { existsSync } from 'node:fs'
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir, release, tmpdir, userInfo } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
@@ -215,7 +216,9 @@ import { registerNasRuntimeIpc } from './nas-runtime-ipc.ts'
 const APP_NAME = DESKTOP_PRODUCT_NAME
 const DESKTOP_WEB_SUPPORTED = process.platform === 'darwin' || process.platform === 'win32'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
-const WINDOW_ICON = app.isPackaged ? join(process.resourcesPath, 'icon.png') : fileURLToPath(new URL('./icon.png', import.meta.url))
+const WINDOW_ICON = (app.isPackaged && existsSync(join(process.resourcesPath, 'icon.png')))
+  ? join(process.resourcesPath, 'icon.png')
+  : fileURLToPath(new URL('./icon.png', import.meta.url))
 const MACOS_TRAY_ICON = fileURLToPath(new URL('./tray-iconTemplate.png', import.meta.url))
 const PRELOAD = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const TITLEBAR_PAGE = fileURLToPath(new URL('./titlebar.html', import.meta.url))
@@ -827,8 +830,14 @@ function refreshTrayMenu(): void {
 }
 
 function createTray(): void {
+  try {
   const images = iconManager?.images()
-  tray = new Tray(images === undefined ? nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : (app.isPackaged ? join(process.resourcesPath, 'tray.ico') : join(app.getAppPath(), 'resources', 'tray-windows.ico'))) : desktopTrayImage(images))
+  // Fenglin: always prefer the PNG window icon over custom .ico — an invalid
+  // tray ICO makes `new Tray` throw and crash startup on Windows.
+  const trayImage = images === undefined
+    ? nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : WINDOW_ICON)
+    : desktopTrayImage(images)
+  tray = new Tray(trayImage)
   tray.setToolTip(APP_NAME)
   refreshTrayMenu()
   // A macOS tray with a context menu opens that menu on a primary click. Do
@@ -839,6 +848,7 @@ function createTray(): void {
     tray.on('click', () => { lifecycle?.showWindow() })
   }
   tray.on('right-click', refreshTrayMenu)
+  } catch (error) { console.warn('desktop: tray unavailable', error) }
 }
 
 /** Apply the saved Dock preference before either setup or the main window appears. */
@@ -1539,7 +1549,7 @@ async function startApplication(): Promise<void> {
     iconManager = new DesktopIconManager({
       directory: join(app.getPath('userData'), 'icons'), platform: process.platform, packaged: app.isPackaged,
       defaultApplication: loadDefaultApplicationIcon(process.platform),
-      defaultTray: nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : (app.isPackaged ? join(process.resourcesPath, 'tray.ico') : join(app.getAppPath(), 'resources', 'tray-windows.ico'))),
+      defaultTray: nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : WINDOW_ICON),
       apply: applyDesktopIcons,
       notify: status => mainSurface?.send(DESKTOP_IPC.iconsStatus, status),
     })
