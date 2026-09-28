@@ -143,7 +143,7 @@ async function drainWithin(collectors: readonly Promise<void>[], ms: number): Pr
 const INSTALL_COMMANDS = new Set(['add', 'install', 'i'])
 
 /** Bound on a pre-install registry lookup when the caller names none. */
-const LOOKUP_TIMEOUT_MS = 20_000
+const LOOKUP_TIMEOUT_MS = 60_000
 
 /** Package specs an install command names explicitly, in order. */
 function namedSpecs(args: readonly string[]): string[] {
@@ -176,7 +176,7 @@ async function namedSpecManifest(
   if (parsed.kind !== 'registry') return undefined
   const viewed = await execa(options.command ?? 'pnpm', [
     ...options.args ?? [], 'view', parsed.spec, 'name', 'version', 'peerDependencies', '--json',
-    ...flags, '--config.fetch-retries=0',
+    ...flags, '--config.fetch-retries=3',
   ], {
     cwd: dir, env: environment, extendEnv: false, reject: false, stdin: 'ignore',
     ...options.signal === undefined ? {} : { cancelSignal: options.signal },
@@ -625,7 +625,7 @@ export function registryArguments(registry: Registry): string[] {
 export async function viewProfilePackage(dir: string, spec: string, options: PackageViewOptions): Promise<PackageViewResult> {
   const result = await execa(options.command ?? 'pnpm', [
     ...options.args ?? [], 'view', spec, 'name', 'version', 'description', 'dsh', '--json',
-    ...registryArguments(options.registry ?? null), '--config.fetch-retries=0',
+    ...registryArguments(options.registry ?? null), '--config.fetch-retries=3',
   ], {
     cwd: dir, env: { ...scrubbedParentEnv(), ...options.env }, extendEnv: false, reject: false, stdin: 'ignore',
     timeout: options.timeoutMs, ...options.signal === undefined ? {} : { cancelSignal: options.signal },

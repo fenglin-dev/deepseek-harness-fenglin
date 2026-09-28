@@ -15,6 +15,7 @@ import { agentPresetProjectionDefinition, externalToolsResolvedProjectionDefinit
 import { acceptsExternalTools, externalToolEnabled, type ExternalToolId, type ExternalToolsState } from './external-tools.ts'
 import { auditRows, mountPreset, standingMountFor, serviceForAgent, type PresetMount } from './mount.ts'
 import { definitionComposition, mountedCompositionRows, type AgentPresetComposition } from './composition-inventory.ts'
+import { discoverUserPresets } from './discovery.ts'
 
 export { agentPresetProjectionDefinition, externalToolsResolvedProjectionDefinition } from './session.ts'
 export { acceptsExternalTools } from './external-tools.ts'
@@ -68,6 +69,25 @@ export class AgentPresetRegistry extends TypertRemoteService {
   private readonly switches = new Map<string, Promise<unknown>>()
   private readonly externalToolMounts = new WeakMap<Agent, Map<ExternalToolId, () => Promise<void> | void>>()
   private externalToolProjector: ExternalToolProjector | undefined
+  private userPresetsLoaded = false
+  /** Fenglin: register `$DSH_HOME/.agent-presets/*` compositions once per process. */
+  private async ensureUserPresets(): Promise<void> {
+    if (this.userPresetsLoaded) return
+    this.userPresetsLoaded = true
+    try {
+      const { dshHomePath } = await import('@deepseek-ai/dsh-home-paths')
+      const discovered = await discoverUserPresets(dshHomePath())
+      for (const definition of discovered) {
+        if (this.definitions.has(definition.id)) continue
+        try { await this.register(definition) } catch (error) {
+          this.owner.logger.warn(`agent preset ${definition.id}: ${String(error)}`)
+        }
+      }
+    } catch (error) {
+      this.owner.logger.warn(`agent presets user discovery failed: ${String(error)}`)
+    }
+  }
+
   private settings: SettingsForms | undefined
 
   constructor(ctx: Context, public config: Config) {
@@ -253,6 +273,7 @@ export class AgentPresetRegistry extends TypertRemoteService {
    * @returns Display metadata and loading diagnostics.
    */
   async list(): Promise<AgentPreset[]> {
+    await this.ensureUserPresets()
     const rows = await Promise.all([...this.definitions.values()].map(async (record) => {
       const broken = await this.diagnostic(record)
       return {
@@ -280,6 +301,7 @@ export class AgentPresetRegistry extends TypertRemoteService {
    * @returns Current metadata, including failure when activation failed.
    */
   async resolve(id?: string): Promise<AgentPreset> {
+    await this.ensureUserPresets()
     const wanted = id ?? this.defaultId
     const record = this.definitions.get(wanted)
     if (record === undefined) throw new RemoteError('agent-preset/not-found', `Unknown agent preset: ${wanted}`,
