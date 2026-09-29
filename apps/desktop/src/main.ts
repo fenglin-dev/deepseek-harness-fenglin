@@ -3939,7 +3939,9 @@ async function startApplication(): Promise<void> {
       const readyOrigin = harnessOrigin
       setTimeout(() => {
         if (harnessOrigin !== readyOrigin || mainSurface === undefined || mainSurface.window.isDestroyed()) return
-        void candidateWelcomeGate.serverReady(url, firstStartPending && desktopMutations.hasCandidate, {
+        // Activation clears the selected candidate before Harness reaches this
+        // callback; the durable first-start gate remains pending until commit.
+        void candidateWelcomeGate.serverReady(url, firstStartPending, {
           loadClient: async (candidateUrl) => {
             const surface = mainSurface
             if (surface !== undefined && !surface.window.isDestroyed()) {
