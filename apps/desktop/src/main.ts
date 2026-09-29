@@ -96,6 +96,7 @@ import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycl
 import { DesktopQuitConfirmation } from './quit-confirmation.ts'
 import { openWelcomeWindow } from './welcome-window.ts'
 import { DesktopWelcomePresentation } from './welcome-presentation.ts'
+import { CandidateWelcomeGate } from './candidate-welcome-gate.ts'
 import { connectDesktopWelcome, type DesktopWelcomeBackend } from './welcome-backend.ts'
 import { WELCOME_IPC } from './welcome-api.ts'
 import { resolveDesktopLocale as resolveWelcomeLocale } from './locale.ts'
@@ -512,6 +513,7 @@ let pluginSnapshotManager: PluginSnapshotManager | undefined
 let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
 let desktopThemeSource: DesktopThemeSource = 'system'
 const reportedDesktopReadiness = new Set<'client' | 'event-dispatch'>()
+const candidateWelcomeGate = new CandidateWelcomeGate()
 let profileMutation: DesktopProfileMutation | undefined
 let workspaceRuntimeManager: OptionalRuntimeManager | undefined
 let dataHomeChooserWindow: BrowserWindow | undefined
@@ -3313,6 +3315,9 @@ async function startApplication(): Promise<void> {
       firstStartPending = false
       preparingFirstStart = false
       await appendDesktopStartupLog('First-start bundled plugin preparation committed after normal readiness.')
+      void candidateWelcomeGate.committed(url => openInitialWorkspace(url, dshHome)).catch((error: unknown) => {
+        console.error('desktop: could not open welcome after first-start verification', error)
+      })
     },
     runSnapshot: (args, timeoutMs, allowDuringDisposal) => runSnapshotCommand(args, timeoutMs, allowDuringDisposal),
     cancelBootableSnapshot,
@@ -3324,6 +3329,7 @@ async function startApplication(): Promise<void> {
     onActivation: () => { publishStartupProgress({ stage: 'starting-harness', progress: 88 }) },
     log: appendDesktopStartupLog,
     onRollback: (error) => {
+      candidateWelcomeGate.rolledBack()
       const detail = error instanceof Error ? error.message : String(error)
       void appendDesktopStartupLog(`Plugin activation failed; the previous Profile was restored: ${detail}`)
       if (firstStartPending) showIncompletePreparation(detail)
@@ -3933,7 +3939,15 @@ async function startApplication(): Promise<void> {
       const readyOrigin = harnessOrigin
       setTimeout(() => {
         if (harnessOrigin !== readyOrigin || mainSurface === undefined || mainSurface.window.isDestroyed()) return
-        void openInitialWorkspace(url, dshHome).catch((error: unknown) => {
+        void candidateWelcomeGate.serverReady(url, firstStartPending && desktopMutations.hasCandidate, {
+          loadClient: async (candidateUrl) => {
+            const surface = mainSurface
+            if (surface !== undefined && !surface.window.isDestroyed()) {
+              await loadAuthenticatedHarness(surface, candidateUrl)
+            }
+          },
+          openWelcome: welcomeUrl => openInitialWorkspace(welcomeUrl, dshHome),
+        }).catch((error: unknown) => {
           console.error('desktop: could not open initial workspace', error)
         })
       }, 120)
