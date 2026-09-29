@@ -13,6 +13,7 @@ const PLATFORM_ONLY = new Map([
   ['apps/desktop/scripts/sign-macos-adhoc.cjs', ['macos']],
   ['apps/desktop/scripts/smoke-windows-package.ps1', ['windows']],
   ['apps/desktop/scripts/smoke-windows-unpacked.mjs', ['windows']],
+  ['apps/desktop/scripts/runtime-deploy-config.test.mjs', ['windows']],
 ])
 
 export function affectedPlatforms(path) {

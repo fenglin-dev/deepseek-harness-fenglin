@@ -9,6 +9,7 @@ test('macOS package smoke changes affect macOS only', () => {
   assert.deepEqual(affectedPlatforms('apps/desktop/scripts/smoke-macos-package.mjs'), ['macos'])
   assert.deepEqual(affectedPlatforms('apps/desktop/scripts/smoke-macos-package.test.mjs'), ['macos'])
   assert.deepEqual(affectedPlatforms('apps/desktop/scripts/smoke-windows-package.ps1'), ['windows'])
+  assert.deepEqual(affectedPlatforms('apps/desktop/scripts/runtime-deploy-config.test.mjs'), ['windows'])
   assert.deepEqual(affectedPlatforms('apps/desktop/scripts/prepare-unix-runtime.mjs'), ['macos', 'linux'])
   assert.deepEqual(affectedPlatforms('apps/desktop/electron-builder.linux.yml'), ['linux'])
   assert.deepEqual(affectedPlatforms('.agents/skills/open-dsh-desktop-release-packaging/SKILL.md'), [])

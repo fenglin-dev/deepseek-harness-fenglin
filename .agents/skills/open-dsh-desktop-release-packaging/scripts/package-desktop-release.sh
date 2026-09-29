@@ -305,12 +305,10 @@ download_status=$(state_get stages.download.status)
 if [[ "$download_status" == verified ]]; then
   "$script_directory/verify-release-directory.sh" "$release_directory"
   echo "release orchestration: reused verified local artifacts"
-elif [[ "$download_status" == running && -d "$release_directory" ]]; then
-  # The downloader activates the complete directory atomically. This covers an
-  # interruption after that rename but before the state update below.
-  "$script_directory/verify-release-directory.sh" "$release_directory"
-  echo "release orchestration: recovered completed local artifacts"
 else
+  # A pre-existing directory can belong to an older set of successful runs.
+  # Its own SHA256SUMS proves integrity, not provenance for the current run IDs.
+  # Retry the identity-checked downloader instead of accepting that directory.
   state_set stages.download.status running
   if [[ "$replace_existing" == 1 || -n "$retry_stage" ]]; then
     "$script_directory/download-desktop-release.sh" --replace-existing --source-sha "$source_sha" "$repository" "$windows_run_id" "$macos_run_id" "$linux_run_id"

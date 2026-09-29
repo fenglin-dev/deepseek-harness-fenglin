@@ -15,6 +15,7 @@ cp "$source_directory/check-release-platform-reuse.mjs" "$scripts/"
 
 printf '{"version":"9.8.7"}\n' > "$fixture/apps/desktop/package.json"
 printf 'name: fixture\n' > "$fixture/.github-workflow-placeholder"
+printf 'release/\n' > "$fixture/.gitignore"
 cat > "$scripts/configure-cli-proxy.sh" <<'EOF'
 #!/usr/bin/env bash
 :
@@ -28,7 +29,10 @@ cat > "$scripts/download-desktop-release.sh" <<'EOF'
 set -euo pipefail
 echo "$*" >> "$ODSH_FIXTURE_DOWNLOAD_LOG"
 root=$(git rev-parse --show-toplevel)
-[[ ! -e "$root/release/9.8.7" ]] || { echo "fixture refuses existing release directory" >&2; exit 1; }
+if [[ -e "$root/release/9.8.7" ]]; then
+  [[ "${1:-}" == --replace-existing ]] || { echo "fixture refuses existing release directory" >&2; exit 1; }
+  rm -rf "$root/release/9.8.7"
+fi
 mkdir -p "$root/release/9.8.7"
 EOF
 cat > "$scripts/verify-release-directory.sh" <<'EOF'
@@ -144,13 +148,24 @@ after=$(grep -c '^dispatch ' "$ODSH_FIXTURE_GH_LOG")
 [[ "$before" == "$after" ]] || { echo "resume dispatched duplicate workflows" >&2; exit 1; }
 [[ $(wc -l < "$ODSH_FIXTURE_DOWNLOAD_LOG" | tr -d ' ') == 1 ]] || { echo "resume repeated the completed download" >&2; exit 1; }
 
+# A crash can leave download=running while an older, internally valid handoff
+# still occupies the destination. Its hashes alone must not mark this run done.
+node "$scripts/release-package-state.mjs" set "$state" stages.download.status running
+printf 'old run\n' > "$fixture/release/9.8.7/stale-marker"
+(
+  cd "$fixture"
+  "$scripts/package-desktop-release.sh" --version 9.8.7 --minimum-free-gib 0 --replace-existing fixture/repository
+)
+[[ $(wc -l < "$ODSH_FIXTURE_DOWNLOAD_LOG" | tr -d ' ') == 2 ]] || { echo "running download trusted a stale directory" >&2; exit 1; }
+[[ ! -e "$fixture/release/9.8.7/stale-marker" ]] || { echo "stale release directory was retained" >&2; exit 1; }
+
 # An explicit stage retry creates a new orchestration identity and clears downstream state.
 rm -rf "$fixture/release/9.8.7"
 (
   cd "$fixture"
   "$scripts/package-desktop-release.sh" --version 9.8.7 --minimum-free-gib 0 --retry-stage download fixture/repository
 )
-[[ $(wc -l < "$ODSH_FIXTURE_DOWNLOAD_LOG" | tr -d ' ') == 2 ]] || { echo "download retry did not repeat the transfer" >&2; exit 1; }
+[[ $(wc -l < "$ODSH_FIXTURE_DOWNLOAD_LOG" | tr -d ' ') == 3 ]] || { echo "download retry did not repeat the transfer" >&2; exit 1; }
 [[ "$(node "$scripts/release-package-state.mjs" get "$state" retries.download)" == 1 ]]
 
 # A macOS-only qualification change retains successful Windows/Linux runs from
