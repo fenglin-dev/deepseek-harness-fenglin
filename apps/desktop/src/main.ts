@@ -3729,7 +3729,7 @@ async function startApplication(): Promise<void> {
           },
           async (archives) => {
             await runDesktopInvocation(resolveHarnessInvocation(harnessEnvironment,
-              ['plugin', '--profile', 'web', 'add', '--save-exact', '--offline', ...archives], launchOptions), 'bundled-batch-install', BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS)
+              ['plugin', '--profile', 'web', 'add', '--save-exact', ...archives], launchOptions), 'bundled-batch-install', BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS)
           })
       } else if (presetUpgradeNeeded) {
         await appendDesktopStartupLog(`Preparing bundled presets once for desktop ${app.getVersion()} after an application upgrade.`)
@@ -4174,7 +4174,7 @@ async function startApplication(): Promise<void> {
       const archivePath = await verifyBundledPluginArchive(bundledDirectory, entry)
       await runDesktopInvocation(resolveHarnessInvocation(
         { ...harnessEnvironment, DSH_HOME: home },
-        ['plugin', '--profile', entry.profile, 'add', '--save-exact', '--offline', archivePath],
+        ['plugin', '--profile', entry.profile, 'add', '--save-exact', archivePath],
         launchOptions,
       ), `diagnostic-plugin-install:${entry.packageName}`, BUNDLED_PLUGIN_INSTALL_TIMEOUT_MS)
     },
