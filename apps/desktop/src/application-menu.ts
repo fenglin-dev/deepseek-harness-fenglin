@@ -10,7 +10,7 @@ export const DESKTOP_COMMANDS = [
   'undo', 'redo', 'cut', 'copy', 'paste', 'select-all', 'zoom-in', 'zoom-out', 'zoom-reset',
   'fullscreen', 'market', 'plugin-restore', 'diagnostics', 'snapshots', 'external-tools',
   'phone', 'im', 'data-home', 'restart', 'show', 'minimize', 'maximize',
-  'docs', 'repository', 'feedback', 'logs', 'devtools', 'emoji',
+  'docs', 'repository', 'feedback', 'logs', 'devtools', 'emoji', 'reload',
 ] as const
 /** Whitelisted desktop command identifier. */
 export type DesktopCommand = typeof DESKTOP_COMMANDS[number]
@@ -22,7 +22,7 @@ export const CLIENT_COMMANDS = [
 
 const en = {
   app: DESKTOP_PRODUCT_NAME, file: 'File', edit: 'Edit', view: 'View', tools: 'Tools', window: 'Window', help: 'Help', more: 'More',
-  about: `About ${DESKTOP_PRODUCT_NAME}`, settings: 'Settings…', updates: 'Check for Updates…',
+  about: `About ${DESKTOP_PRODUCT_NAME}`, reload: 'Refresh', settings: 'Settings…', updates: 'Check for Updates…',
   'new-session': 'New Conversation', 'open-config': 'Open Configuration File', 'open-web': 'Open in Browser', close: 'Close Window', quit: 'Quit Completely',
   undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', 'select-all': 'Select All',
   'zoom-in': 'Zoom In', 'zoom-out': 'Zoom Out', 'zoom-reset': 'Actual Size', fullscreen: 'Enter Full Screen',
@@ -37,13 +37,13 @@ const en = {
   busy: 'A plugin operation or recovery is in progress. Wait for it to finish before restarting or quitting.',
   tray: 'The system tray is unavailable. Cancel to keep the window open, or quit completely.',
   shutdownFailed: 'Background process cleanup did not complete. Exit and restart were blocked. Inspect the logs, then retry quitting.',
-  cancel: 'Cancel', community: 'Maintained by FLAQ AI. An independent community distribution, not an official DeepSeek product.',
+  cancel: 'Cancel', community: 'Fenglin personal edition. Independently maintained; not an official DeepSeek product.',
 }
 /** Exact copy surface shared by every desktop-owned application menu locale. */
 export type ApplicationMenuCopy = typeof en
 const zh: typeof en = {
   app: DESKTOP_PRODUCT_NAME, file: '文件', edit: '编辑', view: '视图', tools: '工具', window: '窗口', help: '帮助', more: '更多',
-  about: `关于 ${DESKTOP_PRODUCT_NAME}`, settings: '设置…', updates: '检查更新…', 'new-session': '新对话',
+  about: `关于 ${DESKTOP_PRODUCT_NAME}`, reload: '刷新', settings: '设置…', updates: '检查更新…', 'new-session': '新对话',
   'open-config': '打开配置文件', 'open-web': '在浏览器中打开', close: '关闭窗口', quit: '完整退出', undo: '撤销', redo: '重做', cut: '剪切',
   copy: '复制', paste: '粘贴', 'select-all': '全选', 'zoom-in': '放大', 'zoom-out': '缩小', 'zoom-reset': '实际大小',
   fullscreen: '进入全屏', 'leave-fullscreen': '退出全屏', market: '插件市场', 'plugin-restore': '插件恢复',
@@ -56,11 +56,11 @@ const zh: typeof en = {
   busy: '插件操作或恢复正在进行，请等待完成后再重启或退出。',
   tray: '系统托盘不可用。可以取消并保留窗口，或完整退出客户端。', cancel: '取消',
   shutdownFailed: '后台进程回收未完成，已阻止退出和重启。请查看日志后重试退出。',
-  community: '由 FLAQ AI 维护的社区独立发行版，并非 DeepSeek 官方产品。',
+  community: '枫林个人维护版，并非 DeepSeek 官方产品。',
 }
 const ru: typeof en = {
   app: DESKTOP_PRODUCT_NAME, file: 'Файл', edit: 'Правка', view: 'Вид', tools: 'Инструменты', window: 'Окно', help: 'Справка', more: 'Ещё',
-  about: `Об ${DESKTOP_PRODUCT_NAME}`, settings: 'Настройки…', updates: 'Проверить обновления…', 'new-session': 'Новый диалог',
+  about: `Об ${DESKTOP_PRODUCT_NAME}`, reload: 'Обновить', settings: 'Настройки…', updates: 'Проверить обновления…', 'new-session': 'Новый диалог',
   'open-config': 'Открыть файл конфигурации', 'open-web': 'Открыть в браузере', close: 'Закрыть окно', quit: 'Полностью выйти', undo: 'Отменить', redo: 'Повторить', cut: 'Вырезать',
   copy: 'Копировать', paste: 'Вставить', 'select-all': 'Выбрать всё', 'zoom-in': 'Увеличить', 'zoom-out': 'Уменьшить', 'zoom-reset': 'Реальный размер',
   fullscreen: 'Во весь экран', 'leave-fullscreen': 'Выйти из полноэкранного режима', market: 'Плагины', 'plugin-restore': 'Восстановление плагинов',
@@ -73,7 +73,7 @@ const ru: typeof en = {
   busy: 'Идёт операция с плагинами или восстановление. Дождитесь завершения перед перезапуском или выходом.',
   tray: 'Системный трей недоступен. Отмените, чтобы оставить окно открытым, или полностью выйдите.',
   shutdownFailed: 'Очистка фоновых процессов не завершена. Выход и перезапуск заблокированы. Проверьте журналы и повторите выход.',
-  cancel: 'Отмена', community: 'Поддерживается FLAQ AI. Независимый общественный дистрибутив, не официальный продукт DeepSeek.',
+  cancel: 'Отмена', community: '枫林个人维护版. Не официальный продукт DeepSeek.',
 }
 /** Resolve native menu copy; unsupported languages fall back to English. @param locale - App locale. @returns Menu dictionary. */
 export function menuCopy(locale: string): typeof en {
@@ -122,7 +122,7 @@ export function applicationMenuTemplate(
   const t = menuCopy(state.locale)
   const mac = state.platform === 'darwin'
   const shortcuts: Partial<Record<DesktopCommand, string>> = {
-    'new-session': 'CmdOrCtrl+N', settings: 'CmdOrCtrl+,', quit: mac ? 'Command+Q' : 'Ctrl+Q',
+    'new-session': 'CmdOrCtrl+N', settings: 'CmdOrCtrl+,', quit: mac ? 'Command+Q' : 'Ctrl+Q', reload: 'CmdOrCtrl+R',
     undo: 'CmdOrCtrl+Z', redo: mac ? 'Command+Shift+Z' : 'Ctrl+Y', cut: 'CmdOrCtrl+X', copy: 'CmdOrCtrl+C',
     paste: 'CmdOrCtrl+V', 'select-all': 'CmdOrCtrl+A', 'zoom-in': 'CmdOrCtrl+Plus',
     'zoom-out': 'CmdOrCtrl+-', 'zoom-reset': 'CmdOrCtrl+0', fullscreen: mac ? 'Control+Command+F' : 'F11',
@@ -147,6 +147,7 @@ export function applicationMenuTemplate(
       ...(['darwin', 'win32'].includes(state.platform) ? [item('open-web')] : []), separator,
       ...(!mac ? [item('settings'), separator] : []), item('close'), ...(!mac ? [item('quit')] : [])]),
     group('edit', [item('undo'), item('redo'), separator, item('cut'), item('copy'), item('paste'), item('select-all'),
+      separator, item('reload'),
       ...(mac ? [separator, item('emoji')] : [])]),
     group('view', [item('zoom-in'), item('zoom-out'), item('zoom-reset'), separator, item('fullscreen'),
       ...(state.development ? [separator, item('devtools')] : [])]),

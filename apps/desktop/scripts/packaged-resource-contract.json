@@ -21,6 +21,8 @@
     "windows": {
       "config": "apps/desktop/electron-builder.yml",
       "resources": [
+        { "from": "resources/tray-windows.ico", "to": "tray.ico" },
+        { "from": "resources/icon-windows.png", "to": "icon.png" },
         {
           "from": "../../.artifacts/desktop-runtime-win-x64/harness",
           "to": "harness",

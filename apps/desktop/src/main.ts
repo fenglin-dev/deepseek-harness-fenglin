@@ -6,6 +6,7 @@ import {
   quarantineProcessRecoveryJournal,
   type DesktopProcessObserver,
 } from './process-observer.ts'
+import { existsSync } from 'node:fs'
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir, release, tmpdir, userInfo } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
@@ -216,7 +217,9 @@ import { registerNasRuntimeIpc } from './nas-runtime-ipc.ts'
 const APP_NAME = DESKTOP_PRODUCT_NAME
 const DESKTOP_WEB_SUPPORTED = process.platform === 'darwin' || process.platform === 'win32'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
-const WINDOW_ICON = fileURLToPath(new URL('./icon.png', import.meta.url))
+const WINDOW_ICON = (app.isPackaged && existsSync(join(process.resourcesPath, 'icon.png')))
+  ? join(process.resourcesPath, 'icon.png')
+  : fileURLToPath(new URL('./icon.png', import.meta.url))
 const MACOS_TRAY_ICON = fileURLToPath(new URL('./tray-iconTemplate.png', import.meta.url))
 const PRELOAD = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const TITLEBAR_PAGE = fileURLToPath(new URL('./titlebar.html', import.meta.url))
@@ -462,6 +465,7 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
       if (error !== '') throw new Error(error)
       return
     }
+    case 'reload': { const w = mainWindow ?? BrowserWindow.getAllWindows()[0]; w?.webContents.reload(); return }
     case 'about': {
       const manifest = JSON.parse(await readFile(new URL('./harness-version.json', import.meta.url), 'utf8')) as { version: string }
       await dialog.showMessageBox({ type: 'info', title: menuCopy(menuLocale).about,
@@ -469,9 +473,9 @@ async function executeProductMenu(command: DesktopCommand): Promise<void> {
         detail: `${app.getVersion()}\nHarness ${manifest.version}\n\n${menuCopy(menuLocale).community}` })
       return
     }
-    case 'docs': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop#readme'); return
-    case 'repository': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop'); return
-    case 'feedback': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop/issues'); return
+    case 'docs': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin#readme'); return
+    case 'repository': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin'); return
+    case 'feedback': await shell.openExternal('https://github.com/fenglin-dev/deepseek-harness-fenglin/issues'); return
     default: throw new Error(`desktop: unhandled menu command ${command}`)
   }
 }
@@ -828,8 +832,9 @@ function refreshTrayMenu(): void {
 }
 
 function createTray(): void {
+  try {
   const images = iconManager?.images()
-  tray = new Tray(images === undefined ? nativeImage.createFromPath(WINDOW_ICON) : desktopTrayImage(images))
+  tray = new Tray(images === undefined ? nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : WINDOW_ICON) : desktopTrayImage(images))
   tray.setToolTip(APP_NAME)
   refreshTrayMenu()
   // A macOS tray with a context menu opens that menu on a primary click. Do
@@ -840,6 +845,7 @@ function createTray(): void {
     tray.on('click', () => { lifecycle?.showWindow() })
   }
   tray.on('right-click', refreshTrayMenu)
+  } catch (error) { console.warn('desktop: tray unavailable', error) }
 }
 
 /** Apply the saved Dock preference before either setup or the main window appears. */

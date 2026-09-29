@@ -12,7 +12,7 @@ const RELEASE_DOWNLOAD_PREFIX = `/${REPOSITORY}/releases/download/`
 const CHECKSUM_ASSET = 'SHA256SUMS'
 const MAX_CHECKSUM_BYTES = 1024 * 1024
 const MAX_RELEASE_METADATA_BYTES = 5 * 1024 * 1024
-const DEFAULT_HEADER_TIMEOUT_MS = 15_000
+const DEFAULT_HEADER_TIMEOUT_MS = 8_000
 const DEFAULT_IDLE_TIMEOUT_MS = 30_000
 const CNB_WITHDRAWAL_RECHECK_MS = 60_000
 const REQUEST_HEADERS = { 'User-Agent': 'DeepSeek-Harness-Desktop' } as const
@@ -621,7 +621,7 @@ export class DesktopReleaseDownloader {
     }
     try {
       try {
-        await this.#downloadInstallerAttempt('system-network', this.#systemFetch, asset.browserUrl, asset, version, file, accumulator, signal)
+        await this.#downloadInstallerAttempt('github-api', this.#apiFetch, asset.apiUrl, asset, version, file, accumulator, signal)
       } catch (error) {
         throwIfUserCancelled(signal)
         if (!fallback) throw error
@@ -630,7 +630,7 @@ export class DesktopReleaseDownloader {
         const resumeFromBytes = accumulator.transferredBytes
         this.#publish({ phase: 'switching', version, fileName: asset.name, transferredBytes: resumeFromBytes, totalBytes: asset.size, resumeFromBytes })
         try {
-          await this.#downloadInstallerAttempt('github-api', this.#apiFetch, asset.apiUrl, asset, version, file, accumulator, signal, accumulator.resumeValidator)
+          await this.#downloadInstallerAttempt('system-network', this.#systemFetch, asset.browserUrl, asset, version, file, accumulator, signal, accumulator.resumeValidator)
         } catch (fallbackError) {
           throwIfUserCancelled(signal)
           logFallbackFailure(fallbackError)
