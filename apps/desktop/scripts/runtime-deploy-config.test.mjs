@@ -59,6 +59,10 @@ test('Windows readiness fails on terminal supervisor errors but permits recovera
     '[2026-09-19T00:00:00Z] [harness-stdout] [info] dsh web: http://127.0.0.1:1234',
   ]) assert.equal(fatal.test(line), false, line)
   assert.equal(source.match(/Assert-HarnessStartupHealthy \$startupLog/gu)?.length, 2)
+  assert.match(source, /Diagnostic Profile readiness does not verify the active Profile/u)
+  assert.match(source, /First-start bundled plugin preparation committed after normal readiness/u)
+  assert.match(source, /event-dispatch is ready/u)
+  assert.equal(source.match(/Test-InstalledDesktopReady -LogText \$startupLog -FirstStart \$(?:true|false)/gu)?.length, 2)
   assert.equal(source.match(/\$appStdout = \$app\.StandardOutput\.ReadToEndAsync\(\)/gu)?.length, 2)
   assert.equal(source.match(/\$appStderr = \$app\.StandardError\.ReadToEndAsync\(\)/gu)?.length, 2)
 })

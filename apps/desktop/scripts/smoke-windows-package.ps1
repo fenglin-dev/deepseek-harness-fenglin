@@ -6,6 +6,17 @@ function Assert-HarnessStartupHealthy([string] $LogText) {
   if ($LogText -match '(?m)^\[[^\r\n]+\] \[desktop-supervisor\] \[error\] (Harness process owner (?:failed|could not start)[^\r\n]*|Harness process range did not become idle[^\r\n]*|Harness startup failed after[^\r\n]*)') {
     throw "Installed Harness startup failed: $($Matches[1])"
   }
+  if ($LogText -match 'Diagnostic Profile readiness does not verify the active Profile') {
+    throw 'Installed application entered diagnostic mode instead of normal Profile readiness.'
+  }
+}
+
+function Test-InstalledDesktopReady([string] $LogText, [bool] $FirstStart) {
+  $webReady = $LogText -match '(?m)^\[[^\r\n]+\] \[harness-stdout\] \[info\] dsh web: http://127\.0\.0\.1:\d+(?:/[^\r\n]*)?\r?$'
+  $clientReady = $LogText -match '(?m)^\[[^\r\n]+\] \[desktop-startup\] \[info\] client ready\r?$'
+  $eventsReady = $LogText -match '(?m)^\[[^\r\n]+\] \[desktop-startup\] \[info\] event-dispatch is ready\r?$'
+  $firstStartCommitted = -not $FirstStart -or $LogText -match '(?m)^\[[^\r\n]+\] \[desktop-startup\] \[info\] First-start bundled plugin preparation committed after normal readiness\.\r?$'
+  return $webReady -and $clientReady -and $eventsReady -and $firstStartCommitted
 }
 
 . (Join-Path $PSScriptRoot 'windows-smoke-journal.ps1')
@@ -160,7 +171,7 @@ try {
     $logExists = Test-Path -LiteralPath $harnessLog
     $startupLog = if ($logExists) { Get-Content -LiteralPath $harnessLog -Raw } else { '' }
     Assert-HarnessStartupHealthy $startupLog
-    if ($startupLog -match '(?m)^\[[^\r\n]+\] \[harness-stdout\] \[info\] dsh web: http://127\.0\.0\.1:\d+(?:/[^\r\n]*)?\r?$') {
+    if (Test-InstalledDesktopReady -LogText $startupLog -FirstStart $true) {
       $ready = $true
       break
     }
@@ -253,7 +264,7 @@ try {
     if ($app.HasExited) { throw "Restarted application exited before Harness readiness with $($app.ExitCode)" }
     $startupLog = if (Test-Path -LiteralPath $harnessLog) { Get-Content -LiteralPath $harnessLog -Raw } else { '' }
     Assert-HarnessStartupHealthy $startupLog
-    if ($startupLog -match '(?m)^\[[^\r\n]+\] \[harness-stdout\] \[info\] dsh web: http://127\.0\.0\.1:\d+(?:/[^\r\n]*)?\r?$') {
+    if (Test-InstalledDesktopReady -LogText $startupLog -FirstStart $false) {
       $ready = $true
       break
     }
