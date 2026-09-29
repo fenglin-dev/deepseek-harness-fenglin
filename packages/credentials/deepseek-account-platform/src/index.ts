@@ -459,8 +459,9 @@ export class PlatformAccount extends DeepSeekAccount {
       try {
         const record = await this.ctx.credentials.readRecord(KEY)
         if (record !== undefined) {
+          const payload = record.kind === 'grant' ? record.payload : undefined
           await this.ctx.credentials.deleteRecord(KEY)
-          const parsed = grant.safeParse(record.payload)
+          const parsed = grant.safeParse(payload)
           if (parsed.success) {
             this.revoke(parsed.data.token, platformClientHeaders(this.platform, client))
           } else {
