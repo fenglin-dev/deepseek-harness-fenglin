@@ -15,6 +15,8 @@ export interface BundledPluginManifestEntry {
   readonly installPolicy: 'startup' | 'manual' | 'diagnostic'
   /** Exact npm or Git spec used first so ordinary installs remain updateable. */
   readonly registrySpec?: string
+  /** Keep a host-compatible npm archive instead of following its moving latest tag. */
+  readonly refreshPolicy?: 'pinned'
   /** Exact historical registry versions once shipped and managed by Desktop. */
   readonly managedUpgradeFrom?: readonly string[]
   /** Reviewed registry packages whose lifecycle scripts this bundled entry requires. */
@@ -136,6 +138,7 @@ export function assertBundledPluginManifestEntry(entry: unknown): asserts entry 
       || !/^\S+$/u.test(candidate.registrySpec)
       || candidate.registrySpec.length > 512
     ))
+    || (candidate.refreshPolicy !== undefined && candidate.refreshPolicy !== 'pinned')
     || (approvedBuilds !== undefined && (
       !Array.isArray(approvedBuilds)
       || approvedBuilds.length > 16

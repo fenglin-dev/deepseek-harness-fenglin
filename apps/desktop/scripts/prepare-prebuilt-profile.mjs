@@ -154,7 +154,9 @@ export async function preparePrebuiltProfile({ destination: published, harnessRo
     if (removable === undefined) throw new Error('prebuilt Profile has no startup plugins')
     await command(relocated, ['remove', removable.packageName, '--config.offline=true'])
   } finally {
-    await rm(relocated, { recursive: true, force: true })
+    // Startup plugins may finish writing their temporary Git metadata just after
+    // Harness exits; retry only transient directory-not-empty cleanup races.
+    await rm(relocated, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
   }
   await rm(published, { recursive: true, force: true })
   await rename(destination, published)

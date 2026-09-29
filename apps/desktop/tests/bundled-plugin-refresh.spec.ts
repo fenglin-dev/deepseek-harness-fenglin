@@ -26,10 +26,12 @@ async function fixture(): Promise<{ directory: string; registryBytes: Buffer }> 
   await mkdir(directory)
   const registryBytes = Buffer.from('old registry archive')
   const gitBytes = Buffer.from('fixed git archive')
+  const pinnedBytes = Buffer.from('pinned registry archive')
   const diagnosticBytes = Buffer.from('fixed diagnostic archive')
   await Promise.all([
     writeFile(join(directory, 'registry-1.0.0.tgz'), registryBytes),
     writeFile(join(directory, 'git-2.0.0.tgz'), gitBytes),
+    writeFile(join(directory, 'pinned-1.2.0.tgz'), pinnedBytes),
     writeFile(join(directory, 'diagnostic-1.1.0.tgz'), diagnosticBytes),
   ])
   await writeFile(join(directory, 'manifest.json'), `${JSON.stringify({
@@ -39,6 +41,11 @@ async function fixture(): Promise<{ directory: string; registryBytes: Buffer }> 
         seedId: 'registry', packageName: 'registry', version: '1.0.0', profile: 'web',
         installPolicy: 'startup', registrySpec: 'registry@1.0.0',
         archive: 'registry-1.0.0.tgz', integrity: integrity(registryBytes),
+      },
+      {
+        seedId: 'pinned', packageName: 'pinned', version: '1.2.0', profile: 'web',
+        installPolicy: 'startup', registrySpec: 'pinned@1.2.0', refreshPolicy: 'pinned',
+        archive: 'pinned-1.2.0.tgz', integrity: integrity(pinnedBytes),
       },
       {
         seedId: 'git', packageName: 'git', version: '2.0.0', profile: 'web',
@@ -74,13 +81,16 @@ describe('bundled plugin refresh', () => {
     })
 
     expect(queryLatest).toHaveBeenCalledWith('registry')
+    expect(queryLatest).toHaveBeenCalledTimes(1)
     expect(manifest.plugins).toMatchObject([
       { packageName: 'registry', version: '1.4.0', registrySpec: 'registry@1.4.0', archive: 'registry-1.4.0.tgz' },
+      { packageName: 'pinned', version: '1.2.0', refreshPolicy: 'pinned', archive: 'pinned-1.2.0.tgz' },
       { packageName: 'git', version: '2.0.0', registrySpec: 'github:example/git#commit', archive: 'git-2.0.0.tgz' },
       { packageName: 'diagnostic', version: '1.1.0', installPolicy: 'diagnostic', archive: 'diagnostic-1.1.0.tgz' },
     ])
     await expect(readFile(join(directory, 'registry-1.4.0.tgz'))).resolves.toEqual(nextBytes)
     await expect(readFile(join(directory, 'git-2.0.0.tgz'), 'utf8')).resolves.toBe('fixed git archive')
+    await expect(readFile(join(directory, 'pinned-1.2.0.tgz'), 'utf8')).resolves.toBe('pinned registry archive')
     await expect(readFile(join(directory, 'diagnostic-1.1.0.tgz'), 'utf8')).resolves.toBe('fixed diagnostic archive')
     await expect(readFile(join(directory, 'registry-1.0.0.tgz'))).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(verifyBundledPluginSnapshot(directory)).resolves.toEqual(manifest)
@@ -102,5 +112,14 @@ describe('bundled plugin refresh', () => {
       download: async () => Buffer.from('modified'),
     })).rejects.toThrow(/downloaded integrity mismatch/)
     await expect(readFile(join(directory, 'registry-1.0.0.tgz'))).resolves.toEqual(registryBytes)
+  })
+
+  it('rejects an unknown refresh policy instead of following latest', async () => {
+    const { directory } = await fixture()
+    const path = join(directory, 'manifest.json')
+    const manifest = JSON.parse(await readFile(path, 'utf8')) as { plugins: Array<Record<string, unknown>> }
+    manifest.plugins[0]!.refreshPolicy = 'anything'
+    await writeFile(path, `${JSON.stringify(manifest)}\n`)
+    await expect(verifyBundledPluginSnapshot(directory)).rejects.toThrow(/invalid bundled plugin manifest entry/)
   })
 })

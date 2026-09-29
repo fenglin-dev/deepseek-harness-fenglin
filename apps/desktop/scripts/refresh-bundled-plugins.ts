@@ -41,7 +41,8 @@ function isStableVersion(version: string): boolean {
 }
 
 function isRegistryTracked(entry: BundledPluginManifestEntry): boolean {
-  return entry.registrySpec === `${entry.packageName}@${entry.version}`
+  return entry.refreshPolicy !== 'pinned'
+    && entry.registrySpec === `${entry.packageName}@${entry.version}`
 }
 
 function integrityFor(bytes: Buffer): string {
@@ -88,7 +89,7 @@ export async function verifyBundledPluginSnapshot(directory: string): Promise<Bu
   return manifest
 }
 
-/** Replace registry-backed entries with pnpm's latest stable dist-tag and retain fixed Git entries.
+/** Replace moving registry entries with pnpm's latest stable dist-tag; retain pinned and Git entries.
  * @param directory - checked desktop bundled-plugin directory to replace atomically.
  * @param dependencies - registry lookup and archive download operations.
  * @returns the resolved manifest written to the snapshot.
