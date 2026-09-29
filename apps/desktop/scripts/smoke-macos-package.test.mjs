@@ -3,7 +3,25 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { verifyHelperLayout } from './smoke-macos-package.mjs'
+import { verifyCodeSignature, verifyHelperLayout } from './smoke-macos-package.mjs'
+
+test('deep signature verification tolerates a large final app while remaining bounded', () => {
+  const app = '/tmp/DeepSeek Harness Desktop.app'
+  let attempts = 0
+  const run = (command, args, options) => {
+    attempts += 1
+    assert.equal(command, '/usr/bin/codesign')
+    assert.deepEqual(args, ['--verify', '--deep', '--strict', app])
+    if (options.timeout < 120000) {
+      const error = new Error('spawnSync /usr/bin/codesign ETIMEDOUT')
+      error.code = 'ETIMEDOUT'
+      throw error
+    }
+    assert.ok(options.timeout <= 300000)
+  }
+  assert.doesNotThrow(() => verifyCodeSignature(app, run))
+  assert.equal(attempts, 1)
+})
 
 test('native Helper lookup accepts display branding but rejects CFBundleName mismatch and missing helpers', { skip: process.platform !== 'darwin' }, () => {
   const app = mkdtempSync(join(tmpdir(), 'dsh-helper-layout-'))

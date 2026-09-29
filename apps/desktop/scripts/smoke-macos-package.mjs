@@ -29,6 +29,15 @@ export function verifyHelperLayout(app) {
   return plist.CFBundleExecutable
 }
 
+/** Verify the extracted final app without skipping deep signature checks.
+ * @param {string} app Application bundle directory.
+ * @param {typeof execFileSync} run Command runner.
+ */
+export function verifyCodeSignature(app, run = execFileSync) {
+  // Large x64 bundles can take over a minute to traverse on shared runners.
+  run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app], { timeout: 300000 })
+}
+
 /** Check a final DMG, ZIP, or app on a native macOS runner.
  * @param {string} input Final package or extracted application.
  */
@@ -57,7 +66,7 @@ export function smokeMacPackage(input) {
     if (apps.length !== 1) throw new Error('Expected exactly one extracted application')
     const app = directory ? join(directory, apps[0]) : source
     const executable = verifyHelperLayout(app)
-    execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', app], { timeout: 60000 })
+    verifyCodeSignature(app)
     execFileSync(process.execPath, [fileURLToPath(new URL('./verify-prebuilt-profile.mjs', import.meta.url)), join(app, 'Contents/Resources')], { timeout: 300000, stdio: 'inherit' })
     const env = { ...process.env }
     delete env.ELECTRON_RUN_AS_NODE
