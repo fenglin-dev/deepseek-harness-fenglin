@@ -450,16 +450,27 @@ export class PlatformAccount extends DeepSeekAccount {
   override signOut(client: AccountClientMetadata): Promise<AccountView> {
     this.removing ??= (async () => {
       if (this.closed) throw new PlatformAuthError('protocol')
-      if (this.attempt !== undefined) await this.cancelSignIn(this.attempt.view.id)
-      const record = await this.ctx.credentials.readRecord(KEY)
-      if (record !== undefined) {
-        if (record.kind !== 'grant') throw new PlatformAuthError('storage')
-        const parsed = grant.safeParse(record.payload)
-        if (!parsed.success) throw new PlatformAuthError('storage')
-        if (parsed.data.issuer !== this.origin) throw new PlatformAuthError('protocol')
-        await this.ctx.credentials.deleteRecord(KEY)
-        this.revoke(parsed.data.token, platformClientHeaders(this.platform, client))
+      if (this.attempt !== undefined) {
+        try { await this.cancelSignIn(this.attempt.view.id) }
+        catch (error) { console.warn('[deepseek-account] cancel during sign-out failed', error) }
       }
+      // Fenglin: always drop the local grant even if payload shape or issuer drifted,
+      // so 退出登录 cannot stick on a stale storage/protocol error.
+      try {
+        const record = await this.ctx.credentials.readRecord(KEY)
+        if (record !== undefined) {
+          await this.ctx.credentials.deleteRecord(KEY)
+          const parsed = grant.safeParse(record.payload)
+          if (parsed.success) {
+            this.revoke(parsed.data.token, platformClientHeaders(this.platform, client))
+          } else {
+            console.warn('[deepseek-account] sign-out dropped unparseable grant without remote revoke')
+          }
+        }
+      } catch (error) {
+        console.warn('[deepseek-account] local credential delete during sign-out failed', error)
+      }
+      this.invalidateDetails()
       this.attempt = undefined
       this.ctx.emit('deepseek-account/signed-out')
       this.changed()

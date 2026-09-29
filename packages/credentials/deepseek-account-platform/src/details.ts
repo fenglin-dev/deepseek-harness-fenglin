@@ -5,7 +5,8 @@ import { AccountUnauthorizedError, PlatformAuthError, requestAccount, requestBon
 
 const user = z.object({
   id: z.string().nullish(),
-  email: z.string(), mobile: z.string().optional(), mobile_number: z.string().optional(),
+  // Fenglin: Platform may omit email or send null; contact falls back to mobile.
+  email: z.string().nullish(), mobile: z.string().nullish(), mobile_number: z.string().nullish(),
   id_profile: z.object({ name: z.string().nullable(), picture: z.string().nullish() }).nullish(),
 })
 // balance and amount arrive as strings that Platform's Web client passes to big.js, whose decimal
@@ -28,7 +29,16 @@ const unnotified = z.array(bonus)
  */
 export function profile(value: unknown): AccountProfile {
   const parsed = user.safeParse(value)
-  if (!parsed.success) throw new PlatformAuthError('protocol')
+  if (!parsed.success) {
+    // Fenglin: never fail the whole profile card for an unexpected user shape.
+    const loose = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
+    return {
+      id: typeof loose.id === 'string' ? loose.id as AccountUserId : null,
+      avatarUrl: null,
+      name: typeof loose.name === 'string' ? loose.name : null,
+      contact: null,
+    }
+  }
   const { email, mobile, mobile_number: mobileNumber, id_profile: identity } = parsed.data
   return {
     id: parsed.data.id == null ? null : parsed.data.id as AccountUserId,
