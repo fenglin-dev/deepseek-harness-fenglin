@@ -66,7 +66,14 @@ if [[ "$1 $2" == "auth token" ]]; then
   exit 0
 fi
 if [[ "$1 $2" == "run view" ]]; then
-  printf 'success\tfixture-branch\tfixture-sha\thttps://example.invalid/run/%s\n' "$3"
+  run_sha=fixture-sha
+  if [[ -n ${ODSH_FIXTURE_OLD_SHA:-} ]]; then
+    case "$3" in
+      101|303) run_sha=$ODSH_FIXTURE_OLD_SHA ;;
+      202) run_sha=$ODSH_FIXTURE_NEW_SHA ;;
+    esac
+  fi
+  printf 'success\tfixture-branch\t%s\thttps://example.invalid/run/%s\n' "$run_sha" "$3"
   exit 0
 fi
 if [[ "$1" == api ]]; then
@@ -358,3 +365,24 @@ ODSH_VERIFY_DMG=0 "$script_directory/verify-release-directory.sh" "$canonical_re
   exit 1
 }
 echo "linked worktree download used the primary checkout release directory"
+
+old_sha=$(git -C "$primary_checkout" rev-parse HEAD)
+mkdir -p "$primary_checkout/apps/desktop/scripts"
+printf 'macOS smoke fix\n' > "$primary_checkout/apps/desktop/scripts/smoke-macos-package.mjs"
+git -C "$primary_checkout" add apps/desktop/scripts/smoke-macos-package.mjs
+git -C "$primary_checkout" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm 'macOS-only qualification fix'
+new_sha=$(git -C "$primary_checkout" rev-parse HEAD)
+(
+  cd "$primary_checkout"
+  PATH="$fake_bin:$PATH" \
+  ODSH_FIXTURE_ARTIFACT_STORE="$artifact_store" \
+  ODSH_FIXTURE_OLD_SHA="$old_sha" \
+  ODSH_FIXTURE_NEW_SHA="$new_sha" \
+  ODSH_RELEASE_DOWNLOAD_STAGING_ROOT="$fixture_root/mixed-staging" \
+  ODSH_RELEASE_OUTPUT_DIRECTORY="$fixture_root/mixed-release" \
+  ODSH_ALLOW_RELEASE_OUTPUT_OVERRIDE=1 \
+  ODSH_VERIFY_DMG=0 \
+    "$script_directory/download-desktop-release.sh" --source-sha "$new_sha" fixture/repository 101 202 303
+)
+ODSH_VERIFY_DMG=0 "$script_directory/verify-release-directory.sh" "$fixture_root/mixed-release"
+echo "platform-compatible mixed-SHA handoff passed"

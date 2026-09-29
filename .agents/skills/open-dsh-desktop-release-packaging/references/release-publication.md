@@ -37,7 +37,7 @@ Do not infer GitHub Release state only from the version suffix. Record the inten
 
 After the notes and local assets are ready, show the user:
 
-- GitHub repository, CNB repository, exact source SHA, tag, title, and intended prerelease/latest state;
+- GitHub repository, CNB repository, exact tag source SHA, each accepted platform run ID and actual SHA (including any compatible older runs), title, and intended prerelease/latest state;
 - absolute notes path and the complete notes or a reviewable rendering;
 - all eight project upload paths and their SHA-256 values from the exact desktop handoff;
 - confirmation that the GitHub Tag and Release do not already exist, and that CNB has no conflicting Release with the same tag;

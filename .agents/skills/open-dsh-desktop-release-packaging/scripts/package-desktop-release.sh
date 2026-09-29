@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 [--version <version>] [--plan <path>] [--minimum-free-gib <gib>] [--retry-stage windows|macos|linux|download] [--replace-existing] [--restart] <owner/repo>" >&2
+  echo "usage: $0 [--version <version>] [--plan <path>] [--minimum-free-gib <gib>] [--retry-stage windows|macos|linux|download] [--reuse-run windows|macos|linux=<successful-run-id>] [--replace-existing] [--restart] <owner/repo>" >&2
   exit 2
 }
 
@@ -12,6 +12,7 @@ minimum_free_gib=10
 restart=0
 retry_stage=
 replace_existing=0
+reuse_runs=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version)
@@ -36,6 +37,11 @@ while [[ $# -gt 0 ]]; do
     --retry-stage)
       [[ $# -ge 2 ]] || usage
       retry_stage=$2
+      shift 2
+      ;;
+    --reuse-run)
+      [[ $# -ge 2 ]] || usage
+      reuse_runs+=("$2")
       shift 2
       ;;
     --replace-existing)
@@ -214,9 +220,8 @@ wait_run() {
   while true; do
     result=$(gh_retry run view "$run_id" --repo "$repository" --json status,conclusion,headSha,url --jq '[.status, (.conclusion // ""), .headSha, .url] | join("\u001f")')
     IFS=$'\x1f' read -r status conclusion head_sha url <<< "$result"
-    [[ "$head_sha" == "$source_sha" ]] || {
+    node "$script_directory/check-release-platform-reuse.mjs" "$stage" "$head_sha" "$source_sha" >/dev/null || {
       state_set "stages.$stage.status" source-mismatch "stages.$stage.url" "$url"
-      echo "$stage run $run_id uses $head_sha, expected $source_sha" >&2
       exit 1
     }
     state_set "stages.$stage.status" "$status" "stages.$stage.conclusion" "$conclusion" "stages.$stage.url" "$url"
@@ -227,7 +232,8 @@ wait_run() {
         exit 1
       fi
       plan_set "platforms.$stage.status" succeeded "platforms.$stage.runId" "$run_id" \
-        "platforms.$stage.sourceSha" "$source_sha" "platforms.$stage.url" "$url"
+        "platforms.$stage.sourceSha" "$head_sha" "platforms.$stage.url" "$url"
+      state_set "stages.$stage.sourceSha" "$head_sha"
       echo "release orchestration: $stage run $run_id succeeded"
       return 0
     fi
@@ -245,13 +251,44 @@ ensure_dispatched() {
   fi
 }
 
+reuse_run() {
+  local specification=$1 stage=${1%%=*} run_id=${1#*=} existing result status conclusion head_sha url
+  [[ "$stage" =~ ^(windows|macos|linux)$ && "$run_id" =~ ^[0-9]+$ ]] || usage
+  existing=$(state_get "stages.$stage.runId")
+  [[ -z "$existing" || "$existing" == "$run_id" ]] || {
+    echo "release orchestration: $stage already has run $existing; use a stage retry before selecting another" >&2
+    exit 1
+  }
+  result=$(gh_retry run view "$run_id" --repo "$repository" --json status,conclusion,headSha,url --jq '[.status, (.conclusion // ""), .headSha, .url] | join("\u001f")')
+  IFS=$'\x1f' read -r status conclusion head_sha url <<< "$result"
+  [[ "$status" == completed && "$conclusion" == success ]] || {
+    echo "release orchestration: $stage run $run_id is not a successful completed run" >&2
+    exit 1
+  }
+  node "$script_directory/check-release-platform-reuse.mjs" "$stage" "$head_sha" "$source_sha"
+  state_set "stages.$stage.runId" "$run_id" "stages.$stage.status" completed \
+    "stages.$stage.conclusion" success "stages.$stage.sourceSha" "$head_sha" "stages.$stage.url" "$url"
+  plan_set "platforms.$stage.runId" "$run_id" "platforms.$stage.sourceSha" "$head_sha" \
+    "platforms.$stage.status" succeeded "platforms.$stage.url" "$url"
+}
+
+for specification in ${reuse_runs[@]+"${reuse_runs[@]}"}; do reuse_run "$specification"; done
+
 ensure_dispatched windows windows-x64 true
 wait_run windows
 windows_run_id=$(state_get stages.windows.runId)
+windows_source_sha=$(state_get stages.windows.sourceSha)
 
 # Dispatch both remaining native targets before waiting so the runners overlap.
-ensure_dispatched macos macos false "$windows_run_id"
-ensure_dispatched linux linux-x64 false "$windows_run_id"
+if [[ "$windows_source_sha" == "$source_sha" ]]; then
+  ensure_dispatched macos macos false "$windows_run_id"
+  ensure_dispatched linux linux-x64 false "$windows_run_id"
+else
+  # A cross-commit snapshot is not delegated to CI. Fresh runs resolve one and
+  # the downloader requires its full content digest to match retained runs.
+  ensure_dispatched macos macos true
+  ensure_dispatched linux linux-x64 true
+fi
 wait_run macos
 wait_run linux
 
@@ -276,9 +313,9 @@ elif [[ "$download_status" == running && -d "$release_directory" ]]; then
 else
   state_set stages.download.status running
   if [[ "$replace_existing" == 1 || -n "$retry_stage" ]]; then
-    "$script_directory/download-desktop-release.sh" --replace-existing "$repository" "$windows_run_id" "$macos_run_id" "$linux_run_id"
+    "$script_directory/download-desktop-release.sh" --replace-existing --source-sha "$source_sha" "$repository" "$windows_run_id" "$macos_run_id" "$linux_run_id"
   else
-    "$script_directory/download-desktop-release.sh" "$repository" "$windows_run_id" "$macos_run_id" "$linux_run_id"
+    "$script_directory/download-desktop-release.sh" --source-sha "$source_sha" "$repository" "$windows_run_id" "$macos_run_id" "$linux_run_id"
   fi
   "$script_directory/verify-release-directory.sh" "$release_directory"
 fi

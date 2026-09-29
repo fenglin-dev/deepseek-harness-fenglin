@@ -2,16 +2,21 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 [--replace-existing] <owner/repo> <windows-run-id> <macos-run-id> <linux-run-id> | [--replace-existing] --macos-only <owner/repo> <macos-run-id>" >&2
+  echo "usage: $0 [--replace-existing] [--source-sha <commit>] <owner/repo> <windows-run-id> <macos-run-id> <linux-run-id> | [--replace-existing] [--source-sha <commit>] --macos-only <owner/repo> <macos-run-id>" >&2
   exit 2
 }
 
 verify_args=()
 replace_existing=0
-if [[ ${1:-} == --replace-existing ]]; then
-  replace_existing=1
-  shift
-fi
+source_sha=
+while [[ ${1:-} == --* ]]; do
+  case "$1" in
+    --replace-existing) replace_existing=1; shift ;;
+    --source-sha) [[ $# -ge 2 ]] || usage; source_sha=$2; shift 2 ;;
+    --macos-only) break ;;
+    *) usage ;;
+  esac
+done
 if [[ $# -eq 3 && $1 == --macos-only ]]; then
   repository=$2
   run_ids=("$3")
@@ -24,6 +29,14 @@ else
   targets=(windows-x64 macos linux-x64)
 fi
 script_directory=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+reuse_checker="$script_directory/check-release-platform-reuse.mjs"
+if [[ -n "$source_sha" ]]; then
+  checkout_sha=$(git rev-parse HEAD)
+  [[ "$source_sha" == "$checkout_sha" ]] || {
+    echo "requested release source $source_sha does not match checkout $checkout_sha" >&2
+    exit 1
+  }
+fi
 source "$script_directory/configure-cli-proxy.sh"
 repository_root=$(cd "$script_directory/../../../.." && pwd)
 speed_check_script="$script_directory/check-release-download-speed.sh"
@@ -309,10 +322,18 @@ for index in "${!run_ids[@]}"; do
     exit 1
   }
 
-  if [[ -z "$common_head_sha" ]]; then
+  if [[ -n "$source_sha" ]]; then
+    case "$target" in
+      windows-x64) reuse_platform=windows ;;
+      macos) reuse_platform=macos ;;
+      linux-x64) reuse_platform=linux ;;
+    esac
+    node "$reuse_checker" "$reuse_platform" "$head_sha" "$source_sha"
+    common_head_sha=$source_sha
+  elif [[ -z "$common_head_sha" ]]; then
     common_head_sha=$head_sha
   elif [[ "$head_sha" != "$common_head_sha" ]]; then
-    echo "workflow run $run_id uses $head_sha, expected $common_head_sha" >&2
+    echo "workflow run $run_id uses $head_sha, expected $common_head_sha; pass --source-sha only after platform-impact review" >&2
     exit 1
   fi
 
